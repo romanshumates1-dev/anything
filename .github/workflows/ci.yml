@@ -24,12 +24,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: yarn
 
       - name: Enable Corepack (Yarn Berry)
-        run: corepack enable
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
 
-      - name: Install dependencies (CI-safe fallback)
-        run: yarn install --immutable || yarn install --check-files --mode=skip-build
+      - name: Install dependencies (strict CI)
+        run: yarn install --immutable
 
       - name: Typecheck
         run: yarn workspace web typecheck
@@ -44,7 +47,7 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
-      RUN_LIVE_FLOWS: '1'
+      RUN_LIVE_FLOWS: "1"
 
     steps:
       - name: Checkout
@@ -61,6 +64,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: yarn
 
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -69,10 +73,12 @@ jobs:
         run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
 
       - name: Enable Corepack (Yarn Berry)
-        run: corepack enable
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
 
-      - name: Install dependencies (CI-safe fallback)
-        run: yarn install --immutable || yarn install --check-files --mode=skip-build
+      - name: Install dependencies (strict CI)
+        run: yarn install --immutable
 
       - name: Run live flow tests
         run: yarn workspace web test
