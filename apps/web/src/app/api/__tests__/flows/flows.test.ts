@@ -18,10 +18,10 @@ vi.mock('@/app/api/utils/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-const enqueueJob = vi.fn(async () => 1);
+const enqueueJob = vi.fn(async (..._a: any[]) => 1);
 vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob: (...a: any[]) => enqueueJob(...a) }));
 
-const sendMessage = vi.fn(async () => ({ status: 'sent', delivery: 'mock' }));
+const sendMessage = vi.fn(async (..._a: any[]) => ({ status: 'sent', delivery: 'mock' }));
 vi.mock('@/app/api/utils/messaging', () => ({ sendMessage: (...a: any[]) => sendMessage(...a) }));
 
 const checkConsent = vi.fn(async () => true);
@@ -186,3 +186,6 @@ describe('LAYER B — csv_import_10k behavior', () => {
     expect(res.status).toBe(413);
   });
 });
+
+
+
