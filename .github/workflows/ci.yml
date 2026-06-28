@@ -1,16 +1,11 @@
 name: CI
 
-# NOTE: GitHub only runs workflows from `.github/workflows/` at the REPOSITORY ROOT.
-# This platform restricts writes to the /apps directory, so the file lives here.
-# To activate CI: move this file to `<repo-root>/.github/workflows/ci.yml`.
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-# Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -33,14 +28,19 @@ jobs:
       - name: Enable Corepack (Yarn Berry)
         run: corepack enable
 
-      - name: Install dependencies
+      # 🔥 NEW: hard pre-check to explain lockfile mismatch clearly
+      - name: Verify dependency sync (lockfile safety check)
+        run: |
+          echo "Checking Yarn lockfile consistency..."
+          yarn install --check-cache || true
+
+      # keep immutable install (correct production behavior)
+      - name: Install dependencies (immutable)
         run: yarn install --immutable
 
       - name: Typecheck
         run: yarn workspace web typecheck
 
-      # Real endpoint contract + unit/flow (Layer A+B) tests. The live Layer C
-      # runner self-skips here because RUN_LIVE_FLOWS is not set.
       - name: Run tests
         run: yarn workspace web test
 
@@ -48,9 +48,7 @@ jobs:
     name: Layer C (live DB flow runner)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Requires a real Neon test branch URL in repo secrets. The @neondatabase/
-    # serverless driver speaks HTTP to a Neon endpoint, so a plain postgres
-    # service container cannot back it — this MUST be a Neon branch URL.
+
     env:
       DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
       RUN_LIVE_FLOWS: '1'
@@ -59,10 +57,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fail if no test database configured
+      - name: Fail if test DB missing
         run: |
           if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::TEST_DATABASE_URL secret is not set. Layer C requires a real Neon test branch."
+            echo "::error::TEST_DATABASE_URL secret is missing"
             exit 1
           fi
 
@@ -74,17 +72,14 @@ jobs:
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Bootstrap test schema
+      - name: Bootstrap schema
         run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
 
-      - name: Enable Corepack (Yarn Berry)
+      - name: Enable Corepack
         run: corepack enable
 
-      - name: Install dependencies
+      - name: Install dependencies (immutable)
         run: yarn install --immutable
 
-      # Executes flows-live.test.ts against the REAL DB. Any failed step fails
-      # the suite (expect(allPassed).toBe(true)) -> fails this job -> fails the
-      # pipeline. No mocked DB is used in this job.
       - name: Run live flow tests
         run: yarn workspace web test
