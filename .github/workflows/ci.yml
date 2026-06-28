@@ -17,24 +17,24 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Enable Corepack (Yarn Berry)
         run: corepack enable
 
-      # 🔥 NEW: hard pre-check to explain lockfile mismatch clearly
-      - name: Verify dependency sync (lockfile safety check)
+      # 🔥 DEBUG STEP (THIS PREVENTS SILENT FAILURES)
+      - name: Validate lockfile consistency (diagnostic)
         run: |
-          echo "Checking Yarn lockfile consistency..."
-          yarn install --check-cache || true
+          echo "Checking dependency sync..."
+          yarn install --mode=skip-build || true
+          echo "Checking for drift..."
+          git diff --exit-code yarn.lock || (echo "::error::Lockfile drift detected. Run 'yarn install' locally and commit yarn.lock" && exit 1)
 
-      # keep immutable install (correct production behavior)
+      # 🔥 REAL INSTALL (STRICT MODE)
       - name: Install dependencies (immutable)
         run: yarn install --immutable
 
@@ -54,22 +54,20 @@ jobs:
       RUN_LIVE_FLOWS: '1'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Fail if test DB missing
+      - name: Fail if missing DB
         run: |
           if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::TEST_DATABASE_URL secret is missing"
+            echo "::error::TEST_DATABASE_URL missing"
             exit 1
           fi
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install psql client
+      - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Bootstrap schema
@@ -78,8 +76,13 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      # 🔥 SAME FIX HERE (IMPORTANT)
+      - name: Validate lockfile consistency (diagnostic)
+        run: |
+          git diff --exit-code yarn.lock || (echo "::error::Lockfile drift detected" && exit 1)
+
       - name: Install dependencies (immutable)
         run: yarn install --immutable
 
-      - name: Run live flow tests
+      - name: Run live flows
         run: yarn workspace web test
