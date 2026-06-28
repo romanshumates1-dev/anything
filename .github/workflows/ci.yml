@@ -20,16 +20,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: yarn
-
-      - name: Enable Corepack (Yarn Berry)
+      # IMPORTANT: force Corepack BEFORE setup-node can leak Yarn 1
+      - name: Enable Corepack FIRST
         run: |
           corepack enable
           corepack prepare yarn@4.12.0 --activate
+
+      - name: Setup Node (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+          cache: yarn
+
+      - name: Verify Yarn version (debug safety)
+        run: yarn --version
 
       - name: Install dependencies (strict CI)
         run: yarn install --immutable
@@ -53,6 +57,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Enable Corepack FIRST
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+
+      - name: Setup Node (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+          cache: yarn
+
       - name: Fail if no test database configured
         run: |
           if [ -z "${DATABASE_URL}" ]; then
@@ -60,22 +75,11 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: yarn
-
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Bootstrap test schema
         run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
-
-      - name: Enable Corepack (Yarn Berry)
-        run: |
-          corepack enable
-          corepack prepare yarn@4.12.0 --activate
 
       - name: Install dependencies (strict CI)
         run: yarn install --immutable
