@@ -61,6 +61,14 @@ async function step(flow: string, id: string, fn: () => Promise<void>) {
   }
 }
 
+// Fails the test AND names the exact failing step(s) + reason in the CI log.
+function assertFlowPassed(flow: string) {
+  const failed = results
+    .filter((r) => r.flow === flow && !r.passed)
+    .map((r) => `${r.step}: ${r.detail}`);
+  expect(failed, `FAILED steps in ${flow}: ${failed.join(' | ') || 'none'}`).toEqual([]);
+}
+
 describe.runIf(LIVE)('LAYER C — live flow execution against real Postgres', () => {
   beforeAll(() => {
     process.env.JOB_RUNNER_SECRET = SECRET;
@@ -174,8 +182,7 @@ describe.runIf(LIVE)('LAYER C — live flow execution against real Postgres', ()
       expect(conv.history[1].role).toBe('user');
     });
 
-    const flowSteps = results.filter((r) => r.flow === 'campaign_lifecycle');
-    expect(flowSteps.every((s) => s.passed)).toBe(true);
+    assertFlowPassed('campaign_lifecycle');
   });
 
   it('csv_import_10k: bulk import inserts + dedupes + logs', async () => {
@@ -202,8 +209,7 @@ describe.runIf(LIVE)('LAYER C — live flow execution against real Postgres', ()
       expect(list.length).toBeGreaterThanOrEqual(1);
     });
 
-    const flowSteps = results.filter((r) => r.flow === 'csv_import_10k');
-    expect(flowSteps.every((s) => s.passed)).toBe(true);
+    assertFlowPassed('csv_import_10k');
   });
 
   it('scheduler_validation: idempotent enqueue prevents duplicate sends', async () => {
@@ -226,8 +232,7 @@ describe.runIf(LIVE)('LAYER C — live flow execution against real Postgres', ()
       expect(exists).toBe(true);
     });
 
-    const flowSteps = results.filter((r) => r.flow === 'scheduler_validation');
-    expect(flowSteps.every((s) => s.passed)).toBe(true);
+    assertFlowPassed('scheduler_validation');
   });
 
   afterAll(async () => {
@@ -277,3 +282,6 @@ describe.skipIf(LIVE)('LAYER C — skipped (set RUN_LIVE_FLOWS=1 + DATABASE_URL 
     expect(LIVE).toBe(false);
   });
 });
+
+
+
