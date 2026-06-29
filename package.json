@@ -8,6 +8,18 @@
     "react-dom": "19.1.0",
     "react-native-screens": "4.16.0"
   },
+  "scripts": {
+    "build": "yarn workspace web build",
+    "dev": "yarn workspace web dev",
+    "test": "yarn workspace web test",
+    "test:watch": "yarn workspace web test:watch",
+    "lint": "yarn oxlint && yarn tsc --noEmit",
+    "lint:fix": "yarn oxlint --fix && yarn oxfmt --write .",
+    "format": "yarn oxfmt --write .",
+    "format:check": "yarn oxfmt --check .",
+    "clean": "echo 'No clean configured for root workspace yet.'",
+    "typecheck": "yarn workspace web typecheck"
+  },
   "devDependencies": {
     "eslint": "^9.27.0",
     "oxfmt": "^0.35.0",
