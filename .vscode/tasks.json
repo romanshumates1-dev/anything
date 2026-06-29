@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: Web",
+      "type": "shell",
+      "command": "yarn workspace @anything/web build",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "Lint: All",
+      "type": "shell",
+      "command": "yarn oxlint && yarn tsc --noEmit",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Test: All",
+      "type": "shell",
+      "command": "yarn test",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "DB: Migrate",
+      "type": "shell",
+      "command": "yarn prisma migrate dev",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "DB: Studio",
+      "type": "shell",
+      "command": "yarn prisma studio",
+      "isBackground": true,
+      "presentation": { "reveal": "always" }
+    }
+  ]
+}
