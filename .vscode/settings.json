@@ -1,0 +1,32 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "explicit"
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "editor.rulers": [100],
+  "files.exclude": {
+    "**/.yarn/cache": true,
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/.expo": true
+  },
+  "search.exclude": {
+    "**/.yarn": true,
+    "**/node_modules": true,
+    "**/.next": true
+  },
+  "oxc.enable": true,
+  "oxc.trace.server": "off",
+  "eslint.enable": false,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "tailwindCSS.experimental.configFile": "apps/web/tailwind.config.ts",
+  "tailwindCSS.includeLanguages": {
+    "typescript": "html",
+    "typescriptreact": "html"
+  }
+}
