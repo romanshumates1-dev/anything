@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "oxc.oxc-vscode",
+    "bradlc.vscode-tailwindcss",
+    "prisma.prisma",
+    "ms-vscode.vscode-typescript-next",
+    "christian-kohler.path-intellisense",
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+    "expo.vscode-expo-tools",
+    "ZixuanChen.vitest-explorer",
+    "GitHub.copilot"
+  ]
+}
