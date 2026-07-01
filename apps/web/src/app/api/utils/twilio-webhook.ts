@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 
-export function validateTwilioSignature(params: {
+export function validateTwilioSignature(input: {
   url: string;
   signature: string;
   authToken: string;
   params: Record<string, string>;
 }): boolean {
-  const { url, signature, authToken, params } = params;
+  const { url, signature, authToken, params } = input;
 
   const sorted = Object.keys(params)
     .sort()
