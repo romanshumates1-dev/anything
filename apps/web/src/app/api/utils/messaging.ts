@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { checkConsent } from './compliance';
 import { logEvent } from './logger';
 import { recordRun } from './execution-ledger';
+import { getTwilioClient, getTwilioConfig } from './twilio-adapter';
 
 export type SendMessagePayload = {
   leadId: number | string;
@@ -64,17 +65,39 @@ export async function sendMessage(payload: SendMessagePayload) {
   try {
     let delivery: 'mock' | 'provider' = 'mock';
 
-    const providerUrl = process.env.SMS_PROVIDER_URL;
-    if (providerUrl) {
-      const res = await fetch(providerUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, text, channel }),
-      });
-      if (!res.ok) {
-        throw new Error(`SMS provider responded [${res.status}] ${res.statusText}`);
+    const twilioConfig = getTwilioConfig();
+    const twilioClient = getTwilioClient();
+    if (twilioClient && twilioConfig) {
+      const toE164 = to.startsWith('+') ? to : `+${to}`;
+      if (twilioConfig.messagingServiceSid) {
+        await twilioClient.messages.create({
+          body: text,
+          to: toE164,
+          messagingServiceSid: twilioConfig.messagingServiceSid,
+        });
+      } else if (twilioConfig.fromNumber) {
+        await twilioClient.messages.create({
+          body: text,
+          to: toE164,
+          from: twilioConfig.fromNumber,
+        });
+      } else {
+        throw new Error('Twilio configured but no messagingServiceSid or fromNumber set');
       }
       delivery = 'provider';
+    } else {
+      const providerUrl = process.env.SMS_PROVIDER_URL;
+      if (providerUrl) {
+        const res = await fetch(providerUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, text, channel }),
+        });
+        if (!res.ok) {
+          throw new Error(`SMS provider responded [${res.status}] ${res.statusText}`);
+        }
+        delivery = 'provider';
+      }
     }
 
     await setCampaignLeadStatus('sent');

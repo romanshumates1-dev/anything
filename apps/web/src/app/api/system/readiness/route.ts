@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { computeReadiness, executionReadiness } from '../../utils/readiness';
+import { getTwilioConfig, getTwilioClient } from '../../utils/twilio-adapter';
 
 // Static manifests (deterministic). Route/page files cannot be introspected at
 // runtime in a serverless build, so the expected set is asserted here against
@@ -92,6 +93,10 @@ export async function GET() {
       FROM audit_logs
     `;
 
+    const twilioConfig = getTwilioConfig();
+    const twilioConnected = twilioConfig !== null;
+    const twilioNumberType = twilioConfig?.numberType || null;
+
     const logRows = await sql`
       SELECT DISTINCT action FROM audit_logs WHERE action = ANY(${EXPECTED_LOG_ACTIONS})
     `;
@@ -136,7 +141,14 @@ export async function GET() {
       flowsExpected: EXPECTED_FLOWS.length,
     });
 
-    return Response.json({ ...result, executionLedger });
+    return Response.json({
+      ...result,
+      executionLedger,
+      twilio: {
+        connected: twilioConnected,
+        numberType: twilioNumberType,
+      },
+    });
   } catch (error: any) {
     console.error('GET /api/system/readiness error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });
