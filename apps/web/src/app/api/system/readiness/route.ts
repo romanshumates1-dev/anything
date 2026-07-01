@@ -38,6 +38,10 @@ const EXPECTED_ROUTES = [
   '/api/dashboard/stats',
   '/api/imports',
   '/api/system/readiness',
+  '/api/system/health',
+  '/api/system/database',
+  '/api/system/queue-status',
+  '/api/system/metrics',
 ];
 
 const EXPECTED_UI_FLOWS = [
