@@ -1,0 +1,16 @@
+{
+  "//": "CI typecheck gate. Covers SHIPPED code only (routes, lib, utils, pages). Test files are validated by execution via vitest (esbuild transpile, no strict type-gate), so they are excluded here to keep the deploy gate deterministic and free of mock-internal type noise.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**",
+    "test/**",
+    "vitest.config.ts",
+    "**/vitest.config.ts"
+  ]
+}

@@ -47,13 +47,17 @@ const HEADER_ALIASES: Record<string, string> = {
   source: 'source',
 };
 
-/** Normalize a phone to digits only (keeps a leading +). Returns '' if none. */
+/** Normalize a phone to E.164-ish (keeps a leading +). Returns '' if none. */
 export function normalizePhone(phone: string | null | undefined): string {
   if (!phone) return '';
   const trimmed = String(phone).trim();
   const hasPlus = trimmed.startsWith('+');
   const digits = trimmed.replace(/[^0-9]/g, '');
   if (!digits) return '';
+  if (!hasPlus && digits.length === 10) {
+    // Default bare 10-digit US numbers to +1
+    return '+1' + digits;
+  }
   return (hasPlus ? '+' : '') + digits;
 }
 

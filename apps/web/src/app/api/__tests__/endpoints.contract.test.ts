@@ -1,29 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// ---- Mocks for the real dependencies these endpoints use ----
-vi.mock('next/headers', () => ({
-  headers: vi.fn(async () => new Headers()),
-}));
+// vi.mock is hoisted by vitest before module-level variables initialize.
+// Use vi.hoisted() to create the mock reference during the hoist phase.
+const { default: _sqlMock } = vi.hoisted(() => {
+  const m = vi.fn(async () => []) as any;
+  m.transaction = vi.fn(async () => []);
+  return { default: m };
+});
+vi.mock('@/app/api/utils/sql', () => ({ default: _sqlMock }));
 
-const getSession = vi.fn();
+const { fn: getSession } = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock('@/lib/auth', () => ({
   auth: { api: { getSession: (...args: any[]) => getSession(...args) } },
 }));
 
-const sqlMock: any = vi.fn(async () => []);
-sqlMock.transaction = vi.fn(async () => []);
-vi.mock('@/app/api/utils/sql', () => ({ default: sqlMock }));
+vi.mock('next/headers', () => ({
+  headers: vi.fn(async () => new Headers()),
+}));
 
-vi.mock('@/app/api/utils/logger', () => ({
+const loggerMocks = vi.hoisted(() => ({
   logEvent: vi.fn(async () => {}),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+vi.mock('@/app/api/utils/logger', () => loggerMocks);
 
-const registerOptOut = vi.fn(async () => {});
-const checkConsent = vi.fn(async () => true);
-vi.mock('@/app/api/utils/compliance', () => ({ registerOptOut, checkConsent }));
+const complianceMocks = vi.hoisted(() => ({
+  registerOptOut: vi.fn(async () => {}),
+  checkConsent: vi.fn(async () => true),
+}));
+vi.mock('@/app/api/utils/compliance', () => complianceMocks);
 
-vi.mock('@/app/api/utils/ai-orchestrator', () => ({
+const aiMocks = vi.hoisted(() => ({
   orchestrateAIResponse: vi.fn(async () => ({
     response_text: 'hi',
     confidence_score: 0.95,
@@ -33,10 +40,12 @@ vi.mock('@/app/api/utils/ai-orchestrator', () => ({
   })),
   detectHighRisk: vi.fn(() => false),
 }));
+vi.mock('@/app/api/utils/ai-orchestrator', () => aiMocks);
 
-vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob: vi.fn(async () => 1) }));
+const jobMocks = vi.hoisted(() => ({ enqueueJob: vi.fn(async () => 1) }));
+vi.mock('@/app/api/utils/jobs', () => jobMocks);
 
-// Import the REAL route handlers (the endpoints that actually exist).
+// Import the REAL route handlers.
 import * as leads from '../leads/route';
 import * as message from '../conversations/message/route';
 import * as optOut from '../compliance/opt-out/route';
@@ -51,7 +60,7 @@ function jsonRequest(url: string, body: unknown, method = 'POST') {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  sqlMock.mockResolvedValue([]);
+  _sqlMock.mockResolvedValue([]);
 });
 
 describe('endpoint surface', () => {
@@ -135,6 +144,6 @@ describe('POST /api/compliance/opt-out', () => {
       })
     );
     expect(res.status).toBe(200);
-    expect(registerOptOut).toHaveBeenCalledWith('+15551234567', 'sms', expect.any(Object));
+    expect(complianceMocks.registerOptOut).toHaveBeenCalledWith('+15551234567', 'sms', expect.any(Object));
   });
 });

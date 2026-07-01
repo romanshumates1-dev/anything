@@ -4,13 +4,16 @@ import { flows, flowKeys } from './registry';
 // ---- Shared mocks (mirror endpoints.contract.test.ts) ----
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 
-const getSession = vi.fn();
+const { fn: getSession } = vi.hoisted(() => ({ fn: vi.fn() }));
 vi.mock('@/lib/auth', () => ({
   auth: { api: { getSession: (...a: any[]) => getSession(...a) } },
 }));
 
-const sqlMock: any = vi.fn(async () => []);
-sqlMock.transaction = vi.fn(async () => []);
+const { default: sqlMock } = vi.hoisted(() => {
+  const m = vi.fn(async () => []) as any;
+  m.transaction = vi.fn(async () => []);
+  return { default: m };
+});
 vi.mock('@/app/api/utils/sql', () => ({ default: sqlMock }));
 
 vi.mock('@/app/api/utils/logger', () => ({
@@ -18,14 +21,14 @@ vi.mock('@/app/api/utils/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-const enqueueJob = vi.fn(async (..._a: any[]) => 1);
+const { fn: enqueueJob } = vi.hoisted(() => ({ fn: vi.fn(async (..._a: any[]) => 1) }));
 vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob: (...a: any[]) => enqueueJob(...a) }));
 
-const sendMessage = vi.fn(async (..._a: any[]) => ({ status: 'sent', delivery: 'mock' }));
+const { fn: sendMessage } = vi.hoisted(() => ({ fn: vi.fn(async (..._a: any[]) => ({ status: 'sent', delivery: 'mock' })) }));
 vi.mock('@/app/api/utils/messaging', () => ({ sendMessage: (...a: any[]) => sendMessage(...a) }));
 
-const checkConsent = vi.fn(async () => true);
-vi.mock('@/app/api/utils/compliance', () => ({ checkConsent, registerOptOut: vi.fn() }));
+const complianceMocks2 = vi.hoisted(() => ({ checkConsent: vi.fn(async () => true), registerOptOut: vi.fn() }));
+vi.mock('@/app/api/utils/compliance', () => complianceMocks2);
 
 // ---- Import REAL handlers + utilities the registry binds to ----
 import * as leads from '../../leads/route';

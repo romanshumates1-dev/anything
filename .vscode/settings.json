@@ -28,5 +28,8 @@
   "tailwindCSS.includeLanguages": {
     "typescript": "html",
     "typescriptreact": "html"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   }
 }

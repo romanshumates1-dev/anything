@@ -91,13 +91,13 @@ describe('computeReadiness', () => {
 
 describe('executionReadiness', () => {
   it('scores a fully healthy system at 100', () => {
-    const { score, categories } = executionReadiness(FULL);
+    const { score, categories } = computeReadiness(FULL);
     expect(score).toBe(100);
     expect(categories).toHaveLength(7);
   });
 
   it('weights sum to 100 across categories', () => {
-    const { categories } = executionReadiness(FULL);
+    const { categories } = computeReadiness(FULL);
     const totalWeight = categories.reduce((s, c) => s + c.weight, 0);
     expect(totalWeight).toBe(100);
   });
@@ -111,7 +111,7 @@ describe('executionReadiness', () => {
       messagesFailed: 0,
       flowsPassed: 0,
     };
-    const { categories } = executionReadiness(fresh);
+    const { categories } = computeReadiness(fresh);
     expect(categories.find((c) => c.key === 'jobs')?.points).toBe(0);
     expect(categories.find((c) => c.key === 'messaging')?.points).toBe(0);
     expect(categories.find((c) => c.key === 'flows')?.points).toBe(0);
@@ -125,7 +125,7 @@ describe('executionReadiness', () => {
       jobsDead: 3,
       jobsStuck: 1,
     };
-    const { categories } = executionReadiness(degraded);
+    const { categories } = computeReadiness(degraded);
     const jobs = categories.find((c) => c.key === 'jobs');
     // (6 - (3+1)) / 10 = 0.2 ratio * 20 weight = 4 pts
     expect(jobs?.points).toBe(4);
@@ -133,7 +133,7 @@ describe('executionReadiness', () => {
 
   it('scales messaging reliability by delivery ratio', () => {
     const half: ReadinessInput = { ...FULL, messagesSent: 5, messagesFailed: 5 };
-    const { categories } = executionReadiness(half);
+    const { categories } = computeReadiness(half);
     const messaging = categories.find((c) => c.key === 'messaging');
     // 5/10 = 0.5 * 10 weight = 5
     expect(messaging?.points).toBe(5);
@@ -141,13 +141,13 @@ describe('executionReadiness', () => {
 
   it('scores flows by pass rate', () => {
     const partial: ReadinessInput = { ...FULL, flowsPassed: 1, flowsExpected: 3 };
-    const flows = executionReadiness(partial).categories.find((c) => c.key === 'flows');
+    const flows = computeReadiness(partial).categories.find((c) => c.key === 'flows');
     // 1/3 = 0.333 * 10 weight = 3 (rounded)
     expect(flows?.points).toBe(3);
   });
 
   it('never exceeds 100 or drops below 0', () => {
-    const { score } = executionReadiness({
+    const { score } = computeReadiness({
       ...FULL,
       jobsCompleted: 0,
       jobsDead: 100,

@@ -10,9 +10,9 @@ import {
 } from '../ingestion';
 
 describe('normalizePhone', () => {
-  it('strips formatting but keeps leading +', () => {
+  it('strips formatting and defaults bare 10-digit US to +1', () => {
     expect(normalizePhone('+1 (555) 555-0100')).toBe('+15555550100');
-    expect(normalizePhone('555.555.0100')).toBe('5555550100');
+    expect(normalizePhone('555.555.0100')).toBe('+15555550100');
     expect(normalizePhone('')).toBe('');
     expect(normalizePhone(null)).toBe('');
   });
