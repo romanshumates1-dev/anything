@@ -72,6 +72,43 @@ E2E journey is what surfaced them; it now runs in CI so this cannot recur.
   `conversation.id` instead of `lead_id`; Next-16 async `params` (Promise) read
   synchronously in several routes + the inbox `[leadId]` client page.
 
+## NOT DEPLOYABLE / DEAD CODE (quarantined)
+Two engines previously reported as passing (the earlier **"GATE PASS 87/100"
+claim is retracted by this finding**) are **not deployable** and are quarantined:
+
+- **`src/app/api/outreach/variant-allocator.ts`** (A/B Thompson-sampling) and
+  **`src/app/api/outreach/resurrection-engine.ts`** (30/60/90-day sequences).
+
+Evidence:
+1. **Backing tables exist in NO schema, NO migration, and NOT in the live DB.**
+   Three tables are referenced and absent everywhere: `message_performance_ledger`,
+   `resurrection_campaign_config`, `resurrection_sent_log`. An
+   `information_schema` check against the live Neon DB returns none of them.
+2. **Never wired to any runtime path** — neither engine is imported by any route,
+   cron, job, gateway, service, or page (grep across `src` = 0 references outside
+   the engines' own files and tests). They are dead code.
+3. **The in-file `ensurePerformanceLedgerSchema()` / `ensureResurrectionSchema()`
+   DDL is never called**, so the tables are not created at runtime either.
+4. **`ResurrectionEngine.getConfig()` reads `(config as any).rows`**, but this
+   codebase's `sql` returns a plain array — so `.rows` is always `undefined` and
+   `getConfig()` returns hard-coded defaults unconditionally, even if the table
+   existed with saved config.
+
+Making them real is deferred to a dedicated build session (migration 004 for the
+3 tables + the `getConfig()` fix + runtime wiring + behavioral tests), NOT done
+under this feature freeze. A **hermetic quarantine guard**
+(`src/app/api/__tests__/quarantine-guard.test.ts`) fails CI if any runtime file
+imports either engine, so the quarantine can't rot silently — delete that guard
+in the same PR that makes the engines real.
+
+## Skipped-test ledger (relabeled)
+- **Tests 1–15 = MISSING_SCHEMA (quarantined)** — `variant-allocator.test.ts`
+  (4) + `resurrection-engine.test.ts` (11). Query tables that exist in no schema,
+  no migration, and not in the live DB; owning engines are quarantined dead code.
+- **Tests 16–19 = LIVE_GATED** — `sms-gateway.test.ts` opt-out suppression (1) +
+  `flows-live.test.ts` (3). Their tables exist; they only need a live DB/creds
+  (`DATABASE_URL` / `RUN_LIVE_FLOWS=1`).
+
 ## CI (`.github/workflows/ci.yml`) — the permanent guard
 On every push / PR to `main`:
 1. **web** — `yarn install --immutable` → typecheck (shipped code) → **oxlint** →
@@ -94,12 +131,14 @@ On every push / PR to `main`:
 - **`@playwright/test` is not in `yarn.lock`** (registry TLS blocked in the
   authoring env); the CI e2e job installs it explicitly. Locally it lives in
   `node_modules` via an isolated-npm install.
-- **oxlint** currently reports 0 errors but also scans 0 files in the authoring
-  environment (path/ignore resolution quirk under Yarn Berry) — verify it scans
-  sources on the first real CI run.
-- 19 tests are DB/live-cred-gated skips (see the skipped-test audit in the
-  session ledger); 15 additionally need tables absent from the repo schema and
-  require a fully-provisioned Neon branch.
+- **oxlint** RESOLVED: the repo-root `.eslintignore` (a blanket `*`) made oxlint
+  silently scan 0 files and falsely pass. The CI step now uses `--no-ignore`
+  (scoped to `apps/web/src`) and scans 204 files — CI log shows "84 warnings and
+  0 errors". The 84 warnings are pre-existing unused-import/var noise (non-blocking
+  by severity); the one deny-severity error it surfaced (a wizard `useEffect`
+  missing-dep) was fixed.
+- **19 skipped tests**: 15 = MISSING_SCHEMA (quarantined, see above), 4 = LIVE_GATED
+  (need a live DB / `RUN_LIVE_FLOWS`).
 
 ## Environment variables for live operation
 Set in `apps/web/.env` (git-ignored) or the deploy environment:
