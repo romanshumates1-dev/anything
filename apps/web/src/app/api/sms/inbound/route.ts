@@ -3,6 +3,7 @@ import { logEvent } from '../../utils/logger';
 import { recordRun } from '../../utils/execution-ledger';
 import { getTwilioConfig } from '../../utils/twilio-adapter';
 import { validateTwilioSignature } from '../../utils/twilio-webhook';
+import { enqueueJob } from '../../utils/jobs';
 
 /**
  * Inbound SMS webhook. Secret-gated (NOT session-gated) since the provider
@@ -28,19 +29,22 @@ export async function POST(request: Request) {
       const url = new URL(request.url);
       const fullUrl = `${url.protocol}//${url.host}${url.pathname}`;
 
+      const formObj = Object.fromEntries(form.entries());
       const valid = validateTwilioSignature({
         url: fullUrl,
         signature: twilioSignature,
         authToken: twilioConfig.authToken,
-        params: Object.fromEntries(form.entries()),
+        params: formObj as Record<string, string>,
       });
 
       if (!valid) {
         return Response.json({ error: 'Invalid signature' }, { status: 403 });
       }
 
-      from = typeof form.get('From') === 'string' ? form.get('From')!.trim() : '';
-      text = typeof form.get('Body') === 'string' ? form.get('Body')!.trim() : '';
+      const fromVal = form.get('From');
+      const textVal = form.get('Body');
+      from = typeof fromVal === 'string' ? fromVal.trim() : '';
+      text = typeof textVal === 'string' ? textVal.trim() : '';
     } else {
       const body = await request.json();
       from = typeof body.from === 'string' ? body.from.trim() : '';
@@ -95,7 +99,15 @@ export async function POST(request: Request) {
       logAssertion: "audit_logs.action='sms_inbound'",
     });
 
-    return Response.json({ status: 'recorded', leadId: lead.id });
+    // pause-AI: only draft an automatic AI reply when the lead is NOT paused.
+    // A paused lead parks the inbound message for a human with no AI job.
+    let aiQueued = false;
+    if (!lead.ai_paused) {
+      await enqueueJob('ai_reply', { leadId: lead.id, conversationId: conv.id });
+      aiQueued = true;
+    }
+
+    return Response.json({ status: 'recorded', leadId: lead.id, aiQueued });
   } catch (error: any) {
     console.error('POST /api/sms/inbound error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });

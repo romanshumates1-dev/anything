@@ -1,101 +1,134 @@
 'use client';
 
-import { use } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, ArrowLeft, Send, Pause, Play, User, Bot, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export default function ThreadPage({ params }: { params: Promise<{ leadId: string }> }) {
+interface Message {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  status: string;
+  text?: string;
+  created_at: string;
+  to_phone: string;
+}
+
+export default function InboxThreadPage({ params }: { params: Promise<{ leadId: string }> }) {
   const { leadId } = use(params);
   const { data: session, isPending: authLoading } = useSession();
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState('');
+  const [aiPaused, setAiPaused] = useState(false);
 
-  const { data: conv, isLoading } = useQuery({
+  const { data: messages, isLoading } = useQuery({
     queryKey: ['conversation', leadId],
     queryFn: async () => {
-      const res = await fetch(`/api/conversations/${leadId}`);
-      if (!res.ok) throw new Error('Failed to fetch conversation');
-      return res.json();
+      const res = await fetch(`/api/conversations/thread/${leadId}`);
+      if (!res.ok) throw new Error('Failed to load conversation');
+      return res.json() as Promise<Message[]>;
     },
     enabled: !!session,
+    refetchInterval: 2000, // Live updates every 2s
   });
 
-  if (authLoading) {
+  const sendMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await fetch('/api/conversations/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: leadId, message: text, channel: 'sms' }),
+      });
+      if (!res.ok) throw new Error('Failed to send');
+      return res.json();
+    },
+    onSuccess: () => {
+      setMessage('');
+      queryClient.invalidateQueries({ queryKey: ['conversation', leadId] });
+    },
+  });
+
+  const toggleAi = async () => {
+    await fetch(`/api/leads/${leadId}/ai`, { method: 'POST' });
+    setAiPaused(!aiPaused);
+  };
+
+  useEffect(() => {
+    if (!session) redirect('/account/signin');
+  }, [session]);
+
+  if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
   }
 
-  if (!session) {
-    redirect('/account/signin');
-  }
-
-  const history = conv?.history || [];
-
   return (
     <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <header>
-          <Link href="/inbox" className="text-sm text-gray-500 flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-4 w-4" /> Inbox
+      <div className="max-w-4xl mx-auto space-y-4">
+        <div className="flex items-center justify-between">
+          <Link href="/inbox" className="text-sm text-gray-500 flex items-center gap-1">
+            <ArrowLeft className="h-4 w-4" /> Back to Inbox
           </Link>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-              {conv?.lead_name || 'Conversation'}
-            </h1>
-            {conv?.requires_human && (
-              <Badge
-                variant="outline"
-                className="bg-amber-50 text-amber-700 border-amber-200 text-xs"
-              >
-                <AlertTriangle className="h-3 w-3 mr-1" /> Needs review
-              </Badge>
-            )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={toggleAi}>
+              {aiPaused ? <><Play className="h-4 w-4 mr-1" /> Resume AI</> : <><Pause className="h-4 w-4 mr-1" /> Pause AI</>}
+            </Button>
           </div>
-          {conv?.lead_phone && <p className="text-sm text-gray-500">{conv.lead_phone}</p>}
-        </header>
+        </div>
 
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle>Thread</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="h-6 w-6 animate-spin opacity-30" />
-              </div>
-            ) : history.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">No messages yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {history.map((m: any, i: number) => {
-                  const isOutbound = m.role === 'assistant';
-                  return (
-                    <div key={i} className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
-                          isOutbound
-                            ? 'bg-blue-600 text-white rounded-br-sm'
-                            : 'bg-gray-100 text-gray-900 rounded-bl-sm'
-                        }`}
-                      >
-                        <p className="text-[10px] uppercase tracking-wide opacity-60 mb-0.5">
-                          {isOutbound ? 'Sent' : 'Reply'}
-                        </p>
-                        {m.content}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            {messages?.length === 0 && (
+              <Alert>
+                <AlertDescription>No messages yet. Start the conversation.</AlertDescription>
+              </Alert>
             )}
+
+            {messages?.map((msg) => (
+              <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[70%] rounded-lg p-3 ${msg.direction === 'outbound' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={msg.direction === 'outbound' ? 'secondary' : 'outline'} className="text-xs">
+                      {msg.direction === 'outbound' ? <><Bot className="h-3 w-3 mr-1" /> Sent</> : <><User className="h-3 w-3 mr-1" /> Received</>}
+                    </Badge>
+                    {msg.status === 'BLOCKED_TEST_MODE' && (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertTriangle className="h-3 w-3 mr-1" /> Blocked
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm">{msg.text || '(no content)'}</p>
+                  <p className="text-xs opacity-70 mt-1">
+                    {new Date(msg.created_at).toLocaleString()} · To: {msg.to_phone}
+                  </p>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
+
+        <div className="flex gap-2">
+          <Input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type a message..."
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && message.trim() && sendMutation.mutate(message)}
+          />
+          <Button onClick={() => message.trim() && sendMutation.mutate(message)} disabled={sendMutation.isPending}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );

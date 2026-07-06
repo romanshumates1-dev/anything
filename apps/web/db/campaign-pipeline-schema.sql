@@ -4,16 +4,42 @@
 -- negotiation price ladders, owner range requests, contracts.
 -- ============================================================================
 
--- Campaign direction + status enums
-CREATE TYPE campaign_direction AS ENUM ('SELLER', 'BUYER');
-CREATE TYPE campaign_status AS ENUM ('DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
-CREATE TYPE contact_status AS ENUM (
-  'QUEUED', 'SENT', 'FOLLOWED_UP', 'ENGAGED', 'NEGOTIATING',
-  'AWAITING_OWNER_RANGE', 'DEAL_AGREED', 'DEAL_NO_AGREEMENT',
-  'CONTRACT_SENT', 'CONTRACT_SIGNED', 'OPTED_OUT', 'COLD', 'INVALID_NUMBER'
-);
-CREATE TYPE owner_range_request_status AS ENUM ('PENDING', 'ANSWERED', 'EXPIRED');
-CREATE TYPE message_template_kind AS ENUM ('OPENING', 'FOLLOW_UP');
+-- Campaign direction + status enums (idempotent: safe to re-run on fresh or existing DB)
+-- Note: PostgreSQL 13+ supports CREATE TYPE IF NOT EXISTS. For earlier versions,
+-- we use DO blocks to check existence before creating (compatible with all versions).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'campaign_direction') THEN
+    CREATE TYPE campaign_direction AS ENUM ('SELLER', 'BUYER');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'campaign_status') THEN
+    CREATE TYPE campaign_status AS ENUM ('DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contact_status') THEN
+    CREATE TYPE contact_status AS ENUM (
+      'QUEUED', 'SENT', 'FOLLOWED_UP', 'ENGAGED', 'NEGOTIATING',
+      'AWAITING_OWNER_RANGE', 'DEAL_AGREED', 'DEAL_NO_AGREEMENT',
+      'CONTRACT_SENT', 'CONTRACT_SIGNED', 'OPTED_OUT', 'COLD', 'INVALID_NUMBER'
+    );
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'owner_range_request_status') THEN
+    CREATE TYPE owner_range_request_status AS ENUM ('PENDING', 'ANSWERED', 'EXPIRED');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'message_template_kind') THEN
+    CREATE TYPE message_template_kind AS ENUM ('OPENING', 'FOLLOW_UP');
+  END IF;
+END $$;
 
 -- Outreach campaigns
 CREATE TABLE IF NOT EXISTS public.outreach_campaigns (
@@ -154,6 +180,6 @@ CREATE TABLE IF NOT EXISTS public.human_approvals (
   status text NOT NULL DEFAULT 'PENDING',
   resolved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timimestz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_human_approvals_org_status ON public.human_approvals (organization_id, status);

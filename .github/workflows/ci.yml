@@ -30,12 +30,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: "20"
 
       # Enable Corepack BEFORE any yarn invocation so Yarn Berry resolves the
       # correct version from .yarnrc.yml without a "no matching version" error.
@@ -45,7 +45,7 @@ jobs:
       # Cache Yarn's global content-addressed store keyed on the lockfile.
       # A cache hit makes `yarn install --immutable` a sub-second no-op.
       - name: Restore Yarn cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .yarn/cache
           key: yarn-${{ hashFiles('yarn.lock') }}
@@ -61,10 +61,21 @@ jobs:
       - name: Typecheck shipped code
         run: yarn workspace web typecheck
 
-      # Runs endpoints.contract.test.ts + flows/flows.test.ts + the
-      # always-skip guard in flows-live.test.ts (describe.skipIf(LIVE)).
-      # All DB calls are mocked; no network or DB access required.
-      - name: Run mocked tests (Layer A + B)
+      # Static analysis (oxlint config at repo root: .oxlintrc.json).
+      # --no-ignore is required: the repo-root .eslintignore is a blanket `*`
+      # (platform scaffolding for a plain-eslint setup that's never wired into
+      # any script), and oxlint honors .eslintignore for compatibility — so
+      # without this flag it silently matches 0 files and reports a false
+      # "0 warnings and 0 errors" pass. --no-ignore only disables that stale
+      # ignore file for this invocation; the path is already scoped to
+      # apps/web/src, so no node_modules/build output is in scope regardless.
+      - name: Lint (oxlint)
+        run: yarn dlx oxlint@1.58.0 --no-ignore apps/web/src
+
+      # Full mocked unit/integration suite (242 tests): behavioral tests for
+      # items 1-8 + approvals / pause-AI / rate-limit. All DB calls are mocked;
+      # flows-live.test.ts self-skips without RUN_LIVE_FLOWS.
+      - name: Run unit + integration suite
         run: yarn workspace web test
 
 # ─────────────────────────────────────────────────────────────
@@ -97,7 +108,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Hard-fail with a clear message rather than a cryptic Neon connection
       # error many steps later.
@@ -110,16 +121,16 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Node 20
-        uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: "20"
 
       - name: Enable Corepack
         run: corepack enable
 
       - name: Restore Yarn cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .yarn/cache
           key: yarn-${{ hashFiles('yarn.lock') }}
@@ -145,5 +156,101 @@ jobs:
       - name: Run live flow tests (Layer C)
         run: yarn workspace web test -- flows-live
 
+# ─────────────────────────────────────────────────────────────
+# JOB 3 — E2E: the 10-step campaign→inbox→approvals journey via Playwright
+# (bundled chromium). This is the permanent guard against "PASS ✅ but the
+# route doesn't exist" — the journey drives the real UI + webhook + DB, so a
+# missing route or broken page fails the merge.
+#
+# The "Bootstrap test schema" step below IS the fresh-deploy test: it applies
+# schema.sql + campaign-pipeline-schema.sql + migrations 001–003 in order to a
+# fresh Neon test branch on every push/PR. A failure here blocks the merge.
+#
+# Requires TEST_DATABASE_URL (Neon branch). Auth/webhook secrets are fixed
+# test values; TWILIO_* are dummy but present so the inbound webhook uses the
+# signed-form path (the spec signs with the same TWILIO_AUTH_TOKEN).
+# ─────────────────────────────────────────────────────────────
+  e2e:
+    name: "E2E — 10-step journey (Playwright/chromium)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [web]
 
+    env:
+      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+      BETTER_AUTH_SECRET: e2e-ci-better-auth-secret-do-not-use-in-prod
+      BETTER_AUTH_URL: http://localhost:4000
+      SMS_INBOUND_SECRET: e2e-ci-sms-inbound-secret
+      TWILIO_ACCOUNT_SID: ACe2eci00000000000000000000000000
+      TWILIO_AUTH_TOKEN: e2e-ci-twilio-auth-token
+      PW_CHANNEL: chromium
+      PGSSLMODE: require
 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Verify TEST_DATABASE_URL secret is configured
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error title=Missing secret::TEST_DATABASE_URL is not set (Neon branch URL)."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Restore Yarn cache
+        uses: actions/cache@v6
+        with:
+          path: .yarn/cache
+          key: yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      # FRESH-DEPLOY TEST: apply base schema + campaign pipeline + the sprint
+      # migrations (auth tables, pause-AI column, api_keys, compliance_audit)
+      # in order to a fresh Neon test branch. All statements are idempotent
+      # (CREATE ... IF NOT EXISTS, guarded CREATE TYPE via DO blocks, guarded
+      # ALTERs). If any statement errors on a fresh DB, psql exits non-zero and
+      # this step fails the merge — this IS the deployable-schema guard.
+      - name: Bootstrap test schema
+        run: |
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/campaign-pipeline-schema.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/001_add_missing_tables.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/002_pause_ai.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/003_auth_tables.sql
+
+      # @playwright/test is not in the lockfile (registry TLS-blocked in the
+      # authoring env); install it here + the bundled chromium browser.
+      - name: Install Playwright + chromium
+        working-directory: apps/web
+        run: |
+          yarn add -D @playwright/test@1.61.1
+          yarn playwright install --with-deps chromium
+
+      # Runs the 10-step journey. playwright.config webServer auto-starts
+      # `yarn dev`; global-setup registers a user + seeds via DATABASE_URL.
+      # A failure here BLOCKS the merge.
+      - name: Run E2E journey (10 steps)
+        working-directory: apps/web
+        run: yarn playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

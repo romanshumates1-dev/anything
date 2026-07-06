@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { parseContactList, dedupeContacts, ParsedContact } from '@/app/api/utils/contactImport';
+import crypto from 'crypto';
 
 // --- Campaign creation ---
 
@@ -24,6 +25,16 @@ export async function POST(request: NextRequest) {
       followUps = [],
       contacts,
       linkedSellerLeadId,
+      testMode = false,
+      dncScrubEnabled = true,
+      litigatorScrubEnabled = true,
+      aiNegotiationEnabled = true,
+      aiValuationEnabled = true,
+      resurrectionEnabled = true,
+      abVariantsEnabled = false,
+      budgetCap,
+      contactListId,
+      selectedTestPhones = [],
     } = body as {
       direction: 'SELLER' | 'BUYER';
       name: string;
@@ -33,6 +44,16 @@ export async function POST(request: NextRequest) {
       followUps?: { delayHours: number; body: string }[];
       contacts?: { name: string; phone: string }[];
       linkedSellerLeadId?: string;
+      testMode?: boolean;
+      dncScrubEnabled?: boolean;
+      litigatorScrubEnabled?: boolean;
+      aiNegotiationEnabled?: boolean;
+      aiValuationEnabled?: boolean;
+      resurrectionEnabled?: boolean;
+      abVariantsEnabled?: boolean;
+      budgetCap?: number;
+      contactListId?: string;
+      selectedTestPhones?: string[];
     };
 
     // --- Validation ---
@@ -77,7 +98,10 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Parse & dedupe contacts ---
-    const rawText = contacts.map(c => `${c.name}, ${c.phone}`).join('\n');
+    // Accept either string[] (pasted lines) or {name,phone}[]
+    const rawText: string = contacts
+      .map(c => (typeof c === 'string' ? c : `${c.name}, ${c.phone}`))
+      .join('\n');
     const parsed = parseContactList(rawText);
     const deduped = dedupeContacts(parsed);
     const invalidRows = deduped.filter(c => !c.valid);
@@ -91,10 +115,14 @@ export async function POST(request: NextRequest) {
     const campaignId = crypto.randomUUID();
     const openingMessageId = crypto.randomUUID();
 
+    // If test mode, enforce caps
+    const finalDailyMax = testMode ? Math.min(dailyVolumeMax, 20) : dailyVolumeMax;
+    const finalDuration = testMode ? Math.min(durationDays, 3) : durationDays;
+
     // Insert campaign + opening message in a transaction
     const result = await sql.transaction([
-      sql`INSERT INTO outreach_campaigns (id, organization_id, direction, name, status, daily_volume_max, duration_days, opening_message_id, linked_seller_lead_id)
-          VALUES (${campaignId}, ${organizationId}, ${direction}, ${name.trim()}, 'DRAFT', ${dailyVolumeMax}, ${durationDays}, ${openingMessageId}, ${linkedSellerLeadId || null})`,
+      sql`INSERT INTO outreach_campaigns (id, organization_id, direction, name, status, daily_volume_max, duration_days, opening_message_id, linked_seller_lead_id, test_mode, dnc_scrub_enabled, litigator_scrub_enabled, ai_negotiation_enabled, ai_valuation_enabled, resurrection_enabled, ab_variants_enabled, budget_cap)
+          VALUES (${campaignId}, ${organizationId}, ${direction}, ${name.trim()}, 'DRAFT', ${finalDailyMax}, ${finalDuration}, ${openingMessageId}, ${linkedSellerLeadId || null}, ${testMode}, ${dncScrubEnabled}, ${litigatorScrubEnabled}, ${aiNegotiationEnabled}, ${aiValuationEnabled}, ${resurrectionEnabled}, ${abVariantsEnabled}, ${budgetCap || null})`,
       sql`INSERT INTO campaign_message_templates (id, organization_id, kind, body, sequence_order, delay_hours)
           VALUES (${openingMessageId}, ${organizationId}, 'OPENING', ${openingMessage}, 0, 0)`,
       ...followUps.map((fu, idx) => {
@@ -102,6 +130,10 @@ export async function POST(request: NextRequest) {
         return sql`INSERT INTO campaign_message_templates (id, organization_id, campaign_id, kind, body, sequence_order, delay_hours)
                    VALUES (${fuId}, ${organizationId}, ${campaignId}, 'FOLLOW_UP', ${fu.body}, ${idx + 1}, ${fu.delayHours})`;
       }),
+      // Link selected test phones if test mode
+      ...(testMode && selectedTestPhones.length > 0 ? selectedTestPhones.map(phoneId => 
+        sql`UPDATE test_phone_numbers SET organization_id = ${organizationId} WHERE id = ${phoneId}`
+      ) : []),
       ...validContacts.flatMap((c, idx) => {
         const contactId = crypto.randomUUID();
         return [

@@ -42,7 +42,7 @@ function AddLeadsControl({ campaignId }: { campaignId: number }) {
     },
     onSuccess: (data) => {
       setMsg(data.added > 0 ? 'Lead added.' : 'Lead already in campaign.');
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
     },
     onError: (err: any) => setMsg(err.message),
   });
@@ -82,7 +82,7 @@ function CampaignCard({ campaign }: { campaign: any }) {
 
   const launch = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/campaigns/${campaign.id}/launch`, { method: 'POST' });
+      const res = await fetch(`/api/outreach/campaigns/${campaign.id}/start`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to launch');
@@ -90,33 +90,40 @@ function CampaignCard({ campaign }: { campaign: any }) {
       return res.json();
     },
     onSuccess: (data) => {
-      setLaunchMsg(`Launched — ${data.queued} queued, ${data.skipped} skipped.`);
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      setLaunchMsg(`Started — status ${data.status}.`);
+      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
     },
     onError: (err: any) => setLaunchMsg(err.message),
   });
 
-  const isLaunched = campaign.status === 'launched';
+  const isLaunched = campaign.status === 'ACTIVE' || campaign.status === 'SCHEDULED';
 
   return (
     <Card className="border-none shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">{campaign.name}</CardTitle>
-        <Badge
-          variant="outline"
-          className={
-            isLaunched
-              ? 'bg-green-50 text-green-700 border-green-200'
-              : 'bg-gray-50 text-gray-600 border-gray-200'
-          }
-        >
-          {campaign.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {campaign.test_mode && (
+            <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">
+              TEST
+            </Badge>
+          )}
+          <Badge
+            variant="outline"
+            className={
+              isLaunched
+                ? 'bg-green-50 text-green-700 border-green-200'
+                : 'bg-gray-50 text-gray-600 border-gray-200'
+            }
+          >
+            {campaign.status}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-gray-500 italic">&ldquo;{campaign.message_template}&rdquo;</p>
+        <p className="text-sm text-gray-500">{campaign.direction || '—'} · {campaign.status}</p>
         <p className="text-xs text-gray-400 mt-2">
-          {campaign.member_count || 0} members · {campaign.sent_count || 0} sent
+          {campaign.total_contacts || 0} contacts
         </p>
 
         <AddLeadsControl campaignId={campaign.id} />
@@ -141,9 +148,11 @@ export default function CampaignsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const { data: campaigns, isLoading } = useQuery({
-    queryKey: ['campaigns'],
+    // Distinct key from the Shell's ['campaigns'] (legacy /api/campaigns) so
+    // React Query does not dedupe this outreach list against it.
+    queryKey: ['outreach-campaigns'],
     queryFn: async () => {
-      const res = await fetch('/api/campaigns');
+      const res = await fetch('/api/outreach/campaigns');
       if (!res.ok) throw new Error('Failed to fetch campaigns');
       return res.json();
     },
@@ -166,7 +175,7 @@ export default function CampaignsPage() {
     onSuccess: () => {
       setForm({ name: '', message_template: '' });
       setError(null);
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
     },
     onError: (err: any) => setError(err.message),
   });
@@ -193,47 +202,67 @@ export default function CampaignsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Campaigns</h1>
         </header>
 
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle>New Campaign</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!form.name.trim() || !form.message_template.trim()) {
-                  setError('Name and message template are required');
-                  return;
-                }
-                create.mutate();
-              }}
-            >
-              <div className="space-y-2">
-                <Label htmlFor="cname">Campaign Name</Label>
-                <Input
-                  id="cname"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Q1 Outreach"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ctemplate">Message Template</Label>
-                <Textarea
-                  id="ctemplate"
-                  value={form.message_template}
-                  onChange={(e) => setForm((f) => ({ ...f, message_template: e.target.value }))}
-                  placeholder="Hey, are you interested in selling your property?"
-                />
-              </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? 'Creating…' : 'Create Campaign'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle>New Campaign</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!form.name.trim() || !form.message_template.trim()) {
+                    setError('Name and message template are required');
+                    return;
+                  }
+                  create.mutate();
+                }}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="cname">Campaign Name</Label>
+                  <Input
+                    id="cname"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Q1 Outreach"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ctemplate">Message Template</Label>
+                  <Textarea
+                    id="ctemplate"
+                    value={form.message_template}
+                    onChange={(e) => setForm((f) => ({ ...f, message_template: e.target.value }))}
+                    placeholder="Hey, are you interested in selling your property?"
+                  />
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <Button type="submit" disabled={create.isPending}>
+                  {create.isPending ? 'Creating…' : 'Create Campaign'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle>Advanced Builder</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-gray-500">Use the 4-step wizard for full campaign control:</p>
+              <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+                <li>Sending schedule & volume caps</li>
+                <li>Follow-up sequences & AI toggles</li>
+                <li>Compliance / DNC / Test Mode</li>
+                <li>Budget cap & review</li>
+              </ul>
+              <Link href="/campaigns/wizard">
+                <Button className="w-full">Open Campaign Wizard →</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-4">
           {isLoading ? (

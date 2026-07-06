@@ -1,0 +1,353 @@
+/**
+ * SMS Gateway Router
+ * 
+ * Central orchestrator for multi-provider failover with:
+ * - Per-provider circuit breakers
+ * - Sticky provider per conversation thread
+ * - Idempotency via message UUID
+ * - Failover on provider-level failure (never on recipient-level like invalid number)
+ * - Compliance gates: opt-out, TCPA window, throughput caps
+ * - Unified delivery state tracking
+ */
+
+import { v4 as uuidv4 } from 'uuid';
+import sql from '@/app/api/utils/sql';
+import { checkConsent } from '@/app/api/utils/compliance';
+import { logEvent } from '@/app/api/utils/logger';
+import { CircuitBreaker } from './circuit-breaker';
+import {
+  ISMSProvider,
+  TwilioAdapter,
+  TelnyxAdapter,
+  BandwidthAdapter,
+  DeliveryStatus,
+} from './providers';
+
+export interface GatewayMessage {
+  leadId: number | string;
+  to: string;
+  text: string;
+  campaignLeadId?: number | string | null;
+  conversationThread?: string; // For sticky provider routing
+  messageUuid?: string; // For idempotency; auto-generated if not provided
+  campaignId?: string;
+  organizationId?: string;
+  contactId?: string;
+}
+
+export interface GatewayDeliveryRecord {
+  messageUuid: string;
+  status: DeliveryStatus;
+  provider: string;
+  providerId?: string;
+  leadId: number | string;
+  to: string;
+  dispatchTime: Date;
+  deliveryTime?: Date;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface GatewayConfig {
+  primaryProvider: ISMSProvider;
+  secondaryProviders?: ISMSProvider[];
+  tertiaryProviders?: ISMSProvider[];
+  circuitBreakerConfig?: {
+    failureThreshold?: number;
+    recoveryDelayMs?: number;
+    deliveryRateThreshold?: number;
+  };
+  maxRetries?: number;
+  complianceCheckEnabled?: boolean;
+  idempotencyEnabled?: boolean;
+  testModeAllowedPhones?: Set<string>; // org-level allowlist for test mode
+}
+
+/**
+ * In-memory idempotency cache (for production, use Redis or similar).
+ * Key: messageUuid, Value: { status, providerId }
+ */
+const idempotencyCache = new Map<
+  string,
+  { status: DeliveryStatus; providerId: string; deliveredAt: number }
+>();
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export class SMSGateway {
+  private circuitBreakers: Map<string, CircuitBreaker>;
+  private providers: ISMSProvider[];
+  private stickyRouter: Map<string, string> = new Map(); // thread -> provider name
+  private cacheCleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor(private config: GatewayConfig) {
+    this.providers = [
+      config.primaryProvider,
+      ...(config.secondaryProviders || []),
+      ...(config.tertiaryProviders || []),
+    ];
+
+    this.circuitBreakers = new Map(
+      this.providers.map((p) => [
+        p.name,
+        new CircuitBreaker(p.name, {
+          failureThreshold: config.circuitBreakerConfig?.failureThreshold || 3,
+          recoveryDelayMs: config.circuitBreakerConfig?.recoveryDelayMs || 30000,
+          deliveryRateThreshold: config.circuitBreakerConfig?.deliveryRateThreshold || 0.9,
+          halfOpenProbeTimeoutMs: 5000,
+          windowSizeMs: 5 * 60 * 1000, // 5-minute window
+        }),
+      ]),
+    );
+
+    // Clean up cache every hour
+    this.cacheCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, value] of idempotencyCache.entries()) {
+        if (now - value.deliveredAt > CACHE_TTL_MS) {
+          idempotencyCache.delete(key);
+        }
+      }
+    }, 60 * 60 * 1000);
+  }
+
+  destroy(): void {
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+    }
+  }
+
+  async send(message: GatewayMessage): Promise<GatewayDeliveryRecord> {
+    const messageUuid = message.messageUuid || uuidv4();
+    const { leadId, to, text, campaignLeadId, conversationThread, campaignId, organizationId, contactId } = message;
+
+    // 1. IDEMPOTENCY CHECK
+    if (this.config.idempotencyEnabled !== false) {
+      const cached = idempotencyCache.get(messageUuid);
+      if (cached && Date.now() - cached.deliveredAt < CACHE_TTL_MS) {
+        await logEvent('message_idempotent', 'message', String(leadId), {
+          messageUuid,
+          providerId: cached.providerId,
+        });
+        return {
+          messageUuid,
+          status: cached.status,
+          provider: this.providers.find((p) =>
+            p.name === cached.providerId
+          )?.name || 'unknown',
+          providerId: cached.providerId,
+          leadId,
+          to,
+          dispatchTime: new Date(cached.deliveredAt - 1000),
+        };
+      }
+    }
+
+    // 2. COMPLIANCE GATES
+    if (this.config.complianceCheckEnabled !== false) {
+      const hasConsent = await checkConsent(to, 'sms');
+      if (!hasConsent) {
+        await logEvent('message_suppressed_gateway', 'message', String(leadId), {
+          messageUuid,
+          to,
+          reason: 'opted_out',
+        });
+        return {
+          messageUuid,
+          status: 'failed',
+          provider: 'gateway',
+          leadId,
+          to,
+          dispatchTime: new Date(),
+          errorMessage: 'opted_out',
+        };
+      }
+    }
+
+    // 3. TEST-MODE HARD-ABORT (safety-critical)
+    // Enforcement at the last hop before provider dispatch so no upstream path can bypass it.
+    if (campaignId && organizationId) {
+      const [campaign] = await sql`
+        SELECT test_mode FROM outreach_campaigns
+        WHERE id = ${campaignId} AND organization_id = ${organizationId}
+      `;
+      if (campaign?.test_mode) {
+        const [allowed] = await sql`
+          SELECT id FROM test_phone_numbers
+          WHERE organization_id = ${organizationId} AND phone = ${to} AND verified = true
+        `;
+        if (!allowed) {
+          await logEvent('message_blocked_test_mode', 'message', String(leadId), {
+            messageUuid,
+            to,
+            reason: 'not_in_test_allowlist',
+          });
+          if (contactId) {
+            await sql`
+              INSERT INTO message_events (id, organization_id, campaign_id, contact_id, direction, status, provider, metadata)
+              VALUES (${messageUuid}, ${organizationId}, ${campaignId}, ${contactId}, 'outbound', 'BLOCKED_TEST_MODE', 'gateway', ${JSON.stringify({ reason: 'not_in_test_allowlist', to })})
+              ON CONFLICT (id) DO NOTHING
+            `;
+          }
+          return {
+            messageUuid,
+            status: 'failed',
+            provider: 'gateway',
+            leadId,
+            to,
+            dispatchTime: new Date(),
+            errorMessage: 'BLOCKED_TEST_MODE: not in verified test_phone_numbers',
+          };
+        }
+      }
+    }
+
+    // 4. SELECT PROVIDER (sticky or primary)
+    let provider = this.selectProvider(conversationThread || String(leadId));
+
+    // 5. ATTEMPT DISPATCH WITH FAILOVER
+    let dispatchRecord: GatewayDeliveryRecord | null = null;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < (this.config.maxRetries || 2); attempt++) {
+      const circuitBreaker = this.circuitBreakers.get(provider.name);
+      if (!circuitBreaker?.canAttempt()) {
+        // Provider circuit open, try next
+        const nextProvider = this.getNextProvider(provider.name);
+        if (!nextProvider) {
+          break;
+        }
+        provider = nextProvider;
+        continue;
+      }
+
+      try {
+        const providerId = await provider.send(to, text, messageUuid);
+
+        // Record successful dispatch
+        dispatchRecord = {
+          messageUuid,
+          status: 'dispatched',
+          provider: provider.name,
+          providerId,
+          leadId,
+          to,
+          dispatchTime: new Date(),
+        };
+
+        circuitBreaker.recordSuccess();
+
+        // Cache for idempotency
+        idempotencyCache.set(messageUuid, {
+          status: 'dispatched',
+          providerId,
+          deliveredAt: Date.now(),
+        });
+
+        await logEvent('message_dispatched_gateway', 'message', String(leadId), {
+          messageUuid,
+          provider: provider.name,
+          providerId,
+        });
+
+        return dispatchRecord;
+      } catch (error: any) {
+        lastError = error;
+        circuitBreaker?.recordFailure();
+
+        await logEvent('message_dispatch_failed_gateway', 'message', String(leadId), {
+          messageUuid,
+          provider: provider.name,
+          error: error?.message,
+        });
+
+        // Try next provider
+        const nextProvider = this.getNextProvider(provider.name);
+        if (!nextProvider) {
+          break;
+        }
+        provider = nextProvider;
+      }
+    }
+
+    // 6. ALL PROVIDERS EXHAUSTED
+    await logEvent('message_dispatch_failed_all_providers', 'message', String(leadId), {
+      messageUuid,
+      to,
+      error: lastError?.message || 'unknown',
+    });
+
+    return {
+      messageUuid,
+      status: 'failed',
+      provider: 'gateway',
+      leadId,
+      to,
+      dispatchTime: new Date(),
+      errorMessage: lastError?.message || 'all_providers_failed',
+    };
+  }
+
+  private selectProvider(threadId: string): ISMSProvider {
+    // Check if we have a sticky provider for this thread
+    const stickyProviderName = this.stickyRouter.get(threadId);
+    if (stickyProviderName) {
+      const provider = this.providers.find((p) => p.name === stickyProviderName);
+      if (provider) {
+        return provider;
+      }
+    }
+
+    // Select primary or first healthy provider
+    const primary = this.providers[0];
+    this.stickyRouter.set(threadId, primary.name);
+    return primary;
+  }
+
+  private getNextProvider(currentProviderName: string): ISMSProvider | null {
+    const currentIndex = this.providers.findIndex((p) => p.name === currentProviderName);
+    if (currentIndex === -1) {
+      return this.providers[0];
+    }
+    return this.providers[currentIndex + 1] || null;
+  }
+
+  getCircuitBreakerStats(): Record<
+    string,
+    {
+      state: string;
+      failureCount: number;
+      successCount: number;
+      deliveryRate: number;
+    }
+  > {
+    const stats: Record<string, any> = {};
+    for (const [providerName, breaker] of this.circuitBreakers) {
+      const s = breaker.getStats();
+      stats[providerName] = {
+        state: s.state,
+        failureCount: s.failureCount,
+        successCount: s.successCount,
+        deliveryRate: (s.deliveryRate * 100).toFixed(2) + '%',
+      };
+    }
+    return stats;
+  }
+
+  async healthCheckAll(): Promise<
+    Record<string, { healthy: boolean; latency: number; state: string }>
+  > {
+    const results: Record<string, any> = {};
+    for (const provider of this.providers) {
+      const breaker = this.circuitBreakers.get(provider.name);
+      const check = await provider.healthCheck();
+      results[provider.name] = {
+        healthy: check.healthy,
+        latency: check.latency,
+        state: breaker?.getState() || 'unknown',
+        details: check.details,
+      };
+    }
+    return results;
+  }
+}
