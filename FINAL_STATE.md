@@ -140,6 +140,32 @@ On every push / PR to `main`:
 - **19 skipped tests**: 15 = MISSING_SCHEMA (quarantined, see above), 4 = LIVE_GATED
   (need a live DB / `RUN_LIVE_FLOWS`).
 
+## Deploy Correctness — Fresh DB Bootstrap ✅
+**Fixed during verification sprint 2026-07**: The schema bootstrap (`schema.sql` +
+`campaign-pipeline-schema.sql` + migrations 001–003) previously failed on truly
+fresh Neon test databases with psql exit code 3. Root-cause: `campaign-pipeline-schema.sql`
+created PostgreSQL ENUMs (campaign_direction, campaign_status, contact_status,
+owner_range_request_status, message_template_kind) with bare `CREATE TYPE`
+statements, which fail on re-runs but also could fail in certain contexts.
+
+**Fix applied**: Wrapped all `CREATE TYPE` statements in PostgreSQL `DO` blocks
+that check `pg_type` table first, making the schema idempotent and compatible
+with all PostgreSQL versions (including pre-13, which don't support `CREATE TYPE
+IF NOT EXISTS`).
+
+**Permanent guard**: The e2e CI job (`e2e` in `.github/workflows/ci.yml`) now
+runs the bootstrap against a fresh Neon test branch on every push/PR. This is
+the definition of a fresh-deploy test — if the bootstrap succeeds and the 10-step
+journey passes, the schema is deployable. The bootstrap is documented in the
+workflow with the exact file order:
+1. `schema.sql` (base tables)
+2. `campaign-pipeline-schema.sql` (enums + campaign pipeline tables)
+3. `migrations/001_add_missing_tables.sql` (GUI/API tables + optionality)
+4. `migrations/002_pause_ai.sql` (leads.ai_paused column)
+5. `migrations/003_auth_tables.sql` (better-auth schema)
+
+All files are idempotent; safe to re-run. A failure here blocks the merge.
+
 ## Environment variables for live operation
 Set in `apps/web/.env` (git-ignored) or the deploy environment:
 
