@@ -42,6 +42,8 @@ const EXPECTED_ROUTES = [
   '/api/system/database',
   '/api/system/queue-status',
   '/api/system/metrics',
+  '/api/system/cron',
+  '/api/simulator',
 ];
 
 const EXPECTED_UI_FLOWS = [

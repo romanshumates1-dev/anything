@@ -3,6 +3,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
 
 export async function POST(
   request: NextRequest,
@@ -45,13 +46,27 @@ export async function POST(
 
     const newStatus = startDate > now ? 'SCHEDULED' : 'ACTIVE';
 
+    // DNC-OFF COMPLIANCE AUDIT: Log the default DNC state at campaign launch
+    await recordComplianceAction({
+      organizationId,
+      campaignId,
+      userId: session.user.id,
+      action: campaign.dnc_scrub_enabled ? 'DNC_SCRUB_ENABLED' : 'DNC_SCRUB_DISABLED',
+      metadata: {
+        confirmationText: campaign.dnc_scrub_enabled 
+          ? 'DNC scrub is enabled by default for this campaign' 
+          : 'DNC scrub has been disabled for this campaign',
+        timestamp: now.toISOString(),
+      },
+    });
+
     await sql`
       UPDATE outreach_campaigns
       SET status = ${newStatus}, start_date = COALESCE(start_date, ${now}), end_date = ${endDate}, updated_at = now()
       WHERE id = ${campaignId}
     `;
 
-    await logEvent('campaign_started', 'campaign', campaignId, { status: newStatus, startDate, endDate }, session.user.id);
+    await logEvent('campaign_started', 'campaign', campaignId, { status: newStatus, startDate, endDate, dncScrubEnabled: campaign.dnc_scrub_enabled }, session.user.id);
 
     return NextResponse.json({ id: campaignId, status: newStatus, startDate, endDate });
   } catch (error: any) {

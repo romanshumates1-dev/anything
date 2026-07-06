@@ -154,6 +154,6 @@ CREATE TABLE IF NOT EXISTS public.human_approvals (
   status text NOT NULL DEFAULT 'PENDING',
   resolved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timimestz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_human_approvals_org_status ON public.human_approvals (organization_id, status);

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import "./global.css";
 import { Providers } from "./providers";
+import Shell from "@/components/Shell";
 
 export const metadata: Metadata = {
 	title: "Anything App",
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 			</head>
 			<body>
 				<Providers>
-					{children}
+				<Shell>{children}</Shell>
 				</Providers>
 			</body>
 		</html>

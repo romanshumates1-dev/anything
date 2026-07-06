@@ -38,3 +38,57 @@ services:
           sleep 5
         done
     restart: always
+
+  # Cron worker: runs scheduled maintenance tasks on intervals.
+  # Uses the same CRON_SECRET as the web app for authentication.
+  cron:
+    image: alpine:3.19
+    depends_on:
+      - web
+    environment:
+      - CRON_SECRET=${CRON_SECRET}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache wget >/dev/null 2>&1 || true
+        # Stuck conversation check: every 5 minutes
+        while true; do
+          wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="x-cron-secret: $${CRON_SECRET}" \
+            --post-data='{"task":"stuck-conversations"}' \
+            http://web:3000/api/system/cron || true
+          sleep 300
+        done &
+        # Retry failed SMS: hourly
+        while true; do
+          sleep 3600
+          wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="x-cron-secret: $${CRON_SECRET}" \
+            --post-data='{"task":"retry-sms"}' \
+            http://web:3000/api/system/cron || true
+        done &
+        # Daily report: nightly at 2am
+        while true; do
+          sleep 7200
+          wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="x-cron-secret: $${CRON_SECRET}" \
+            --post-data='{"task":"daily-report"}' \
+            http://web:3000/api/system/cron || true
+          sleep 86400
+        done &
+        # Log cleanup: weekly
+        while true; do
+          sleep 604800
+          wget -q -O - \
+            --header="Content-Type: application/json" \
+            --header="x-cron-secret: $${CRON_SECRET}" \
+            --post-data='{"task":"log-cleanup"}' \
+            http://web:3000/api/system/cron || true
+          sleep 604800
+        done &
+        wait
+    restart: always

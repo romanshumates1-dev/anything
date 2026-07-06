@@ -193,47 +193,67 @@ export default function CampaignsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Campaigns</h1>
         </header>
 
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle>New Campaign</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!form.name.trim() || !form.message_template.trim()) {
-                  setError('Name and message template are required');
-                  return;
-                }
-                create.mutate();
-              }}
-            >
-              <div className="space-y-2">
-                <Label htmlFor="cname">Campaign Name</Label>
-                <Input
-                  id="cname"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Q1 Outreach"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ctemplate">Message Template</Label>
-                <Textarea
-                  id="ctemplate"
-                  value={form.message_template}
-                  onChange={(e) => setForm((f) => ({ ...f, message_template: e.target.value }))}
-                  placeholder="Hey, are you interested in selling your property?"
-                />
-              </div>
-              {error && <p className="text-sm text-red-600">{error}</p>}
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? 'Creating…' : 'Create Campaign'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle>New Campaign</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!form.name.trim() || !form.message_template.trim()) {
+                    setError('Name and message template are required');
+                    return;
+                  }
+                  create.mutate();
+                }}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="cname">Campaign Name</Label>
+                  <Input
+                    id="cname"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Q1 Outreach"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ctemplate">Message Template</Label>
+                  <Textarea
+                    id="ctemplate"
+                    value={form.message_template}
+                    onChange={(e) => setForm((f) => ({ ...f, message_template: e.target.value }))}
+                    placeholder="Hey, are you interested in selling your property?"
+                  />
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <Button type="submit" disabled={create.isPending}>
+                  {create.isPending ? 'Creating…' : 'Create Campaign'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle>Advanced Builder</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-gray-500">Use the 4-step wizard for full campaign control:</p>
+              <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+                <li>Sending schedule & volume caps</li>
+                <li>Follow-up sequences & AI toggles</li>
+                <li>Compliance / DNC / Test Mode</li>
+                <li>Budget cap & review</li>
+              </ul>
+              <Link href="/campaigns/wizard">
+                <Button className="w-full">Open Campaign Wizard →</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-4">
           {isLoading ? (
