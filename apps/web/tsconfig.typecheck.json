@@ -13,6 +13,7 @@
     "vitest.config.ts",
     "**/vitest.config.ts",
     "e2e/**",
-    "playwright.config.ts"
+    "playwright.config.ts",
+    ".next/**"
   ]
 }
