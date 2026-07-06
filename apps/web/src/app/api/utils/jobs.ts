@@ -3,6 +3,7 @@ import { SMSGateway } from '@/app/api/gateway/sms-gateway';
 import { TwilioAdapter } from '@/app/api/gateway/providers';
 import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
+import { getTwilioConfig } from './twilio-adapter';
 
 export async function enqueueJob(
   type: string,
@@ -83,7 +84,12 @@ export async function processNextJob() {
     switch (job.type) {
       case 'send_message': {
         const payload: any = job.payload;
-        if (payload.channel === 'sms') {
+        // Route SMS through the Twilio gateway only when Twilio is actually
+        // configured. With no provider, fall back to the provider-agnostic
+        // sendMessage seam (which simulates delivery when SMS_PROVIDER_URL is
+        // unset) — otherwise a deploy without Twilio env silently dead-letters
+        // every send instead of using the documented mock path.
+        if (payload.channel === 'sms' && getTwilioConfig()) {
           const gateway = await getGateway();
           const result = await gateway.send({
             leadId: payload.leadId,

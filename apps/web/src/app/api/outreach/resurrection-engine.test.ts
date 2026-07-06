@@ -1,3 +1,11 @@
+/*
+ * QUARANTINED (verification sprint 2026-07): this engine is DEAD CODE — its
+ * backing tables exist in no schema/migration/live DB and it is wired to no
+ * runtime path. These live tests are it.skip (not skipIf DATABASE_URL) so they
+ * never run — they cannot pass until migration 004 creates the tables. See
+ * FINAL_STATE.md "NOT DEPLOYABLE" + quarantine-guard.test.ts. Un-skip in the
+ * PR that makes the engine real.
+ */
 /**
  * Resurrection Engine Tests
  * 
@@ -19,7 +27,7 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Configuration', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should return default config when not configured', async () => {
+    it.skip('should return default config when not configured', async () => {
       const config = await engine.getConfig();
 
       expect(config).toBeDefined();
@@ -30,7 +38,7 @@ describe('ResurrectionEngine', () => {
       expect(config.targetStatuses).toContain('NO_AGREEMENT');
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should allow setting config', async () => {
+    it.skip('should allow setting config', async () => {
       await engine.setConfig({
         enabled: false,
         monthlyMaxResurrections: 100,
@@ -41,7 +49,7 @@ describe('ResurrectionEngine', () => {
       expect(config.monthlyMaxResurrections).toBe(100);
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should allow disabling resurrections org-wide', async () => {
+    it.skip('should allow disabling resurrections org-wide', async () => {
       await engine.setConfig({ enabled: false });
 
       const leads = await engine.findEligibleLeads(30);
@@ -50,7 +58,7 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Opt-Out Enforcement', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should skip opted-out leads', async () => {
+    it.skip('should skip opted-out leads', async () => {
       // Create a test lead and mark as opted-out (in real test with DB)
       const result = await engine.sendResurrection(
         999,
@@ -66,14 +74,14 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Eligible Lead Finding', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should return empty when config disabled', async () => {
+    it.skip('should return empty when config disabled', async () => {
       await engine.setConfig({ enabled: false });
 
       const leads = await engine.findEligibleLeads(30);
       expect(leads).toHaveLength(0);
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should filter by sequence day', async () => {
+    it.skip('should filter by sequence day', async () => {
       // Test that the method correctly filters leads by days since last contact
       const leads30 = await engine.findEligibleLeads(30);
       const leads60 = await engine.findEligibleLeads(60);
@@ -85,7 +93,7 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Resurrection Sending', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should reject send when resurrection disabled', async () => {
+    it.skip('should reject send when resurrection disabled', async () => {
       await engine.setConfig({ enabled: false });
 
       const result = await engine.sendResurrection(
@@ -108,7 +116,7 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Batch Processing', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should process day batch and return summary', async () => {
+    it.skip('should process day batch and return summary', async () => {
       const result = await engine.processDayBatch(30);
 
       expect(result).toHaveProperty('sent');
@@ -119,7 +127,7 @@ describe('ResurrectionEngine', () => {
       expect(typeof result.skipped).toBe('number');
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should return 0 for unknown sequence day', async () => {
+    it.skip('should return 0 for unknown sequence day', async () => {
       const result = await engine.processDayBatch(999);
 
       expect(result.sent).toBe(0);
@@ -129,7 +137,7 @@ describe('ResurrectionEngine', () => {
   });
 
   describe('Default Sequences', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should have 3 default sequences', async () => {
+    it.skip('should have 3 default sequences', async () => {
       const config = await engine.getConfig();
 
       expect(config.sequences).toHaveLength(3);
@@ -138,7 +146,7 @@ describe('ResurrectionEngine', () => {
       expect(config.sequences[2].day).toBe(90);
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should have labels and messages for each sequence', async () => {
+    it.skip('should have labels and messages for each sequence', async () => {
       const config = await engine.getConfig();
 
       for (const seq of config.sequences) {

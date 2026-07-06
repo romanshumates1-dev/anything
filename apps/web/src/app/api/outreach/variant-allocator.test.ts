@@ -1,3 +1,11 @@
+/*
+ * QUARANTINED (verification sprint 2026-07): this engine is DEAD CODE — its
+ * backing tables exist in no schema/migration/live DB and it is wired to no
+ * runtime path. These live tests are it.skip (not skipIf DATABASE_URL) so they
+ * never run — they cannot pass until migration 004 creates the tables. See
+ * FINAL_STATE.md "NOT DEPLOYABLE" + quarantine-guard.test.ts. Un-skip in the
+ * PR that makes the engine real.
+ */
 /**
  * Variant Allocator Tests
  * 
@@ -18,7 +26,7 @@ describe('VariantAllocator', () => {
   });
 
   describe('Thompson Sampling Allocation', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should initialize with equal weights for untested variants', async () => {
+    it.skip('should initialize with equal weights for untested variants', async () => {
       const weights = await allocator.getVariantWeights(['variant_a', 'variant_b', 'variant_c']);
       
       expect(weights).toBeDefined();
@@ -26,7 +34,7 @@ describe('VariantAllocator', () => {
       expect(values.length).toBeGreaterThanOrEqual(0); // May be 0 if no data
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should allocate higher weight to higher-performing variants', async () => {
+    it.skip('should allocate higher weight to higher-performing variants', async () => {
       // In a real test with DB, we'd seed performance data
       // For now, test the interface
       const weights = await allocator.getVariantWeights(['v1', 'v2']);
@@ -68,7 +76,7 @@ describe('VariantAllocator', () => {
   });
 
   describe('Variant Analytics Calculation', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should calculate correct delivery/reply/deal rates', async () => {
+    it.skip('should calculate correct delivery/reply/deal rates', async () => {
       const analytics = await allocator.getVariantAnalytics();
       
       // Each analytic should have required fields
@@ -83,7 +91,7 @@ describe('VariantAllocator', () => {
       }
     });
 
-    it.skipIf(!process.env.DATABASE_URL)('should be ordered by deal rate descending', async () => {
+    it.skip('should be ordered by deal rate descending', async () => {
       const analytics = await allocator.getVariantAnalytics();
       
       for (let i = 1; i < analytics.length; i++) {
