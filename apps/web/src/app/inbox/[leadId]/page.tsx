@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
@@ -22,16 +22,17 @@ interface Message {
   to_phone: string;
 }
 
-export default function InboxThreadPage({ params }: { params: { leadId: string } }) {
+export default function InboxThreadPage({ params }: { params: Promise<{ leadId: string }> }) {
+  const { leadId } = use(params);
   const { data: session, isPending: authLoading } = useSession();
   const queryClient = useQueryClient();
   const [message, setMessage] = useState('');
   const [aiPaused, setAiPaused] = useState(false);
 
   const { data: messages, isLoading } = useQuery({
-    queryKey: ['conversation', params.leadId],
+    queryKey: ['conversation', leadId],
     queryFn: async () => {
-      const res = await fetch(`/api/conversations/thread/${params.leadId}`);
+      const res = await fetch(`/api/conversations/thread/${leadId}`);
       if (!res.ok) throw new Error('Failed to load conversation');
       return res.json() as Promise<Message[]>;
     },
@@ -44,19 +45,19 @@ export default function InboxThreadPage({ params }: { params: { leadId: string }
       const res = await fetch('/api/conversations/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: params.leadId, message: text, channel: 'sms' }),
+        body: JSON.stringify({ leadId: leadId, message: text, channel: 'sms' }),
       });
       if (!res.ok) throw new Error('Failed to send');
       return res.json();
     },
     onSuccess: () => {
       setMessage('');
-      queryClient.invalidateQueries({ queryKey: ['conversation', params.leadId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', leadId] });
     },
   });
 
   const toggleAi = async () => {
-    await fetch(`/api/leads/${params.leadId}/ai`, { method: 'POST' });
+    await fetch(`/api/leads/${leadId}/ai`, { method: 'POST' });
     setAiPaused(!aiPaused);
   };
 

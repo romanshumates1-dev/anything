@@ -7,7 +7,7 @@ import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -15,7 +15,7 @@ export async function POST(
   }
 
   try {
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
     const organizationId = (session.user as any).organizationId || 'default';
 
     const campaignRows = await sql`

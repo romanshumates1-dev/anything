@@ -57,7 +57,7 @@ export default function InboxPage() {
         ) : (
           <div className="space-y-3">
             {conversations.map((conv: any) => (
-              <Link key={conv.id} href={`/inbox/${conv.id}`}>
+              <Link key={conv.id} href={`/inbox/${conv.lead_id}`}>
                 <Card className="border-none shadow-sm hover:shadow-md transition-shadow cursor-pointer">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">

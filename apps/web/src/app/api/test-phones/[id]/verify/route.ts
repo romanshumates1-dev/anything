@@ -6,7 +6,7 @@ import crypto from 'crypto';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -16,7 +16,7 @@ export async function POST(
   try {
     const { code } = await request.json();
     const orgId = session.user.id;
-    const phoneId = params.id;
+    const { id: phoneId } = await params;
 
     // Fetch the test phone record
     const [record] = await sql`

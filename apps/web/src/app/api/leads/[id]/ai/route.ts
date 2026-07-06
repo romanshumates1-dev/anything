@@ -14,13 +14,13 @@ import { logEvent } from '../../../utils/logger';
  * Ghost-feature note (verification sprint 2026-07): the inbox UI already calls
  * this route; it did not exist until now (404).
  */
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const leadId = params.id;
+  const { id: leadId } = await params;
   if (!leadId) {
     return Response.json({ error: 'Lead ID is required' }, { status: 400 });
   }
