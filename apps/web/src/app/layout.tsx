@@ -15,12 +15,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
 		<html lang="en">
-			<head>
-				<link
-					rel="stylesheet"
-					href="/fontawesome/releases/v6.3.0/css/pro.min.css?token=2c15cc0cc7"
-				/>
-			</head>
 			<body>
 				<Providers>
 				<Shell>{children}</Shell>
