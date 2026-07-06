@@ -133,7 +133,7 @@ export default function CampaignWizardPage() {
     } else if (!form.testMode) {
       setForm(f => ({ ...f, dncScrubEnabled: true }));
     }
-  }, [form.consentMode, form.testMode]);
+  }, [form.contactSource, form.consentMode, form.testMode]);
 
   // Mutations
   const createMutation = useMutation({
