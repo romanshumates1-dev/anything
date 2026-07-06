@@ -6,7 +6,9 @@ import { resolve } from 'path';
  * apps/web cwd). Avoids a runtime dependency just to load a handful of secrets.
  */
 export function loadEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
+  // Start from the process env (CI supplies secrets this way), then overlay a
+  // local .env when present (local dev convenience).
+  const out: Record<string, string> = { ...(process.env as Record<string, string>) };
   try {
     const txt = readFileSync(resolve(process.cwd(), '.env'), 'utf-8');
     for (const raw of txt.split(/\r?\n/)) {
@@ -15,7 +17,7 @@ export function loadEnv(): Record<string, string> {
       if (m) out[m[1]] = m[2];
     }
   } catch {
-    // fall back to process.env
+    // no local .env — rely on process.env
   }
   return out;
 }

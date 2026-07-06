@@ -1,5 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
+// Local dev drives the system Edge (chromium download is blocked by TLS
+// interception here). CI sets PW_CHANNEL=chromium to use Playwright's bundled
+// chromium (installed via `playwright install`). 'chromium' → no channel.
+const PW_CHANNEL = process.env.PW_CHANNEL ?? 'msedge';
+const channel = PW_CHANNEL === 'chromium' ? undefined : PW_CHANNEL;
+
 /**
  * E2E harness for the DealFlow campaign → inbox → approvals journey.
  *
@@ -22,7 +28,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:4000',
     storageState: 'e2e/.auth/state.json',
-    channel: 'msedge',
+    channel,
     headless: true,
     trace: 'retain-on-failure',
   },
