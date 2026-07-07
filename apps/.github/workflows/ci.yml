@@ -44,6 +44,36 @@ jobs:
       - name: Run tests
         run: yarn workspace web test
 
+  desktop:
+    name: Desktop (build + typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable Corepack (Yarn Berry)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Generates icons, bundles main/preload/renderer via esbuild, and copies
+      # static assets. Fails the job on any TypeScript/bundling error.
+      - name: Build desktop app
+        run: yarn workspace desktop build
+
+      # Type-only pass against the shipped source (needs electron types, which
+      # are installed above). Fails the job on any type error.
+      - name: Typecheck desktop app
+        run: yarn workspace desktop typecheck
+
   flows-live:
     name: Layer C (live DB flow runner)
     runs-on: ubuntu-latest

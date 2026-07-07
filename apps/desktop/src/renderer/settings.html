@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Strict CSP: only local self-hosted scripts/styles; no remote content,
+         no inline script, no eval. This page never talks to the network. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings — DealFlow AI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <div class="brand">
+        <div class="logo">DF</div>
+        <div>
+          <h1>Settings</h1>
+        </div>
+      </div>
+      <p class="subtitle" id="appInfo">Loading…</p>
+
+      <div class="section-title">Connection</div>
+      <div class="card">
+        <div class="row field-wide" style="flex-direction: column; align-items: stretch;">
+          <div style="display:flex; justify-content:space-between; width:100%;">
+            <div>
+              <div class="label">Application URL</div>
+              <div class="hint">The DealFlow AI web address this app loads.</div>
+            </div>
+          </div>
+          <input
+            type="url"
+            id="appUrl"
+            placeholder="https://app.dealflow.ai"
+            spellcheck="false"
+            autocomplete="off"
+            style="margin-top: 10px;"
+          />
+        </div>
+      </div>
+
+      <div class="section-title">Appearance</div>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Theme</div>
+            <div class="hint">Match the system, or force light/dark.</div>
+          </div>
+          <select id="theme">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="row">
+          <div>
+            <div class="label">Zoom</div>
+            <div class="hint">Default zoom level for the app content.</div>
+          </div>
+          <select id="zoom">
+            <option value="0.8">80%</option>
+            <option value="0.9">90%</option>
+            <option value="1">100%</option>
+            <option value="1.1">110%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5">150%</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title">Behavior</div>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Minimize to tray</div>
+            <div class="hint">Keep running in the tray when you close the window.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="minimizeToTray" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="label">Launch on startup</div>
+            <div class="hint">Open DealFlow AI when you sign in to your computer.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="launchOnStartup" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section-title">Updates</div>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Automatic updates</div>
+            <div class="hint">Download and install new versions in the background.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="autoUpdate" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="label">Update status</div>
+            <div class="hint" id="updateStatus">—</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button id="installUpdate" class="primary" style="display:none;">Restart &amp; Update</button>
+            <button id="checkUpdates">Check now</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="reload" class="primary">Reload App</button>
+        <button id="reset" class="danger">Reset to Defaults</button>
+      </div>
+
+      <p class="status" id="status"></p>
+      <p class="footer">DealFlow AI Desktop</p>
+    </main>
+
+    <script src="./settings.js"></script>
+  </body>
+</html>

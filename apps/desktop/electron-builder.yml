@@ -1,0 +1,98 @@
+appId: ai.dealflow.desktop
+productName: DealFlow AI
+copyright: Copyright © 2026 DealFlow AI
+
+# Only ship what the packaged app actually needs.
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - assets/**/*
+  - package.json
+  - "!**/*.map"
+  - "!scripts/**/*"
+  - "!src/**/*"
+  - "!tsconfig.json"
+  - "!electron-builder.yml"
+
+# Ensure a clean output on every packaging run.
+removePackageScripts: true
+asar: true
+
+# ---------------------------------------------------------------------------
+# Auto-update feed. electron-updater reads this generic provider.
+# Point `url` at wherever you host release artifacts + latest*.yml manifests.
+# ---------------------------------------------------------------------------
+publish:
+  - provider: generic
+    url: https://downloads.dealflow.ai/desktop/${channel}
+    channel: latest
+
+# ---------------------------- Windows --------------------------------------
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.ico
+  artifactName: ${productName}-${version}-${arch}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DealFlow AI
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh
+
+# ---------------------------- macOS ----------------------------------------
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.icns
+  category: public.app-category.business
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# ---------------------------- Linux ----------------------------------------
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+  icon: assets/icon.png
+  category: Office
+  maintainer: DealFlow AI <support@dealflow.ai>
+  synopsis: DealFlow AI desktop client
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Protocol registration for deep links (dealflow://...)
+protocols:
+  - name: DealFlow AI Protocol
+    schemes:
+      - dealflow

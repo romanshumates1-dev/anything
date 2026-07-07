@@ -18,7 +18,14 @@
     "format": "yarn oxfmt --write .",
     "format:check": "yarn oxfmt --check .",
     "clean": "echo 'No clean configured for root workspace yet.'",
-    "typecheck": "yarn workspace web typecheck"
+    "typecheck": "yarn workspace web typecheck",
+    "desktop:dev": "yarn workspace desktop dev",
+    "desktop:build": "yarn workspace desktop build",
+    "desktop:typecheck": "yarn workspace desktop typecheck",
+    "desktop:dist": "yarn workspace desktop dist",
+    "desktop:dist:win": "yarn workspace desktop dist:win",
+    "desktop:dist:mac": "yarn workspace desktop dist:mac",
+    "desktop:dist:linux": "yarn workspace desktop dist:linux"
   },
   "devDependencies": {
     "eslint": "^9.27.0",
