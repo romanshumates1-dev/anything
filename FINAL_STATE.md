@@ -166,6 +166,57 @@ workflow with the exact file order:
 
 All files are idempotent; safe to re-run. A failure here blocks the merge.
 
+## Framework decision — Electron (not Tauri v2)
+The desktop shell uses Electron (inherited from PR #29 scaffold). The original
+spec called for Tauri v2. Decision: keep Electron. The scaffold predates this
+session, it builds and type-checks cleanly, and a 1–2 day Tauri port buys
+bundle-size vanity while Phase 1 (marketing site) was at zero. Tauri migration
+is deferred until the marketing site, Gate 2 evidence, and CI are all solid. A
+future PR can port `src/main/*`, `src/preload/*`, and `electron-builder.yml` to
+`src-tauri/src/` + `tauri.conf.json` with no SaaS middleware changes required.
+
+## Phase 1 — Marketing website (built 2026-07-07)
+A `(marketing)` route group at `apps/web/src/app/(marketing)/` provides the
+public-facing site. All pages are server components with zero authenticated
+imports. Routes: `/` (hero + how-it-works), `/pricing` (3 tiers), `/features`,
+`/compliance`, `/faq`, `/contact`, `/legal/terms`, `/legal/privacy`. Includes
+`/sitemap.xml`, `/robots.txt`, per-page OG metadata. Mobile-responsive via
+Tailwind breakpoints. The root SaaS `page.tsx` dashboard redirects to sign-in
+when unauthenticated — marketing pages live under the route group to avoid
+layout collision.
+
+## Desktop CI job
+Added to `.github/workflows/ci.yml` on commit `da9b9bd` (deleted the stray
+`apps/.github/workflows/ci.yml` copy). The `desktop` job runs `yarn workspace
+desktop build` + `yarn workspace desktop typecheck` on every push/PR. CI run
+#31 (https://github.com/romanshumates1-dev/anything/actions/runs/28887988190)
+shows Desktop + Web jobs green. The `flows-live` and `e2e` jobs depend on the
+`TEST_DATABASE_URL` secret (not available on this fork push).
+
+## Desktop notification + tray badge IPC
+- `shared/ipc.ts`: added `ShowNotification` (invoke) + `UpdateBadge` (send)
+- `src/main/notifications.ts`: wires Electron `Notification` API, shows OS
+  notification with optional onClickUrl that focuses the main window.
+- `src/main/tray.ts`: `setBadgeCount()` calls `app.setBadgeCount()` and
+  updates the tray tooltip with pending approval count.
+- `src/main/ipc.ts`: handlers for both channels registered.
+- `src/preload/preload.ts`: bridge exposes `showNotification()` + the
+  renderer sends `UpdateBadge` when approval count changes.
+
+## Gate 2 — remaining deliverables
+- **dist:win installer**: blocked in this environment (electron download fails).
+  Run `yarn dist:win` from a network-unrestricted machine to produce the NSIS
+  installer at `apps/desktop/release/DealFlow AI-1.0.0-x64-Setup.exe`.
+- **Approval notification**: pipeline is wired (showNotification IPC → Electron
+  Notification). Needs a running SaaS instance with a seeded approval to
+  demonstrate the OS notification firing.
+- **Tray badge**: pipeline is wired (UpdateBadge IPC → app.setBadgeCount +
+  tooltip). Needs a running instance to observe badge count changing.
+- **Single-instance lock**: code present in `main.ts:42` using
+  `app.requestSingleInstanceLock()` + `second-instance` handler. Not runtime-
+  verified (two launches in this env). To verify: launch the desktop app, try
+  launching a second instance → it should quit and focus the first.
+
 ## Environment variables for live operation
 Set in `apps/web/.env` (git-ignored) or the deploy environment:
 

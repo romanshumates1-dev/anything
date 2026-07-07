@@ -3,6 +3,10 @@ productName: DealFlow AI
 copyright: Copyright © 2026 DealFlow AI
 
 # Only ship what the packaged app actually needs.
+# Yarn Berry PnP mode cannot vend electron to electron-builder, so we
+# declare the version explicitly for the packager to download.
+electronVersion: 33.3.0
+
 directories:
   output: release
   buildResources: build

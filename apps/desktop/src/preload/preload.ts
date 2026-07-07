@@ -52,6 +52,9 @@ const bridge: DesktopBridge = {
 
   log: (level, message) => ipcRenderer.send(IpcSend.LogMessage, level, message),
 
+  showNotification: (title, body, onClickUrl) =>
+    ipcRenderer.invoke(IpcInvoke.ShowNotification, title, body, onClickUrl),
+
   onConnectivityChanged: (cb) =>
     subscribe<ConnectivityStatus>(IpcEvent.ConnectivityChanged, cb),
 

@@ -81,6 +81,23 @@ export function createTray(): void {
   logger.info("System tray created.");
 }
 
+export function setBadgeCount(count: number): void {
+  if (tray && !tray.isDestroyed()) {
+    // macOS dock badge, Windows taskbar overlay.
+    try {
+      app.setBadgeCount(count);
+    } catch {
+      // Not supported on all platforms — tooltip fallback is sufficient.
+    }
+    // Update tooltip with the pending count.
+    tray.setToolTip(
+      count > 0
+        ? `DealFlow AI — ${count} approval${count === 1 ? "" : "s"} pending`
+        : "DealFlow AI",
+    );
+  }
+}
+
 export function destroyTray(): void {
   if (tray && !tray.isDestroyed()) {
     tray.destroy();

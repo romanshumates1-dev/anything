@@ -29,8 +29,9 @@ import {
   onUpdateStatus,
   quitAndInstall,
 } from "./updater";
+import { showNotification } from "./notifications";
 
-import { refreshTrayMenu } from "./tray";
+import { refreshTrayMenu, setBadgeCount } from "./tray";
 import { getSettingsWindow } from "./settings-window";
 
 function appInfo(): AppInfo {
@@ -116,6 +117,18 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcInvoke.OpenExternal, (_e, url: unknown) => {
     if (typeof url !== "string") return false;
     return openExternal(url);
+  });
+
+  ipcMain.handle(IpcInvoke.ShowNotification, (_e, title: unknown, body: unknown, onClickUrl: unknown) => {
+    showNotification({
+      title: typeof title === "string" ? title : "",
+      body: typeof body === "string" ? body : "",
+      onClickUrl: typeof onClickUrl === "string" ? onClickUrl : undefined,
+    });
+  });
+
+  ipcMain.on(IpcSend.UpdateBadge, (_event, count: unknown) => {
+    setBadgeCount(typeof count === "number" ? count : 0);
   });
 
   // One-way channels.

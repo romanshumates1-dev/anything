@@ -16,12 +16,14 @@ export const IpcInvoke = {
   QuitAndInstallUpdate: "updater:quit-and-install",
   ReloadApp: "app:reload",
   OpenExternal: "app:open-external",
+  ShowNotification: "app:show-notification",
 } as const;
 
 /** Channels the renderer can SEND one-way (fire-and-forget via ipcRenderer.send). */
 export const IpcSend = {
   RendererReady: "renderer:ready",
   LogMessage: "app:log",
+  UpdateBadge: "app:update-badge",
 } as const;
 
 /** Channels the main process PUSHES to the renderer (via webContents.send). */
@@ -98,6 +100,7 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<boolean>;
   rendererReady(): void;
   log(level: "info" | "warn" | "error", message: string): void;
+  showNotification(title: string, body: string, onClickUrl?: string): Promise<void>;
   onConnectivityChanged(cb: (status: ConnectivityStatus) => void): () => void;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void;
