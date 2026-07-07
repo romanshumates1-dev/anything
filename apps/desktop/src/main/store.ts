@@ -33,14 +33,13 @@ const store = new Store<Schema>({
       isMaximized: false,
     },
   },
-  // Bump when the schema shape changes to trigger a migration on upgrade.
-  schemaVersion: 1,
 });
 
 const THEMES: ReadonlyArray<AppSettings["theme"]> = ["system", "light", "dark"];
 
 function clampZoom(value: unknown): number {
   const n = typeof value === "number" && Number.isFinite(value) ? value : 1;
+
   // Match Chromium's practical zoom bounds.
   return Math.min(3, Math.max(0.5, n));
 }

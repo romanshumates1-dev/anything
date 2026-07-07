@@ -52,8 +52,6 @@ const bridge: DesktopBridge = {
 
   log: (level, message) => ipcRenderer.send(IpcSend.LogMessage, level, message),
 
-  onNavigate: (cb) => subscribe<string>(IpcEvent.Navigate, cb),
-
   onConnectivityChanged: (cb) =>
     subscribe<ConnectivityStatus>(IpcEvent.ConnectivityChanged, cb),
 
@@ -61,8 +59,6 @@ const bridge: DesktopBridge = {
 
   onSettingsChanged: (cb) =>
     subscribe<AppSettings>(IpcEvent.SettingsChanged, cb),
-
-  onShowSettings: (cb) => subscribe<void>(IpcEvent.ShowSettings, () => cb()),
 };
 
 // Expose under a namespaced global to avoid clashing with the SaaS app code.

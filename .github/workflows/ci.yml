@@ -79,12 +79,63 @@ jobs:
         run: yarn workspace web test
 
 # ─────────────────────────────────────────────────────────────
+# JOB — Desktop: bundle (esbuild) + typecheck the Electron shell.
+#
+# Runs in parallel with the web job (no DB needed). The build step generates
+# icons, bundles main/preload/renderer via esbuild, and copies static assets;
+# the typecheck step runs `tsc --noEmit` against the shipped source. Either a
+# bundling error or a type error fails the job and blocks the merge.
+#
+# Note: this job does NOT run `electron-builder` (no packaging/binary download)
+# — it only proves the desktop source compiles + bundles cleanly, which is the
+# fast, deterministic guard suitable for every push/PR. Packaging installers is
+# a separate release-time concern.
+# ─────────────────────────────────────────────────────────────
+  desktop:
+    name: "Desktop — bundle + typecheck"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Restore Yarn cache
+        uses: actions/cache@v6
+        with:
+          path: .yarn/cache
+          key: yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Generates icons, bundles main/preload/renderer via esbuild, and copies
+      # the static HTML/CSS. Fails the job on any bundling error.
+      - name: Build desktop app
+        run: yarn workspace desktop build
+
+      # Type-only pass against the shipped source (electron types are installed
+      # above). Fails the job on any type error.
+      - name: Typecheck desktop app
+        run: yarn workspace desktop typecheck
+
+# ─────────────────────────────────────────────────────────────
 # JOB 2 — Layer C: live flow runner against a real Neon test branch.
 #
 # Only runs after the web job passes. Bootstraps the schema, then executes
 # flows-live.test.ts against the real DB. Any failed step fails CI.
 #
 # Requirements:
+
 #   TEST_DATABASE_URL — a Neon branch postgres:// connection string,
 #   configured as a GitHub repo secret. The @neondatabase/serverless
 #   driver speaks HTTP to Neon, so a plain postgres:// service container

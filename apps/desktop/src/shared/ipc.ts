@@ -26,11 +26,9 @@ export const IpcSend = {
 
 /** Channels the main process PUSHES to the renderer (via webContents.send). */
 export const IpcEvent = {
-  Navigate: "app:navigate",
   ConnectivityChanged: "app:connectivity-changed",
   UpdateStatus: "updater:status",
   SettingsChanged: "settings:changed",
-  ShowSettings: "app:show-settings",
 } as const;
 
 export type IpcInvokeChannel = (typeof IpcInvoke)[keyof typeof IpcInvoke];
@@ -100,9 +98,7 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<boolean>;
   rendererReady(): void;
   log(level: "info" | "warn" | "error", message: string): void;
-  onNavigate(cb: (path: string) => void): () => void;
   onConnectivityChanged(cb: (status: ConnectivityStatus) => void): () => void;
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
   onSettingsChanged(cb: (settings: AppSettings) => void): () => void;
-  onShowSettings(cb: () => void): () => void;
 }

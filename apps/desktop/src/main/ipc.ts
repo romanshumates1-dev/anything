@@ -25,9 +25,11 @@ import {
 } from "./window";
 import {
   checkForUpdates,
+  getLastUpdateStatus,
   onUpdateStatus,
   quitAndInstall,
 } from "./updater";
+
 import { refreshTrayMenu } from "./tray";
 import { getSettingsWindow } from "./settings-window";
 
@@ -119,12 +121,15 @@ export function registerIpcHandlers(): void {
   // One-way channels.
   ipcMain.on(IpcSend.RendererReady, (event) => {
     logger.info("Renderer reported ready.");
-    // Push current update status to the freshly-loaded renderer.
-    onUpdateStatus((status) => {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(IpcEvent.UpdateStatus, status);
-      }
-    });
+    // Push the CURRENT update status once to the freshly-loaded renderer.
+    // We intentionally do NOT register a new onUpdateStatus listener here:
+    // RendererReady fires on every page load/navigation, so subscribing per
+    // event would leak listeners unboundedly over a long-running session.
+    // Ongoing status changes are fanned out by the single global subscription
+    // registered below.
+    if (!event.sender.isDestroyed()) {
+      event.sender.send(IpcEvent.UpdateStatus, getLastUpdateStatus());
+    }
   });
 
   ipcMain.on(IpcSend.LogMessage, (_e, level: unknown, message: unknown) => {
@@ -134,9 +139,19 @@ export function registerIpcHandlers(): void {
     else logger.info(`[renderer] ${msg}`);
   });
 
-  // Bridge update-status pushes to the tray so its labels stay current.
-  onUpdateStatus(() => refreshTrayMenu());
+  // Single, process-lifetime subscription that fans update-status changes out
+  // to every open window and keeps the tray labels current. Registered once
+  // (registerIpcHandlers runs a single time at app ready), so no leak.
+  onUpdateStatus((status) => {
+    for (const win of [getMainWindow(), getSettingsWindow()]) {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(IpcEvent.UpdateStatus, status);
+      }
+    }
+    refreshTrayMenu();
+  });
 
   // Ensure the OS login-item state matches persisted settings at startup.
   syncLaunchOnStartup(getSettings().launchOnStartup);
+
 }
