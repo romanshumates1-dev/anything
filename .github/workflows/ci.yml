@@ -156,10 +156,8 @@ jobs:
       SMS_INBOUND_SECRET: "flow-runner-secret"
       # PGSSLMODE ensures psql honours SSL even if the URL parser omits it.
       PGSSLMODE: require
-      # AI orchestration endpoint (ai-orchestrator.ts line 3)
-      NEXT_PUBLIC_CREATE_BASE_URL: ${{ secrets.NEXT_PUBLIC_CREATE_BASE_URL }}
-      # AI orchestration auth token (ai-orchestrator.ts line 76)
-      ANYTHING_PROJECT_TOKEN: ${{ secrets.ANYTHING_PROJECT_TOKEN }}
+      # AI orchestration key (ai-orchestrator.ts — server-side only, never NEXT_PUBLIC_)
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout
@@ -240,10 +238,8 @@ jobs:
       TWILIO_AUTH_TOKEN: e2e-ci-twilio-auth-token
       PW_CHANNEL: chromium
       PGSSLMODE: require
-      # AI orchestration endpoint (ai-orchestrator.ts line 3)
-      NEXT_PUBLIC_CREATE_BASE_URL: ${{ secrets.NEXT_PUBLIC_CREATE_BASE_URL }}
-      # AI orchestration auth token (ai-orchestrator.ts line 76)
-      ANYTHING_PROJECT_TOKEN: ${{ secrets.ANYTHING_PROJECT_TOKEN }}
+      # AI orchestration key (ai-orchestrator.ts — server-side only, never NEXT_PUBLIC_)
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout
