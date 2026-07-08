@@ -323,25 +323,78 @@ The preload bridge exposes this fully; tray tooltip updates to "DealFlow AI — 
 
 The full IPC chain for Gate 2 features is verified in code.
 
-## Conversation orchestrator — Gemini scaffold replaced (2026-07-08)
-The conversation orchestrator (`apps/web/src/app/api/utils/ai-orchestrator.ts`)
-was scaffold Gemini code that called a wrong-vendor
-`/integrations/google-gemini-3-0-pro/` URL via `NEXT_PUBLIC_CREATE_BASE_URL` +
-`ANYTHING_PROJECT_TOKEN`. This was the only AI call in the runtime path
-(reached by `POST /api/conversations/message` and the `ai_reply` job handler).
-Replaced with a direct call to the Anthropic Messages API
-(`https://api.anthropic.com/v1/messages`) using `ANTHROPIC_API_KEY` (server-side
-only, never `NEXT_PUBLIC_*`). No SDK dependency — uses native `fetch()`. The CI
-workflow env block was updated: `NEXT_PUBLIC_CREATE_BASE_URL` and
-`ANYTHING_PROJECT_TOKEN` removed; `ANTHROPIC_API_KEY` added to `flows-live` and
-`e2e` jobs. Tests assert the Anthropic boundary (URL, `x-api-key` header,
-`anthropic-version`, body shape) and cover: missing key, code-fence stripping,
-role filtering, model override, empty content blocks, and non-ok status.
-Scaffold sweep: `NEXT_PUBLIC_CREATE_BASE_URL` remains in `auth.ts`
-`trustedOrigins` (load-bearing for platform OAuth, not AI-related); all other
-`NEXT_PUBLIC_CREATE_*` references are in auth/social-sign-in components
-(platform-injected OAuth config, load-bearing). No other `/integrations/` URLs
-or wrong-vendor (gemini/openai) calls exist in runtime paths.
+## AI client — consolidated to one shared module (2026-07-08)
+
+### Correction 1: single Anthropic client
+
+The codebase had **no pre-existing AI service module** (confirmed by scanning for
+`callClaude`, `anthropic`, `aiClient`, `aiService`, `negotiation.*worker` — zero
+hits outside the files created in the initial session). The orchestrator
+(`ai-orchestrator.ts`) was the only AI caller, and it had the Anthropic fetch
+inlined. A new single shared module was created at:
+
+**`apps/web/src/app/api/utils/anthropic-client.ts`**
+
+This is now the **sole** Anthropic client in the codebase. It exports:
+
+- `callAnthropic(options)` — retries (2×, backoff), timeout (60 s), error taxonomy
+  (`AnthropicClientError` with `status`, `retryable`, `originalError`)
+- `ANTHROPIC_MESSAGES_URL`, `ANTHROPIC_API_VERSION`, `ANTHROPIC_MODEL` constants
+- Types: `AnthropicMessage`, `AnthropicCallOptions`, `AnthropicResponse`
+
+Both the conversation orchestrator and any future negotiation path **must** import
+`callAnthropic` from this module; direct `fetch()` to `api.anthropic.com` is a
+boundary violation.
+
+### Correction 2: CI runs without ANTHROPIC_API_KEY (mocked AI)
+
+`ANTHROPIC_API_KEY` was removed from the `flows-live` and `e2e` job env blocks.
+The AI call is mocked at the module boundary in CI:
+
+- `ai-orchestrator.test.ts` uses `vi.mock('../anthropic-client')` — no network
+  access, no key required, zero dependency on any third-party API
+- The `flows-live` and `e2e` jobs never trigger real API calls
+- A human operator can run with real AI by setting `RUN_LIVE_AI=1` locally
+
+### Correction 3: auth.ts trustedOrigins analysis
+
+`NEXT_PUBLIC_CREATE_BASE_URL` appears in `apps/web/src/lib/auth.ts` line 39
+inside the `trustedOrigins` array alongside `BETTER_AUTH_URL`,
+`EXPO_PUBLIC_PROXY_BASE_URL`, and `NEXT_PUBLIC_CREATE_HOST`.
+
+**What it does:** better-auth's CSRF check validates the incoming request
+`Origin` against `trustedOrigins`. If the origin isn't listed, the auth server
+rejects the request as a cross-site forgery.
+
+- **In this dev environment** (`BETTER_AUTH_URL=http://localhost:4000`):
+  `NEXT_PUBLIC_CREATE_BASE_URL` is also set by the platform scaffold. Both
+  origins pass CSRF — the request comes from `localhost:4000` which is already
+  covered by `BETTER_AUTH_URL`.
+- **In production**: The platform scaffold produces a
+  `NEXT_PUBLIC_CREATE_BASE_URL` value like `https://dealflow-ai.com`. If the app
+  is also served under a customer domain or a staging sandbox, the CSRF check
+  needs both origins. Removing `NEXT_PUBLIC_CREATE_BASE_URL` from
+  `trustedOrigins` would break any deploy that serves auth on a different URL
+  than `BETTER_AUTH_URL` (e.g., a `*.dealflow.ai` sandbox).
+
+**Recommendation**: **Keep it** with a documented reason. The current code has a
+guard: `.filter((v): v is string => Boolean(v))` — if the env var is unset, no
+entry is added. Production that doesn't set `NEXT_PUBLIC_CREATE_BASE_URL` simply
+doesn't include it. No additional env-gating needed.
+
+### What was replaced
+
+The original scaffold Gemini code in `ai-orchestrator.ts` called a wrong-vendor
+`/integrations/google-gemini-3-0-pro/` URL. This was the only AI call in the
+runtime path (reached by `POST /api/conversations/message` and the `ai_reply` job
+handler). It now delegates to `callAnthropic` from the shared client module.
+
+Scaffold sweep: `NEXT_PUBLIC_CREATE_BASE_URL` and `NEXT_PUBLIC_CREATE_HOST`
+remain in `auth.ts` `trustedOrigins` (load-bearing for platform auth CSRF, not
+AI-related). All other `NEXT_PUBLIC_CREATE_*` references are in auth/social-sign-in
+components (platform-injected OAuth config, load-bearing). No other
+`/integrations/` URLs or wrong-vendor (gemini/openai) calls exist in runtime
+paths.
 
 ## Environment variables for live operation
 Set in `apps/web/.env` (git-ignored) or the deploy environment:

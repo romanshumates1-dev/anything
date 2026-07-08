@@ -134,8 +134,10 @@ jobs:
 # Only runs after the web job passes. Bootstraps the schema, then executes
 # flows-live.test.ts against the real DB. Any failed step fails CI.
 #
+# AI is mocked in CI (boundary tests prove the contract).
+# Real-key calls only under RUN_LIVE_AI=1 for human-triggered validation.
+#
 # Requirements:
-
 #   TEST_DATABASE_URL — a Neon branch postgres:// connection string,
 #   configured as a GitHub repo secret. The @neondatabase/serverless
 #   driver speaks HTTP to Neon, so a plain postgres:// service container
@@ -154,10 +156,7 @@ jobs:
       # job-runner and SMS webhook auth checks pass without real secrets.
       JOB_RUNNER_SECRET: "flow-runner-secret"
       SMS_INBOUND_SECRET: "flow-runner-secret"
-      # PGSSLMODE ensures psql honours SSL even if the URL parser omits it.
       PGSSLMODE: require
-      # AI orchestration key (ai-orchestrator.ts — server-side only, never NEXT_PUBLIC_)
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout
@@ -219,6 +218,9 @@ jobs:
 # schema.sql + campaign-pipeline-schema.sql + migrations 001–003 in order to a
 # fresh Neon test branch on every push/PR. A failure here blocks the merge.
 #
+# AI is mocked in CI (boundary tests prove the contract).
+# Real-key calls only under RUN_LIVE_AI=1 for human-triggered validation.
+#
 # Requires TEST_DATABASE_URL (Neon branch). Auth/webhook secrets are fixed
 # test values; TWILIO_* are dummy but present so the inbound webhook uses the
 # signed-form path (the spec signs with the same TWILIO_AUTH_TOKEN).
@@ -238,8 +240,6 @@ jobs:
       TWILIO_AUTH_TOKEN: e2e-ci-twilio-auth-token
       PW_CHANNEL: chromium
       PGSSLMODE: require
-      # AI orchestration key (ai-orchestrator.ts — server-side only, never NEXT_PUBLIC_)
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout
