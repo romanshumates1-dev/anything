@@ -1,6 +1,14 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-10 (b). The full GUI journey was driven live in system Edge and is proven._
+_Last session: 2026-07-10 (c). Fixed the user-reported WHITE SCREEN + got the full e2e suite green (journey + marketing)._
+
+## Session (c) additions — white screen + marketing routing
+- **White screen (real-user first load) FIXED.** Root cause: `GET /api/auth/get-session` was 500ing ("Jest worker child process exceptions") because a stale/uncleared `.next` cache + orphaned Playwright/tinypool workers I'd left running starved the dev server and crashed the auth-route worker. Every page's `useSession()` then hung → blank render. Fix: kill orphaned workers, clear `.next`, clean reboot → get-session 200 (4/4); unauthenticated `/` now renders the sign-in form (`unauth-probe.mjs`). **Operational lesson: don't leave orphaned `next dev` / playwright test-server / tinypool processes running — they starve the dev server. Kill stragglers + `rm -rf apps/web/.next` if pages start rendering blank.**
+- **Marketing landing was unreachable + `/dashboard` 404'd.** `app/page.tsx` (dashboard) and `app/(marketing)/page.tsx` both resolved to `/`; the dashboard won, hiding the marketing site, and the sidebar "Dashboard" link (`/dashboard`) 404'd. Per owner decision (**marketing for guests, app for users**): moved dashboard → `app/dashboard/page.tsx`, marketing group now owns `/`, and authenticated `/` redirects to `/dashboard`.
+- **Full e2e suite GREEN**: `journey.spec.ts` + `marketing.spec.ts` (rewritten for the real unauthenticated funnel) = **3/3**. Typecheck exit 0; unit 252 passed / 19 skipped.
+- **Known follow-up (non-blocking):** marketing pages are still wrapped by the client `Shell`, so guest `/` SSRs a brief spinner before the marketing content hydrates in (bad for SEO/first-paint). Proper fix = move the app `Shell` into an `(app)` route group so marketing renders server-only. Deferred.
+
+
 
 ## Preflight Table (latest run — dev server up)
 

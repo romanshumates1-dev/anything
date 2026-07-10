@@ -1,7 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { CheckCircle, Bot, Shield, Zap, BarChart3, MessageSquare } from "lucide-react";
+import { auth } from "@/lib/auth";
 
-export default function LandingPage() {
+// Marketing landing owns "/". Guests see this page; authenticated users are
+// sent to the SaaS app at /dashboard. (Previously /app/page.tsx (dashboard)
+// and this page both resolved to "/", a route collision that shadowed the
+// marketing site entirely.)
+export default async function LandingPage() {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (session) redirect("/dashboard");
   return (
     <div className="min-h-screen">
       {/* Hero */}

@@ -63,6 +63,30 @@ and `apps/web/e2e/.proof/` for screenshots + `walk-report.json`.
   `ANTHROPIC_API_KEY` in `apps/web/.env`. Blocks live AI replies only; the whole
   GUI journey is proven without it.
 
+### Session (c) — white screen + `/` route collision
+
+- **White screen on first load was `/api/auth/get-session` 500ing** ("Jest worker
+  child process exceptions"). NOT a code bug — a stale/uncleared `.next` cache plus
+  **orphaned `next dev` / Playwright `test-server` / `tinypool` worker processes**
+  starved the dev server and crashed the auth-route worker. `useSession()` then
+  never resolved, so the client `Shell` hung on its loading state → blank render.
+  Cure: kill straggler node workers + `rm -rf apps/web/.next` + clean single reboot.
+  If pages start rendering blank in dev again, check for orphaned node processes
+  first (`Get-CimInstance Win32_Process -Filter "Name='node.exe'"`).
+
+- **`/` had a hard route collision** — `app/page.tsx` (SaaS dashboard) and
+  `app/(marketing)/page.tsx` (marketing landing) both resolve to `/` (a route
+  group does NOT change the URL, contrary to the Phase-1 assumption). The dashboard
+  won, so the marketing landing was unreachable dead code AND `/dashboard` 404'd
+  (breaking the sidebar link). Resolved (owner chose "marketing for guests, app for
+  users"): the dashboard now lives at `app/dashboard/page.tsx`; the marketing group
+  owns `/`; `app/(marketing)/page.tsx` is `async` and redirects authenticated users
+  to `/dashboard`. Follow-up: marketing pages are still wrapped by the client
+  `Shell` (brief SSR spinner before hydration) — move `Shell` into an `(app)` route
+  group for server-only marketing render. `marketing.spec.ts` was rewritten to test
+  the real unauthenticated funnel (home → /pricing → CTA → /contact; Sign In nav →
+  /account/signin).
+
 ## Root causes found this session (2026-07-10) — do not re-investigate
 - **`Error: Can't resolve 'tailwindcss' in 'd:\anything\apps'`** — Next 16 turbopack + `@tailwindcss/postcss` resolves the `tailwindcss` package from `d:\anything\apps` (parent of the workspace) instead of `apps/web`. Blocks all page compilation at :4000. This is the root of the "GUI errors at :4000" complaint. Fix is the single next task (ensure `tailwindcss` resolves from `apps/web`, e.g. installed in the web workspace / correct PostCSS config cwd).
 - **`jobs-dev.mjs` is ESM** — `require()` throws; must use `import`. Already converted.
