@@ -46,7 +46,8 @@ export async function getGateway(): Promise<SMSGateway> {
         ),
         complianceCheckEnabled: true,
         idempotencyEnabled: true,
-        testModeAllowedPhones: new Set(['+15551234567', '+15559876543']),
+        // test-mode enforcement is DB-driven (test_phone_numbers table in sms-gateway.ts)
+        // — no hardcoded allowlist here.
       });
   }
   return smsGateway;

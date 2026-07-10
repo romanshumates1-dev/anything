@@ -37,7 +37,7 @@ export interface ISMSProvider {
 
 /**
  * Twilio Provider Adapter
- * Wraps existing twilio-adapter and messaging.ts send path
+ * Uses the real Twilio REST API via the twilio SDK client.
  */
 export class TwilioAdapter implements ISMSProvider {
   name = 'twilio';
@@ -49,6 +49,13 @@ export class TwilioAdapter implements ISMSProvider {
     private messagingServiceSid: string | undefined,
   ) {}
 
+  private getClient() {
+    // Lazy-import to avoid circular deps; twilio SDK is already a dep
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const twilio = require('twilio');
+    return twilio(this.accountSid, this.authToken);
+  }
+
   async isHealthy(): Promise<boolean> {
     try {
       const check = await this.healthCheck();
@@ -59,16 +66,44 @@ export class TwilioAdapter implements ISMSProvider {
   }
 
   async send(to: string, text: string, messageUuid: string): Promise<string> {
-    // Placeholder: integrate with existing getTwilioClient() and create message
-    // Returns the Twilio message SID
+    const client = this.getClient();
     const toE164 = to.startsWith('+') ? to : `+${to}`;
-    const sid = `sm_${messageUuid.substring(0, 16)}`; // Mock for now
-    return sid;
+
+    const createParams: Record<string, string> = {
+      body: text,
+      to: toE164,
+    };
+    if (this.messagingServiceSid) {
+      createParams.messagingServiceSid = this.messagingServiceSid;
+    } else if (this.fromNumber) {
+      createParams.from = this.fromNumber;
+    } else {
+      throw new Error('TwilioAdapter: no messagingServiceSid or fromNumber configured');
+    }
+
+    const message = await client.messages.create(createParams);
+    console.log('[TwilioAdapter] sent', {
+      sid: message.sid,
+      status: message.status,
+      to: toE164,
+      messageUuid,
+    });
+    return message.sid;
   }
 
   async getDeliveryStatus(providerId: string): Promise<DeliveryStatus> {
-    // Query Twilio API for message status; return normalized status
-    return 'sent'; // Mock for now
+    const client = this.getClient();
+    const message = await client.messages(providerId).fetch();
+    const statusMap: Record<string, DeliveryStatus> = {
+      queued: 'queued',
+      sending: 'queued',
+      sent: 'sent',
+      delivered: 'delivered',
+      undelivered: 'undelivered',
+      failed: 'failed',
+      canceled: 'bounced',
+    };
+    return statusMap[message.status] || 'sent';
   }
 
   validateWebhook(body: any, signature?: string): boolean {

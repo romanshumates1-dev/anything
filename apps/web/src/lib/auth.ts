@@ -33,10 +33,10 @@ const pool = new Pool({
 // served under so better-auth's CSRF check doesn't reject legitimate requests
 // as "Invalid origin". The request's own origin + known sandbox / published
 // URLs + the mobile iframe proxy URL are all listed here.
+// Ghost-protocol: NEXT_PUBLIC_CREATE_BASE_URL was an auth remnant (removed).
 const trustedOrigins = [
   process.env.BETTER_AUTH_URL,
   process.env.EXPO_PUBLIC_PROXY_BASE_URL,
-  process.env.NEXT_PUBLIC_CREATE_BASE_URL,
   process.env.NEXT_PUBLIC_CREATE_HOST
     ? `https://${process.env.NEXT_PUBLIC_CREATE_HOST}`
     : null,

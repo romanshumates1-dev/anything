@@ -24,8 +24,9 @@ export function validateTwilioSignature(input: {
     .update(`${url}${data}`)
     .digest('base64');
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  );
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  // timingSafeEqual requires equal-length buffers; mismatched length = invalid
+  if (sigBuf.length !== expBuf.length) return false;
+  return crypto.timingSafeEqual(sigBuf, expBuf);
 }

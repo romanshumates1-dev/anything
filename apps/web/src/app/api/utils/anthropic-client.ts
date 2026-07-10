@@ -13,7 +13,7 @@
 // ---- constants --------------------------------------------------------------
 export const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_API_VERSION = '2023-06-01';
-export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
 // ---- retry / timeout --------------------------------------------------------
 const REQUEST_TIMEOUT_MS = 60_000;

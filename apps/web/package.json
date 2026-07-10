@@ -8,7 +8,9 @@
 		"typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
 		"test": "vitest run --config src/app/api/vitest.config.ts",
 		"test:watch": "vitest --config src/app/api/vitest.config.ts",
-		"test:e2e": "playwright test"
+		"test:e2e": "playwright test",
+		"jobs:dev": "node --env-file=.env scripts/jobs-dev.mjs",
+		"preflight": "node --env-file=.env scripts/preflight.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",
@@ -36,6 +38,7 @@
 		"ws": "^8.18.2"
 	},
 	"devDependencies": {
+		"@playwright/test": "1.61.1",
 		"@tailwindcss/postcss": "^4.1.16",
 		"@testing-library/dom": "^10.4.0",
 		"@testing-library/jest-dom": "^6.6.4",
