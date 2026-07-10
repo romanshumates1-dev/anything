@@ -169,16 +169,37 @@ export default function CampaignWizardPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-      redirect('/campaigns');
     },
   });
 
   const saveDraft = () => {
-    createMutation.mutate(form);
+    createMutation.mutate(form, {
+      onSuccess: () => {
+        if (typeof window !== 'undefined') window.location.href = '/campaigns';
+      },
+    });
   };
 
-  const launch = () => {
-    createMutation.mutate(form);
+  // "Launch Campaign" must ACTIVATE the campaign, not just save a draft.
+  // Previously launch() and saveDraft() were identical (both created a DRAFT and
+  // never called the activation endpoint), so the button labelled "Launch" left
+  // every campaign in DRAFT and no ACTIVE card ever appeared. Create → then POST
+  // /start to transition DRAFT → ACTIVE (SCHEDULED if start_date is in future).
+  const launch = async () => {
+    setError(null);
+    try {
+      const created = await createMutation.mutateAsync(form);
+      if (!created?.id) throw new Error('Campaign was not created');
+      const res = await fetch(`/api/outreach/campaigns/${created.id}/start`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to launch campaign');
+      }
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      if (typeof window !== 'undefined') window.location.href = '/campaigns';
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   const nextStep = () => {

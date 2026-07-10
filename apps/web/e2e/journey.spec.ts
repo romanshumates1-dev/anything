@@ -56,8 +56,25 @@ test('full journey: wizard → launch → inbox/thread → approve range → neg
   const card = page.locator('div').filter({ hasText: campaignName }).first();
   await expect(card.getByText('TEST').first()).toBeVisible();
 
+  // --- "Launch Campaign" must ACTIVATE the campaign (DRAFT → ACTIVE) ---
+  // Regression guard: launch() used to be identical to saveDraft() and left the
+  // campaign in DRAFT. It now calls /start, so the launched campaign is ACTIVE.
+  await expect
+    .poll(
+      async () => {
+        const [row] = await sql`SELECT status FROM outreach_campaigns WHERE id = ${created.id}`;
+        return row?.status;
+      },
+      { timeout: 15000 }
+    )
+    .toBe('ACTIVE');
+
   // --- Simulate an inbound reply via the signed Twilio webhook ---
-  const webhookUrl = 'http://localhost:4000/api/sms/inbound';
+  // Twilio signs the PUBLIC-facing URL it POSTs to, and the inbound route
+  // validates against PUBLIC_WEBHOOK_URL when set (falling back to the request
+  // URL otherwise). Sign over the SAME URL the route validates, so this holds
+  // both in CI (no PUBLIC_WEBHOOK_URL → localhost) and locally (ngrok URL set).
+  const webhookUrl = env.PUBLIC_WEBHOOK_URL || 'http://localhost:4000/api/sms/inbound';
   const params = { From: TEST_PHONE, Body: 'Yes, what is your offer?' };
   const signature = twilioSignature(webhookUrl, params, env.TWILIO_AUTH_TOKEN);
   const inbound = await page.request.post('/api/sms/inbound', {

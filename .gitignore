@@ -55,3 +55,10 @@ apps/mobile/caches/*
 playwright-report
 test-results
 
+
+# Session runtime artifacts + local proof (regenerable via scripts/*-walk.mjs)
+apps/web/.jobs-dev.pid
+apps/web/e2e/.proof/
+dev.live.log
+jobs.live.log
+.claude/

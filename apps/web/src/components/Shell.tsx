@@ -74,69 +74,53 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <SidebarGroupLabel>Navigation</SidebarGroupLabel>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <Link href="/dashboard">
-                      <SidebarMenuButton asChild>
-                        <a>Dashboard</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/dashboard">Dashboard</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/campaigns">
-                      <SidebarMenuButton asChild>
-                        <a>Campaigns</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/campaigns">Campaigns</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/inbox">
-                      <SidebarMenuButton asChild>
-                        <a>Conversations</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/inbox">Conversations</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/approvals">
-                      <SidebarMenuButton asChild>
-                        <a>
+                    <SidebarMenuButton asChild>
+                      <Link href="/approvals">
+                        <span>
                           Approvals {approvals?.count ? <Badge>{approvals.count}</Badge> : null}
-                        </a>
-                      </SidebarMenuButton>
-                    </Link>
+                        </span>
+                      </Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/leads">
-                      <SidebarMenuButton asChild>
-                        <a>Contacts</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/leads">Contacts</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/contracts">
-                      <SidebarMenuButton asChild>
-                        <a>Contracts</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/contracts">Contracts</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/analytics">
-                      <SidebarMenuButton asChild>
-                        <a>Analytics</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/analytics">Analytics</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/settings">
-                      <SidebarMenuButton asChild>
-                        <a>Settings</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/settings">Settings</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <Link href="/health">
-                      <SidebarMenuButton asChild>
-                        <a>System Health</a>
-                      </SidebarMenuButton>
-                    </Link>
+                    <SidebarMenuButton asChild>
+                      <Link href="/health">System Health</Link>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroup>

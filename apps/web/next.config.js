@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   devIndicators: false,
+  // Pin Turbopack's workspace root to THIS app. Without this, Next 16 infers the
+  // monorepo root (d:\anything) and resolves `tailwindcss` from d:\anything\apps,
+  // hitting the hoisted v3.4.x (pulled in by apps/mobile's NativeWind) instead of
+  // this app's own tailwindcss v4 in apps/web/node_modules. That mismatch is what
+  // produced `Error: Can't resolve 'tailwindcss' in 'd:\anything\apps'`.
+  turbopack: {
+    root: __dirname,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

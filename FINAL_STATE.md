@@ -1,5 +1,68 @@
 # DealFlow AI — Verified Milestone (`v1.1.0-verified`)
 
+## Root causes found 2026-07-10 (session b) — GUI journey driven live, do not re-investigate
+
+The full journey was driven end-to-end in a real (system Edge) browser:
+register → every sidebar tab → import (paste + file) → wizard build+launch →
+inbox → approvals → DB unblock. See `BREAKAGE_TABLE.md` rows 1–11 for the ledger
+and `apps/web/e2e/.proof/` for screenshots + `walk-report.json`.
+
+- **`Error: Can't resolve 'tailwindcss'` is fixed and PROVEN.** The
+  `turbopack.root: __dirname` pin in `apps/web/next.config.js` resolves
+  `tailwindcss` v4 from `apps/web/node_modules` (not the parent, which held
+  apps/mobile's v3). The dashboard now renders fully styled
+  (`e2e/.proof/01-after-register.png`); all 10 routes return HTTP 200.
+
+- **`Module not found: Can't resolve 'uuid'`** at
+  `src/app/api/gateway/sms-gateway.ts:13`. The `.yarnrc.yml`
+  `nmHoistingLimits: workspaces` change de-hoisted transitive deps;
+  `uuid` was never a declared dependency of `apps/web`, so it stopped
+  resolving. This 500'd `/api/jobs/process` and, while turbopack held the
+  broken module in its graph, **cascaded 500s onto unrelated pages**
+  (`/account/signup` rendered blank). Fixed by using Node's built-in
+  `randomUUID` from `node:crypto` (zero new deps; the e2e already uses it).
+  Any future "module not found" for a bare package after the de-hoist means
+  that package must be a **declared** dependency of `apps/web` (or replaced
+  with a built-in) — hoisting no longer covers it.
+
+- **Shell nested-anchor hydration error** on every page: `<Link>` (renders
+  `<a>`) wrapped `<SidebarMenuButton asChild><a>` → `<a>` inside `<a>`. Fixed by
+  the canonical shadcn pattern `<SidebarMenuButton asChild><Link>…</Link>`.
+
+- **Four page data endpoints were missing/broken** (ghost-feature pattern, same
+  as the prior sprint's audit): `/api/approvals/count` (405 — no `count` route,
+  fell through to POST-only `[id]`), `/api/contracts` (404), `/api/analytics`
+  (404, then an enum error). All three routes were built org-scoped +
+  session-authed. Analytics funnel is computed from `campaign_contacts` /
+  `message_events` / `contracts`; `campaign_contacts.status` is the
+  `contact_status` **enum** — compare with `status::text` to avoid
+  `invalid input value for enum` on non-member literals.
+
+- **"Launch Campaign" never launched.** `launch()` in the wizard was byte-for-byte
+  identical to `saveDraft()` — both created a `DRAFT` and never called the
+  (already built + tested) `POST /api/outreach/campaigns/[id]/start` activation
+  route. So no campaign ever became ACTIVE. Fixed: `launch()` now creates then
+  POSTs `/start` (DRAFT → ACTIVE, SCHEDULED if `start_date` is future). The
+  journey spec now asserts `status === 'ACTIVE'` after launch.
+
+- **E2E inbound signature (403).** The inbound route validates the Twilio
+  signature against `PUBLIC_WEBHOOK_URL` (correct — Twilio signs the public URL
+  it POSTs to). The journey hardcoded the `localhost` URL when signing, so once
+  `.env` set `PUBLIC_WEBHOOK_URL` (ngrok) the signatures diverged. Fixed: the
+  test signs `env.PUBLIC_WEBHOOK_URL || localhost` — matching real Twilio and
+  holding in both CI (unset → localhost) and local (ngrok). The APP was correct.
+
+- **`YARN_TMP_FOLDER` breaks every `yarn` command.** It is set in the inherited
+  **process** environment (not User/Machine registry) to `d:\anything\.yarn\tmp`;
+  Yarn 4.12 rejects the legacy `tmpFolder` setting. Workaround: `unset
+  YARN_TMP_FOLDER` inline before any yarn command. Not persisted → fresh
+  terminals are unaffected.
+
+- **Anthropic API key is invalid (preflight Check 4 → 401).** It was valid in the
+  prior handoff, so it was rotated/expired. BLOCKED-ON-OWNER: supply a valid
+  `ANTHROPIC_API_KEY` in `apps/web/.env`. Blocks live AI replies only; the whole
+  GUI journey is proven without it.
+
 ## Root causes found this session (2026-07-10) — do not re-investigate
 - **`Error: Can't resolve 'tailwindcss' in 'd:\anything\apps'`** — Next 16 turbopack + `@tailwindcss/postcss` resolves the `tailwindcss` package from `d:\anything\apps` (parent of the workspace) instead of `apps/web`. Blocks all page compilation at :4000. This is the root of the "GUI errors at :4000" complaint. Fix is the single next task (ensure `tailwindcss` resolves from `apps/web`, e.g. installed in the web workspace / correct PostCSS config cwd).
 - **`jobs-dev.mjs` is ESM** — `require()` throws; must use `import`. Already converted.

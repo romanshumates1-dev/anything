@@ -10,7 +10,7 @@
  * - Unified delivery state tracking
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import sql from '@/app/api/utils/sql';
 import { checkConsent } from '@/app/api/utils/compliance';
 import { logEvent } from '@/app/api/utils/logger';
@@ -118,7 +118,7 @@ export class SMSGateway {
   }
 
   async send(message: GatewayMessage): Promise<GatewayDeliveryRecord> {
-    const messageUuid = message.messageUuid || uuidv4();
+    const messageUuid = message.messageUuid || randomUUID();
     const { leadId, to, text, campaignLeadId, conversationThread, campaignId, organizationId, contactId } = message;
 
     // 1. IDEMPOTENCY CHECK

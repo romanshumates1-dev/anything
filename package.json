@@ -11,7 +11,7 @@
   "scripts": {
     "build": "yarn workspace web build",
     "dev": "yarn workspace web dev",
-    "dev:clean": "node -e \"const fs=require('fs');const{pexecSync}=require('child_process');const pf='apps/web/.jobs-dev.pid';try{var p=parseInt(fs.readFileSync(pf,'utf8'));if(process.kill(p,0))pexecSync(\`taskkill /F /PID \${p} 2>nul\`);fs.unlinkSync(pf);}catch(e){}pexecSync('for /f \"tokens=5\" %a in (\"netstat -ano 2>nul | findstr :4000\") do taskkill /F /PID %a 2>nul');\" && yarn workspace web dev",
+    "dev:clean": "node scripts/dev-clean.mjs && yarn workspace web dev",
     "jobs:dev": "yarn workspace web jobs:dev",
     "test": "yarn workspace web test",
     "test:watch": "yarn workspace web test:watch",
