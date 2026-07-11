@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const features = [
-  { title: "AI Negotiation", desc: "Gemini-powered conversations that qualify leads, answer objections, and negotiate price ranges autonomously.", icon: Bot },
+  { title: "AI Negotiation", desc: "Claude-powered conversations that qualify leads, answer objections, and negotiate price ranges autonomously.", icon: Bot },
   { title: "Approval Workflows", desc: "Owner-range and contract approvals with one-tap accept/reject from any device.", icon: Shield },
   { title: "10DLC A2P Compliance", desc: "Built-in opt-out handling, throughput management, and carrier registration workflows.", icon: Zap },
   { title: "Test Mode", desc: "Sandbox campaigns so you can validate copy, pricing, and routing before going live.", icon: CheckCircle },

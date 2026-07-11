@@ -104,6 +104,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild>
+                      <Link href="/crm">CRM</Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
                       <Link href="/contracts">Contracts</Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

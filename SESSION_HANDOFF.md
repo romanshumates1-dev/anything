@@ -1,6 +1,17 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-10 (c). Fixed the user-reported WHITE SCREEN + got the full e2e suite green (journey + marketing)._
+_Last session: 2026-07-10 (d). Wired the owner's Anthropic key (live call proven), resolved the "Gemini" confusion, deepened analytics, added a CRM._
+
+## Session (d) — Anthropic key, Gemini audit, analytics depth, CRM
+- **AI vendor = Anthropic (Claude), confirmed.** The 4 "Gemini" references were stale UI TEXT only (2 marketing pages, 2 dashboard health panels) — zero runtime Gemini/Google calls. All relabelled to "Claude". The message path already uses the shared `anthropic-client.ts`.
+- **Owner's new Anthropic key set** in gitignored `apps/web/.env` + `ANTHROPIC_MODEL=claude-sonnet-5`. **Live call PROVEN**: preflight Check 4 → `model=claude-sonnet-5, input_tokens=17, output_tokens=4` ✅. ⚠️ The key was pasted in plaintext chat — **owner should rotate it** in the Anthropic console.
+- **Analytics deepened** (`/api/analytics` + `/analytics` page, extended not replaced): per-stage conversion rates, response/opt-out/delivery rates, cost-per-contact, cost-per-deal, ESTIMATED profit margin (real costs − closed×assumed fee via `ASSIGNMENT_FEE_CENTS`), per-campaign table, 14-day time series. Proven live with seeded mock data ($0): overall conv 1.9%, response 42.9%, opt-out 5.7%, cost/deal $1.73, est. margin $19,996.55 (`e2e/.proof/c-analytics.png`).
+- **CRM added** (`/crm` page + `/api/crm/contacts` list + `[id]` detail): filterable contact table (status/campaign/search), CSV export, per-contact drawer with conversation history + negotiation ladder + manual opt-out. Over EXISTING campaign_contacts data (no new lead system). Sidebar link added.
+- **Gates**: typecheck exit 0; unit 252 passed / 19 skipped; e2e 3/3 green.
+- **Operational lesson (reinforced): after adding/removing route files, RESTART with `rm -rf apps/web/.next`.** A warm restart left a partial route manifest (whole `/api/*` tree 404'd); clearing `.next` fixed it. Also unset BOTH `YARN_TMP_FOLDER` and `ELECTRON_RUN_AS_NODE` before yarn/electron.
+- **Deferred (owner chose local-only earlier; v3.0 prompt Missions B/D):** own-domain deploy to dealswiftautomation.com (that domain is a SEPARATE marketing site, not this app), Lighthouse, Windows installer, 5k-contact sim, real-SMS loopback. Not started this session.
+
+
 
 ## Session (c) additions — white screen + marketing routing
 - **White screen (real-user first load) FIXED.** Root cause: `GET /api/auth/get-session` was 500ing ("Jest worker child process exceptions") because a stale/uncleared `.next` cache + orphaned Playwright/tinypool workers I'd left running starved the dev server and crashed the auth-route worker. Every page's `useSession()` then hung → blank render. Fix: kill orphaned workers, clear `.next`, clean reboot → get-session 200 (4/4); unauthenticated `/` now renders the sign-in form (`unauth-probe.mjs`). **Operational lesson: don't leave orphaned `next dev` / playwright test-server / tinypool processes running — they starve the dev server. Kill stragglers + `rm -rf apps/web/.next` if pages start rendering blank.**

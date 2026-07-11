@@ -134,7 +134,7 @@ export default async function LandingPage() {
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { title: "AI Negotiation", desc: "Gemini-powered conversations that qualify leads and negotiate price ranges autonomously.", icon: Bot },
+              { title: "AI Negotiation", desc: "Claude-powered conversations that qualify leads and negotiate price ranges autonomously.", icon: Bot },
               { title: "Approval Workflows", desc: "Owner-range and contract approvals with one-tap accept/reject from any device.", icon: Shield },
               { title: "10DLC Compliant", desc: "Built-in A2P 10DLC compliance, opt-out handling, and throughput management.", icon: Zap },
               { title: "Rate Limiting", desc: "Per-API-key sliding-window rate limiting to keep your outbound within carrier caps.", icon: Shield },

@@ -147,7 +147,7 @@ export default function DashboardPage() {
             <CardContent className="space-y-6">
               {[
                 { name: 'Database (Neon)', status: 'Operational', color: 'bg-green-500' },
-                { name: 'AI Orchestrator (Gemini)', status: 'Operational', color: 'bg-green-500' },
+                { name: 'AI Orchestrator (Claude)', status: 'Operational', color: 'bg-green-500' },
                 { name: 'Job Queue (Internal)', status: 'Active', color: 'bg-green-500' },
                 { name: 'Auth (Better-Auth)', status: 'Secure', color: 'bg-green-500' },
               ].map((item) => (
