@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { requireAdmin } from '@/app/api/utils/authz';
 import crypto from 'crypto';
 
 function hashKey(key: string): string {
@@ -21,6 +22,10 @@ function maskKey(key: string): { prefix: string; last4: string } {
 }
 
 export async function GET() {
+  // API-key management is an admin-only surface (domain + ADMIN enforced
+  // server-side in requireAdmin, independent of the middleware layer).
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -41,6 +46,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  // Domain-lock layer 4 (issuance): keys are only ISSUABLE to allowed-domain
+  // admins. Key VALIDITY is enforced per-request in src/middleware.ts via the
+  // owner join.
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 

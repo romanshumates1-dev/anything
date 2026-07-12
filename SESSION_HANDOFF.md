@@ -1,6 +1,29 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-10 (d). Wired the owner's Anthropic key (live call proven), resolved the "Gemini" confusion, deepened analytics, added a CRM._
+_Last session: 2026-07-12 (e). Reconciled repo state, hardened the in-flight domain-lock + RBAC work: adversarial code review → fixed 5 confirmed defects (incl. a CI-blocking typecheck error, fully-broken API-key revocation, and a 7-day session-revocation hole) — all proven live. Suite 296/19, e2e 3/3, typecheck 0._
+
+## Session (e) — STEP -1 reconciliation + RBAC/domain-lock hardening
+
+**Reconciliation (source of truth = `main`, clean):** local `main` == `origin/main` (a630589), no divergence. Other branches (`verification-sprint`, `agents/*`, two `copilot/*`) are all ≤ main or 1 stale commit behind on unrelated tooling — none ahead with real work. The uncommitted working tree WAS the in-flight domain-lock + RBAC feature (Part A of the RBAC/deploy prompt): `access-control.ts`, `authz.ts`, admin routes/UI, migrations 004/005, middleware access gate, auth domain hooks. Docs matched git. No merge/rebase needed.
+
+**RBAC state = functionally complete + now hardened.** Enforced in depth (all proven live this session):
+- **Layer 1/2 (register/login):** out-of-domain email → 403 at both `/sign-up/email` and `/sign-in/email`; no user row created. In-domain signup → MEMBER.
+- **Layer 3 (middleware access gate):** in-domain MEMBER (below `MIN_ACCESS_ROLE=ADMIN`) → `/pending-access` redirect / 403 JSON; out-of-domain session → `/access-restricted` / 403; ADMIN passes.
+- **Layer 4 (v1 API):** key issuance admin-only; key validity re-checks owner domain+role every request (proved: valid key → 403 the instant its owner is demoted).
+- **Admin UI:** promote/demote live; last-admin guard unit-tested; owner `roman.shumate@dealswiftautomation.com` seeded ADMIN (single admin row confirmed).
+
+**5 defects found by adversarial review + fixed + PROVEN (see BREAKAGE_TABLE rows 15–19):**
+1. `analytics/route.ts` `money()` undefined → CI typecheck failed (my earlier `npx tsc` was a false pass). Added local helper.
+2. `DELETE /api/settings/api-keys/[id]` read `props.params.id` sync → Next 16 params is a Promise → revocation 100% broken (404). Now `await`ed.
+3. `session.cookieCache` (7-day) served stale sessions → demotion/revocation didn't take effect for up to 7 days. **Disabled cookieCache** → revocation immediate (live: `/api/campaigns` 200→401 on session delete).
+4. `/api/system/{database,metrics,queue-status}` had NO auth; `/readiness` any-session → operational-data leak. Added `requireAdmin` (health/cron unchanged).
+5. Analytics "Est. revenue" showed the estimated slice, not total. Fixed to `revenueCents`.
+
+**Gates this session:** typecheck exit 0 · unit 296 passed / 19 skipped · e2e journey 1/1 + marketing 2/2 green.
+
+---
+
+_Prior — session 2026-07-10 (d): Wired the owner's Anthropic key (live call proven), resolved the "Gemini" confusion, deepened analytics, added a CRM._
 
 ## Session (d) — Anthropic key, Gemini audit, analytics depth, CRM
 - **AI vendor = Anthropic (Claude), confirmed.** The 4 "Gemini" references were stale UI TEXT only (2 marketing pages, 2 dashboard health panels) — zero runtime Gemini/Google calls. All relabelled to "Claude". The message path already uses the shared `anthropic-client.ts`.
@@ -69,7 +92,7 @@ in `apps/web/.env`, then re-run `node --env-file=.env scripts/preflight.mjs` —
 real SMS→AI round-trip, which needs the valid key + a running `yarn jobs:dev`).
 
 ## Pending owner actions
-- **BLOCKED-ON-OWNER: `ANTHROPIC_API_KEY` invalid (401).** Was valid in prior handoff → rotated/expired. Replace it; nothing else blocks AI.
+- **BLOCKED-ON-OWNER: Anthropic API key has $0 credit balance.** As of session (e) the key AUTHENTICATES (no longer 401) but every call 400s with `"Your credit balance is too low to access the Anthropic API"` (preflight Check 4 + job engine Check 7 dead-letter after 3 attempts). Owner must add credits/upgrade at console.anthropic.com → Plans & Billing. Nothing in code blocks AI; this is purely account billing.
 - ngrok running (`ngrok http 4000`) + Twilio Console webhook → `POST https://<ngrok>/api/sms/inbound` for a real inbound round-trip.
 - Live test-mode campaign launch via GUI wizard for a real SMS send.
 

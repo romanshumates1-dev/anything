@@ -53,12 +53,13 @@ const consoleErrors = [];
 page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
-// register
-const email = `import-${tag}@dealflow.test`;
+// register (allowed domain + ADMIN promotion — platform is domain/role locked)
+const email = `import-${tag}@dealswiftautomation.com`;
 await page.goto(`${BASE}/account/signup`, { waitUntil: 'domcontentloaded' });
 await page.fill('input[type=email]', email);
 await page.fill('input[type=password]', 'Test1234!pass');
 await Promise.all([page.waitForURL(`${BASE}/`, { timeout: 30000 }).catch(() => {}), page.getByRole('button', { name: /Sign Up/ }).click()]);
+await sql`UPDATE "user" SET role = 'ADMIN' WHERE email = ${email}`;
 
 // ---- PASTE path ----
 await page.goto(`${BASE}/leads/import`, { waitUntil: 'networkidle' });

@@ -1,6 +1,5 @@
 import sql from '@/app/api/utils/sql';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { requireAdmin } from '@/app/api/utils/authz';
 import { computeReadiness, executionReadiness } from '../../utils/readiness';
 import { getTwilioConfig, getTwilioClient } from '../../utils/twilio-adapter';
 
@@ -71,10 +70,12 @@ const EXPECTED_LOG_ACTIONS = [
 const EXPECTED_FLOWS = ['campaign_lifecycle', 'csv_import_10k', 'scheduler_validation'];
 
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  // Full readiness (table inventory, job/message aggregates, Twilio + flow
+  // state) is admin-only. This route sits in the middleware's /api/system
+  // exemption, so a bare `if (!session)` would let a below-role MEMBER read it;
+  // requireAdmin enforces domain + ADMIN independently.
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
 
   try {
     const tableRows = await sql`

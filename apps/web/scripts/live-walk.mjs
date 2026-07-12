@@ -45,7 +45,9 @@ const context = await browser.newContext({ baseURL: BASE, viewport: { width: 144
 const page = await context.newPage();
 
 // ---- REGISTER via the real signup GUI ----
-const email = `walk-${Date.now()}@dealflow.test`;
+// Domain-locked platform: signup must use an allowed domain, and the walk
+// needs ADMIN (MIN_ACCESS_ROLE) — promoted via DB right after registering.
+const email = `walk-${Date.now()}@dealswiftautomation.com`;
 const password = 'Test1234!pass';
 const authBucket = { step: 'register', consoleErrors: [], pageErrors: [], failedResponses: [] };
 attachListeners(page, authBucket);
@@ -63,6 +65,14 @@ authBucket.landedUrl = page.url();
 await page.screenshot({ path: `${OUT}/01-after-register.png`, fullPage: true });
 report.push(authBucket);
 console.log(`[register] ${email} → landed at ${authBucket.landedUrl}`);
+
+// promote the fresh user to ADMIN so the role gate lets the walk through
+{
+  const { neon } = await import('@neondatabase/serverless');
+  const sqlAdmin = neon(process.env.DATABASE_URL);
+  await sqlAdmin`UPDATE "user" SET role = 'ADMIN' WHERE email = ${email}`;
+  console.log(`[register] ${email} promoted to ADMIN for the walk`);
+}
 
 // ---- WALK EVERY TAB ----
 for (const [name, path] of TABS) {

@@ -130,7 +130,7 @@ export default function AnalyticsPage() {
                 <CardContent className="space-y-2 text-sm">
                   <Row label="Closed deals" value={String(margin.closedDeals ?? 0)} />
                   <Row label="Assumed fee / deal" value={money(margin.estimatedFeePerDealCents)} />
-                  <Row label="Est. revenue" value={money(margin.estimatedRevenueCents)} />
+                  <Row label="Est. revenue" value={money(margin.revenueCents)} />
                   <Row label="Attributed cost" value={money(costs.totalCostCents)} />
                   <div className="border-t pt-2"><Row label="Est. margin" value={money(margin.estimatedMarginCents)} bold /></div>
                   <p className="text-xs text-gray-400 pt-1">{margin.note}</p>

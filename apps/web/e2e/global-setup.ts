@@ -31,7 +31,10 @@ export default async function globalSetup(_config: FullConfig) {
   }
   if (!up) throw new Error('dev server did not become ready on :4000');
 
-  const email = `e2e-${Date.now()}@dealflow.test`;
+  // Domain-locked platform (2026-07): signups must use an ALLOWED_EMAIL_DOMAINS
+  // address, and reaching the app requires MIN_ACCESS_ROLE (default ADMIN) —
+  // so register on the real allowed domain and promote before the journey.
+  const email = `e2e-${Date.now()}@dealswiftautomation.com`;
   const password = 'Test1234!pass';
   const res = await ctx.post('/api/auth/sign-up/email', {
     data: { email, password, name: 'E2E User' },
@@ -39,11 +42,12 @@ export default async function globalSetup(_config: FullConfig) {
   });
   if (!res.ok()) throw new Error(`signup failed ${res.status()}: ${await res.text()}`);
 
+  const sql = neon(env.DATABASE_URL || process.env.DATABASE_URL!);
+  await sql`UPDATE "user" SET role = 'ADMIN' WHERE email = ${email}`;
+
   mkdirSync('e2e/.auth', { recursive: true });
   await ctx.storageState({ path: 'e2e/.auth/state.json' });
   await ctx.dispose();
-
-  const sql = neon(env.DATABASE_URL || process.env.DATABASE_URL!);
   // idempotent: clear any prior run's lead (cascades its conversation) then seed.
   await sql`DELETE FROM leads WHERE phone = ${TEST_PHONE}`;
   await sql`INSERT INTO leads (type, name, phone, status) VALUES ('seller', 'Alice Seller', ${TEST_PHONE}, 'new')`;

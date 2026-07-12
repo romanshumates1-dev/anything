@@ -286,6 +286,8 @@ jobs:
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/001_add_missing_tables.sql
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/002_pause_ai.sql
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/003_auth_tables.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/004_assignment_fee.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/005_user_roles.sql
 
       # @playwright/test is not in the lockfile (registry TLS-blocked in the
       # authoring env); install it here + the bundled chromium browser.

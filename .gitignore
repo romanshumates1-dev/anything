@@ -61,4 +61,9 @@ apps/web/.jobs-dev.pid
 apps/web/e2e/.proof/
 dev.live.log
 jobs.live.log
+desktop.live.log
+apps/web/dev.log
+# Detached dev/jobs runner logs (Start-Process redirect targets)
+*-session.log
+*-session.err.log
 .claude/

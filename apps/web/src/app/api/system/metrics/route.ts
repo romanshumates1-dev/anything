@@ -1,8 +1,13 @@
 import sql from '@/app/api/utils/sql';
+import { requireAdmin } from '@/app/api/utils/authz';
 
 const START_TIME = Date.now();
 
 export async function GET() {
+  // AI/SMS/error aggregates are admin-only. This route sits in the middleware's
+  // /api/system exemption, so it must gate itself.
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
   try {
     const [aiAgg] = await sql`
       SELECT count(*)::int AS total

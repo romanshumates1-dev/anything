@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public."user" (
   email text NOT NULL UNIQUE,
   "emailVerified" boolean NOT NULL DEFAULT false,
   image text,
+  role text NOT NULL DEFAULT 'MEMBER',
   "createdAt" timestamp NOT NULL DEFAULT now(),
   "updatedAt" timestamp NOT NULL DEFAULT now()
 );

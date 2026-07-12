@@ -16,13 +16,18 @@ const errs = [];
 page.on('console', (m) => m.type() === 'error' && errs.push(m.text().slice(0, 140)));
 page.on('pageerror', (e) => errs.push('PAGEERR ' + String(e).slice(0, 140)));
 
-// register
-const email = `verifyc-${Date.now()}@dealflow.test`;
+// register (allowed domain + ADMIN promotion — platform is domain/role locked)
+const email = `verifyc-${Date.now()}@dealswiftautomation.com`;
 await page.goto(`${BASE}/account/signup`, { waitUntil: 'domcontentloaded' });
 await page.fill('input[type=email]', email);
 await page.fill('input[type=password]', 'Test1234!pass');
 await Promise.all([page.waitForURL((u) => !u.pathname.startsWith('/account'), { timeout: 30000 }).catch(() => {}), page.getByRole('button', { name: /Sign Up/ }).click()]);
 await page.waitForTimeout(1000);
+{
+  const { neon } = await import('@neondatabase/serverless');
+  const sqlAdmin = neon(process.env.DATABASE_URL);
+  await sqlAdmin`UPDATE "user" SET role = 'ADMIN' WHERE email = ${email}`;
+}
 
 // analytics API
 const a = await page.request.get('/api/analytics');

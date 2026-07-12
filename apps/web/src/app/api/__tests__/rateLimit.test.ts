@@ -25,8 +25,18 @@ function v1Req(key: string, ip = '10.0.0.1') {
   });
 }
 
-function keyRecord(limit = 120, revoked = false) {
-  return [{ id: 'k1', revoked, rate_limit_per_min: limit }];
+function keyRecord(limit = 120, revoked = false, owner: Partial<{ email: string; role: string }> = {}) {
+  // Domain lock layer 4: the limiter also verifies the key OWNER, so a valid
+  // owner is part of the default fixture.
+  return [
+    {
+      id: 'k1',
+      revoked,
+      rate_limit_per_min: limit,
+      owner_email: owner.email ?? 'ops@dealswiftautomation.com',
+      owner_role: owner.role ?? 'ADMIN',
+    },
+  ];
 }
 
 beforeEach(() => {
@@ -91,6 +101,38 @@ describe('Item 4 — auth is checked before budget', () => {
     mockSql.mockResolvedValue([]);
     const res = await enforceRateLimit(v1Req('df_test_unknown'));
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Domain lock layer 4 — key OWNER must be an allowed-domain user with an approved role', () => {
+  it('403 when the owner email domain is not allowlisted (default dealswiftautomation.com)', async () => {
+    mockSql.mockResolvedValue(keyRecord(120, false, { email: 'evil@gmail.com', role: 'ADMIN' }));
+    const res = await enforceRateLimit(v1Req('df_live_outsider'));
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when the owner is below MIN_ACCESS_ROLE (default ADMIN)', async () => {
+    mockSql.mockResolvedValue(
+      keyRecord(120, false, { email: 'member@dealswiftautomation.com', role: 'MEMBER' })
+    );
+    const res = await enforceRateLimit(v1Req('df_live_member'));
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when the key has no resolvable owner (fail closed)', async () => {
+    mockSql.mockResolvedValue([
+      { id: 'k1', revoked: false, rate_limit_per_min: 120, owner_email: null, owner_role: null },
+    ]);
+    const res = await enforceRateLimit(v1Req('df_live_orphan'));
+    expect(res.status).toBe(403);
+  });
+
+  it('non-vacuous: the same owner shape passes when the domain IS allowed', async () => {
+    mockSql.mockResolvedValue(
+      keyRecord(120, false, { email: 'owner@dealswiftautomation.com', role: 'ADMIN' })
+    );
+    const res = await enforceRateLimit(v1Req('df_live_owner_ok'));
+    expect(res.status).toBe(200);
   });
 });
 

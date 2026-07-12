@@ -1,6 +1,11 @@
 import sql from '@/app/api/utils/sql';
+import { requireAdmin } from '@/app/api/utils/authz';
 
 export async function GET() {
+  // Job-queue depth is admin-only. This route sits in the middleware's
+  // /api/system exemption, so it must gate itself.
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
   try {
     const [agg] = await sql`
       SELECT

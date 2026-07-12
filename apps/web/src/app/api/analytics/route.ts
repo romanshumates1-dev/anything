@@ -23,6 +23,15 @@ function rate(n: number, d: number): number {
   return d > 0 ? Math.round((n / d) * 1000) / 10 : 0; // one-decimal percent
 }
 
+// Cents → "$1,234.56" for the human-readable margin note (mirrors the client
+// formatter in src/app/analytics/page.tsx).
+function money(cents: number): string {
+  return `$${((cents || 0) / 100).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -56,7 +65,9 @@ export async function GET() {
     const [ct] = await sql`
       SELECT
         COUNT(*) AS contracted,
-        COUNT(*) FILTER (WHERE status::text IN ('SIGNED','CONTRACT_SIGNED','COMPLETED')) AS closed
+        COUNT(*) FILTER (WHERE status::text IN ('SIGNED','CONTRACT_SIGNED','COMPLETED')) AS closed,
+        COALESCE(SUM(assignment_fee_cents) FILTER (WHERE status::text IN ('SIGNED','CONTRACT_SIGNED','COMPLETED')), 0) AS actual_fee_cents,
+        COUNT(*) FILTER (WHERE status::text IN ('SIGNED','CONTRACT_SIGNED','COMPLETED') AND assignment_fee_cents IS NOT NULL) AS closed_with_fee
       FROM contracts WHERE organization_id = ${org}
     `;
 
@@ -105,8 +116,14 @@ export async function GET() {
     // are meaningful before any SMS has been dispatched).
     const reach = sent || totalContacts;
 
-    const estimatedRevenueCents = closed * ASSIGNMENT_FEE_CENTS;
-    const estimatedMarginCents = estimatedRevenueCents - totalCostCents;
+    // Revenue prefers ACTUAL recorded assignment fees; only deals with no fee
+    // recorded fall back to the ASSIGNMENT_FEE_CENTS estimate.
+    const closedWithFee = Number(ct.closed_with_fee);
+    const actualRevenueCents = Number(ct.actual_fee_cents);
+    const estimatedRevenueCents = Math.max(0, closed - closedWithFee) * ASSIGNMENT_FEE_CENTS;
+    const revenueCents = actualRevenueCents + estimatedRevenueCents;
+    const estimatedMarginCents = revenueCents - totalCostCents;
+    const marginIsEstimated = estimatedRevenueCents > 0 || closed === 0;
 
     return Response.json({
       // ---- backward-compatible fields (existing page shape) ----
@@ -141,11 +158,17 @@ export async function GET() {
         costPerDealCents: closed > 0 ? Math.round(totalCostCents / closed) : 0,
       },
       margin: {
-        estimatedFeePerDealCents: ASSIGNMENT_FEE_CENTS,
         closedDeals: closed,
+        closedWithRecordedFee: closedWithFee,
+        actualRevenueCents,
         estimatedRevenueCents,
+        revenueCents,
+        estimatedFeePerDealCents: ASSIGNMENT_FEE_CENTS,
         estimatedMarginCents,
-        note: 'Margin is an ESTIMATE: costs are real (SMS+AI from message_events); revenue = closed deals × an assumed assignment fee (set ASSIGNMENT_FEE_CENTS). No fee/revenue is tracked in the schema yet.',
+        isEstimated: marginIsEstimated,
+        note: marginIsEstimated
+          ? `Costs are real (SMS+AI). Revenue mixes recorded assignment fees (${money(actualRevenueCents)}) with an assumed ${money(ASSIGNMENT_FEE_CENTS)}/deal for ${Math.max(0, closed - closedWithFee)} closed deal(s) missing a fee — record fees on contracts to make this exact.`
+          : 'Margin is based on ACTUAL recorded assignment fees and real SMS+AI costs.',
       },
       perCampaign: perCampaign.map((c: any) => ({
         id: c.id,

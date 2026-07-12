@@ -1,6 +1,12 @@
 import sql from '@/app/api/utils/sql';
+import { requireAdmin } from '@/app/api/utils/authz';
 
 export async function GET() {
+  // Operational metadata (connection counts) is admin-only. This route sits in
+  // the middleware's /api/system exemption, so it must gate itself — otherwise
+  // it is anonymously readable.
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
   try {
     const start = Date.now();
     const [result] = await sql`SELECT 1 AS ok`;

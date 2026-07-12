@@ -18,10 +18,17 @@
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { argon2Verify } from 'argon2-wasm-edge';
 import { betterAuth } from 'better-auth';
-import { createAuthMiddleware } from 'better-auth/api';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
 import ws from 'ws';
+
+import {
+  ROLE_ADMIN,
+  ROLE_MEMBER,
+  isEmailDomainAllowed,
+  isSeedAdminEmail,
+} from '@/app/api/utils/access-control';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -104,10 +111,24 @@ export const auth = betterAuth({
     },
   },
   hooks: {
-    // better-auth's /sign-up/email schema requires `name`. Generated user apps
-    // often collect only email+password, so backfill a name from the email
-    // local-part to keep signup working without a visible name field.
     before: createAuthMiddleware(async (ctx) => {
+      // Domain lock, layer 1 (register) + layer 2 (login): reject any
+      // email/password sign-up or sign-in whose domain is not allowlisted
+      // (ALLOWED_EMAIL_DOMAINS, default dealswiftautomation.com) BEFORE any
+      // account/session work happens. Social + other paths are covered by the
+      // databaseHooks below, so no single bypass grants access.
+      if (ctx.path === '/sign-up/email' || ctx.path === '/sign-in/email') {
+        const body = ctx.body as { email?: unknown } | undefined;
+        if (!body || typeof body.email !== 'string' || !isEmailDomainAllowed(body.email)) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Access restricted: this platform is limited to authorized email domains.',
+          });
+        }
+      }
+
+      // better-auth's /sign-up/email schema requires `name`. Generated user apps
+      // often collect only email+password, so backfill a name from the email
+      // local-part to keep signup working without a visible name field.
       if (ctx.path !== '/sign-up/email') return;
       const body = ctx.body as { email?: unknown; name?: unknown } | undefined;
       if (!body || typeof body.email !== 'string') return;
@@ -115,6 +136,42 @@ export const auth = betterAuth({
       const derived = body.email.split('@')[0];
       body.name = derived && derived.length > 0 ? derived : 'User';
     }),
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        // Domain lock at the account boundary: no out-of-domain user row is
+        // ever created, regardless of the auth path (email, social, future
+        // plugins). Also the ADMIN seed: SEED_ADMIN_EMAILS (default the
+        // owner, roman.shumate@dealswiftautomation.com) get role ADMIN on
+        // first signup — idempotent by construction (runs once per create,
+        // never duplicates; migration 005 upgrades a pre-existing row).
+        before: async (user) => {
+          if (!isEmailDomainAllowed(user.email)) {
+            throw new APIError('FORBIDDEN', {
+              message: 'Access restricted: this platform is limited to authorized email domains.',
+            });
+          }
+          return {
+            data: { ...user, role: isSeedAdminEmail(user.email) ? ROLE_ADMIN : ROLE_MEMBER },
+          };
+        },
+      },
+    },
+    session: {
+      create: {
+        // Domain lock, layer 2 (session): even if an out-of-domain account
+        // somehow exists in the DB, it can never mint a session. Fresh DB
+        // read — no trust in the incoming object.
+        before: async (session) => {
+          const { rows } = await pool.query('SELECT email FROM "user" WHERE id = $1 LIMIT 1', [
+            session.userId,
+          ]);
+          if (!rows[0] || !isEmailDomainAllowed(rows[0].email)) return false;
+          return { data: session };
+        },
+      },
+    },
   },
   advanced: {
     cookiePrefix: 'better-auth',
@@ -134,9 +191,16 @@ export const auth = betterAuth({
     },
   },
   session: {
+    // Cookie cache DISABLED intentionally. When enabled, better-auth serves the
+    // session (and its role) from a signed `session_data` cookie WITHOUT reading
+    // the DB for maxAge seconds. With RBAC that is a security hole: an admin who
+    // demotes a user or revokes their sessions (DELETE FROM session, see
+    // api/admin/users/[id]) would NOT actually cut off access — getSession would
+    // keep returning the cached session until the cookie's maxAge expired (was 7
+    // days). The DB session table is the single source of truth, so every
+    // getSession must hit it and revocation/demotion takes effect next request.
     cookieCache: {
-      enabled: true,
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      enabled: false,
     },
   },
   user: {
@@ -144,6 +208,15 @@ export const auth = betterAuth({
       image: {
         type: 'string',
         required: false,
+      },
+      // Platform role (ADMIN | MEMBER). input:false means clients can NEVER
+      // set it through sign-up/update bodies — it is assigned server-side by
+      // the user.create hook above and changed only via /api/admin/users.
+      role: {
+        type: 'string',
+        required: false,
+        defaultValue: ROLE_MEMBER,
+        input: false,
       },
     },
   },
