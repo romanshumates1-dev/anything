@@ -44,6 +44,19 @@ All five FIXED live this session (curl/DB evidence captured, not just unit tests
 
 **Known limitations (documented, not fixed — low risk / out of scope):** (a) last-admin demotion guard is count-then-update — a TOCTOU race needs two simultaneous demotions of the last two admins (unit-tested for the sequential case, which is the real-world path); (b) pre-existing v1 API keys with NULL/foreign `created_by` now fail closed (403) by design — owner reissues under a live admin; (c) per-key rate-limit uses an in-memory Map (per-isolate; documented in middleware); (d) dev-only social sign-in shim (`test@example.com`) is rejected by the domain hook (correct — not an allowed domain).
 
+## Session 2026-07-13 (g) — Part B deploy prep (scaffold-host sweep + DEPLOY.md)
+
+B1 scaffold-host / hardcoded-origin sweep of the RUNTIME (grep `src`, excl tests):
+
+| file:ref | what | verdict |
+|---|---|---|
+| `apps/web/src/lib/auth.ts` `trustedOrigins` (BETTER_AUTH_URL, NEXT_PUBLIC_CREATE_HOST, EXPO_PUBLIC_PROXY_BASE_URL) | auth trusted origins | **already env-driven** — prod resolves to `https://dealswiftautomation.com` via `BETTER_AUTH_URL`; the scaffold `NEXT_PUBLIC_CREATE_HOST` entry is filtered out when unset. No change. |
+| `apps/web/src/app/api/sms/inbound/route.ts` `PUBLIC_WEBHOOK_URL` | Twilio signature base | **already env-driven** — set to `https://dealswiftautomation.com/api/sms/inbound` in prod. No change. |
+| `SocialSignInButtons.tsx`, `account/social-dev-shim/page.tsx`, `api/__create/check-social-secrets/route.ts` `NEXT_PUBLIC_CREATE_*` | scaffold social-auth **dev shim** | gated by `NEXT_PUBLIC_CREATE_ENV==='DEVELOPMENT'` → **inert in prod** (var unset). Documented "leave unset" in DEPLOY.md. No runtime change. |
+| `apps/desktop/src/main/config.ts:30` prod `DEFAULT_APP_URL` | desktop prod default host | **FIXED** — was hardcoded `https://app.dealflow.ai` (old placeholder) → now `https://dealswiftautomation.com` (still overridable via `DEALFLOW_APP_URL`). Part C. desktop `tsc` exit 0. |
+
+Result: **no hardcoded scaffold host in the WEB runtime** — origins are all env-driven; the single hardcoded host was the desktop prod default, now pointing at the owner's domain. `DEPLOY.md` written (host = Vercel + Vercel Cron + Neon; **no Redis** — queue is Postgres-backed, verified by grep; DNS records, full prod env-var list, schema/migration apply incl. 006, Twilio webhook, first-deploy checklist, `git push` redeploy). Owner-login steps tagged BLOCKED-ON-OWNER.
+
 ## Environmental / owner-blocked (not code defects)
 
 | # | item | detail | status |

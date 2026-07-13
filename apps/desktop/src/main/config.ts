@@ -27,7 +27,7 @@ export const PROTOCOL = "dealflow";
  */
 export const DEFAULT_APP_URL = (
   process.env.DEALFLOW_APP_URL ??
-  (IS_DEV ? "http://localhost:4000" : "https://app.dealflow.ai")
+  (IS_DEV ? "http://localhost:4000" : "https://dealswiftautomation.com")
 ).replace(/\/+$/, "");
 
 /**

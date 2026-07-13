@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-12/13 (f). Built the standalone **Lead Finder** module (KY public-record lead-gen) — all 5 phase gates proven live (registry, ingest+dedupe, scoring, segment→leads handoff, UI screenshot). Suite 306/19, typecheck 0. Next: Part B (DEPLOY.md)._
+_Last session: 2026-07-13 (f+g). Built the standalone **Lead Finder** module (all 5 phase gates proven live) and completed **Part B** deploy prep (DEPLOY.md for dealswiftautomation.com + scaffold sweep + desktop host fix). Suite 306/19, typecheck 0 (web + desktop)._
 
 ## Session (f) — Lead Finder module (standalone, plugs into the pipeline)
 
@@ -17,7 +17,13 @@ New module: `apps/web/src/app/lead-finder/` (UI) + `apps/web/src/app/api/lead-fi
 
 10 new unit tests (normalizer/scorer/dedupe/compliance-strip). Suite 306 passed / 19 skipped; typecheck 0.
 
-**Deferred (next):** Part B — DEPLOY.md + scaffold-host sweep for dealswiftautomation.com. Also: automated fetch worker for PERMITTED sources (Louisville Open Data SODA API, robots-honoring + 60s rate-limit) — deferred until the owner confirms dataset terms with a KY attorney.
+## Session (g) — Part B: deploy prep for dealswiftautomation.com
+
+- **B1 scaffold sweep (BREAKAGE_TABLE session g):** web runtime is already env-driven (`BETTER_AUTH_URL`, `PUBLIC_WEBHOOK_URL`, auth `trustedOrigins`) — no hardcoded scaffold host. The `NEXT_PUBLIC_CREATE_*` refs are a dev-only social shim, inert in prod. The one hardcoded host was the **desktop** prod default (`https://app.dealflow.ai`) → **fixed** to `https://dealswiftautomation.com` (env-overridable via `DEALFLOW_APP_URL`; desktop `tsc` 0). That also satisfies Part C (desktop points at the domain in prod; it loads the gated web app so it honors domain-lock + RBAC automatically).
+- **B2 `DEPLOY.md` written** (repo root): host = **Vercel + Vercel Cron + Neon** (NO Redis — the job queue is Postgres-backed, grep-verified; the drain is `POST /api/jobs/process`). Includes DNS records for apex+www, full prod env-var list (names+purpose, no values), idempotent schema+migrations apply (incl. 006), Vercel Cron job runner, Twilio prod webhook, first-deploy checklist, and `git push`=redeploy. Owner-login steps tagged BLOCKED-ON-OWNER.
+- **B3:** auto-deploy documented (push to main → CI → Vercel build). Actual wiring is BLOCKED-ON-OWNER (needs the Vercel account + domain + prod secrets).
+
+**Deferred (next):** automated fetch worker for PERMITTED sources (Louisville Open Data SODA API, robots-honoring + 60s rate-limit) — deferred until the owner confirms dataset terms with a KY attorney. Also: prompt-3 Launch Verification as a formal checklist pass; owner-blocked items (Anthropic credit, DNS, Vercel/Twilio logins) per DEPLOY.md.
 
 ---
 
