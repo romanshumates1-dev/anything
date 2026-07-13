@@ -38,7 +38,7 @@ export async function callOllama(
   options: AnthropicCallOptions,
   cfg: OllamaOptions
 ): Promise<AnthropicResponse> {
-  const { messages, system, maxTokens = 1024, raw = false } = options;
+  const { messages, system, maxTokens = 1024, raw = false, json = false } = options;
 
   const hasUserLast = messages.length > 0 && messages[messages.length - 1].role === 'user';
   const chatMessages = [
@@ -48,12 +48,15 @@ export async function callOllama(
   ];
 
   const url = `${cfg.baseUrl.replace(/\/+$/, '')}/api/chat`;
-  const body = {
+  const body: Record<string, unknown> = {
     model: cfg.model,
     messages: chatMessages,
     stream: false,
     options: { num_predict: maxTokens },
   };
+  // Constrain the model to valid JSON when the caller expects it. Small local
+  // models emit loose key:value text without this, breaking JSON.parse.
+  if (json) body.format = 'json';
 
   let lastError: AnthropicClientError | undefined;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

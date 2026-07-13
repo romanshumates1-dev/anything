@@ -56,6 +56,12 @@ export interface AnthropicCallOptions {
   maxTokens?: number;
   /** When true the caller wants the full raw content blocks (for debugging). */
   raw?: boolean;
+  /**
+   * When true the caller expects a strict JSON object back. Local models
+   * (Ollama) need this to emit valid JSON (`format:"json"`); the Anthropic
+   * backend relies on the prompt and ignores it.
+   */
+  json?: boolean;
 }
 
 export interface AnthropicContentBlock {

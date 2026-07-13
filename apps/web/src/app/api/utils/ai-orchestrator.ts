@@ -71,6 +71,7 @@ OUTPUT FORMAT: Respond with a JSON object containing exactly these fields: respo
     const result = await callAI({
       messages,
       system: systemPrompt,
+      json: true, // orchestrator always expects a strict JSON decision (forces Ollama format:json)
     });
 
     // Parse the JSON decision from the model's text output.

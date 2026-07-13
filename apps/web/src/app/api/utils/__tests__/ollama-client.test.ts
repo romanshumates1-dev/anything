@@ -25,6 +25,22 @@ describe('callOllama — maps Ollama /api/chat → AnthropicResponse shape', () 
     expect(r.usage.output_tokens).toBe(7);
   });
 
+  it('forces valid JSON via format:"json" when json:true (small local models emit loose text otherwise)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: '{"ok":1}' } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callOllama({ messages: [{ role: 'user', content: 'q' }], json: true }, CFG);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.format).toBe('json');
+  });
+
+  it('omits format when json is not requested (free-text)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: 'hi' } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callOllama({ messages: [{ role: 'user', content: 'q' }] }, CFG);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.format).toBeUndefined();
+  });
+
   it('sends system + messages to /api/chat with stream:false', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: 'ok' } }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
