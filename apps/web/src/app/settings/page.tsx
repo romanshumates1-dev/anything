@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, ShieldCheck, TestTube, Key, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import AiProviderCard from '@/components/settings/AiProviderCard';
 
 export default function SettingsPage() {
   const { data: session, isPending: authLoading } = useSession();
@@ -148,8 +149,11 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto space-y-8">
         <header>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
-          <p className="text-gray-500 mt-1">Manage test numbers and API access</p>
+          <p className="text-gray-500 mt-1">Manage AI provider, test numbers, and API access</p>
         </header>
+
+        {/* AI Provider (Anthropic hosted vs local Ollama) */}
+        <AiProviderCard />
 
         {/* Test Phone Numbers */}
         <Card className="border-none shadow-sm">

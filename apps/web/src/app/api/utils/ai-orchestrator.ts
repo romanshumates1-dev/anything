@@ -1,10 +1,10 @@
 import { logEvent } from './logger';
+import { ANTHROPIC_MODEL } from './anthropic-client';
 import {
-  callAnthropic,
-  ANTHROPIC_MODEL,
+  callAI,
   AnthropicClientError,
   type AnthropicMessage,
-} from './anthropic-client';
+} from './ai-provider';
 
 // High-risk topics that ALWAYS require human approval before any outbound send,
 // regardless of what the model returns. This is the server-side safety net for
@@ -68,7 +68,7 @@ OUTPUT FORMAT: Respond with a JSON object containing exactly these fields: respo
     .map((m: any) => ({ role: m.role, content: m.content }));
 
   try {
-    const result = await callAnthropic({
+    const result = await callAI({
       messages,
       system: systemPrompt,
     });

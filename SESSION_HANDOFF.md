@@ -1,6 +1,15 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-13 (f+g). Built the standalone **Lead Finder** module (all 5 phase gates proven live) and completed **Part B** deploy prep (DEPLOY.md for dealswiftautomation.com + scaffold sweep + desktop host fix). Suite 306/19, typecheck 0 (web + desktop)._
+_Last session: 2026-07-13 (f–h). Built the **Lead Finder** module (5 gates live), **Part B** deploy prep (DEPLOY.md + `anything-web` Vercel wiring), and an **AI-provider option** (hosted Claude OR local Ollama, in-app toggle). Suite 323/19, typecheck 0. Next: Part C, then full launch-verification pass._
+
+## Session (h) — AI provider option (Anthropic hosted OR local Ollama)
+
+Owner-requested optional feature: run the app's AI on Anthropic (credits) OR a local open-source model via Ollama (free per message), toggled in **Settings → AI Provider**.
+- **Single entry point `callAI`** (`ai-provider.ts`) dispatches to `callAnthropic` (default) or `callOllama` (new `ollama-client.ts`, native `/api/chat`, same AnthropicResponse shape + shared error taxonomy). Only caller (`ai-orchestrator.ts`) updated; provider-agnostic.
+- **`app_settings` table** (migration 007) + `ai-settings.ts` resolver: DB toggle → env (`AI_PROVIDER`/`OLLAMA_BASE_URL`/`OLLAMA_MODEL`) → default (anthropic), 15s cache. `PUT /api/settings/ai-provider` (admin) persists; `GET /api/system/ai-status` (admin) live-tests the active backend.
+- **UI:** `AiProviderCard` in Settings — provider picker, Ollama URL/model, Save, Test connection, launch guide. Screenshot `e2e/.proof/ai-provider.png`.
+- **Proven live:** toggle persists (source=db); Ollama status → clean "is `ollama serve` running?"; Anthropic status → real $0-credit error. 11 unit tests (mapping/resolution/dispatch). Added to `LAUNCH_VERIFICATION_CHECKLIST.md` §5.4.
+- Note: this is the owner overriding the earlier "Anthropic-only runtime" rule with an explicit, opt-in local alternative. Anthropic remains the default; Ollama is a self-hosted open model, not a competing cloud vendor.
 
 ## Session (f) — Lead Finder module (standalone, plugs into the pipeline)
 

@@ -173,6 +173,24 @@ or AI replies will dead-letter. No code change needed.
 
 ---
 
+## 7b. AI provider — hosted Claude OR local Ollama (owner's choice)
+
+The app's AI (classifier/negotiator) runs through one entry point (`callAI`) with a
+selectable backend, set in **Settings → AI Provider** (persisted in `app_settings`,
+no redeploy) or via env (`AI_PROVIDER=anthropic|ollama`):
+
+- **Anthropic (default)** — best quality; needs `ANTHROPIC_API_KEY` + account credit (step 7).
+- **Local (Ollama)** — free per message; run a 6–8 GB open model on a box with ≥8 GB RAM:
+  ```bash
+  ollama serve                 # server on :11434
+  ollama pull llama3.1:8b      # ~4.7 GB (or qwen2.5:7b / mistral:7b)
+  ```
+  Then set provider = Local, `OLLAMA_BASE_URL` (default `http://localhost:11434`) and
+  `OLLAMA_MODEL`, and click **Test connection**. For a Vercel prod deploy the model must
+  run on a reachable always-on host (Ollama can't run inside a serverless function) —
+  point `OLLAMA_BASE_URL` at that host. Settings → AI Provider → **Test connection** gives
+  a live green/red for whichever backend is active.
+
 ## 8. First-deploy checklist
 
 1. [ ] Neon prod branch created; `DATABASE_URL` copied.
