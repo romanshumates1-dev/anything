@@ -22,8 +22,10 @@ BLOCKED-ON-OWNER = needs an owner action (login/secret/registration).
 ## Section 2 — Live app journey
 - ☑ 2.1–2.8 Register→dashboard, every tab renders, import (paste+file), wizard→ACTIVE, inbox, approvals unblock — Playwright journey green (10-step). Analytics funnel non-zero.
 
-## Section 3 — Real SMS loopback — **BLOCKED-ON-OWNER (10DLC)**
-- ☐ All live-send steps deferred until 10DLC approval. Inbound webhook + signature verification are wired and unit-tested; Personal Test Mode allowlist enforced.
+## Section 3 — Real SMS loopback — Twilio TRIAL (live findings 2026-07-13)
+- ☑ Twilio REST auth works (preflight Check 5); signed inbound webhook processed (Check 6).
+- ⚠️ **Trial limits (live-tested):** Lookup API → `401 policy evaluation failed` (add-on not enabled on trial → skip-trace/compliance-data unavailable until upgrade). Outbound via **Messaging Service** → `400 trial accounts have limited parameter access` — trials send only **from the trial number to a verified number**. The app prefers the Messaging Service (correct for prod 10DLC), so **the app cannot send on the trial**; a live send requires either upgrade + 10DLC, or a direct From-number test to a verified recipient.
+- ☐ Live outbound round-trip: BLOCKED — needs the trial From number + a verified recipient (owner providing); and full app-path sending needs 10DLC + a paid account. NO bulk/unsolicited sends attempted (compliance).
 
 ## Section 4 — Scale readiness ($0, mock) — **BLOCKED-ON-OWNER (10DLC)** for live; mock-mode sim OK
 - ☐ 5k-contact simulator not run this session (mock-mode only when run; never live sends pre-10DLC).
@@ -32,7 +34,9 @@ BLOCKED-ON-OWNER = needs an owner action (login/secret/registration).
 - ☑ 5.1 Repo-wide grep: zero Gemini/Google-AI in any runtime path; single AI entry point (`callAI`) with Anthropic default.
 - ☑ **5.4 AI provider option (NEW):** app can use the hosted Claude API OR a local open-source model via Ollama, toggled in Settings → AI Provider (persisted in `app_settings`; env fallback; default Anthropic). Proven live: toggle persists (source=db), `/api/system/ai-status` returns true green/red — Ollama "not reachable / is `ollama serve` running?" and Anthropic surfaces the real $0-credit error. 11 unit tests (mapping/resolution/dispatch). Screenshot `e2e/.proof/ai-provider.png`.
 - ☑ 5.3 Missing key at runtime → loud error (no canned-reply fallback outside tests).
-- ☐ 5.2 Live 200 from a model — **BLOCKED-ON-OWNER**: fund Anthropic, OR run Ollama locally and Test connection (green).
+- ☑ **5.2 Live model generation PROVEN via Ollama.** qwen2.5:7b drove the real orchestrator prompt end-to-end; `ai_reply` jobs complete on attempt 1 through the Ollama path (Anthropic would fail on $0 credit, so these are genuinely local-model). Required a fix — see 5.5.
+- ☑ **5.5 Ollama JSON fix (live-found).** qwen2.5 emitted loose text, not strict JSON → orchestrator `JSON.parse` would dead-letter the job. Added Ollama `format:"json"` (opt-in `json` call option; Anthropic ignores it; orchestrator passes `json:true`). TDD RED→GREEN; committed `30c0be3`. Escalation stays server-side via `detectHighRisk` regardless of model output.
+- ⚠️ 5.2b Anthropic live 200 still BLOCKED-ON-OWNER ($0 credit) — but no longer launch-blocking since Ollama is a working provider.
 
 ## Section 6 — Domain & deploy (dealswiftautomation.com)
 - ☑ 6.1 Scaffold-host sweep: no hardcoded scaffold host in web runtime; desktop prod default → dealswiftautomation.com.
