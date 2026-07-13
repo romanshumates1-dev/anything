@@ -118,25 +118,30 @@ grants ADMIN on first signup for any `SEED_ADMIN_EMAILS` address.
 - **Build command:** `yarn build`  (→ `next build`)
 - **Start command:** `yarn start`  (→ `next start`)  — Vercel handles this itself.
 
-**BLOCKED-ON-OWNER:** create the Vercel project, import the GitHub repo, set root
-dir `apps/web`, add the env vars from step 2, then add the custom domain
-`dealswiftautomation.com` (+ `www`) — Vercel then shows the exact DNS records for step 1.
+**BLOCKED-ON-OWNER:** in the Vercel project **`anything-web`**, import the GitHub repo,
+set root dir `apps/web`, add the env vars from step 2 (use `apps/web/.env.production.template`
+as the checklist), then add the custom domain `dealswiftautomation.com` (+ `www`) —
+Vercel then shows the exact DNS records for step 1.
 
 ---
 
 ## 5. Background job runner in prod (NOT `yarn jobs:dev`)
 
-`yarn jobs:dev` is dev-only. In prod, drive the queue with **Vercel Cron** — add to
-`apps/web/vercel.json`:
+`yarn jobs:dev` is dev-only. In prod the queue is drained by **Vercel Cron**, already
+wired: `apps/web/vercel.json` is committed with
 
 ```json
 { "crons": [ { "path": "/api/jobs/process", "schedule": "* * * * *" } ] }
 ```
 
-Vercel Cron calls the route every minute; the route drains due jobs. Protect it with
-`JOB_RUNNER_SECRET` (the route already checks it — configure the cron to send the
-header, or gate via Vercel's cron auth). Alternatively run a tiny always-on worker
-(Fly.io/Railway) executing the `scripts/jobs-dev.mjs` poll loop against the prod URL.
+Vercel Cron issues a **GET** every minute with `Authorization: Bearer $CRON_SECRET`.
+The `/api/jobs/process` route accepts BOTH that bearer (cron) and the
+`x-job-runner-secret: $JOB_RUNNER_SECRET` header (the dev poller / docker), and
+handles GET + POST — so just set `CRON_SECRET` in Vercel and it works with no extra
+config. (Minute-level cron needs Vercel **Pro**; on Hobby, either accept the reduced
+frequency or run a GitHub Actions scheduled workflow that `curl`s the prod URL with
+the `x-job-runner-secret` header from a repo secret. A small Fly.io/Railway worker
+running the `scripts/jobs-dev.mjs` poll loop against the prod URL also works.)
 
 ---
 
@@ -147,6 +152,16 @@ webhook to **POST** `https://dealswiftautomation.com/api/sms/inbound`. This must
 exactly match `PUBLIC_WEBHOOK_URL` (the route validates Twilio's signature against it).
 
 **BLOCKED-ON-OWNER:** requires the owner's Twilio login.
+
+### ⚠️ 6a. 10DLC / campaign registration — HARD GATE on live SMS
+
+**The owner does NOT yet have 10DLC / campaign acceptance.** Until Twilio approves the
+brand + campaign registration, **do not enable live outbound SMS** — unregistered A2P
+10DLC traffic is filtered/blocked by carriers and can incur penalties. Concretely:
+- Keep campaigns in **Personal Test Mode** (allowlisted numbers only) or mock mode.
+- Do **not** run the "real SMS loopback" / scale-send verification steps live.
+- The inbound webhook + signature verification are fine to wire (receiving costs nothing).
+- Flip to live sending only after 10DLC is approved AND quiet-hours/opt-out/DNC are green.
 
 ---
 
