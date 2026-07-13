@@ -229,7 +229,12 @@ jobs:
     name: "E2E — 10-step journey (Playwright/chromium)"
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: [web]
+    # Serialized after flows-live: both jobs bootstrap + query the SAME Neon
+    # TEST_DATABASE_URL branch. Running in parallel let e2e's migration DDL
+    # (ALTER/CREATE for 001–007) take ACCESS EXCLUSIVE locks mid-flows-live-run,
+    # intermittently failing Layer C. Serializing removes the collision. (Ideal:
+    # a separate Neon branch per job — needs a 2nd secret, owner action.)
+    needs: [web, flows-live]
 
     env:
       DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
