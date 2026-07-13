@@ -1,6 +1,27 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-12 (e). Reconciled repo state, hardened the in-flight domain-lock + RBAC work: adversarial code review → fixed 5 confirmed defects (incl. a CI-blocking typecheck error, fully-broken API-key revocation, and a 7-day session-revocation hole) — all proven live. Suite 296/19, e2e 3/3, typecheck 0._
+_Last session: 2026-07-12/13 (f). Built the standalone **Lead Finder** module (KY public-record lead-gen) — all 5 phase gates proven live (registry, ingest+dedupe, scoring, segment→leads handoff, UI screenshot). Suite 306/19, typecheck 0. Next: Part B (DEPLOY.md)._
+
+## Session (f) — Lead Finder module (standalone, plugs into the pipeline)
+
+New module: `apps/web/src/app/lead-finder/` (UI) + `apps/web/src/app/api/lead-finder/*` (routes) + migration `006_lead_finder.sql` (`lead_sources`, `sourced_leads`, `lead_source_uploads`). Added to the sidebar + the RBAC middleware matcher (admin-gated) + CI migration bootstrap.
+
+**Compliance is the architecture:** `sourced_leads` has NO phone/email columns; the CSV normalizer strips any contact-looking column before persistence (skip-trace resolves phones downstream). Registry marks each source PERMITTED / MANUAL_ONLY / PROHIBITED; only **Louisville Metro Open Data** is PERMITTED (live robots check 2026-07-12: `/resource/` allowed, 60s crawl-delay). All others MANUAL_ONLY (owner uploads; never scraped). Routes refuse to set PERMITTED without a recorded live robots check. NOT LEGAL ADVICE note in FINAL_STATE.md.
+
+**Gates proven live (all 5):**
+- G1 registry: `/api/lead-finder/sources` lists 9 seeded KY sources with verified access_method + terms_status; UI shows upload slots + PERMITTED/MANUAL badges.
+- G2 ingest: probate fixture (4 rows) → 2 inserted, 1 deduped (parcel+address), 1 failed; DB grep proves **0 contact-data fields** populated; provenance on every row.
+- G3 scoring: stacked Jane Heir (probate+absentee+equity)=**53** > single Bob Local (probate)=**37**; human "why" strings correct. (No standalone scorer existed to wire into — the score lives on the sourced lead and maps into `leads.metadata` at handoff; verified there is no second scorer.)
+- G4 handoff: "Create campaign from segment" → 2 `leads` rows (source=lead-finder, phone/email NULL, metadata carries score+provenance+needs_skip_trace); sourced_leads flip to handed_off. Feeds the EXISTING import→skip-trace→DNC→wizard machine.
+- G5 UI: live screenshot `e2e/.proof/lead-finder.png` — registry + scored table + segment action, real data. Desktop surfaces it automatically (Electron loads the web app).
+
+10 new unit tests (normalizer/scorer/dedupe/compliance-strip). Suite 306 passed / 19 skipped; typecheck 0.
+
+**Deferred (next):** Part B — DEPLOY.md + scaffold-host sweep for dealswiftautomation.com. Also: automated fetch worker for PERMITTED sources (Louisville Open Data SODA API, robots-honoring + 60s rate-limit) — deferred until the owner confirms dataset terms with a KY attorney.
+
+---
+
+_Prior — session 2026-07-12 (e). Reconciled repo state, hardened the in-flight domain-lock + RBAC work: adversarial code review → fixed 5 confirmed defects (incl. a CI-blocking typecheck error, fully-broken API-key revocation, and a 7-day session-revocation hole) — all proven live. Suite 296/19, e2e 3/3, typecheck 0._
 
 ## Session (e) — STEP -1 reconciliation + RBAC/domain-lock hardening
 

@@ -1,5 +1,32 @@
 # DealFlow AI — Verified Milestone (`v1.1.0-verified`)
 
+## Lead Finder module (session 2026-07-12/13 (f)) — standalone KY lead-gen tool
+
+A self-contained module (`apps/web/src/app/lead-finder/` UI + `apps/web/src/app/api/lead-finder/*`
+routes + `lead_sources` / `sourced_leads` / `lead_source_uploads` tables, migration 006) that
+gathers high-distress KY seller + cash-buyer PROSPECTS from free public records, scores them, and
+hands a selected segment into the EXISTING contact pipeline (leads → skip-trace → DNC → wizard). It
+plugs in; it does not duplicate import/scoring/scheduler. All five phase gates proven live this
+session (registry API, MANUAL upload ingest+dedupe, signal-based scoring, segment→leads handoff,
+UI screenshot `e2e/.proof/lead-finder.png`).
+
+**⚠️ COMPLIANCE — NOT LEGAL ADVICE.** The code enforces *technical* permission only:
+- `sourced_leads` stores PROPERTY + OWNER-NAME public records **only** — it has NO phone/email
+  columns and the CSV normalizer strips any contact-looking column before persistence. Phone
+  numbers are resolved exclusively downstream by the owner's existing skip-trace step.
+- The `lead_sources` registry marks each source PERMITTED / MANUAL_ONLY / PROHIBITED. Only
+  **Louisville Metro Open Data (data.louisvilleky.gov)** is PERMITTED this build, after a LIVE
+  robots.txt check (robots allows `/resource/`, 60s crawl-delay, verified 2026-07-12). Every other
+  seeded source is MANUAL_ONLY (owner downloads + uploads the county file — the tool never scrapes
+  it). No source is PERMITTED without a recorded live check (enforced in the POST/PATCH routes).
+- **The owner must independently confirm with a Kentucky attorney that each PERMITTED source's terms
+  of use actually allow their intended use.** The code enforces robots/rate-limit/terms *technically*;
+  the owner owns the *legal* call. Sourced leads enter the same opt-out / DNC / quiet-hours pipeline
+  as any other lead — the tool bypasses no compliance control. Scores are SIGNAL-BASED ESTIMATES from
+  public-record signals, not guaranteed outcomes.
+
+---
+
 ## Root causes found 2026-07-10 (session b) — GUI journey driven live, do not re-investigate
 
 The full journey was driven end-to-end in a real (system Edge) browser:

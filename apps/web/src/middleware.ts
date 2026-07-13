@@ -285,6 +285,7 @@ export const config = {
     '/approvals/:path*',
     '/leads/:path*',
     '/crm/:path*',
+    '/lead-finder/:path*',
     '/contracts/:path*',
     '/analytics/:path*',
     '/settings/:path*',
