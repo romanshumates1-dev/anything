@@ -67,6 +67,15 @@ export function normalizeWhitespace(v: string | null | undefined): string {
   return (v ?? '').replace(/\s+/g, ' ').trim();
 }
 
+// Defense-in-depth: even after contact COLUMNS are stripped, a phone/email can
+// hide inside a freeform cell (e.g. a "Notes" column). Redact those VALUE
+// patterns from anything persisted so contact data never lands in raw_fields.
+const EMAIL_VALUE_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const PHONE_VALUE_RE = /(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
+export function scrubContactValues(v: string): string {
+  return v.replace(EMAIL_VALUE_RE, '[redacted-email]').replace(PHONE_VALUE_RE, '[redacted-phone]');
+}
+
 /** Parse a currency-ish string ("$120,000", "120000.00") to integer cents. */
 export function parseMoneyCents(v: string | null | undefined): number | null {
   if (!v) return null;
@@ -180,7 +189,7 @@ export function parseSourcedCsv(text: string, opts: ParseOptions): SourcedParseR
     const rawFields: Record<string, string> = {};
     headerCells.forEach((h, idx) => {
       if (hm.contactCols.has(idx)) return; // strip contact columns from raw_fields
-      const val = normalizeWhitespace(cells[idx]);
+      const val = scrubContactValues(normalizeWhitespace(cells[idx]));
       if (val) rawFields[h || `col${idx}`] = val;
     });
 

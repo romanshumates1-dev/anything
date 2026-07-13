@@ -43,6 +43,19 @@ describe('parseSourcedCsv — compliance + normalization', () => {
     expect(rows[0].mailingAddress).toBeNull();
   });
 
+  it('redacts phone/email VALUES embedded in a non-contact column (defense in depth)', () => {
+    const csv = [
+      'Owner Name,Property Address,Parcel ID,Notes',
+      'Ann Owner,1 Elm St,PID-9,"call 502-555-0000 or ann@x.com re: estate sale"',
+    ].join('\n');
+    const { rows } = parseSourcedCsv(csv, { sourceRecordType: 'probate', sourceCategory: 'seller' });
+    const blob = JSON.stringify(rows[0]);
+    expect(blob).not.toContain('502-555-0000');
+    expect(blob).not.toContain('ann@x.com');
+    // the non-contact note content is preserved (redacted, not dropped)
+    expect(rows[0].rawFields['Notes']).toMatch(/estate sale/);
+  });
+
   it('keeps a legitimate "Mailing Address" column (not falsely stripped as contact)', () => {
     const csv = ['Owner Name,Property Address,Mailing Address,Parcel ID', 'A,1 St,PO Box 5,PID-1'].join('\n');
     const { rows } = parseSourcedCsv(csv, { sourceRecordType: 'probate', sourceCategory: 'seller' });
