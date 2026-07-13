@@ -65,6 +65,11 @@ export async function POST(request: Request) {
         assessedValueCents: r.assessedValueCents,
         sourceWeight: Number(source.distress_weight) || 50,
       });
+      // Dedupe key is scoped to the SOURCE so the same parcel appearing in a
+      // second source (e.g. probate AND tax-delinquent) is NOT silently
+      // dropped — the operator sees both records. Re-uploading the same source
+      // file still dedupes idempotently.
+      const scopedKey = `${sourceId}|${r.dedupeKey}`;
       const rows = await sql`
         INSERT INTO sourced_leads
           (source_id, category, owner_name, property_address, mailing_address, parcel_id, record_type, county,
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
           (${sourceId}, ${category}, ${r.ownerName}, ${r.propertyAddress}, ${r.mailingAddress}, ${r.parcelId},
            ${source.record_type}, ${r.county}, ${r.assessedValueCents},
            ${JSON.stringify(r.signals)}, ${JSON.stringify(r.rawFields)}, ${JSON.stringify(provenanceBase)},
-           ${score}, ${JSON.stringify(reasons)}, ${r.dedupeKey}, ${admin.userId})
+           ${score}, ${JSON.stringify(reasons)}, ${scopedKey}, ${admin.userId})
         ON CONFLICT (dedupe_key) DO NOTHING
         RETURNING id
       `;

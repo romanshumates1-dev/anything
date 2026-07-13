@@ -36,8 +36,21 @@ export interface SourcedParseResult {
   totalRows: number;
 }
 
-// Headers we refuse to persist (contact data). Stripped from raw_fields too.
-const CONTACT_HEADER_RE = /\b(phone|mobile|cell|tel|fax|email|e-mail|contact)\b/i;
+// Contact tokens we refuse to persist. Matched against the header with all
+// non-letters removed, so snake_case/compound headers (phone_number,
+// EmailAddress, Cell Phone, Home Telephone) are caught — a \b-boundary regex
+// missed those and leaked the value into raw_fields / mailing_address.
+// 'email' (not 'mail') is used so a legitimate "Mailing Address" survives.
+const CONTACT_TOKENS = ['phone', 'mobile', 'telephone', 'fax', 'email', 'contact'];
+function isContactHeader(header: string): boolean {
+  const norm = header.toLowerCase().replace(/[^a-z]/g, '');
+  if (!norm) return false;
+  if (CONTACT_TOKENS.some((t) => norm.includes(t))) return true;
+  // 'cell' / 'cellphone' / 'cellnumber' but NOT 'parcel'.
+  if (norm === 'cell' || norm.startsWith('cell')) return true;
+  if (norm === 'tel') return true;
+  return false;
+}
 
 // Fuzzy header → field matchers (first match wins).
 const FIELD_MATCHERS: Array<{ field: keyof NormalizedSourcedLead | 'recordType'; re: RegExp }> = [
@@ -64,16 +77,22 @@ export function parseMoneyCents(v: string | null | undefined): number | null {
   return Math.round(dollars * 100);
 }
 
-/** Stable dedupe key: county|parcel|normalized-address (lowercased). */
+/**
+ * Stable dedupe key: county|parcel|normalized-address|owner (lowercased).
+ * owner_name is included so distinct owner-only rows (no parcel/address — e.g.
+ * some probate lists) don't all collapse to `<county>||` and get dropped.
+ */
 export function buildDedupeKey(
   county: string | null,
   parcelId: string | null,
-  propertyAddress: string | null
+  propertyAddress: string | null,
+  ownerName: string | null = null
 ): string {
   const parts = [
     normalizeWhitespace(county).toLowerCase(),
     normalizeWhitespace(parcelId).toLowerCase(),
     normalizeWhitespace(propertyAddress).toLowerCase().replace(/[.,]/g, ''),
+    normalizeWhitespace(ownerName).toLowerCase(),
   ];
   return parts.join('|');
 }
@@ -119,7 +138,7 @@ function mapHeaders(headerCells: string[]): HeaderMap {
   const byField: Partial<Record<string, number>> = {};
   const contactCols = new Set<number>();
   headerCells.forEach((h, idx) => {
-    if (CONTACT_HEADER_RE.test(h)) {
+    if (isContactHeader(h)) {
       contactCols.add(idx); // never persisted
       return;
     }
@@ -199,7 +218,7 @@ export function parseSourcedCsv(text: string, opts: ParseOptions): SourcedParseR
       assessedValueCents,
       signals,
       rawFields,
-      dedupeKey: buildDedupeKey(county, parcelId, propertyAddress),
+      dedupeKey: buildDedupeKey(county, parcelId, propertyAddress, ownerName),
     });
   }
 
@@ -307,13 +326,16 @@ export interface ScoreResult {
  */
 export function scoreSourcedLead(input: ScoreInput): ScoreResult {
   const reasons: string[] = [];
-  const distinct = Array.from(new Set(input.signals));
+  // Order-independent: rank distinct signals by strength so the STRONGEST always
+  // gets full value and weaker ones stack at 70% — regardless of array order.
+  const distinct = Array.from(new Set(input.signals))
+    .filter((s) => (SIGNAL_POINTS[s] ?? 0) > 0)
+    .sort((a, b) => (SIGNAL_POINTS[b] ?? 0) - (SIGNAL_POINTS[a] ?? 0));
 
   let base = 0;
   distinct.forEach((s, i) => {
     const pts = SIGNAL_POINTS[s] ?? 0;
-    if (pts <= 0) return;
-    // First signal full value; each additional stacked signal at 70% (compounding motivation).
+    // Strongest signal full value; each additional stacked signal at 70% (compounding motivation).
     const weighted = i === 0 ? pts : Math.round(pts * 0.7);
     base += weighted;
     if (SIGNAL_LABEL[s]) reasons.push(SIGNAL_LABEL[s]);

@@ -29,6 +29,26 @@ describe('parseSourcedCsv — compliance + normalization', () => {
     expect(Object.keys(r.rawFields).join(',').toLowerCase()).not.toMatch(/phone|email/);
   });
 
+  it('strips contact columns with snake_case / compound headers (regression: \\b regex holes)', () => {
+    const csv = [
+      'Owner Name,Property Address,Parcel ID,phone_number,EmailAddress,Cell Phone,Home Telephone',
+      'Ann Owner,1 Elm St,PID-9,502-555-0000,ann@x.com,502-555-1111,502-555-2222',
+    ].join('\n');
+    const { rows } = parseSourcedCsv(csv, { sourceRecordType: 'probate', sourceCategory: 'seller' });
+    const blob = JSON.stringify(rows[0]).toLowerCase();
+    for (const leak of ['555-0000', 'ann@x.com', '555-1111', '555-2222']) {
+      expect(blob).not.toContain(leak);
+    }
+    // EmailAddress must NOT be captured as mailing_address (it matched /mail/i before)
+    expect(rows[0].mailingAddress).toBeNull();
+  });
+
+  it('keeps a legitimate "Mailing Address" column (not falsely stripped as contact)', () => {
+    const csv = ['Owner Name,Property Address,Mailing Address,Parcel ID', 'A,1 St,PO Box 5,PID-1'].join('\n');
+    const { rows } = parseSourcedCsv(csv, { sourceRecordType: 'probate', sourceCategory: 'seller' });
+    expect(rows[0].mailingAddress).toBe('PO Box 5');
+  });
+
   it('flags a row with no owner/address/parcel as a failure (nothing to act on)', () => {
     const csv = ['Owner Name,Parcel ID', ','].join('\n');
     const { rows, failures } = parseSourcedCsv(csv, { sourceRecordType: 'probate', sourceCategory: 'seller' });
@@ -59,16 +79,23 @@ describe('parseSourcedCsv — compliance + normalization', () => {
   });
 });
 
-describe('dedupeInBatch — by county|parcel|address', () => {
+describe('dedupeInBatch — by county|parcel|address|owner', () => {
   it('collapses rows with the same dedupe key', () => {
     const mk = (parcel: string) => ({
       ownerName: 'x', propertyAddress: '1 A St', mailingAddress: null, parcelId: parcel,
       county: 'Jefferson', assessedValueCents: null, signals: [], rawFields: {},
-      dedupeKey: buildDedupeKey('Jefferson', parcel, '1 A St'),
+      dedupeKey: buildDedupeKey('Jefferson', parcel, '1 A St', 'x'),
     });
     const { unique, duplicates } = dedupeInBatch([mk('P1'), mk('P1'), mk('P2')]);
     expect(unique).toHaveLength(2);
     expect(duplicates).toBe(1);
+  });
+
+  it('does NOT collapse two owner-only rows (regression: owner_name in the key)', () => {
+    // No parcel, no address — only distinct owner names. These are different leads.
+    const k1 = buildDedupeKey('Jefferson', null, null, 'Alice Heir');
+    const k2 = buildDedupeKey('Jefferson', null, null, 'Bob Heir');
+    expect(k1).not.toBe(k2);
   });
 });
 
@@ -103,6 +130,13 @@ describe('scoreSourcedLead — stacked distress scores highest', () => {
   it('scores a cash buyer from cash_purchase + investor signals', () => {
     const { score } = scoreSourcedLead({ signals: ['cash_purchase', 'investor_entity'], assessedValueCents: null, sourceWeight: 75 });
     expect(score).toBeGreaterThan(30);
+  });
+
+  it('is order-independent — strongest signal gets full weight regardless of array order (regression)', () => {
+    // pre_foreclosure (40) is strongest; absentee (15) is weakest.
+    const a = scoreSourcedLead({ signals: ['absentee', 'pre_foreclosure'], assessedValueCents: null, sourceWeight: W });
+    const b = scoreSourcedLead({ signals: ['pre_foreclosure', 'absentee'], assessedValueCents: null, sourceWeight: W });
+    expect(a.score).toBe(b.score);
   });
 });
 

@@ -48,6 +48,16 @@ export async function POST(request: Request) {
 
     let created = 0;
     for (const sl of segment) {
+      // Claim the row FIRST (conditional on status='new') so a concurrent call
+      // or retry can't double-hand-off the same lead. If we don't claim it,
+      // someone else already did — skip.
+      const claim = await sql`
+        UPDATE sourced_leads SET status = 'handed_off', handed_off_at = now(), updated_at = now()
+        WHERE id = ${sl.id} AND status = 'new'
+        RETURNING id
+      `;
+      if (claim.length === 0) continue;
+
       const name = sl.owner_name || sl.property_address || `Parcel ${sl.parcel_id || sl.id}`;
       const metadata = {
         origin: 'lead-finder',
@@ -71,9 +81,7 @@ export async function POST(request: Request) {
         RETURNING id
       `;
       await sql`
-        UPDATE sourced_leads
-        SET status = 'handed_off', handed_off_lead_id = ${lead.id}, handed_off_at = now(), updated_at = now()
-        WHERE id = ${sl.id}
+        UPDATE sourced_leads SET handed_off_lead_id = ${lead.id} WHERE id = ${sl.id}
       `;
       created++;
     }

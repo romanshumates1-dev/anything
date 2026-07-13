@@ -41,13 +41,24 @@ BLOCKED-ON-OWNER = needs an owner action (login/secret/registration).
 - ☐ 6.4 BLOCKED-ON-OWNER: registrar DNS, Vercel project `anything-web` + domain, prod secrets, Twilio prod webhook.
 
 ## Section 7 — Website & desktop
-- ☑ 7.x Marketing pages render; marketing Playwright spec green. Desktop bundles + typechecks in CI; prod APP_URL → dealswiftautomation.com; loads the gated web app (honors domain-lock + RBAC).
+- ☑ 7.x Marketing pages render; marketing Playwright spec green (2/2). Desktop bundles + typechecks in CI (green).
+- ☑ **Part C (desktop alignment):** prod `DEFAULT_APP_URL` → `https://dealswiftautomation.com` (dev localhost). Desktop has NO local auth surface (grep: only a "never bypass TLS in prod" comment), confines navigation to the app origin (`security.ts` will-navigate/redirect/webview guards), hardens the session (denies all permission requests), and loads the gated web app root — so it structurally cannot bypass domain-lock/RBAC (all server-side, proven live). Packaged-binary click-through = BLOCKED-ON-ENV (needs built installer + GUI session).
 - ☐ 7.2 Lighthouse — not run this session.
 
 ## Section 8 — Compliance finals
 - ☑ 8.4 Org isolation test green. Domain-lock + RBAC enforced server-side at every layer (register/login/middleware/API/admin/v1-key). Session revocation immediate (cookie-cache disabled).
+- ☑ 8.7 **Live authz sweep (this session):** all 10 new routes (lead-finder sources/upload/create-campaign/sourced-leads/[id], settings/ai-provider, system/ai-status, admin/users) return **401 to anonymous** — none reachable without an authorized admin session.
 - ☑ 8.x Opt-out/quiet-hours/DNC covered by existing tests (regression green).
 - ☐ Lead Finder compliance: property+owner-name only, 0 contact fields (proven); sourced leads obey DNC/opt-out via the shared pipeline.
 
-## Section 9 — Launch freeze
-- ☐ 9.x Final GO/NO-GO after Part C + a full section-by-section live pass. Owner-blocked list: Anthropic credit, 10DLC, DNS/Vercel/Twilio logins.
+## Section 9 — Adversarial audit + launch freeze
+- ⚠️ **Audit PARTIAL (session-limit truncated).** The multi-dimension bug/exploit audit ran only the **lead-finder** dimension before a session limit killed the other 5 dimensions (authz, ai-provider, injection, frontend, prod) and every verifier. It is **not** a clean bill of health — re-run those 5 dimensions when the limit resets.
+- ☑ **Lead-finder findings fixed + re-verified (6):**
+  1. **[compliance] Contact-column strip regex holes** — `\b` boundaries missed `phone_number`/`EmailAddress`/`Cell Phone`; `EmailAddress` then matched `/mail/i` → stored as `mailing_address`. **Fixed** (normalized-header token match; 'email' not 'mail' so "Mailing Address" survives). Live re-test: fixture with those headers → **0 contact data persisted**, mailing NULL.
+  2. **[correctness] dedupe key dropped owner-only rows** — added `owner_name` to the key.
+  3. **[correctness] cross-source parcels silently dropped** — dedupe key now source-scoped (same parcel in 2 sources kept).
+  4. **[correctness] scoring was array-order dependent** — signals now ranked by strength (strongest = full weight).
+  5. **[robustness] handoff double-hand-off race** — claim-first conditional UPDATE (status='new') before insert.
+  4 new regression tests; unit **327 passed / 19 skipped**; typecheck 0.
+- ☑ Live authz sweep (independent of the audit): all 10 new routes 401 to anonymous.
+- ☐ 9.x Final GO/NO-GO pending: re-run the 5 truncated audit dimensions + owner-blocked list (Anthropic credit, 10DLC, DNS/Vercel/Twilio logins).

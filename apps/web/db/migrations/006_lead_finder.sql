@@ -68,8 +68,10 @@ CREATE TABLE IF NOT EXISTS public.sourced_leads (
   CONSTRAINT sourced_leads_status_check CHECK (status IN ('new','handed_off'))
 );
 
--- Dedupe by (county + parcel_id + normalized address), collapsed into dedupe_key
--- upstream. Unique so re-uploading an overlapping county file is a no-op.
+-- dedupe_key = source_id|county|parcel|address|owner (built upstream). Scoped to
+-- the SOURCE so the same parcel in two sources isn't dropped; owner_name is
+-- included so distinct owner-only rows don't collapse. Unique so re-uploading
+-- the same source file is idempotent.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sourced_leads_dedupe ON public.sourced_leads (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_sourced_leads_score ON public.sourced_leads (distress_score DESC);
 CREATE INDEX IF NOT EXISTS idx_sourced_leads_county ON public.sourced_leads (county);
