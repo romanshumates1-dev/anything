@@ -59,6 +59,11 @@ BLOCKED-ON-OWNER = needs an owner action (login/secret/registration).
   3. **[correctness] cross-source parcels silently dropped** — dedupe key now source-scoped (same parcel in 2 sources kept).
   4. **[correctness] scoring was array-order dependent** — signals now ranked by strength (strongest = full weight).
   5. **[robustness] handoff double-hand-off race** — claim-first conditional UPDATE (status='new') before insert.
-  4 new regression tests; unit **327 passed / 19 skipped**; typecheck 0.
+  6. **[compliance, 2nd pass] embedded contact in freeform cell** — a phone/email inside a non-contact column (e.g. "Notes") was persisted verbatim. **Fixed** via `scrubContactValues()` (US-phone + email value redaction) on every persisted raw value — TDD (RED→GREEN). 
+  Regression tests added throughout; unit **328 passed / 19 skipped**; typecheck 0; all commits CI-green (4 jobs).
 - ☑ Live authz sweep (independent of the audit): all 10 new routes 401 to anonymous.
-- ☐ 9.x Final GO/NO-GO pending: re-run the 5 truncated audit dimensions + owner-blocked list (Anthropic credit, 10DLC, DNS/Vercel/Twilio logins).
+
+### GO / NO-GO — **Conditional GO**
+- **Proven:** every commit this session CI-green (4 jobs each); RBAC/domain-lock enforced + live-verified at every layer; session revocation immediate; Lead Finder compliance hardened across TWO audit passes (0 contact data at column AND value level, provenance, dedupe, scoring); AI-provider toggle live; DEPLOY.md complete with a hard 10DLC SMS gate; Part C (desktop) verified no-bypass.
+- **NOT claimed:** "completely exploit-free." The adversarial audit could not finish 5/6 dimensions (ai-provider, injection, frontend, prod, authz-deep) — twice killed by a session limit. That coverage gap is real; re-run the audit when the limit resets before asserting exploit-hardened.
+- **Owner-blocked before live launch (all in DEPLOY.md):** Anthropic credit · Twilio **10DLC** (NO live SMS until approved) · registrar DNS · Vercel project `anything-web` + domain · prod secrets · Twilio prod webhook.
