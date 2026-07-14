@@ -2,9 +2,21 @@
 
 import { useSession } from '@/lib/auth-client';
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target } from 'lucide-react';
+import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target, Globe } from 'lucide-react';
+
+// Lazy-loaded, client-only — the globe never blocks analytics (page renders
+// fully without it; the canvas chunk loads on demand).
+const CampaignGlobe = dynamic(() => import('@/components/analytics/CampaignGlobe'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[380px] flex items-center justify-center text-gray-300">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  ),
+});
 
 const money = (cents: number) => `$${((cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (n: number) => `${(n ?? 0).toFixed(1)}%`;
@@ -20,6 +32,19 @@ export default function AnalyticsPage() {
       return res.json();
     },
     enabled: !!session,
+  });
+
+  // Globe geo data — separate query so it never blocks the main analytics load;
+  // refetches every 20s for a live-ish feed.
+  const { data: geo } = useQuery({
+    queryKey: ['analytics-geo'],
+    queryFn: async () => {
+      const res = await fetch('/api/analytics/geo');
+      if (!res.ok) return { campaigns: [] };
+      return res.json();
+    },
+    enabled: !!session,
+    refetchInterval: 20_000,
   });
 
   if (authLoading) {
@@ -93,6 +118,19 @@ export default function AnalyticsPage() {
                 </Card>
               ))}
             </div>
+
+            {/* Live campaign globe — approximate prospect regions (lazy-loaded) */}
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5" /> Live Campaign Map
+                  <span className="text-xs font-normal text-gray-400">approximate regions</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CampaignGlobe campaigns={geo?.campaigns || []} />
+              </CardContent>
+            </Card>
 
             {/* Funnel with per-stage conversion */}
             <Card className="border-none shadow-sm">

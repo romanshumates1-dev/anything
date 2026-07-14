@@ -2,7 +2,14 @@
 
 _Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
 
-## Session (i) — Phase 2 (IN PROGRESS): click-reduction express paths
+## Session (i) — Phase 3 DONE: 3D live campaign globe on analytics
+- **Self-contained canvas globe** (`components/analytics/CampaignGlobe.tsx`) — orthographic projection, NO three.js/globe.gl dependency (this env has had registry-TLS issues; zero install, tiny footprint). Rotatable (drag) + gentle auto-rotate; glowing dots at APPROXIMATE prospect regions (area-code centroids), color per campaign, pulse on recent activity, back-facing points hidden.
+- **Data** (`api/analytics/geo`, admin-gated): derives region ONLY from phone area code (region-level, no new PII) via `utils/area-codes.ts` (KY/NC/GA/MO in depth + major US metros); aggregates per campaign+region with a 48h active flag; per-campaign color; caps 5k contacts. `regionForPhone` unit-tested (6 tests).
+- **Lazy-loaded** via `next/dynamic({ssr:false})` — analytics KPIs/funnel render without it (proven: globe below the KPIs). **Reduced-motion respected** (no auto-rotate). Perf: ≤400 points, DPR≤2.
+- Gate 3 proven live: globe renders with multi-region dots + multi-campaign color legend from seeded activity, **0 console errors** (`e2e/.proof/analytics-globe.png`). geo endpoint anon→401. typecheck 0; suite 338/19.
+- Ship-order OK: started only after Gate 2 CI confirmed green (`b827431`).
+
+## Session (i) — Phase 2 DONE (Gate 2 CI green b827431): click-reduction express paths
 - **Campaign launch — Quick Launch express path** (`campaigns/wizard`): a "⚡ Quick Launch (Test Mode)" button on step 1 activates the campaign with smart defaults, FORCED into Personal Test Mode (no real sends — respects the 10DLC gate) — you never leave step 1. Proven live: fills name+opener+one verified test number → **ACTIVE test-mode campaign in 1 click** (`e2e/.proof/quick-launch-campaigns.png`).
   - **Before/after (activation clicks, after step-1 fields):** Next→Next→Next→Launch = **4 clicks across 4 screens** → Quick Launch = **1 click on 1 screen**.
 - **Lead-gen → campaign** (`lead-finder`): after "Create campaign from segment", a direct **"Build campaign →"** CTA links straight to the wizard (was: plain text, user navigates manually). Multi-state subtitle + per-state attorney note.
