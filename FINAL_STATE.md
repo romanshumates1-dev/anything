@@ -19,11 +19,15 @@ UI screenshot `e2e/.proof/lead-finder.png`).
   robots.txt check (robots allows `/resource/`, 60s crawl-delay, verified 2026-07-12). Every other
   seeded source is MANUAL_ONLY (owner downloads + uploads the county file — the tool never scrapes
   it). No source is PERMITTED without a recorded live check (enforced in the POST/PATCH routes).
-- **The owner must independently confirm with a Kentucky attorney that each PERMITTED source's terms
-  of use actually allow their intended use.** The code enforces robots/rate-limit/terms *technically*;
-  the owner owns the *legal* call. Sourced leads enter the same opt-out / DNC / quiet-hours pipeline
-  as any other lead — the tool bypasses no compliance control. Scores are SIGNAL-BASED ESTIMATES from
-  public-record signals, not guaranteed outcomes.
+- **The owner must independently confirm with an attorney IN EACH STATE that each PERMITTED source's
+  terms of use actually allow their intended use.** The registry now spans **KY, NC, GA, MO, and
+  St. Louis** (migration 008, 2026-07-14). Live-verified PERMITTED open-data portals: Louisville
+  (data.louisvilleky.gov), NC OneMap (nconemap.gov), Atlanta Regional (opendata.atlantaregional.com),
+  Missouri (data.mo.gov). St. Louis City open data is MANUAL_ONLY (its robots disallows data
+  automation). All county probate/tax/deed/code/assessor records are MANUAL_ONLY (owner uploads).
+  The code enforces robots/rate-limit/terms *technically*; the owner owns the *legal* call per state.
+  Sourced leads enter the same opt-out / DNC / quiet-hours pipeline as any other lead — the tool
+  bypasses no compliance control. Scores are SIGNAL-BASED ESTIMATES, not guaranteed outcomes.
 
 ---
 

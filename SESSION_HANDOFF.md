@@ -1,6 +1,17 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-13 (f–h). Built the **Lead Finder** module (5 gates live), **Part B** deploy prep (DEPLOY.md + `anything-web` Vercel wiring), and an **AI-provider option** (hosted Claude OR local Ollama, in-app toggle). Suite 323/19, typecheck 0. Next: Part C, then full launch-verification pass._
+_Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
+
+## Session (i) — Phase 1: Lead Finder multi-state expansion (NC/GA/MO/St. Louis)
+- Interpreted "mousiri/St Louis" = **Missouri (statewide) + St. Louis (metro)** (confirmed).
+- `db/migrations/008_lead_finder_states.sql`: 28 sources added to the EXISTING registry (no rebuild). Seller + buyer categories per jurisdiction; county probate/tax/deed/code/assessor = MANUAL_ONLY (conservative default).
+- **Live robots checks (2026-07-14, pasted in report):** data.mo.gov (Socrata `/resource/`, 1s) → PERMITTED; nconemap.gov (ArcGIS Hub `/datasets,/api`, 60s) → PERMITTED; opendata.atlantaregional.com (ArcGIS Hub, 60s) → PERMITTED; www.stlouis-mo.gov (disallows `/data/*json`+`?parcelId`) → MANUAL_ONLY.
+- Gate 1 proven live: NC Probate ingest → 2 rows, scored via EXISTING scorer (stacked probate+absentee+equity 53 > single 42), provenance intact, **0 contact data**. Migration wired into CI bootstrap. Existing suite 332/19 green. Test data cleaned.
+- NOT LEGAL ADVICE: owner confirms each source's terms with an attorney **per state** (FINAL_STATE.md).
+
+---
+
+_Prior — session 2026-07-13 (f–h). Built the **Lead Finder** module (5 gates live), **Part B** deploy prep (DEPLOY.md + `anything-web` Vercel wiring), and an **AI-provider option** (hosted Claude OR local Ollama, in-app toggle). Suite 323/19, typecheck 0. Next: Part C, then full launch-verification pass._
 
 ## Session (h) — AI provider option (Anthropic hosted OR local Ollama)
 
