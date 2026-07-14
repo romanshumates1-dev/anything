@@ -2,6 +2,14 @@
 
 _Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
 
+## Session (i) — Phase 4 DONE: AI sales-skill optimization
+- **Sales-optimized supervisor prompt** (`utils/ai-sales-prompt.ts`, `buildSupervisorPrompt`): a strict SUPERSET of the original guardrails (security/prompt-injection, escalation, confidence<0.8→human, exact JSON contract ALL kept) + rapport, objection handling, motivated-seller pacing, and closing skills. Wired into `ai-orchestrator` (signature unchanged).
+- **Objection library** (price/timing/trust/not_selling/agent_listed) with ethical, truthful strategies; the AI never invents an offer (defers to the price ladder → escalation).
+- **Guardrails proven intact:** the server-side `detectHighRisk` net (offer/price/$/contract/sign/assign) runs on BOTH inbound + AI-response in BOTH the conversation path and the SMS `ai_reply` job — model-independent. **Live proof:** enriched prompt on qwen2.5 handled a price/"lowball" objection with rapport (no invented number) and correctly set `requires_human=true` (conf 0.7). 10 behavioral tests green.
+- **⚠️ NO conversion claims (per the rule):** the prompt is a craft improvement, **UNVERIFIED** pending experiment data — no significance test ran (no live traffic; the A/B variant-allocator stays QUARANTINED, not wired). Owner measures lift once real data accrues or the variant system is explicitly enabled.
+- **Mock 1k-run:** no simulator script exists in-repo; the AI pipeline completes cleanly live (objection→valid JSON→escalation) + suite 348/19 green. A full mock-mode 1k scale sim is a separate harness (not built this session).
+- typecheck 0. Ship-order OK: started after Gate 3 CI green (`1e7f156`).
+
 ## Session (i) — Phase 3 DONE: 3D live campaign globe on analytics
 - **Self-contained canvas globe** (`components/analytics/CampaignGlobe.tsx`) — orthographic projection, NO three.js/globe.gl dependency (this env has had registry-TLS issues; zero install, tiny footprint). Rotatable (drag) + gentle auto-rotate; glowing dots at APPROXIMATE prospect regions (area-code centroids), color per campaign, pulse on recent activity, back-facing points hidden.
 - **Data** (`api/analytics/geo`, admin-gated): derives region ONLY from phone area code (region-level, no new PII) via `utils/area-codes.ts` (KY/NC/GA/MO in depth + major US metros); aggregates per campaign+region with a 48h active flag; per-campaign color; caps 5k contacts. `regionForPhone` unit-tested (6 tests).
