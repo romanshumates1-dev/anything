@@ -27,7 +27,7 @@ test('full journey: wizard → launch → inbox/thread → approve range → neg
   await page.getByRole('option', { name: 'Paste Numbers' }).click();
   await page.fill('#paste', `Alice ${TEST_PHONE}\nBob +15025550002\nCarol +15025550003`);
   await page.fill('#opening', 'Hi, are you open to a cash offer on your property this month?');
-  await page.getByRole('button', { name: /Next: Sending/ }).click();
+  await page.getByRole('button', { name: /Customize.*Sending/ }).click();
 
   // --- Steps 2 & 3: defaults ---
   await page.getByRole('button', { name: /Next: Follow-ups/ }).click();

@@ -71,7 +71,7 @@ export default function DashboardPage() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-gray-900">DealFlow AI</h1>
-            <p className="text-gray-500 mt-1 text-lg">Production Hardened Infrastructure</p>
+            <p className="text-gray-500 mt-1 text-lg">Find leads, launch SMS campaigns, close deals.</p>
           </div>
           <div className="flex gap-4">
             <Link href="/campaigns">
@@ -101,6 +101,26 @@ export default function DashboardPage() {
             </Link>
           </div>
         </header>
+
+        {/* Quick Start — the 3-step flow so a new user knows exactly what to do. */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { n: 1, title: 'Find or import leads', desc: 'Lead Finder (public records) or import a CSV.', href: '/lead-finder', cta: 'Open Lead Finder' },
+            { n: 2, title: 'Launch a campaign', desc: 'Quick Launch with smart defaults, or customize.', href: '/campaigns/wizard', cta: 'New Campaign' },
+            { n: 3, title: 'Watch it work', desc: 'Track replies in Analytics, approve deals in Approvals.', href: '/analytics', cta: 'View Analytics' },
+          ].map((s) => (
+            <div key={s.n} className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-semibold">{s.n}</span>
+                <span className="font-semibold text-gray-900">{s.title}</span>
+              </div>
+              <p className="text-sm text-gray-500 mt-2 flex-1">{s.desc}</p>
+              <Link href={s.href} className="mt-3">
+                <Button variant="outline" size="sm" className="w-full">{s.cta} →</Button>
+              </Link>
+            </div>
+          ))}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {statCards.map((stat) => (
