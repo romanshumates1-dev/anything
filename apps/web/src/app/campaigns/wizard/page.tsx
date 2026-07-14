@@ -81,6 +81,10 @@ const DEFAULT_FORM: CampaignForm = {
   selectedTestPhones: [],
 };
 
+// Smart default opener for the express path — merge fields + low-friction ask.
+const DEFAULT_OPENER =
+  "Hi {name}, I came across {address} in {city} and wanted to reach out — would you consider an offer on it? No obligation at all.";
+
 export default function CampaignWizardPage() {
   const { data: session, isPending: authLoading } = useSession();
   const queryClient = useQueryClient();
@@ -185,10 +189,10 @@ export default function CampaignWizardPage() {
   // never called the activation endpoint), so the button labelled "Launch" left
   // every campaign in DRAFT and no ACTIVE card ever appeared. Create → then POST
   // /start to transition DRAFT → ACTIVE (SCHEDULED if start_date is in future).
-  const launch = async () => {
+  const activate = async (formToUse: CampaignForm) => {
     setError(null);
     try {
-      const created = await createMutation.mutateAsync(form);
+      const created = await createMutation.mutateAsync(formToUse);
       if (!created?.id) throw new Error('Campaign was not created');
       const res = await fetch(`/api/outreach/campaigns/${created.id}/start`, { method: 'POST' });
       if (!res.ok) {
@@ -200,6 +204,23 @@ export default function CampaignWizardPage() {
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  const launch = () => activate(form);
+
+  // Quick Launch (express path): activate straight from step 1 using the smart
+  // defaults, FORCED into Personal Test Mode so nothing sends to real numbers
+  // (safe while 10DLC is pending). Cuts the 4-step click-through to one action.
+  const quickLaunch = () => {
+    if (!form.name.trim()) {
+      setError('Give the campaign a name first, then Quick Launch.');
+      return;
+    }
+    activate({
+      ...form,
+      testMode: true,
+      openingMessage: form.openingMessage.trim() || DEFAULT_OPENER,
+    });
   };
 
   const nextStep = () => {
@@ -405,8 +426,14 @@ export default function CampaignWizardPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
-                <Button onClick={nextStep}>Next: Sending →</Button>
+              <div className="flex items-center justify-between gap-3 border-t pt-4">
+                <div>
+                  <Button variant="outline" onClick={quickLaunch} disabled={createMutation.isPending} className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                    ⚡ Quick Launch (Test Mode)
+                  </Button>
+                  <p className="text-xs text-gray-400 mt-1">Launches now with smart defaults, safely in Personal Test Mode.</p>
+                </div>
+                <Button onClick={nextStep}>Customize → Sending</Button>
               </div>
             </CardContent>
           </Card>

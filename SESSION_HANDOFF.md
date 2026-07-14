@@ -2,6 +2,13 @@
 
 _Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
 
+## Session (i) — Phase 2 (IN PROGRESS): click-reduction express paths
+- **Campaign launch — Quick Launch express path** (`campaigns/wizard`): a "⚡ Quick Launch (Test Mode)" button on step 1 activates the campaign with smart defaults, FORCED into Personal Test Mode (no real sends — respects the 10DLC gate) — you never leave step 1. Proven live: fills name+opener+one verified test number → **ACTIVE test-mode campaign in 1 click** (`e2e/.proof/quick-launch-campaigns.png`).
+  - **Before/after (activation clicks, after step-1 fields):** Next→Next→Next→Launch = **4 clicks across 4 screens** → Quick Launch = **1 click on 1 screen**.
+- **Lead-gen → campaign** (`lead-finder`): after "Create campaign from segment", a direct **"Build campaign →"** CTA links straight to the wizard (was: plain text, user navigates manually). Multi-state subtitle + per-state attorney note.
+- typecheck 0; suite 332/19 green; no logic/compliance change (Quick Launch only sets testMode+default opener, reuses the existing create+/start).
+- **Phase 2 REMAINING (Gate 2 still OPEN):** full visual-system pass (tokens/spacing/palette), onboarding guidance, desktop parity + screenshots on BOTH web and desktop, before/after for the full lead-gen→campaign path. Ship-order: do NOT start Phase 3 until Gate 2 closes.
+
 ## Session (i) — Phase 1: Lead Finder multi-state expansion (NC/GA/MO/St. Louis)
 - Interpreted "mousiri/St Louis" = **Missouri (statewide) + St. Louis (metro)** (confirmed).
 - `db/migrations/008_lead_finder_states.sql`: 28 sources added to the EXISTING registry (no rebuild). Seller + buyer categories per jurisdiction; county probate/tax/deed/code/assessor = MANUAL_ONLY (conservative default).

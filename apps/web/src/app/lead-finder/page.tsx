@@ -28,6 +28,7 @@ export default function LeadFinderPage() {
   const [uploadText, setUploadText] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [justHandedOff, setJustHandedOff] = useState(false);
 
   const [county, setCounty] = useState('');
   const [category, setCategory] = useState('');
@@ -60,7 +61,7 @@ export default function LeadFinderPage() {
 
   const doUpload = async (sourceId: number) => {
     if (!uploadText.trim()) { setMsg('Paste the county file (CSV) first.'); return; }
-    setBusy(true); setMsg(null);
+    setBusy(true); setMsg(null); setJustHandedOff(false);
     try {
       const res = await fetch('/api/lead-finder/upload', {
         method: 'POST',
@@ -85,8 +86,9 @@ export default function LeadFinderPage() {
         body: JSON.stringify({ filter: { county: county ? `%${county}%` : undefined, category: category || undefined, minScore } }),
       });
       const j = await res.json();
-      if (!res.ok) { setMsg(j.error || 'Handoff failed'); return; }
+      if (!res.ok) { setMsg(j.error || 'Handoff failed'); setJustHandedOff(false); return; }
       setMsg(`Created ${j.created} contacts from the segment → next: skip-trace, DNC, then the campaign wizard.`);
+      setJustHandedOff(true);
       qc.invalidateQueries({ queryKey: ['lf-prospects'] });
     } finally { setBusy(false); }
   };
@@ -103,16 +105,25 @@ export default function LeadFinderPage() {
         <header>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Lead Finder</h1>
           <p className="text-gray-500 mt-1">
-            High-distress Kentucky seller + cash-buyer prospects from free public records.
+            High-distress seller + cash-buyer prospects from free public records (KY, NC, GA, MO, St. Louis).
           </p>
           <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded p-2">
             Compliance: property + owner-name records only — no phones/emails are ever gathered here (skip-trace resolves
             contact downstream). Sources marked MANUAL-ONLY are uploaded by you; PERMITTED sources were live robots-checked.
-            Confirm each source's terms with a KY attorney (not legal advice). Scores are signal-based estimates.
+            Confirm each source's terms with an attorney per state (not legal advice). Scores are signal-based estimates.
           </p>
         </header>
 
-        {msg && <div className="text-sm bg-blue-50 border border-blue-200 text-blue-800 rounded p-3">{msg}</div>}
+        {msg && (
+          <div className="text-sm bg-blue-50 border border-blue-200 text-blue-800 rounded p-3 flex items-center justify-between gap-3">
+            <span>{msg}</span>
+            {justHandedOff && (
+              <a href="/campaigns/wizard" className="shrink-0 inline-flex items-center rounded bg-blue-600 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-700">
+                Build campaign →
+              </a>
+            )}
+          </div>
+        )}
 
         {/* ── Source registry ── */}
         <Card className="border-none shadow-sm">
