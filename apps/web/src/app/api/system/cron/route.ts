@@ -209,7 +209,7 @@ export async function POST(request: Request) {
       step: 'execute',
       status: 'fail',
       passed: false,
-      detail: error?.message || 'unknown',
+      detail: 'unknown',
     });
 
     return Response.json({

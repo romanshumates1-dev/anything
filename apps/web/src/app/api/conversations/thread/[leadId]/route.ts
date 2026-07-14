@@ -53,6 +53,6 @@ export async function GET(
     return NextResponse.json(messages);
   } catch (error: any) {
     console.error('GET /api/conversations/thread error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

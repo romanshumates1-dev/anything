@@ -64,6 +64,6 @@ export async function POST(
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('POST /api/test-phones/[id]/verify error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

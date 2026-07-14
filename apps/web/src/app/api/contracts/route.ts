@@ -28,6 +28,6 @@ export async function GET() {
     return Response.json(rows);
   } catch (error: any) {
     console.error('GET /api/contracts error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

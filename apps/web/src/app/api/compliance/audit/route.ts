@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(rows);
   } catch (error: any) {
     console.error('GET /api/compliance/audit error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
@@ -63,6 +63,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('POST /api/compliance/audit error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

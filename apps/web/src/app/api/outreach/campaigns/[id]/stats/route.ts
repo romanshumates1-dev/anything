@@ -70,6 +70,6 @@ export async function GET(
     });
   } catch (error: any) {
     console.error('GET /api/outreach/campaigns/[id]/stats error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

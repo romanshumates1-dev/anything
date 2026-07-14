@@ -59,6 +59,6 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error('GET /api/crm/contacts error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

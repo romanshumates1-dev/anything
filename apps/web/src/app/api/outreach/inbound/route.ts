@@ -44,6 +44,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, action: result.action });
   } catch (error: any) {
     console.error('POST /api/outreach/inbound error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

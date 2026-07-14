@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       });
     } catch (error: any) {
       console.error('OTP send failed:', error);
-      return Response.json({ error: 'Failed to send OTP', detail: error.message }, { status: 500 });
+      return Response.json({ error: 'Failed to send OTP' }, { status: 500 });
     }
 
     // Log the send for rate limiting

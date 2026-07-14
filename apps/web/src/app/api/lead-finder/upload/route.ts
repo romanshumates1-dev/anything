@@ -116,6 +116,6 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('POST /api/lead-finder/upload error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error?.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

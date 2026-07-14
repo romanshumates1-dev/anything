@@ -44,6 +44,6 @@ export async function POST(
     return NextResponse.json({ id: campaignId, status: newStatus });
   } catch (error: any) {
     console.error('POST /api/outreach/campaigns/[id]/resume error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

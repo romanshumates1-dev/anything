@@ -99,6 +99,6 @@ export async function POST(
     });
   } catch (error: any) {
     console.error('POST /api/outreach/campaigns/[id]/contacts error', error);
-    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

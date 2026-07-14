@@ -185,6 +185,6 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error('GET /api/analytics error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -124,7 +124,7 @@ export async function sendMessage(payload: SendMessagePayload) {
     await logEvent('message_failed', 'message', String(leadId), {
       to,
       channel,
-      error: error?.message ?? 'unknown',
+      error: 'unknown',
     });
     await recordRun({
       task: 'process_jobs',
@@ -132,7 +132,7 @@ export async function sendMessage(payload: SendMessagePayload) {
       step: 'send_message',
       status: 'fail',
       passed: false,
-      detail: error?.message ?? 'unknown',
+      detail: 'unknown',
       dbAssertion: campaignLeadId != null ? "campaign_leads.status='failed'" : 'no campaign_lead',
       logAssertion: "audit_logs.action='message_failed'",
     });

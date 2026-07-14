@@ -61,7 +61,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     });
   } catch (error: any) {
     console.error('GET /api/crm/contacts/[id] error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
@@ -87,6 +87,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ error: 'Unknown action' }, { status: 400 });
   } catch (error: any) {
     console.error('PATCH /api/crm/contacts/[id] error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

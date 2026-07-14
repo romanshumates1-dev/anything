@@ -64,6 +64,6 @@ export async function GET() {
     return Response.json(combined);
   } catch (error: any) {
     console.error('GET /api/approvals error', error);
-    return Response.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

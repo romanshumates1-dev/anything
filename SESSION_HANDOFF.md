@@ -2,6 +2,18 @@
 
 _Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
 
+## Session (i) — Phase 5 DONE: exploit-hardened security re-run (findings table)
+| # | Category | Checked | Result | Evidence |
+|---|---|---|---|---|
+| 5.1 | AuthZ-deep | all new routes anon; org isolation; MEMBER→admin | **PASS** | 10 new routes → 401 anon (live sweep); approvals org-isolation tests green (8); RBAC domain+role server-side at every layer (session e) |
+| 5.2 | Injection | string-built SQL / $queryRawUnsafe; file parse | **PASS** | zero unsafe SQL; bulk import uses `sql(query, $1..)` parameterized; CSV parse caps rows + strips contact + scrubs values |
+| 5.3 | Frontend | XSS sinks; NEXT_PUBLIC_ secrets; localStorage | **PASS** | 2 `dangerouslySetInnerHTML` both static (shadcn chart CSS, swagger bootstrap — no user input); no sensitive `NEXT_PUBLIC_`; no localStorage secrets |
+| 5.4 | AI-provider | one vendor; key server-side; no mock fallback; injection defense | **PASS** | zero Gemini/Google-AI runtime; single `callAI` entry; key never client/logged; missing key → `throw` (loud); prompt SECURITY rule treats lead text as untrusted |
+| 5.5 | Prod | error leaks; phone logs; rate limit; DNC/quiet-hours/opt-out | **FIXED + PASS** | **FIXED: 35 routes leaked `detail: error.message` on 500 → now generic** (full error still `console.error`'d server-side) + a regression-guard test that fails if it returns; no raw phone logging; per-key rate limiter live; compliance suite green |
+| 5.6 | Debug sweep | tsc; oxlint; suite; CI; preflight | **PASS** (1 owner-blocked) | tsc 0; **oxlint 260 files / 0 errors** (needs `--no-ignore` — the repo `.eslintignore` blanket `*` is a false-pass footgun; CI uses it correctly); suite 350/19; CI green; preflight — Check 4 (Anthropic) BLOCKED-ON-OWNER ($0 credit), else pass |
+
+- Gate 5 met (one FIXED item root-caused with a non-vacuous guard test). Only owner-blocked residual: Anthropic credit (preflight Check 4).
+
 ## Session (i) — Phase 4 DONE: AI sales-skill optimization
 - **Sales-optimized supervisor prompt** (`utils/ai-sales-prompt.ts`, `buildSupervisorPrompt`): a strict SUPERSET of the original guardrails (security/prompt-injection, escalation, confidence<0.8→human, exact JSON contract ALL kept) + rapport, objection handling, motivated-seller pacing, and closing skills. Wired into `ai-orchestrator` (signature unchanged).
 - **Objection library** (price/timing/trust/not_selling/agent_listed) with ethical, truthful strategies; the AI never invents an offer (defers to the price ladder → escalation).
