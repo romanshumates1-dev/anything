@@ -191,6 +191,42 @@ no redeploy) or via env (`AI_PROVIDER=anthropic|ollama`):
   point `OLLAMA_BASE_URL` at that host. Settings → AI Provider → **Test connection** gives
   a live green/red for whichever backend is active.
 
+## 7c. Hosting Ollama reachably for FREE prod AI SMS
+
+Vercel functions can't reach `localhost:11434`, so for free AI in prod the model
+must run on a machine you control, exposed over HTTPS **with auth** (raw Ollama has
+no authentication — an open endpoint lets anyone burn your compute). The app sends
+`Authorization: Bearer $OLLAMA_API_KEY`; enforce that token at the proxy.
+
+**Option A — free, your own machine + Cloudflare Tunnel (recommended to start):**
+Keep a machine on running Ollama; a named Cloudflare Tunnel gives a stable HTTPS
+hostname with access control, at no cost.
+```bash
+ollama serve                                   # local model server on :11434
+ollama pull qwen2.5:7b
+# one-time: install cloudflared, auth, create a named tunnel bound to a hostname
+cloudflared tunnel create dealswift-ollama
+cloudflared tunnel route dns dealswift-ollama ollama.dealswiftautomation.com
+# run it (map the hostname → localhost:11434), ideally as a service so it stays up:
+cloudflared tunnel run --url http://localhost:11434 dealswift-ollama
+```
+Protect it with a **Cloudflare Access service token** (or an Nginx/Caddy bearer check)
+and set the SAME token as `OLLAMA_API_KEY` in Vercel. Then in Vercel set
+`OLLAMA_BASE_URL=https://ollama.dealswiftautomation.com`, `AI_PROVIDER=ollama` (or
+toggle in Settings), `OLLAMA_MODEL=qwen2.5:7b`. Tradeoff: only up while that machine +
+tunnel are running — if it's offline, AI replies fail (they don't fall back to
+Anthropic automatically). For always-on, use Option B.
+
+**Option B — small always-on box (not free, most reliable):** a VPS / Fly.io / Railway
+instance with ≥8 GB RAM running `ollama serve` behind Caddy/Nginx that checks the
+bearer. Same env wiring. ~$5–15/mo; survives your PC being off.
+
+**Verify:** Settings → AI Provider → set Local (Ollama) + the URL → **Test connection**
+(`/api/system/ai-status` sends the bearer and reports reachable + model present).
+
+> ⚠️ Whatever you pick, the machine must stay on for AI to work. If you want
+> zero-maintenance, fund Anthropic instead and set `AI_PROVIDER=anthropic`.
+
 ## 8. First-deploy checklist
 
 1. [ ] Neon prod branch created; `DATABASE_URL` copied.

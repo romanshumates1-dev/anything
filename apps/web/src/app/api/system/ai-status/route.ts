@@ -16,7 +16,10 @@ export async function GET() {
 
   if (cfg.provider === 'ollama') {
     try {
+      const headers: Record<string, string> = {};
+      if (process.env.OLLAMA_API_KEY) headers.Authorization = `Bearer ${process.env.OLLAMA_API_KEY}`;
       const res = await fetch(`${cfg.ollamaBaseUrl}/api/tags`, {
+        headers,
         signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) {

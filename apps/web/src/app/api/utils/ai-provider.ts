@@ -19,7 +19,14 @@ export { AnthropicClientError } from './anthropic-client';
 export async function callAI(options: AnthropicCallOptions): Promise<AnthropicResponse> {
   const cfg = await getAiConfig();
   if (cfg.provider === 'ollama') {
-    return callOllama(options, { baseUrl: cfg.ollamaBaseUrl, model: cfg.ollamaModel });
+    // OLLAMA_API_KEY is a SECRET read straight from env (never from the DB
+    // toggle / never returned by the settings API) — sent as a bearer to a
+    // tunnel-protected remote Ollama.
+    return callOllama(options, {
+      baseUrl: cfg.ollamaBaseUrl,
+      model: cfg.ollamaModel,
+      apiKey: process.env.OLLAMA_API_KEY || undefined,
+    });
   }
   return callAnthropic(options);
 }

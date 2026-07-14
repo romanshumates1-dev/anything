@@ -162,7 +162,7 @@ export default function AiProviderCard() {
                   <div>ollama serve                # starts the local server on :11434</div>
                   <div>ollama pull llama3.1:8b      # ~4.7 GB; or qwen2.5:7b / mistral:7b</div>
                   <div className="font-sans pt-1 text-gray-500">2. Set provider = Local (Ollama) above, Save, then Test connection.</div>
-                  <div className="font-sans text-gray-500">3. For a hosted prod deploy, point the base URL at your Ollama host (a small always-on box with 8 GB+ RAM).</div>
+                  <div className="font-sans text-gray-500">3. For prod (Vercel can't reach localhost): expose Ollama over HTTPS with auth (Cloudflare Tunnel free, or a VPS) and point the base URL there. See DEPLOY.md §7c — set OLLAMA_API_KEY so the endpoint isn't open.</div>
                 </div>
               )}
             </div>

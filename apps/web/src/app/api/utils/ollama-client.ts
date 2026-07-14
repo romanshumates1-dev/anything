@@ -27,6 +27,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export interface OllamaOptions {
   baseUrl: string;
   model: string;
+  /** Optional bearer token — set when a REMOTE Ollama is fronted by an
+   *  auth-enforcing proxy/tunnel (raw Ollama has no auth; never expose it open). */
+  apiKey?: string;
 }
 
 /**
@@ -61,10 +64,12 @@ export async function callOllama(
   let lastError: AnthropicClientError | undefined;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
       const res = await withTimeout(
         fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify(body),
         }),
         REQUEST_TIMEOUT_MS

@@ -41,6 +41,22 @@ describe('callOllama — maps Ollama /api/chat → AnthropicResponse shape', () 
     expect(body.format).toBeUndefined();
   });
 
+  it('sends Authorization: Bearer when an apiKey is configured (for a tunnel-protected remote Ollama)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: 'ok' } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callOllama({ messages: [{ role: 'user', content: 'q' }] }, { ...CFG, apiKey: 'secret-token' });
+    const headers = (fetchMock.mock.calls[0][1] as any).headers;
+    expect(headers.Authorization).toBe('Bearer secret-token');
+  });
+
+  it('omits Authorization when no apiKey (local, unauthenticated)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: 'ok' } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await callOllama({ messages: [{ role: 'user', content: 'q' }] }, CFG);
+    const headers = (fetchMock.mock.calls[0][1] as any).headers;
+    expect(headers.Authorization).toBeUndefined();
+  });
+
   it('sends system + messages to /api/chat with stream:false', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: { content: 'ok' } }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
