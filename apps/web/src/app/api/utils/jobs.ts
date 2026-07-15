@@ -4,6 +4,7 @@ import { TwilioAdapter } from '@/app/api/gateway/providers';
 import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
+import { recordAIDispatched, dispatchAckIfNeeded } from './sla';
 
 export async function enqueueJob(
   type: string,
@@ -126,6 +127,19 @@ export async function processNextJob() {
           SELECT * FROM ai_conversations WHERE lead_id = ${payload.leadId} LIMIT 1
         `;
         if (conv) {
+          // INT-1: SLA latency tracking — record AI dispatch start
+          await recordAIDispatched(payload.conversationId, process.env.AI_PROVIDER as any || 'anthropic');
+
+          // INT-1: provider-aware ack-SMS fallback (prospect never sits in silence)
+          const [lead] = await sql`SELECT phone FROM leads WHERE id = ${payload.leadId} LIMIT 1`;
+          if (lead?.phone) {
+            await dispatchAckIfNeeded({
+              conversationId: payload.conversationId,
+              leadId: payload.leadId,
+              to: lead.phone,
+            });
+          }
+
           const history = conv.history || [];
           const lastUser = [...history].reverse().find((m: any) => m.role === 'user');
           const decision = await orchestrateAIResponse(payload.leadId, history);

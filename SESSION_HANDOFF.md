@@ -1,6 +1,20 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-14 (i). NEW 5-phase prompt (expansion/UX/globe/AI/hardening). Gate -1 clean (main==origin/main). **Phase 1 DONE**: Lead Finder expanded to NC, GA, MO, St. Louis (28 sources, migration 008) — 3 new PERMITTED open-data portals live robots-verified, rest MANUAL_ONLY; ingest+scoring proven on NC data (stacked 53 > single 42), 0 contact leak, suite 332 green. Next: Phase 2 (UX revamp)._
+_Last session: 2026-07-15 (j). INT-1 SLA instrumentation complete, typecheck 0, 18/18 tests green. Checkpoint reached — awaiting owner review of implement→run→verify→log pattern before INT-3 through P3._
+
+## Session (j) — INT-1: SLA latency instrumentation + provider-aware ack-SMS fallback
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| J.1 | Migration `009_sla_latency.sql` applied | **PASS** | Table `inbound_latency` + indexes + materialized view `inbound_latency_p95` + unique index for CONCURRENTLY refresh; applied via `scripts/apply-migration-009.mjs` |
+| J.2 | `sla.ts` module compiles | **PASS** | `yarn run typecheck` exit 0; no new TS errors across 8 modified/new files |
+| J.3 | Unit tests (18) | **PASS** | `vitest run` 18/18 green: recordReplyReceived, recordAIDispatched (subquery ORDER BY/LIMIT fix), shouldSendAck (anthropic threshold + ollama immediate), wasAckSent/markAckSent idempotency, computeP95Direct (null, window, pending exclusion, interpolation), invariant tests |
+| J.4 | Inbound SMS hook | **PASS** | `sms/inbound/route.ts` calls `recordReplyReceived(conv.id, lead.id)` after `ai_conversations` upsert; verified by test + code review |
+| J.5 | AI reply job hook | **PASS** | `jobs.ts` `ai_reply` case calls `recordAIDispatched()` then `dispatchAckIfNeeded()` before `orchestrateAIResponse()`; ack SMS fires before AI generation starts |
+| J.6 | Metrics endpoint | **PASS** | `system/metrics/route.ts` includes `sla: p95 ?? {p95Ms:null,...}`; honest null when no data (not hidden) |
+| J.7 | Invariant: prospect never sits in silence | **PASS** | ollama: `shouldSendAck` always true (50s/gen → ack precedes); anthropic: 45s threshold, ack only when crossed (fast path silent) |
+
+**Prod deployment: OWNER-BLOCKED** — `AI_PROVIDER=anthropic` on reply path + always-on worker (Fly/Railway) polling jobs at seconds-granularity required before INT-1 SLA guarantees are real in production. The code is live and tested; the operational wiring (worker + provider env) is the unblock spec.
 
 ## Session (i) — Phase 5 DONE: exploit-hardened security re-run (findings table)
 | # | Category | Checked | Result | Evidence |

@@ -4,6 +4,7 @@ import { recordRun } from '../../utils/execution-ledger';
 import { getTwilioConfig } from '../../utils/twilio-adapter';
 import { validateTwilioSignature } from '../../utils/twilio-webhook';
 import { enqueueJob } from '../../utils/jobs';
+import { recordReplyReceived } from '../../utils/sla';
 
 /**
  * Inbound SMS webhook.
@@ -144,6 +145,9 @@ export async function POST(request: Request) {
           last_message_at = NOW()
       WHERE id = ${conv.id}
     `;
+
+    // INT-1: record reply_received timestamp for SLA latency tracking
+    await recordReplyReceived(conv.id, lead.id);
 
     await logEvent('sms_inbound', 'conversation', conv.id.toString(), {
       leadId: lead.id,
