@@ -13,6 +13,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Loader2, ShieldCheck, TestTube, Key, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AiProviderCard from '@/components/settings/AiProviderCard';
+import BetaFlagsCard from '@/components/settings/BetaFlagsCard';
+import EventLogPanel from '@/components/EventLogPanel';
 
 export default function SettingsPage() {
   const { data: session, isPending: authLoading } = useSession();
@@ -154,6 +156,10 @@ export default function SettingsPage() {
 
         {/* AI Provider (Anthropic hosted vs local Ollama) */}
         <AiProviderCard />
+
+        {/* Beta integrations + the live Event Log (manual-testing harness) */}
+        <BetaFlagsCard />
+        <EventLogPanel />
 
         {/* Test Phone Numbers */}
         <Card className="border-none shadow-sm">

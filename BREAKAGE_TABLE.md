@@ -1,5 +1,32 @@
 # BREAKAGE_TABLE.md — DealFlow AI
 
+## MVP v2 verification matrix (Option B — substance lifted onto the real platform)
+
+Rule: a row is VERIFIED only with **observed output** captured this session. Intentions are not verification.
+
+### P1 — one-command launch + beta-flag/Event-Log harness  ✅ ALL VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| One-command cold launch | `launch.ps1`, `launch.bat` | kill node + `launch.ps1 -Clean` (cold, .next removed), detached | Single pass, **0 self-heal retries**; printed status table; `+ opened http://localhost:4000` | **VERIFIED** |
+| Health: all services ok | `api/system/health/route.ts` | `GET /api/system/health` | `{"ok":true,"services":{"db":true,"jobs":true,"ai":true,"sms":true},"drivers":{"ai":"ollama","sms":"twilio"}}` | **VERIFIED** |
+| Never opens a broken tab | `launch.ps1` | forced-fail path (poisoned `.next`) | Health 404 → launcher did **not** open a tab; printed failing services + log tail; exit 1 | **VERIFIED** |
+| Flag toggle → health <1s | `utils/betaFlags.ts`, `settings/beta-flags/route.ts` | `scripts/p1-verify.mjs` (routes warmed first) | speedToLead **461ms**, voiceEscalation **515ms**, localPresence **593ms**, cadenceEngine **482ms** — all <1s; each restored OFF | **VERIFIED** |
+| Flags persist server-side, default OFF | `app_settings` key=`beta_flags` | launcher status table + health | `speedToLead off · voiceEscalation off · localPresence off · cadenceEngine off` | **VERIFIED** |
+| Beta Flags panel wired (no ghost UI) | `components/settings/BetaFlagsCard.tsx` | `/settings` → click Speed-to-Lead switch | Toast "Speed-to-Lead OFF"; DB row updated; **`beta_flag_changed` row appeared in the Event Log** | **VERIFIED** |
+| Event Log panel wired | `components/EventLogPanel.tsx`, `api/system/event-log/route.ts` | `/settings` → Event Log | Panel renders, newest-first, integration filters; phone numbers masked server-side | **VERIFIED** |
+| Zero console errors | dashboard + settings | `p1-verify.mjs` (console + pageerror listeners) | `[console errors] 0 []` | **VERIFIED** |
+
+**Bugs found by running it (not assumed):**
+1. `Start-Process -FilePath 'yarn'` → *"%1 is not a valid Win32 application"* — yarn on Windows is a `.cmd` shim. **Fixed:** children launch via `cmd.exe /c`.
+2. `/api/system/health` **404** (rendered the not-found page) — Turbopack wrote a corrupt `.next/dev/types/routes.d.ts` after routes changed under a live server. Root-caused (clean `.next` → `ok:true`), **not** a code fault. **Fixed:** launcher self-heals (clear `.next` + retry once) and `-Clean` switch added.
+3. First flag toggle measured **1113ms** (>1s gate) — that was dev **route cold-compile**, not flag propagation (warm: ~470ms). **Fixed the measurement** (warm routes before timing) rather than re-rolling until green.
+
+**Deliberate spec deviations (with evidence):**
+- Health timeout **180s**, not the spec's 15s: a cold Turbopack build here measured >90s (at 90s the loop timed out on a *healthy* build and wastefully rebuilt, ~4min total). Intent preserved — fail loudly, never open a broken tab.
+- Port **4000** (this repo), not 4600. No local Redis/Postgres to boot: Postgres is Neon (cloud); "workers" = the `jobs-dev` drain loop.
+
+
 Live-app defect ledger. Rows are worked in journey order; auth gate outranks all.
 Evidence for FIXED+PROVEN rows lives in `apps/web/e2e/.proof/` (screenshots +
 `walk-report.json`) and the Playwright journey spec (`apps/web/e2e/journey.spec.ts`).

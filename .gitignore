@@ -66,4 +66,11 @@ apps/web/dev.log
 # Detached dev/jobs runner logs (Start-Process redirect targets)
 *-session.log
 *-session.err.log
+# launch.ps1 redirect targets
+*-launch.log
+*-launch.log.err
+*-launch.err.log
+launch-run.log
+launch-run.err.log
+dev-clean.log
 .claude/
