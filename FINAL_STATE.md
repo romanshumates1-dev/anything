@@ -1,5 +1,38 @@
 # DealFlow AI — Verified Milestone (`v1.1.0-verified`)
 
+## AI provider — config-driven, one code path
+
+The runtime AI has ONE entry point (`callAI` in `apps/web/src/app/api/utils/ai-provider.ts`)
+that swaps backend at the client boundary — there are NOT two divergent AI implementations.
+Both backends return the identical `AnthropicResponse`; the orchestrator/negotiator never
+know which is active. Selection resolves DB toggle → env → default; with no DB toggle row
+(the shipped/default state), **`.env` is the sole switch — flip one line + restart, nothing else.**
+
+Selector:
+```ts
+export async function callAI(options) {
+  const cfg = await getAiConfig();                 // DB toggle → env AI_PROVIDER → default 'anthropic'
+  if (cfg.provider === 'ollama')
+    return callOllama(options, { baseUrl: cfg.ollamaBaseUrl, model: cfg.ollamaModel, apiKey: process.env.OLLAMA_API_KEY });
+  return callAnthropic(options);
+}
+```
+
+| | Ollama (local) | Anthropic (hosted) |
+|---|---|---|
+| Cost | **Free** (your compute) | Paid (API credits) |
+| Hosting | Self-hosted; needs a **reachable** host (DEPLOY.md §7c) | Fully hosted; nothing to run |
+| Negotiation quality | Lower (7–8B open model) | Higher close quality |
+| Best for | **Dev / test / cost-saving** | **Production** |
+| Switch | `.env` → `AI_PROVIDER=ollama` (+ `OLLAMA_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_API_KEY` if remote) | `.env` → `AI_PROVIDER=anthropic` (+ funded `ANTHROPIC_API_KEY`) |
+
+**Security — single-vendor / no-mock rule holds with Ollama in the mix:** `callAI` selects ONE
+provider and does NOT silently fall back to the other. If the selected backend is unavailable it
+THROWS (loud) — Anthropic with no key → `throw AnthropicClientError('ANTHROPIC_API_KEY is not
+configured')`; Ollama unreachable → `throw AnthropicClientError('Ollama not reachable …')`. The job
+dead-letters; there is **no canned/mock reply** anywhere in the runtime (grep-verified). Zero
+Gemini/Google-AI runtime leftover.
+
 ## Lead Finder module (session 2026-07-12/13 (f)) — standalone KY lead-gen tool
 
 A self-contained module (`apps/web/src/app/lead-finder/` UI + `apps/web/src/app/api/lead-finder/*`

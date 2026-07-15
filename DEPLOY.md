@@ -227,6 +227,25 @@ bearer. Same env wiring. ~$5–15/mo; survives your PC being off.
 > ⚠️ Whatever you pick, the machine must stay on for AI to work. If you want
 > zero-maintenance, fund Anthropic instead and set `AI_PROVIDER=anthropic`.
 
+### What "host Ollama reachably" concretely requires to run a LIVE campaign
+The prod job runner calls Ollama for **every AI reply**, so for a live campaign ALL of these
+must hold for as long as the campaign is active:
+1. **A machine that stays on** with ≥8 GB free RAM running `ollama serve` and the model pulled
+   (`ollama pull qwen2.5:7b`). If it sleeps/reboots/loses power, AI replies dead-letter (no
+   fallback). Your laptop works for testing; a small always-on VPS/Fly.io box is the reliable
+   choice for a real campaign.
+2. **A public HTTPS URL** reaching that machine's `:11434` — a named Cloudflare Tunnel
+   (`https://ollama.dealswiftautomation.com`) or the VPS's own TLS. Vercel functions cannot reach
+   `localhost`, so the URL must be internet-reachable from Vercel.
+3. **Auth on that URL** — raw Ollama has none. Put a bearer check at the proxy/tunnel and set the
+   SAME token as `OLLAMA_API_KEY` in Vercel. An open endpoint = anyone burns your compute.
+4. **Vercel env set:** `AI_PROVIDER=ollama`, `OLLAMA_BASE_URL=<the https url>`,
+   `OLLAMA_MODEL=qwen2.5:7b`, `OLLAMA_API_KEY=<token>` — then Settings → AI Provider →
+   **Test connection** must be green before you launch.
+5. **Throughput reality:** a 7–8B model on modest hardware answers in seconds, not milliseconds —
+   fine for SMS cadence + quiet-hours pacing, but it will not match hosted-Claude latency or
+   negotiation quality. For higher close rates on a real campaign, `AI_PROVIDER=anthropic`.
+
 ## 8. First-deploy checklist
 
 1. [ ] Neon prod branch created; `DATABASE_URL` copied.
