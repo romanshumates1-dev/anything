@@ -16,7 +16,6 @@
  *   { deal, noDeal, optedOut, cold, stuck, total, durationMs }
  */
 
-import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
 
@@ -73,7 +72,7 @@ function validateConfig(body: any): SimulatorConfig {
  * Returns the outcome category.
  */
 async function simulateConversation(
-  config: SimulatorConfig,
+  _config: SimulatorConfig,
   _conversationId: number,
 ): Promise<'deal' | 'noDeal' | 'optedOut' | 'cold' | 'stuck'> {
   try {

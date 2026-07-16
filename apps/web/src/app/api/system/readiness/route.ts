@@ -1,7 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { computeReadiness, executionReadiness } from '../../utils/readiness';
-import { getTwilioConfig, getTwilioClient } from '../../utils/twilio-adapter';
+import { getTwilioConfig } from '../../utils/twilio-adapter';
 
 // Static manifests (deterministic). Route/page files cannot be introspected at
 // runtime in a serverless build, so the expected set is asserted here against

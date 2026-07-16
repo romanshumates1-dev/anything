@@ -156,3 +156,27 @@ export async function updateProfile(id: string, patch: Partial<ProfileInput>): P
   `) as Row[];
   return row ? toProfile(row) : null;
 }
+
+export async function getProfileVersions(profileId: string): Promise<Array<{ version: number; snapshot: NegotiationProfile; changedBy: string | null; changeReason: string | null; createdAt: Date }>> {
+  const rows = (await sql`
+    SELECT version, snapshot, changed_by, change_reason, created_at
+      FROM negotiation_profile_versions
+     WHERE profile_id = ${profileId}
+     ORDER BY version DESC
+  `) as Array<Record<string, any>>;
+  return rows.map((r) => ({
+    version: Number(r.version),
+    snapshot: r.snapshot as NegotiationProfile,
+    changedBy: r.changed_by,
+    changeReason: r.change_reason,
+    createdAt: new Date(r.created_at),
+  }));
+}
+
+export async function rollbackProfileToVersion(profileId: string, targetVersion: number): Promise<NegotiationProfile | null> {
+  const [row] = (await sql`
+    SELECT public.rollback_negotiation_profile(${profileId}, ${targetVersion}) AS profile
+  `) as Array<Record<string, any>>;
+  if (!row?.profile) return null;
+  return toProfile(row.profile as Row);
+}

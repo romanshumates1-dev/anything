@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const orgId = session.user.id;
     const rawKey = generateKey(prefix);
     const keyHash = hashKey(rawKey);
-    const { prefix: maskedPrefix, last4 } = maskKey(rawKey);
+    const { prefix: maskedPrefix } = maskKey(rawKey);
 
     const [key] = await sql`
       INSERT INTO api_keys (id, organization_id, name, key_hash, prefix, scopes, rate_limit_per_min, created_by)

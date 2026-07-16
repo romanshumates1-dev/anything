@@ -111,7 +111,7 @@ export class TwilioAdapter implements ISMSProvider {
     return statusMap[message.status] || 'sent';
   }
 
-  validateWebhook(body: any, signature?: string): boolean {
+  validateWebhook(body: any, _signature?: string): boolean {
     // Verify Twilio webhook signature (uses auth token)
     return !!body.MessageSid;
   }
@@ -171,12 +171,12 @@ export class TelnyxAdapter implements ISMSProvider {
     return msgId;
   }
 
-  async getDeliveryStatus(providerId: string): Promise<DeliveryStatus> {
+  async getDeliveryStatus(_providerId: string): Promise<DeliveryStatus> {
     // Query Telnyx API
     return 'sent';
   }
 
-  validateWebhook(body: any, signature?: string): boolean {
+  validateWebhook(body: any, _signature?: string): boolean {
     // Verify Telnyx webhook signature
     return !!body.id && body.type?.includes('message');
   }
@@ -235,11 +235,11 @@ export class BandwidthAdapter implements ISMSProvider {
     return msgId;
   }
 
-  async getDeliveryStatus(providerId: string): Promise<DeliveryStatus> {
+  async getDeliveryStatus(_providerId: string): Promise<DeliveryStatus> {
     return 'sent';
   }
 
-  validateWebhook(body: any, signature?: string): boolean {
+  validateWebhook(body: any, _signature?: string): boolean {
     return !!body.message?.id;
   }
 

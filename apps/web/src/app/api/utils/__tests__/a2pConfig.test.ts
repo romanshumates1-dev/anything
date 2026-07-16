@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { get10DLCThroughputConfig, validate10DLCThroughputConfig } from '../a2pConfig';
 
-describe('A2P Config — throughput enforcement and hard caps', () => {
+describe('A2P Config â€” throughput enforcement and hard caps', () => {
   beforeEach(() => {
     // Clear env vars before each test
     delete process.env.TWILIO_10DLC_ASSIGNED_MPS;
@@ -122,3 +122,4 @@ describe('A2P Config — throughput enforcement and hard caps', () => {
     });
   });
 });
+

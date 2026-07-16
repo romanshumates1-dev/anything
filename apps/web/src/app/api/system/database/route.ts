@@ -9,7 +9,7 @@ export async function GET() {
   if (!admin.ok) return admin.response;
   try {
     const start = Date.now();
-    const [result] = await sql`SELECT 1 AS ok`;
+    await sql`SELECT 1 AS ok`;
     const latencyMs = Date.now() - start;
 
     const [poolInfo] = await sql`

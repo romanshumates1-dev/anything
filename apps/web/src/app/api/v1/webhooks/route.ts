@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
-import { authenticateApiKey, checkScope } from '../auth/utils';
+import { authenticateApiKey } from '../auth/utils';
 
 export async function GET(request: NextRequest) {
   const authResult = await authenticateApiKey(request);

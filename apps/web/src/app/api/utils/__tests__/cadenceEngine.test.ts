@@ -1,5 +1,5 @@
 /**
- * INT-4 — Cadence Engine tests (pure logic, no DB gate).
+ * INT-4 â€” Cadence Engine tests (pure logic, no DB gate).
  *
  * These test the scheduling logic, dedupe key generation, and the
  * processCadenceStep decision tree. The DB I/O layer (scheduleNextStep)
@@ -34,7 +34,7 @@ import { dispatchGate } from '@/app/api/utils/dispatchGate';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
 import { processCadenceStep, scheduleNextStep, cancelCadence } from '../cadenceEngine';
 
-describe('INT-4 — Cadence Engine', () => {
+describe('INT-4 â€” Cadence Engine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -49,7 +49,7 @@ describe('INT-4 — Cadence Engine', () => {
 
     it('schedules a job with correct dedupe key when flag is ON', async () => {
       vi.mocked(isBetaFlagOn).mockResolvedValue(true);
-      vi.mocked(sql).mockImplementation(async (strings: any, ...values: any[]) => {
+      vi.mocked(sql).mockImplementation(async (strings: any, ..._values: any[]) => {
         const query = typeof strings === 'string' ? strings : strings.join('?');
         if (query.includes('campaign_contacts')) {
           return [{ id: 'c1', follow_ups_sent: 0, phone: '+15025550001', organization_id: 'org1' }];
@@ -84,7 +84,7 @@ describe('INT-4 — Cadence Engine', () => {
 
     it('returns null when no follow-up template exists', async () => {
       vi.mocked(isBetaFlagOn).mockResolvedValue(true);
-      vi.mocked(sql).mockImplementation(async (strings: any, ...values: any[]) => {
+      vi.mocked(sql).mockImplementation(async (strings: any, ..._values: any[]) => {
         const query = typeof strings === 'string' ? strings : strings.join('?');
         if (query.includes('campaign_contacts')) {
           return [{ id: 'c1', follow_ups_sent: 5, phone: '+15025550001' }];
@@ -110,7 +110,7 @@ describe('INT-4 — Cadence Engine', () => {
         'c1'
       );
       // Verify the query targets BOTH cadence_step and voice_call jobs for the
-      // contact — a reply 30s after the opening must also kill the T+60s call.
+      // contact â€” a reply 30s after the opening must also kill the T+60s call.
       const call = vi.mocked(sql).mock.calls[0];
       const queryStr = call[0] as any;
       expect(queryStr.join('')).toContain("type IN ('cadence_step', 'voice_call')");
@@ -170,7 +170,7 @@ describe('INT-4 — Cadence Engine', () => {
 
       expect(result.sent).toBe(false);
       expect(result.reason).toBe('gate:OUTSIDE_WINDOW');
-      // Bug #12: it must NOT re-enqueue its own in-flight dedupe key — the
+      // Bug #12: it must NOT re-enqueue its own in-flight dedupe key â€” the
       // unique index spans processing rows, so that insert silently no-ops and
       // the step is lost. Same-row deferral instead: surface deferAt+gateCode
       // and jobs.ts moves THIS job's run_at.
@@ -203,7 +203,7 @@ describe('INT-4 — Cadence Engine', () => {
     it('sends message when gate allows (no more follow-ups = nextJobId null)', async () => {
       vi.mocked(isBetaFlagOn).mockResolvedValue(true);
       
-      vi.mocked(sql).mockImplementation(async (strings: any, ...values: any[]) => {
+      vi.mocked(sql).mockImplementation(async (strings: any, ..._values: any[]) => {
         const query = typeof strings === 'string' ? strings : strings.join('?');
         if (query.includes('campaign_contacts WHERE id')) {
           return [{ id: 'c1', status: 'SENT', opted_out_at: null, last_reply_at: null, seller_lead_id: 'l1' }];
@@ -244,7 +244,7 @@ describe('INT-4 — Cadence Engine', () => {
       vi.mocked(isBetaFlagOn).mockResolvedValue(true);
       const sqlMock = vi.fn();
       vi.mocked(sql).mockImplementation(sqlMock);
-      sqlMock.mockImplementation(async (strings: any, ...values: any[]) => {
+      sqlMock.mockImplementation(async (strings: any, ..._values: any[]) => {
         const query = typeof strings === 'string' ? strings : strings.join('?');
         if (query.includes('campaign_contacts WHERE id')) {
           return [{ id: 'c1', status: 'SENT', opted_out_at: null, last_reply_at: null, seller_lead_id: 'l1' }];
@@ -272,7 +272,7 @@ describe('INT-4 — Cadence Engine', () => {
   });
 });
 
-// ── INT-4 completion (session l) ─────────────────────────────────────────────
+// â”€â”€ INT-4 completion (session l) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 vi.mock('@/app/api/gateway/voice-gateway', () => ({
   getVoiceGateway: vi.fn(() => ({ call: mockVoiceCall })),
@@ -283,7 +283,7 @@ const { mockVoiceCall } = vi.hoisted(() => ({
 
 import { dispatchOpenings, scheduleVoiceStep, processVoiceStep, CONSENT_BASIS_ATTESTED } from '../cadenceEngine';
 
-describe('dispatchOpenings — the T+0 step that STARTS the ladder', () => {
+describe('dispatchOpenings â€” the T+0 step that STARTS the ladder', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('flag OFF: no-op, campaign start behaves exactly as pre-INT-4', async () => {
@@ -338,7 +338,7 @@ describe('dispatchOpenings — the T+0 step that STARTS the ladder', () => {
   });
 });
 
-describe('scheduleVoiceStep — ladder T+60s voice escalation', () => {
+describe('scheduleVoiceStep â€” ladder T+60s voice escalation', () => {
   beforeEach(() => vi.clearAllMocks());
   const payload = { contactId: 'c1', campaignId: 'camp1', organizationId: 'org1', phone: '+15025550101', leadId: 7, consentBasis: CONSENT_BASIS_ATTESTED };
 
@@ -363,7 +363,7 @@ describe('scheduleVoiceStep — ladder T+60s voice escalation', () => {
   });
 });
 
-describe('processVoiceStep — freshness re-checks + same-row deferral', () => {
+describe('processVoiceStep â€” freshness re-checks + same-row deferral', () => {
   beforeEach(() => vi.clearAllMocks());
   const payload = { contactId: 'c1', campaignId: 'camp1', organizationId: 'org1', phone: '+15025550101', leadId: 7, consentBasis: CONSENT_BASIS_ATTESTED };
 
@@ -400,13 +400,13 @@ describe('processVoiceStep — freshness re-checks + same-row deferral', () => {
   });
 });
 
-describe('ABSORPTION — a contact mid-ladder fires each remaining step exactly once', () => {
+describe('ABSORPTION â€” a contact mid-ladder fires each remaining step exactly once', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('follow_ups_sent=2 with 4 templates: every schedule attempt targets ONLY step 3, same idempotency key', async () => {
     vi.mocked(isBetaFlagOn).mockResolvedValue(true);
     // scheduleNextStep is invoked from MULTIPLE places (launch hook, post-send
-    // hook, processCadenceStep) — absorption safety = all of them compute the
+    // hook, processCadenceStep) â€” absorption safety = all of them compute the
     // SAME dedupe key from DB state, so the unique index collapses them to one
     // job. Simulate three concurrent-ish invocations:
     for (let i = 0; i < 3; i++) {
@@ -427,11 +427,11 @@ describe('ABSORPTION — a contact mid-ladder fires each remaining step exactly 
   });
 });
 
-describe('INT-2 — answered voice call takes the EXACT sms/inbound transitions', () => {
+describe('INT-2 â€” answered voice call takes the EXACT sms/inbound transitions', () => {
   beforeEach(() => vi.clearAllMocks());
   const payload = { contactId: 'c1', campaignId: 'camp1', organizationId: 'org1', phone: '+15025550101', leadId: 7, consentBasis: CONSENT_BASIS_ATTESTED };
 
-  const sqlText = (call: any[]) => (Array.isArray(call[0]) ? (call[0] as string[]).join('¶') : String(call[0]));
+  const sqlText = (call: any[]) => (Array.isArray(call[0]) ? (call[0] as string[]).join('Â¶') : String(call[0]));
 
   it('answered + price-bearing transcript: history append, requires_human, needs_review, ladder halted', async () => {
     vi.mocked(isBetaFlagOn).mockResolvedValue(true);
@@ -476,3 +476,4 @@ describe('INT-2 — answered voice call takes the EXACT sms/inbound transitions'
     expect(texts.some((t) => t.includes('last_reply_at = now()'))).toBe(false);
   });
 });
+

@@ -12,7 +12,7 @@ async function scheduleDailyCampaign(params: {
   enqueueJob: (type: string, payload: any) => Promise<number>;
   dailyVolumeMax?: number;
 }) {
-  const { organizationId, contacts, now, enqueueJob, dailyVolumeMax = DAILY_CAP } = params;
+  const { contacts, enqueueJob, dailyVolumeMax = DAILY_CAP } = params;
 
   // Filter candidates that are past their delay and under daily cap.
   // This mirrors the intent without hitting the DB: pick up to dailyVolumeMax.

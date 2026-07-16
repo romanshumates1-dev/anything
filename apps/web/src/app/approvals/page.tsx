@@ -2,13 +2,12 @@
 
 import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { redirect } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, AlertTriangle, Check, X, Home } from 'lucide-react';
+import { Loader2, AlertTriangle, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ApprovalsPage() {

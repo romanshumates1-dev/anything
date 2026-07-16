@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { redirect } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, ShieldCheck, TestTube, Key, Trash2 } from 'lucide-react';
+import { Loader2, TestTube, Key, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AiProviderCard from '@/components/settings/AiProviderCard';
 import BetaFlagsCard from '@/components/settings/BetaFlagsCard';

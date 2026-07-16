@@ -3,7 +3,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
-import { parseContactList, dedupeContacts, ParsedContact } from '@/app/api/utils/contactImport';
+import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport';
 import crypto from 'crypto';
 
 // --- Campaign creation ---
@@ -33,7 +33,6 @@ export async function POST(request: NextRequest) {
       resurrectionEnabled = true,
       abVariantsEnabled = false,
       budgetCap,
-      contactListId,
       selectedTestPhones = [],
     } = body as {
       direction: 'SELLER' | 'BUYER';
@@ -120,7 +119,7 @@ export async function POST(request: NextRequest) {
     const finalDuration = testMode ? Math.min(durationDays, 3) : durationDays;
 
     // Insert campaign + opening message in a transaction
-    const result = await sql.transaction([
+    const _result = await sql.transaction([
       sql`INSERT INTO outreach_campaigns (id, organization_id, direction, name, status, daily_volume_max, duration_days, opening_message_id, linked_seller_lead_id, test_mode, dnc_scrub_enabled, litigator_scrub_enabled, ai_negotiation_enabled, ai_valuation_enabled, resurrection_enabled, ab_variants_enabled, budget_cap)
           VALUES (${campaignId}, ${organizationId}, ${direction}, ${name.trim()}, 'DRAFT', ${finalDailyMax}, ${finalDuration}, ${openingMessageId}, ${linkedSellerLeadId || null}, ${testMode}, ${dncScrubEnabled}, ${litigatorScrubEnabled}, ${aiNegotiationEnabled}, ${aiValuationEnabled}, ${resurrectionEnabled}, ${abVariantsEnabled}, ${budgetCap || null})`,
       sql`INSERT INTO campaign_message_templates (id, organization_id, kind, body, sequence_order, delay_hours)
@@ -134,7 +133,7 @@ export async function POST(request: NextRequest) {
       ...(testMode && selectedTestPhones.length > 0 ? selectedTestPhones.map(phoneId => 
         sql`UPDATE test_phone_numbers SET organization_id = ${organizationId} WHERE id = ${phoneId}`
       ) : []),
-      ...validContacts.flatMap((c, idx) => {
+      ...validContacts.flatMap((c) => {
         const contactId = crypto.randomUUID();
         return [
           sql`INSERT INTO campaign_contacts (id, campaign_id, organization_id, name, phone, status)

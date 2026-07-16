@@ -1,5 +1,4 @@
 import { logEvent } from './logger';
-import { ANTHROPIC_MODEL } from './anthropic-client';
 import { buildSupervisorPrompt } from './ai-sales-prompt';
 import {
   callAI,

@@ -61,6 +61,18 @@ function shutdown(sig) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// Unhandled rejection audit (Phase Q.1)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[worker] UNHANDLED REJECTION:', reason);
+  // Do not exit - log and keep working
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[worker] UNCAUGHT EXCEPTION:', err);
+  // Do not exit - log and keep working
+  // In production, a proper restart policy (PM2, Docker restart) handles this
+});
+
 console.log(`[worker] starting — polling ${APP_URL}/api/jobs/process every ${INTERVAL_MS}ms (batch ${BATCH})`);
 while (running) {
   await drainOnce();

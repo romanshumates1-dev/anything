@@ -12,7 +12,6 @@ vi.mock('@/app/api/utils/jobs', () => ({
 }));
 
 import { withContactLock } from '@/app/api/utils/contactLock';
-import { processInboundSms } from '@/app/api/services/inboundSms';
 
 describe('concurrency & scale hardening', () => {
   beforeEach(() => {

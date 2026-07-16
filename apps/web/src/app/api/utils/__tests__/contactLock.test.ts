@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const sqlMock = vi.fn(async () => []);
 const { default: mockSql } = vi.hoisted(() => {
   const m = vi.fn(async () => []);
   return { default: m };

@@ -18,13 +18,7 @@ import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { pickNumber, activePoolCount } from '@/app/api/utils/numberPoolStore';
 import { logEvent } from '@/app/api/utils/logger';
 import { CircuitBreaker } from './circuit-breaker';
-import {
-  ISMSProvider,
-  TwilioAdapter,
-  TelnyxAdapter,
-  BandwidthAdapter,
-  DeliveryStatus,
-} from './providers';
+import { ISMSProvider, DeliveryStatus } from './providers';
 
 export interface GatewayMessage {
   leadId: number | string;
@@ -134,7 +128,7 @@ export class SMSGateway {
 
   async send(message: GatewayMessage): Promise<GatewayDeliveryRecord> {
     const messageUuid = message.messageUuid || randomUUID();
-    const { leadId, to, text, campaignLeadId, conversationThread, campaignId, organizationId, contactId } = message;
+    const { leadId, to, text, conversationThread, campaignId, organizationId, contactId } = message;
 
     // 0. UNIVERSAL DISPATCH GATE (P2.0-W) — every SMS that leaves this system
     // passes here AT TRANSMIT TIME. A cadence step gated when its job was

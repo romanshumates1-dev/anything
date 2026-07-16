@@ -32,6 +32,35 @@ poll loop as `scripts/jobs-dev.mjs` (pointed at the prod URL) — no app changes
 
 ---
 
+## Container Deployment (alternative to Vercel)
+
+If you prefer container deployment (Fly.io, Railway, or any Docker host):
+
+```bash
+# One-time setup
+cp apps/web/.env.example apps/web/.env
+# Fill in DATABASE_URL (Neon), BETTER_AUTH_SECRET, etc.
+
+# Start the stack
+docker compose up -d
+
+# Verify health
+curl http://localhost:4000/api/system/health
+
+# Stop
+docker compose down
+```
+
+**Important:** The app uses `@neondatabase/serverless` which speaks HTTP/WebSocket to Neon.
+A vanilla `postgres:16-alpine` container CANNOT be used as the database because:
+- The serverless driver does NOT speak the Postgres wire protocol
+- For fully-local testing, you would need Neon's local WebSocket proxy
+- For now, `DATABASE_URL` must point at a real Neon branch (free tier works)
+
+See docker-compose.yml for the worker container timing and profiles (ollama optional).
+
+---
+
 ## 1. DNS records at the registrar  — **BLOCKED-ON-OWNER**
 
 At the registrar for `dealswiftautomation.com`, set:
@@ -104,6 +133,12 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/003_auth_table
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/004_assignment_fee.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/005_user_roles.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/006_lead_finder.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/007_app_settings.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/008_lead_finder_states.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/009_sla_latency.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/010_number_pool.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/011_test_phone_otp_log.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/012_negotiation_profiles.sql
 ```
 
 The owner (`roman.shumate@dealswiftautomation.com`) becomes ADMIN automatically:
@@ -119,7 +154,7 @@ grants ADMIN on first signup for any `SEED_ADMIN_EMAILS` address.
 - **Start command:** `yarn start`  (→ `next start`)  — Vercel handles this itself.
 
 **BLOCKED-ON-OWNER:** in the Vercel project **`anything-web`**, import the GitHub repo,
-set root dir `apps/web`, add the env vars from step 2 (use `apps/web/.env.production.template`
+set root dir `apps/web`, add the env vars from step 2 (use `apps/web/.env.example`
 as the checklist), then add the custom domain `dealswiftautomation.com` (+ `www`) —
 Vercel then shows the exact DNS records for step 1.
 
@@ -249,7 +284,7 @@ must hold for as long as the campaign is active:
 ## 8. First-deploy checklist
 
 1. [ ] Neon prod branch created; `DATABASE_URL` copied.
-2. [ ] Schema + migrations applied (step 3); `psql` exits 0 on all 8.
+2. [ ] Schema + migrations applied (step 3); `psql` exits 0 on all migrations.
 3. [ ] Vercel project imported (root `apps/web`), all step-2 env vars set.
 4. [ ] Custom domain added in Vercel; DNS records from step 1 set at registrar; TLS green.
 5. [ ] `vercel.json` cron committed (step 5); first cron run drains a test job.

@@ -17,7 +17,6 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
-import { drainJobs } from '@/app/api/utils/jobs';
 
 type CronTask = {
   name: string;

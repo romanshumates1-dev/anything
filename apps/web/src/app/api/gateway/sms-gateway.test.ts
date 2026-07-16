@@ -27,7 +27,7 @@ vi.mock('@/app/api/utils/sql', () => {
 
 // checkConsent is the gateway's opt-out gate. Mocking the module (rather than the
 // SQL underneath it) is what lets the suppression test assert real behaviour
-// without a live DB — see "GATE 1: Compliance Gates".
+// without a live DB â€” see "GATE 1: Compliance Gates".
 vi.mock('@/app/api/utils/compliance', () => ({ checkConsent: vi.fn() }));
 
 // P2.0-W: the universal dispatchGate runs first in SMSGateway.send. Default
@@ -53,7 +53,7 @@ vi.mock('@/app/api/utils/numberPoolStore', () => ({
   activePoolCount: mockActivePoolCount,
 }));
 
-import { SMSGateway, GatewayMessage } from './sms-gateway';
+import { SMSGateway } from './sms-gateway';
 import { checkConsent } from '@/app/api/utils/compliance';
 
 // Mock provider for testing
@@ -82,7 +82,7 @@ class MockProvider implements ISMSProvider {
     return `${this.name}_${messageUuid.substring(0, 8)}`;
   }
 
-  async getDeliveryStatus(providerId: string): Promise<DeliveryStatus> {
+  async getDeliveryStatus(_providerId: string): Promise<DeliveryStatus> {
     return 'sent';
   }
 
@@ -128,14 +128,14 @@ describe('SMS Gateway', () => {
 
   describe('GATE 1: Failover on Provider Outage', () => {
     it('should route message to primary provider on success', async () => {
-      const result = await gateway.send({
+      const _result = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
       });
 
-      expect(result.status).toBe('dispatched');
-      expect(result.provider).toBe('primary');
+      expect(_result.status).toBe('dispatched');
+      expect(_result.provider).toBe('primary');
       expect(primaryProvider.sendCount).toBe(1);
       expect(secondaryProvider.sendCount).toBe(0);
     });
@@ -143,14 +143,14 @@ describe('SMS Gateway', () => {
     it('should failover to secondary when primary fails', async () => {
       primaryProvider.shouldFail = true;
 
-      const result = await gateway.send({
+      const _result = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
       });
 
-      expect(result.status).toBe('dispatched');
-      expect(result.provider).toBe('secondary');
+      expect(_result.status).toBe('dispatched');
+      expect(_result.provider).toBe('secondary');
       expect(secondaryProvider.sendCount).toBe(1);
     });
 
@@ -184,7 +184,7 @@ describe('SMS Gateway', () => {
     it('should not duplicate messages on failover', async () => {
       primaryProvider.shouldFail = true;
 
-      const result = await gateway.send({
+      const _result = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
@@ -193,23 +193,23 @@ describe('SMS Gateway', () => {
       // Primary fails once, then failover to secondary
       expect(primaryProvider.sendCount).toBe(1);
       expect(secondaryProvider.sendCount).toBe(1);
-      expect(result.status).toBe('dispatched');
+      expect(_result.status).toBe('dispatched');
     });
 
     it('should return failed status when all providers exhausted', async () => {
       primaryProvider.shouldFail = true;
       secondaryProvider.shouldFail = true;
 
-      const result = await gateway.send({
+      const _result = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
       });
 
-      expect(result.status).toBe('failed');
-      expect(result.provider).toBe('gateway');
+      expect(_result.status).toBe('failed');
+      expect(_result.provider).toBe('gateway');
       // Error message may be the provider error or the generic all_providers_failed
-      expect(result.errorMessage).toBeDefined();
+      expect(_result.errorMessage).toBeDefined();
     });
   });
 
@@ -285,7 +285,7 @@ describe('SMS Gateway', () => {
       // Fail primary to see if secondary takes over (it shouldn't for sticky thread)
       primaryProvider.shouldFail = true;
 
-      const result = await gateway.send({
+      const _result = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Message 2',
@@ -302,7 +302,7 @@ describe('SMS Gateway', () => {
       primaryProvider.shouldFail = true;
 
       // Message on thread A uses secondary after failover
-      const result1 = await gateway.send({
+      const _result1 = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Message on thread A',
@@ -312,20 +312,20 @@ describe('SMS Gateway', () => {
       primaryProvider.shouldFail = false;
 
       // Message on thread B uses primary
-      const result2 = await gateway.send({
+      const _result2 = await gateway.send({
         leadId: 2,
         to: '+15559876543',
         text: 'Message on thread B',
         conversationThread: 'threadB',
       });
 
-      expect(result2.provider).toBe('primary');
+      expect(_result2.provider).toBe('primary');
     });
   });
 
   describe('GATE 1: Compliance Gates', () => {
     // Replaces a DATABASE_URL-skipped test of the same name whose only assertion
-    // was `expect(result).toBeDefined()` — which passes whether the message is
+    // was `expect(result).toBeDefined()` â€” which passes whether the message is
     // suppressed OR sent to an opted-out number. checkConsent is a module import,
     // so it mocks directly; no live DB is needed and nothing here is skipped.
     it('suppresses an opted-out number and never reaches the provider', async () => {
@@ -360,7 +360,7 @@ describe('SMS Gateway', () => {
   describe('GATE 1: Idempotency', () => {
     it('should not duplicate messages on retry with same UUID', async () => {
       // Send first time
-      const result1 = await gateway.send({
+      const _result1 = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
@@ -370,7 +370,7 @@ describe('SMS Gateway', () => {
 
       // Simulate retry with same UUID by creating a fresh request
       // (In real usage, the messageUuid would be part of the idempotency key)
-      const result2 = await gateway.send({
+      const _result2 = await gateway.send({
         leadId: 1,
         to: '+15551234567',
         text: 'Test message',
@@ -637,3 +637,8 @@ describe('INT-3: local-presence from-number wiring', () => {
     expect(mockPickNumber).not.toHaveBeenCalled();
   });
 });
+
+
+
+
+

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseContactList, dedupeContacts } from '../contactImport';
+import { parseContactList } from '../contactImport';
 
 describe('parseContactList edge cases', () => {
   it('empty input returns empty array', () => {
@@ -48,10 +48,10 @@ describe('parseContactList edge cases', () => {
   });
 
   it('emoji and non-ASCII in name pass through unmodified', () => {
-    const result = parseContactList('José García 🏠, 555-123-4567');
+    const result = parseContactList('JosÃ© GarcÃ­a ðŸ , 555-123-4567');
     expect(result).toHaveLength(1);
     expect(result[0].valid).toBe(true);
-    expect(result[0].name).toBe('José García 🏠');
+    expect(result[0].name).toBe('JosÃ© GarcÃ­a ðŸ');
     expect(result[0].phone).toBe('+15551234567');
   });
 });

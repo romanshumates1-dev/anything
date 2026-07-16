@@ -1,0 +1,7 @@
+{
+  "name": "@modelcontextprotocol/server-sequential-thinking",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server for sequential thinking tool",
+  "note": "This server runs via npx - no local installation needed. The actual package is installed from npm registry."
+}
