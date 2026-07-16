@@ -146,3 +146,26 @@ Result: **no hardcoded scaffold host in the WEB runtime** — origins are all en
 | D1 | `jobs-dev` 2nd-launch refusal | lock code + pidfile written; 2nd-instance refusal still unproven under the command-timeout harness |
 | D2 | root `dev:clean` script | `scripts/dev-clean.mjs` exists; `&&` chaining runs fine via Yarn's portable shell, unverified end-to-end |
 | D3 | analytics "% of sent" cosmetic | when `sent=0`, `total = sent || 1` yields "1100% of sent"; counts are correct; pre-existing page math, out of scope |
+
+---
+
+### INT-3 — local-presence number pool (logic layer)  ✅ VERIFIED
+
+Split deliberately: the **selection algorithm is pure** (`numberPool.ts`) and tested with **no DB gate** — 15/15 always run. Only genuine I/O (atomic cap claim, daily reset, setting round-trip) sits behind the live gate in `numberPoolStore.ts`. The interesting logic is therefore never dark.
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Order: exact area code ≻ nearest region ≻ least-used | `utils/numberPool.ts` `selectNumber` | `vitest run numberPool.select.test.ts` (no DB) | `15 passed (15)`. 502-lead→502-number over an idle 213; 859-lead→270 (Western KY) over 213 (LA) **even when LA was unused** — locality outranks balancing; ties→least-used | **VERIFIED** |
+| `dailyCap = min(rotationCap, computeDailyCapacity)` | `numberPool.ts` `effectiveDailyCap` | same | medium 10DLC/13h → `{rotationCap:125, carrierCap:10000, effective:125, limitedBy:'rotation'}`; low-trust/0.01h → `{carrierCap:36, effective:36, limitedBy:'carrier'}` | **VERIFIED** |
+| Both values visible per-number (guard vs carrier ceiling) | `numberPoolStore.listPoolUsage` | live | `rotationCap:125, carrierCap:10000, effective:125, limitedBy:'rotation', remaining:125` | **VERIFIED** |
+| rotationCap default 125, settable, kill-switch at 0 | `numberPoolStore` + `app_settings key='number_pool'` | live + pure | unset→`125`; `setRotationCap(40)`→`40`; `-1`/`1.5` **rejected** (throws, not stored); cap 0 → `selectNumber` returns null | **VERIFIED** |
+| Cap never breached; exhausted pool → null | `pickNumber` | live: cap=2, 3 numbers, 8 picks | 6 picks succeeded, `picks[6]`/`picks[7]` **null**; every `daily_sent <= 2`. Null means *don't send* — never "fall back to any number" | **VERIFIED** |
+| Daily reset (no cron dependency) | `pickNumber`, lazy reset in SQL | live: `daily_sent=99, last_reset_date=CURRENT_DATE-1`, cap=1 | picked the number; `daily_sent` became **1**, not 100 — yesterday's count did not consume today's cap | **VERIFIED** |
+| Concurrent picks cannot double-claim the last slot | `pickNumber` conditional UPDATE | live: 5 racing `pickNumber`, cap=1, one active number | exactly **1** pick returned the number; `daily_sent = 1` | **VERIFIED** |
+| Inactive numbers never picked | `selectNumber` + SQL filter | live + pure | inactive 502 skipped for a 502 lead | **VERIFIED** |
+| Lint | both modules | `oxlint --no-ignore` (3 files) | `Found 0 warnings and 0 errors` | **VERIFIED** |
+
+**Bugs found by running it (not assumed):**
+7. **The daily reset would never have fired — found by the live test, not by review.** `sentToday()` did `String(row.last_reset_date).slice(0,10)`, but the Neon driver returns `date` columns as **JS `Date` objects**, so that produced `"Wed Jul 15"` — not `"2026-07-15"`. The comparison `"Wed Jul 15" < "2026-07-16"` is a lexicographic string compare (`W` > `2`), so it was **always false**: every number would have stuck permanently at its cap after one busy day and the pool would have silently died. Observed: `expected '+12705550102' to be '+15025550101'` — the capped-yesterday number was skipped instead of reset.
+8. **Split-brain reset authority (latent, same fix).** The read path used JS UTC (`todayUtc()`) while the claiming UPDATE used Postgres `CURRENT_DATE`. Diagnosed live: `pg CURRENT_DATE = 2026-07-16T04:00:00.000Z` (a Date, offset baked in) vs `js todayUtc() = "2026-07-16"`. On any DB not in the app's timezone the two disagree — the read says "reset", the UPDATE says "capped". **Fixed by removing JS from the decision entirely**: `sent_today` is now computed in SQL (`CASE WHEN last_reset_date < CURRENT_DATE THEN 0 ELSE daily_sent END`), the same `CURRENT_DATE` the claim's WHERE uses, so read and write agree by construction. Both tests green after.
+9. **Unbounded retry** in `pickNumber`'s race-loser path (self-review, pre-run): recursed with no depth guard. **Fixed:** `attemptsLeft = 3`, degrading to `null` ("don't send") rather than spinning.

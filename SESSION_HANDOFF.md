@@ -2,6 +2,12 @@
 
 _Last session: 2026-07-15 (j). INT-1 SLA instrumentation complete, typecheck 0, 18/18 tests green. Checkpoint reached — awaiting owner review of implement→run→verify→log pattern before INT-3 through P3._
 
+## DEFERRED — autonomous MAO / offer computation (owner decision, 2026-07-15)
+
+The MVP v2 prompt assumed a computed offer number existed and made a 50-run "negotiation-ceiling fuzz" against it the headline P3 test. It does not exist, anywhere: no ARV, no MAO, no offer ceiling repo-wide (the only `ceiling` is `computeThroughputCeiling`, which is SMS throughput). This is by design, not omission — [ai-sales-prompt.ts:90](apps/web/src/app/api/utils/ai-sales-prompt.ts:90) forbids the AI from setting prices or quoting numbers and requires escalation to a human for any number/terms/contract; the human's range then flows through `owner_range_requests` → `parsePriceRange()` → `campaign_contacts.status='NEGOTIATING'`. (`audit/readiness-audit.ts:99` already carried "MAO math not tested" as a known risk — i.e. it was always aspirational.)
+
+**Owner decision: DEFERRED, not built.** Autonomous MAO math is a new feature, and building new features inside a verification phase is the exact pattern this workflow exists to kill. If it is built later it lives **behind its own beta flag, off by default**. The escalation invariant — AI never quotes a number, always escalates, owner is always notified — remains the **baseline that any future negotiation feature must explicitly justify overriding**. It is never to be weakened as a side effect of another change. The real ceiling in this system is the AI's *authority*, not a dollar figure, and that is what P3 verifies instead (escalation-invariant fuzz + `parsePriceRange` fuzz).
+
 ## The 37 skipped tests — full inventory (owner-requested: "skipped tests are where ghost verification hides")
 
 Enumerated from `vitest run --reporter=verbose` (not from memory). 37 skips, 5 files, 3 causes.
