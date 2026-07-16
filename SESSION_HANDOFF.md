@@ -1,6 +1,24 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-16 (k). INT-4 Cadence Engine complete (committed b7dd43e), 11/11 tests green. Next: INT-2 (Voice/RVM) or P3 (atomic verification) per priority._
+_Last session: 2026-07-16 (k). INT-4 Cadence Engine + INT-2 Voice/RVM complete (commits b7dd43e, 9f59499). Next: P3 (atomic verification) or owner review._
+
+## Session (k) — INT-2: Voice / RVM Gateway (mock driver, Twilio stubbed)
+
+Built the voice channel seam parallel to SMS gateway. No real carrier calls — mock driver logs, Twilio stub validates config but never dials.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| K.1 | `voice-gateway.ts` module compiles | **PASS** | `tsc --noEmit` — zero errors from new files |
+| K.2 | Unit tests (13) | **PASS** | `vitest run voice-gateway.test.ts` 13/13 green: MockVoiceDriver dialCount, TwilioVoiceStub config validation, VoiceGateway voice+rvm dispatch, failure handling, health check |
+| K.3 | Mock driver never dials | **PASS** | `MockVoiceDriver.dial()` increments `dialCount`, logs `[MockVoiceDriver] would dial`, returns `status:'queued'` — no carrier API |
+| K.4 | Twilio stub validates config | **PASS** | Missing accountSid → throws; missing fromNumber → throws; present config → `status:'stubbed'` |
+| K.5 | VoiceGateway logs events | **PASS** | `voice_call_dispatched` + `voice_call_failed` events logged with callUuid, channel, to, campaignId |
+| K.6 | dispatchGate consentBasis contract | **PASS** | Documented: voice/rvm without `consentBasis` → `NO_CONSENT` (proven in dispatchGate.test.ts) |
+| K.7 | voiceEscalation flag OFF contract | **PASS** | Documented: `betaFlag:'voiceEscalation'` off → `FLAG_OFF` (proven in dispatchGate.test.ts) |
+
+**Commit:** `9f59499` — `feat(voice): INT-2 Voice/RVM mock driver + Twilio stub`
+
+**Prod deployment note:** The voice channel is gated by `voiceEscalation` beta flag (default OFF). When enabled, it requires a real Twilio voice config (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VOICE_FROM_NUMBER`) and valid `consentBasis` on every call. The mock driver is for verification only; production would use `TwilioVoiceStub` or a future real Twilio voice adapter.
 
 ## Session (k) — INT-4: Cadence Engine (job-queue-driven follow-up scheduler)
 

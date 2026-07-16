@@ -1,5 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { checkConsent } from './compliance';
+import { dispatchGate } from './dispatchGate';
+import type { BetaFlagKey } from './betaFlags';
 import { logEvent } from './logger';
 import { recordRun } from './execution-ledger';
 import { getTwilioClient, getTwilioConfig } from './twilio-adapter';
@@ -10,6 +12,10 @@ export type SendMessagePayload = {
   to: string;
   text: string;
   campaignLeadId?: number | string | null;
+  /** P2.0-W: passed through to dispatchGate (see sms-gateway.ts). */
+  betaFlag?: BetaFlagKey;
+  isCadenceStep?: boolean;
+  transactional?: boolean;
 };
 
 /**
@@ -39,6 +45,30 @@ export async function sendMessage(payload: SendMessagePayload) {
       WHERE id = ${campaignLeadId}
     `;
   };
+
+  // 0. UNIVERSAL DISPATCH GATE (P2.0-W). This is the non-gateway transmit path
+  // (no Twilio configured / non-sms channel) — it must be gated identically to
+  // the gateway or a config difference silently removes compliance. SMS only:
+  // the gate's spec covers sms/voice/rvm; email keeps the consent check below.
+  if (channel === 'sms') {
+    const gate = await dispatchGate({
+      phone: to,
+      channel: 'sms',
+      betaFlag: payload.betaFlag,
+      isCadenceStep: payload.isCadenceStep,
+      transactional: payload.transactional,
+    });
+    if (!gate.allow) {
+      await setCampaignLeadStatus('failed');
+      await logEvent('message_suppressed', 'message', String(leadId), {
+        to,
+        channel,
+        reason: gate.code,
+        detail: gate.reason,
+      });
+      return { status: 'suppressed' as const, gateCode: gate.code, retryAt: gate.retryAt };
+    }
+  }
 
   // 1. Consent gate — a re-check at send time, not just at enqueue time.
   const hasConsent = await checkConsent(to, channel);

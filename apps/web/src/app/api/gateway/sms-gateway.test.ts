@@ -30,6 +30,15 @@ vi.mock('@/app/api/utils/sql', () => {
 // without a live DB — see "GATE 1: Compliance Gates".
 vi.mock('@/app/api/utils/compliance', () => ({ checkConsent: vi.fn() }));
 
+// P2.0-W: the universal dispatchGate runs first in SMSGateway.send. Default
+// ALLOW here keeps every pre-existing test deterministic (the real gate would
+// make failover tests depend on the wall clock via quiet hours); the wiring
+// describe below overrides it per-test to prove denial is honored.
+const { mockDispatchGate } = vi.hoisted(() => ({
+  mockDispatchGate: vi.fn(async () => ({ allow: true as const, timezones: [] as string[] })),
+}));
+vi.mock('@/app/api/utils/dispatchGate', () => ({ dispatchGate: mockDispatchGate }));
+
 import { SMSGateway, GatewayMessage } from './sms-gateway';
 import { checkConsent } from '@/app/api/utils/compliance';
 
@@ -478,5 +487,66 @@ describe('Circuit Breaker Unit Tests', () => {
 
     const stats = breaker.getStats();
     expect(stats.state).toBe('open');
+  });
+});
+
+describe('P2.0-W: universal dispatchGate wiring at the transmit hop', () => {
+  let primaryProvider: MockProvider;
+
+  beforeEach(() => {
+    primaryProvider = new MockProvider('primary');
+    vi.mocked(checkConsent).mockResolvedValue(true);
+    mockDispatchGate.mockReset();
+    mockDispatchGate.mockResolvedValue({ allow: true, timezones: [] });
+  });
+
+  it('calls the gate with the recipient + channel BEFORE any provider dispatch', async () => {
+    const gw = new SMSGateway({ primaryProvider });
+    await gw.send({
+      leadId: 1, to: '+15025550101', text: 'hello',
+      betaFlag: 'cadenceEngine', isCadenceStep: true, transactional: false,
+    });
+    expect(mockDispatchGate).toHaveBeenCalledWith({
+      phone: '+15025550101',
+      channel: 'sms',
+      betaFlag: 'cadenceEngine',
+      consentBasis: undefined,
+      isCadenceStep: true,
+      transactional: false,
+    });
+    expect(primaryProvider.sendCount).toBe(1);
+  });
+
+  it('a gate DENIAL means the provider is never touched and the code surfaces', async () => {
+    const retryAt = new Date('2026-07-17T14:00:00Z');
+    mockDispatchGate.mockResolvedValue({
+      allow: false, code: 'QUIET_HOURS', reason: 'Outside 8am-9pm lead-local',
+      retryAt, timezones: ['America/New_York'],
+    });
+    const gw = new SMSGateway({ primaryProvider });
+    const result = await gw.send({ leadId: 1, to: '+15025550101', text: 'held' });
+
+    expect(primaryProvider.sendCount).toBe(0); // the carrier never saw it
+    expect(result.status).toBe('failed');
+    expect(result.gateCode).toBe('QUIET_HOURS');
+    expect(result.errorMessage).toBe('QUIET_HOURS');
+    expect(result.retryAt).toEqual(retryAt); // callers can defer, not dead-letter
+  });
+
+  it('DNC denial suppresses even when the legacy checkConsent would allow', async () => {
+    // The gate is channel-agnostic (STOP on voice suppresses SMS); checkConsent
+    // is channel-scoped. If they disagree, the gate must win.
+    vi.mocked(checkConsent).mockResolvedValue(true);
+    mockDispatchGate.mockResolvedValue({ allow: false, code: 'DNC', reason: 'opted out', timezones: [] });
+    const gw = new SMSGateway({ primaryProvider, complianceCheckEnabled: true });
+    const result = await gw.send({ leadId: 1, to: '+15025550101', text: 'never' });
+    expect(primaryProvider.sendCount).toBe(0);
+    expect(result.gateCode).toBe('DNC');
+  });
+
+  it('transactional flows through to the gate request (OTP path)', async () => {
+    const gw = new SMSGateway({ primaryProvider });
+    await gw.send({ leadId: 0, to: '+16073656567', text: 'code: 123456', transactional: true });
+    expect(mockDispatchGate).toHaveBeenCalledWith(expect.objectContaining({ transactional: true }));
   });
 });

@@ -148,6 +148,9 @@ export async function sendAckSms(params: {
       to,
       text: ACK_SMS_BODY,
       conversationThread: `conv_${conversationId}`,
+      // The ack is an INT-1 speedToLead artifact: flag OFF must mean zero
+      // outbound events. The gate enforces it (FLAG_OFF) at transmit time.
+      betaFlag: 'speedToLead',
     });
 
     await logEvent('sla_ack_sent', 'conversation', String(conversationId), {

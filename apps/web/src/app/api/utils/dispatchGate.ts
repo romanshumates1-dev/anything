@@ -51,6 +51,14 @@ export interface DispatchRequest {
   consentBasis?: string | null;
   /** Cadence steps additionally snap to send windows. */
   isCadenceStep?: boolean;
+  /**
+   * Recipient-requested, non-marketing sends (e.g. the OTP a user just asked
+   * for on their own phone). Skips quiet-hours/send-window ONLY — DNC, beta
+   * flag, and consent checks always run. TCPA quiet hours restrict
+   * solicitations; a verification code the recipient explicitly requested
+   * seconds ago is not one, and holding it until morning breaks the flow.
+   */
+  transactional?: boolean;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -140,6 +148,10 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
     }
 
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
+    // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
+    if (req.transactional) {
+      return { allow: true, timezones: tzs };
+    }
     if (!isWithinQuietHours(tzs, at)) {
       const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d)) ?? undefined;
       return { allow: false, code: 'QUIET_HOURS', reason: 'Outside 8am-9pm lead-local', retryAt, timezones: tzs };

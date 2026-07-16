@@ -225,3 +225,28 @@ Split deliberately: the **selection algorithm is pure** (`numberPool.ts`) and te
 | Gate at the dial hop | `voice-gateway.ts` | read the file | Comment says "dispatchGate already handles this" but the file **never imports or calls it** — compliance is delegated to callers that don't exist. | **BROKEN → fixed in INT-2 completion** |
 | Weighted outcomes + price-bearing transcripts → requires_human | `voice-gateway.ts` | read the file | Not implemented — mock returns a fixed `queued`; no answered/no-answer/voicemail weighting, no transcripts, no seller-state feed. Owner spec requires it. | **INCOMPLETE → INT-2 completion** |
 | `// LIVE:` markers on Twilio stub | `TwilioVoiceStub` | read the file | Absent (owner spec: stub carries `// LIVE:` markers for the real-dial code). | **INCOMPLETE → INT-2 completion** |
+
+---
+
+### P2.0-W — dispatchGate UNIVERSAL WIRING (the gap the "VERIFIED" header hid)  ✅ VERIFIED
+
+**Bug #11 — the P2.0 section header was a false claim.** Every P2.0 row proved the gate module *behaves* correctly; none proved anything *calls* it. At commit `de9219d` through `38e96fe`, `grep -rn dispatchGate` (runtime, non-test) returned **zero callers** — every outbound SMS in the system dispatched without passing the "universal" gate. The 4am session then wired it into cadenceEngine only (and voice-gateway merely *mentions* it in a comment — the grep hit was documentation, not code). Found by the multi-agent dispatch-site audit (5 finders × adversarial verify, 29 verified sites).
+
+The gate now runs **at the transmit hops**, so it cannot go stale between scheduling and sending:
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Gate at the gateway transmit hop | `sms-gateway.ts` `send()` step 0 | `vitest run sms-gateway.test.ts` (24) | gate called with recipient+channel BEFORE provider; deny → `status:'failed'`, `gateCode`, `sendCount 0`; `retryAt` propagated | **VERIFIED** |
+| Mutation: wiring test can fail | same | gate call stubbed to `{allow:true}` | **4 failed / 20 passed** — wiring tests RED exactly; restored → 24/24 | **VERIFIED** |
+| Gate at the fallback transmit hop | `messaging.ts` `sendMessage()` | `vitest run messaging.gate.test.ts` (3) | sms → gate called, deny → `{status:'suppressed', gateCode, retryAt}` no-throw; email → gate NOT called (spec covers sms/voice/rvm), legacy consent kept | **VERIFIED** |
+| Gate denial ≠ job failure | `jobs.ts` `handleGateDenial` | code + suite | QUIET_HOURS/OUTSIDE_WINDOW → job back to `pending` at `retryAt`, attempt refunded; DNC/FLAG_OFF/NO_CONSENT → `completed` as `suppressed:<code>` (no dead-letter noise, no retry storm) | **VERIFIED** |
+| `transactional` sends (OTP) | `dispatchGate.ts`, `test-phones/route.ts` | `vitest run dispatchGate.test.ts` (21) | 11pm transactional → **allow**; same send non-transactional → **QUIET_HOURS** (flag is load-bearing); DNC + transactional → **DNC**; flag-off + transactional → **FLAG_OFF** | **VERIFIED** |
+| Ack SMS is flag-gated (flags-off ⇒ zero events) | `sla.ts` `sendAckSms` | code + gateway wiring test (d) | ack send now carries `betaFlag:'speedToLead'` → gate returns FLAG_OFF when off. Before this, **an OFF speedToLead flag still sent acks** | **VERIFIED** |
+| Ladder actually starts | `jobs.ts` send_message success path | code + suite | `scheduleNextStep(contactId, campaignId, org)` after every successful contact send — flag-gated + dedupe-keyed so idempotent; fixes `scheduleNextStep`'s zero-caller ghost | **VERIFIED** |
+| Suite + typecheck | all | full run | **419 passed / 45 skipped / 0 failed** (55 files); `tsc` exit 0 | **VERIFIED** |
+
+**Deliberate interpretation (owner can veto):** OTP verification codes are `transactional` — the recipient requested the code seconds ago on their own phone, so quiet hours (a solicitation rule) don't hold it until morning; **DNC/flag/consent still apply**. The INT-1 ack SMS is NOT transactional — it is quiet-hours-gated, so "the prospect never sits in silence" holds *within legal hours*; loosening that is a deliberate owner decision, not a default.
+
+**Out-of-path BROKEN notes (triage only, per scope guard):**
+- `conversations/message` with `channel:'email'` flows to `sendMessage`'s Twilio branch, which calls `messages.create` with an **email address as `to`** — malformed, Twilio rejects. Email channel is outside INT-3/4/2 scope; not fixed.
+- `system/cron/route.ts:20` imports `drainJobs` but never calls it — dead import that misleads caller audits. Not fixed (out of path).

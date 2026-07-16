@@ -13,6 +13,8 @@
 import { randomUUID } from 'node:crypto';
 import sql from '@/app/api/utils/sql';
 import { checkConsent } from '@/app/api/utils/compliance';
+import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
+import type { BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { logEvent } from '@/app/api/utils/logger';
 import { CircuitBreaker } from './circuit-breaker';
 import {
@@ -33,6 +35,14 @@ export interface GatewayMessage {
   campaignId?: string;
   organizationId?: string;
   contactId?: string;
+  /** P2.0-W: which beta integration this send belongs to (omit for core sends). */
+  betaFlag?: BetaFlagKey;
+  /** P2.0-W: passed through to dispatchGate (meaningful for voice/rvm callers). */
+  consentBasis?: string | null;
+  /** P2.0-W: cadence steps additionally snap to send windows at the gate. */
+  isCadenceStep?: boolean;
+  /** P2.0-W: recipient-requested send (OTP) — skips time gates only, never DNC. */
+  transactional?: boolean;
 }
 
 export interface GatewayDeliveryRecord {
@@ -46,6 +56,10 @@ export interface GatewayDeliveryRecord {
   deliveryTime?: Date;
   errorCode?: string;
   errorMessage?: string;
+  /** P2.0-W: set when dispatchGate denied the send; callers branch on this. */
+  gateCode?: DenyCode;
+  /** P2.0-W: when the gate says "not now" (quiet hours/window), when to retry. */
+  retryAt?: Date;
 }
 
 export interface GatewayConfig {
@@ -120,6 +134,40 @@ export class SMSGateway {
   async send(message: GatewayMessage): Promise<GatewayDeliveryRecord> {
     const messageUuid = message.messageUuid || randomUUID();
     const { leadId, to, text, campaignLeadId, conversationThread, campaignId, organizationId, contactId } = message;
+
+    // 0. UNIVERSAL DISPATCH GATE (P2.0-W) — every SMS that leaves this system
+    // passes here AT TRANSMIT TIME. A cadence step gated when its job was
+    // processed can still drain minutes later; this is the check that cannot
+    // go stale. Gate order (DNC ≻ flag ≻ consent ≻ quiet hours ≻ window) and
+    // fail-closed behaviour live in dispatchGate itself.
+    const gate = await dispatchGate({
+      phone: to,
+      channel: 'sms',
+      betaFlag: message.betaFlag,
+      consentBasis: message.consentBasis,
+      isCadenceStep: message.isCadenceStep,
+      transactional: message.transactional,
+    });
+    if (!gate.allow) {
+      await logEvent('message_suppressed_gateway', 'message', String(leadId), {
+        messageUuid,
+        to,
+        reason: gate.code,
+        detail: gate.reason,
+        retryAt: gate.retryAt?.toISOString(),
+      });
+      return {
+        messageUuid,
+        status: 'failed',
+        provider: 'gateway',
+        leadId,
+        to,
+        dispatchTime: new Date(),
+        errorMessage: gate.code,
+        gateCode: gate.code,
+        retryAt: gate.retryAt,
+      };
+    }
 
     // 1. IDEMPOTENCY CHECK
     if (this.config.idempotencyEnabled !== false) {
