@@ -14,6 +14,7 @@ import { Loader2, ShieldCheck, TestTube, Key, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import AiProviderCard from '@/components/settings/AiProviderCard';
 import BetaFlagsCard from '@/components/settings/BetaFlagsCard';
+import NumberPoolCard from '@/components/settings/NumberPoolCard';
 import EventLogPanel from '@/components/EventLogPanel';
 
 export default function SettingsPage() {
@@ -159,6 +160,8 @@ export default function SettingsPage() {
 
         {/* Beta integrations + the live Event Log (manual-testing harness) */}
         <BetaFlagsCard />
+        {/* INT-3: local-presence pool — usage table + rotation cap (Decision 2) */}
+        <NumberPoolCard />
         <EventLogPanel />
 
         {/* Test Phone Numbers */}

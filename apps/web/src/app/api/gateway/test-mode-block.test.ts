@@ -24,6 +24,13 @@ vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 vi.mock('@/app/api/utils/dispatchGate', () => ({
   dispatchGate: vi.fn(async () => ({ allow: true, timezones: [] })),
 }));
+// INT-3 deps pinned OFF for the same reason — this file's sql mock must only
+// ever see the test-mode allowlist queries it was written for.
+vi.mock('@/app/api/utils/betaFlags', () => ({ isBetaFlagOn: vi.fn(async () => false) }));
+vi.mock('@/app/api/utils/numberPoolStore', () => ({
+  pickNumber: vi.fn(async () => null),
+  activePoolCount: vi.fn(async () => 0),
+}));
 
 import { SMSGateway } from './sms-gateway';
 import { ISMSProvider, DeliveryStatus, ProviderNormalizedEvent } from './providers';

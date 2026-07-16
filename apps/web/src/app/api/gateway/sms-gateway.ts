@@ -14,7 +14,8 @@ import { randomUUID } from 'node:crypto';
 import sql from '@/app/api/utils/sql';
 import { checkConsent } from '@/app/api/utils/compliance';
 import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
-import type { BetaFlagKey } from '@/app/api/utils/betaFlags';
+import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
+import { pickNumber, activePoolCount } from '@/app/api/utils/numberPoolStore';
 import { logEvent } from '@/app/api/utils/logger';
 import { CircuitBreaker } from './circuit-breaker';
 import {
@@ -250,6 +251,47 @@ export class SMSGateway {
       }
     }
 
+    // 3.5 INT-3 LOCAL PRESENCE — pick a from-number matching the lead's area
+    // code. Placed AFTER every abort-style check so a blocked send never burns
+    // a pool slot (pickNumber atomically claims one against the daily cap).
+    // Semantics (owner Decision 2 + null-means-don't-send):
+    //   - flag OFF            → default sender, untouched behaviour
+    //   - transactional (OTP) → default sender (local presence is for outreach)
+    //   - pool EMPTY          → feature unconfigured: default sender + warn event
+    //   - pool CAPPED         → hold the send (retry after the UTC-midnight
+    //                           reset) — never "send from anything"
+    let localFrom: string | undefined;
+    if (!message.transactional && (await isBetaFlagOn('localPresence'))) {
+      const picked = await pickNumber(to);
+      if (picked) {
+        localFrom = picked;
+      } else if ((await activePoolCount()) > 0) {
+        const retryAt = new Date(new Date().setUTCHours(24, 0, 30, 0)); // just past the daily reset
+        await logEvent('local_presence_exhausted', 'message', String(leadId), {
+          messageUuid,
+          to,
+          retryAt: retryAt.toISOString(),
+        });
+        return {
+          messageUuid,
+          status: 'failed',
+          provider: 'gateway',
+          leadId,
+          to,
+          dispatchTime: new Date(),
+          errorMessage: 'LOCAL_PRESENCE_EXHAUSTED',
+          gateCode: 'OUTSIDE_WINDOW', // deferrable class: jobs re-run it at retryAt
+          retryAt,
+        };
+      } else {
+        await logEvent('local_presence_unconfigured', 'message', String(leadId), {
+          messageUuid,
+          to,
+          detail: 'localPresence flag is ON but the number pool has no active numbers',
+        });
+      }
+    }
+
     // 4. SELECT PROVIDER (sticky or primary)
     let provider = this.selectProvider(conversationThread || String(leadId));
 
@@ -270,7 +312,7 @@ export class SMSGateway {
       }
 
       try {
-        const providerId = await provider.send(to, text, messageUuid);
+        const providerId = await provider.send(to, text, messageUuid, localFrom);
 
         // Record successful dispatch
         dispatchRecord = {

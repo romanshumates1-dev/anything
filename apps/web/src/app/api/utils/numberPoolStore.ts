@@ -119,6 +119,12 @@ export async function listPoolUsage(windowHours = DEFAULT_WINDOW_HOURS): Promise
   };
 }
 
+/** Active numbers in the pool — distinguishes "unconfigured" (0) from "capped". */
+export async function activePoolCount(): Promise<number> {
+  const [row] = await sql`SELECT COUNT(*)::int AS c FROM number_pool WHERE active = true`;
+  return row?.c ?? 0;
+}
+
 export async function addNumber(params: {
   phoneNumber: string;
   numberType?: NumberPoolEntry['numberType'];

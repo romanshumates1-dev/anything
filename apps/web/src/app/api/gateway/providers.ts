@@ -28,7 +28,8 @@ export type ProviderNormalizedEvent = {
 export interface ISMSProvider {
   name: string;
   isHealthy(): Promise<boolean>;
-  send(to: string, text: string, messageUuid: string): Promise<string>; // returns provider message ID
+  /** `from` (INT-3 local presence) overrides the adapter's default sender when given. */
+  send(to: string, text: string, messageUuid: string, from?: string): Promise<string>; // returns provider message ID
   getDeliveryStatus(providerId: string): Promise<DeliveryStatus>;
   validateWebhook(body: any, signature?: string): boolean;
   normalizeWebhookEvent(body: any): ProviderNormalizedEvent | null;
@@ -65,7 +66,7 @@ export class TwilioAdapter implements ISMSProvider {
     }
   }
 
-  async send(to: string, text: string, messageUuid: string): Promise<string> {
+  async send(to: string, text: string, messageUuid: string, from?: string): Promise<string> {
     const client = this.getClient();
     const toE164 = to.startsWith('+') ? to : `+${to}`;
 
@@ -73,7 +74,11 @@ export class TwilioAdapter implements ISMSProvider {
       body: text,
       to: toE164,
     };
-    if (this.messagingServiceSid) {
+    if (from) {
+      // INT-3 local presence: an explicit pool number beats the messaging
+      // service (whose whole job is picking a sender — we already picked one).
+      createParams.from = from;
+    } else if (this.messagingServiceSid) {
       createParams.messagingServiceSid = this.messagingServiceSid;
     } else if (this.fromNumber) {
       createParams.from = this.fromNumber;

@@ -250,3 +250,22 @@ The gate now runs **at the transmit hops**, so it cannot go stale between schedu
 **Out-of-path BROKEN notes (triage only, per scope guard):**
 - `conversations/message` with `channel:'email'` flows to `sendMessage`'s Twilio branch, which calls `messages.create` with an **email address as `to`** — malformed, Twilio rejects. Email channel is outside INT-3/4/2 scope; not fixed.
 - `system/cron/route.ts:20` imports `drainJobs` but never calls it — dead import that misleads caller audits. Not fixed (out of path).
+
+---
+
+### INT-3 — WIRING + SETTINGS UI (completes the pool: logic → send path → owner surface)  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Pool pick rides to the provider as `from` | `sms-gateway.ts` step 3.5, `providers.ts` (`send(..., from?)`) | `vitest run` gateway suite (46) | flag ON → `pickNumber('+15025559999')` called, provider received `from:'+15025550777'`, dispatched | **VERIFIED** |
+| Flag OFF / transactional ⇒ pool untouched | same | same | `pickNumber` NOT called in either case; default sender used | **VERIFIED** |
+| Pool CAPPED ⇒ hold, never "send from anything" | same | same | `sendCount 0`, `LOCAL_PRESENCE_EXHAUSTED`, `retryAt` after the UTC-midnight reset (deferrable class → jobs re-run it) | **VERIFIED** |
+| Pool EMPTY ⇒ unconfigured fallback + warn event | same | same | dispatched via default sender; `local_presence_unconfigured` logged | **VERIFIED** |
+| Gate denial never burns a pool slot | pick placed AFTER all abort checks | same | gate deny → `pickNumber` NOT called | **VERIFIED** |
+| Admin API round-trip | `settings/number-pool/route.ts` | `node --env-file=.env scripts/int3-verify.mjs` (live server) | GET 200 · POST 201 (number in table, area `502` derived) · PATCH cap 90 persisted, `effective` followed → 90 · malformed number 400 · negative cap 400 | **VERIFIED** |
+| Both caps visible per-number (Decision 2) | same + `NumberPoolCard.tsx` | same | `rotation=125 carrier=10000 (limitedBy rotation)` in API AND rendered in the UI table columns Guard/Carrier/Effective | **VERIFIED** |
+| Admin-only | same | same | anon GET → **401** | **VERIFIED** |
+| UI wired end-to-end (no ghost UI) | `NumberPoolCard.tsx`, settings page | same | card + table render; the live-added `+15025550188` visible in the table; `number_pool_added` + `number_pool_cap_changed` Event Log rows exist; **0 console errors** | **VERIFIED** |
+| Suite + typecheck + lint | all | full run | **425 passed / 45 skipped / 0 failed**; `tsc` 0; oxlint 0/0 on the 5 touched files | **VERIFIED** |
+
+**INT-3 VERIFY: ALL PASS (18/18 checks).** Cleanup ran (test number + cap setting + verify admin removed).
