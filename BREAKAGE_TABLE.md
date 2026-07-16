@@ -302,3 +302,20 @@ The gate now runs **at the transmit hops**, so it cannot go stale between schedu
 | **Bug #13 — detector missed 4 of 5 owner corpus classes** | `ai-orchestrator.ts` `HIGH_RISK_PATTERNS` | corpus tests, RED first | before: "87500", "87.5k", "ninety grand", "six figures", "I´d take ninety", "send the paperwork, let´s close" ALL passed undetected (`\bclosing\b` missed "close"). After: 5/5 classes escalate; 4 neutral lines do NOT blanket-escalate. One RED iteration ("take less than one hundred") fixed by widening the connector group | **FIXED+PROVEN** |
 | `// LIVE:` markers on the Twilio voice stub | `TwilioVoiceStub.dial`, `getVoiceGateway` | read | full `calls.create` sketch incl. machineDetection + status webhook, behind `// LIVE:` — nothing dials until the owner flips post-A2P | **VERIFIED** |
 | Suite + typecheck | all | full run | **449 passed / 45 skipped / 0 failed** (57 files); tsc 0 | **VERIFIED** |
+
+---
+
+### P3 — headline verification suite (escalation fuzz + parsePriceRange + live restart/flags/opt-out)  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| **50/50 escalation-invariant fuzz** | `__tests__/p3/escalation-fuzz.test.ts`, `ai-orchestrator.ts` | `vitest run __tests__/p3/` | 50 adversarial msgs × 5 classes (plain/spelled/contract-no-digits/counteroffer/confirmation) through the REAL `ai_reply` handler w/ a MAXIMALLY DECEPTIVE model (requires_human:false + innocuous reply). All 50: `requires_human=true` persisted, `needs_review` notification fired, poisoned reply never sent. **50/50** | **VERIFIED** |
+| Fuzz actually bites (mutation) | same | comment out the tens-words pattern, re-run | **3/50 escaped** ("give me seventy five", "meet me at ninety", "lock it in at ninety five") — RED as required; pattern restored → 50/50 | **VERIFIED** |
+| Ack SMS (only auto-outbound) has no numbers | `sla.ts ACK_SMS_BODY` | strict regex in fuzz | zero digits, zero currency tokens | **VERIFIED** |
+| **parsePriceRange fuzz** | `ownerRangeRequest.ts` | same suite | 50 randomized valid ranges → exact numerics, never NaN; reversed rejected (never swapped); garbage/injection/degenerate rejected | **VERIFIED** |
+| parsePriceRange guard bites (mutation) | same | replace `max<=min` with `false` | reversed-range test goes RED; restored | **VERIFIED** |
+| **Restart-resume (live, cross-process)** | `scripts/p3-verify.mjs`, jobs drain loop | `node --env-file=.env scripts/p3-verify.mjs` (running stack) | a `cadence_step` written straight to the durable `jobs` table was drained to `completed` by the SERVER loop (a different process) within 15s — the queue IS the state | **VERIFIED** |
+| **Flags OFF ⇒ zero events (live)** | cadenceEngine flag OFF | same | drained step produced **0** send_message jobs and **0** outbound audit events | **VERIFIED** |
+| **Opt-out suppression beats transactional (live)** | `dispatchGate`, `test-phones/route.ts` | same | OTP to a DNC number → **409** "it previously opted out" — DNC ≻ transactional; carrier never touched | **VERIFIED** |
+| **Bug #14 — OTP path 500 on a missing table** | `db/migrations/011_test_phone_otp_log.sql` | live verify RED→GREEN | `test_phone_otp_log` (the OTP rate-limit table) was never created → every send threw "relation does not exist" → 500. THE root cause of "cannot add/verify test numbers". Migration adds it (idempotent); OTP path now 409/works | **FIXED+PROVEN** |
+| Full suite + typecheck | all | full run | **455 passed / 45 skipped / 0 failed** (58 files); tsc exit 0 | **VERIFIED** |

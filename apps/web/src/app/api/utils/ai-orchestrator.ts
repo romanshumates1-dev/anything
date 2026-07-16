@@ -34,6 +34,12 @@ const HIGH_RISK_PATTERNS: RegExp[] = [
   /\b\d+(?:\.\d+)?\s?k\b/i, // "90k", "87.5k"
   /\b(?:grand|figures?)\b/i, // "ninety grand", "six figures"
   /\b(?:take|pay|accept|want|give|offer(?:ing)?|asking|settle\s+for)\s+(?:(?:about|around|at\s+least|less\s+than|more\s+than|under|over|maybe|like)\s+)*(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)\b/i, // "I'd take ninety", "take less than one hundred"
+  // Spelled tens-and-up number words escalate ANYWHERE — the P3 fuzz found
+  // verb-anchored patterns miss "give me seventy five", "meet me at ninety",
+  // "lock it in at ninety five". Ones-words (one..ten) stay out: "one thing",
+  // "call you in two" are everyday speech; tens-words in seller texts are
+  // near-always money. Over-escalation is the safe direction.
+  /\b(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)\b/i,
   /\b(?:paperwork|papers|documents?|docs)\b/i, // "send the paperwork"
   /\bclose\b/i, // "let's close" (the old \bclosing\b missed it)
   /\bagreed?\b/i, // "so we're agreed at ..., right?"

@@ -20,7 +20,9 @@ import { getGateway } from '@/app/api/utils/jobs';
 export const ANTHROPIC_ACK_THRESHOLD_MS = 45_000;
 export const OLLAMA_ACK_IMMEDIATE = true; // always ack before calling ollama
 
-const ACK_SMS_BODY =
+// Exported so the P3 escalation fuzz can assert the ONLY auto-outbound in the
+// reply flow is digit- and currency-free (strict; loosen deliberately).
+export const ACK_SMS_BODY =
   "Thanks for your message. We're drafting a response and will reply shortly. — DealFlow AI";
 
 /** Record the moment an inbound reply arrives (before any AI job is enqueued). */
