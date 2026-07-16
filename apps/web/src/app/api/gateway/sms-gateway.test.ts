@@ -25,7 +25,13 @@ vi.mock('@/app/api/utils/sql', () => {
   return { default: mockSql };
 });
 
+// checkConsent is the gateway's opt-out gate. Mocking the module (rather than the
+// SQL underneath it) is what lets the suppression test assert real behaviour
+// without a live DB — see "GATE 1: Compliance Gates".
+vi.mock('@/app/api/utils/compliance', () => ({ checkConsent: vi.fn() }));
+
 import { SMSGateway, GatewayMessage } from './sms-gateway';
+import { checkConsent } from '@/app/api/utils/compliance';
 
 // Mock provider for testing
 class MockProvider implements ISMSProvider {
@@ -292,30 +298,36 @@ describe('SMS Gateway', () => {
   });
 
   describe('GATE 1: Compliance Gates', () => {
-    it.skipIf(!process.env.DATABASE_URL)('should suppress opted-out numbers at gateway level', async () => {
-      // For this test, we test that when complianceCheckEnabled is true,
-      // the gateway checks consent. Since we're mocking checkConsent returns false,
-      // messages should be suppressed.
-      
-      // Create a test that doesn't require mocking if possible
-      const testGateway = new SMSGateway({
-        primaryProvider,
-        complianceCheckEnabled: true,
-      });
+    // Replaces a DATABASE_URL-skipped test of the same name whose only assertion
+    // was `expect(result).toBeDefined()` — which passes whether the message is
+    // suppressed OR sent to an opted-out number. checkConsent is a module import,
+    // so it mocks directly; no live DB is needed and nothing here is skipped.
+    it('suppresses an opted-out number and never reaches the provider', async () => {
+      vi.mocked(checkConsent).mockResolvedValue(false);
+      const testGateway = new SMSGateway({ primaryProvider, complianceCheckEnabled: true });
 
-      // In a real test, we'd mock the sql client's checkConsent query
-      // For now, we'll test the basic suppression path
-      // (Full integration test would verify actual opt-out in DB)
-      
       const result = await testGateway.send({
         leadId: 1,
         to: '+15551234567',
-        text: 'This might be suppressed',
+        text: 'This must be suppressed',
       });
 
-      // Since we can't easily mock the checkConsent in this test harness,
-      // we just verify the gateway accepted the message
-      expect(result).toBeDefined();
+      expect(checkConsent).toHaveBeenCalledWith('+15551234567', 'sms');
+      expect(result.status).toBe('failed');
+      expect(result.errorMessage).toBe('opted_out');
+      expect(result.provider).toBe('gateway');
+      // The invariant that matters: the carrier never saw it.
+      expect(primaryProvider.sendCount).toBe(0);
+    });
+
+    it('sends when consent is present (proves the gate is not a blanket block)', async () => {
+      vi.mocked(checkConsent).mockResolvedValue(true);
+      const testGateway = new SMSGateway({ primaryProvider, complianceCheckEnabled: true });
+
+      const result = await testGateway.send({ leadId: 1, to: '+15551234567', text: 'Allowed' });
+
+      expect(result.errorMessage).not.toBe('opted_out');
+      expect(primaryProvider.sendCount).toBe(1);
     });
   });
 

@@ -9,10 +9,12 @@ Rule: a row is VERIFIED only with **observed output** captured this session. Int
 | Feature | File(s) | How verified (exact command) | Actual observed result | Status |
 |---|---|---|---|---|
 | One-command cold launch | `launch.ps1`, `launch.bat` | kill node + `launch.ps1 -Clean` (cold, .next removed), detached | Single pass, **0 self-heal retries**; printed status table; `+ opened http://localhost:4000` | **VERIFIED** |
-| Health: all services ok | `api/system/health/route.ts` | `GET /api/system/health` | `{"ok":true,"services":{"db":true,"jobs":true,"ai":true,"sms":true},"drivers":{"ai":"ollama","sms":"twilio"}}` | **VERIFIED** |
+| Health: all services ok | `api/system/health/route.ts` | `GET /api/system/health` | **RE-RUN post-deviation:** `{"ok":true,"status":"healthy","uptime":39,"version":"0.1.0","services":{"db":true,"jobs":true,"ai":true,"sms":true},"timestamp":"2026-07-16T01:54:22.255Z"}` — liveness only, `drivers` gone | **VERIFIED** |
+| Public health leaks no config | `api/system/health/route.ts` | `p1-verify.mjs` `[1]` — asserts absence | `PASS public health does NOT expose betaFlags / drivers / database / twilio` (4/4) | **VERIFIED** |
 | Never opens a broken tab | `launch.ps1` | forced-fail path (poisoned `.next`) | Health 404 → launcher did **not** open a tab; printed failing services + log tail; exit 1 | **VERIFIED** |
-| Flag toggle → health <1s | `utils/betaFlags.ts`, `settings/beta-flags/route.ts` | `scripts/p1-verify.mjs` (routes warmed first) | speedToLead **461ms**, voiceEscalation **515ms**, localPresence **593ms**, cadenceEngine **482ms** — all <1s; each restored OFF | **VERIFIED** |
-| Flags persist server-side, default OFF | `app_settings` key=`beta_flags` | launcher status table + health | `speedToLead off · voiceEscalation off · localPresence off · cadenceEngine off` | **VERIFIED** |
+| Flag toggle → reflected <1s | `utils/betaFlags.ts`, `settings/beta-flags/route.ts` | `scripts/p1-verify.mjs` (routes warmed first) | **RE-RUN post-deviation** (measured on the admin route, not health): speedToLead **612ms**, voiceEscalation **575ms**, localPresence **625ms**, cadenceEngine **546ms** — all <1s; each restored OFF | **VERIFIED** |
+| Flags NOT readable without admin | `settings/beta-flags/route.ts` | `p1-verify.mjs` `[2b]` anon GET | `PASS anon flags read -> 401` | **VERIFIED** |
+| Flags persist server-side, default OFF | `app_settings` key=`beta_flags` | launcher status table (`scripts/launch-status.mjs`) | **RE-RUN post-deviation:** launcher printed `cadenceEngine off · localPresence off · speedToLead off · voiceEscalation off`; drivers `ai=ollama sms=twilio` | **VERIFIED** |
 | Beta Flags panel wired (no ghost UI) | `components/settings/BetaFlagsCard.tsx` | `/settings` → click Speed-to-Lead switch | Toast "Speed-to-Lead OFF"; DB row updated; **`beta_flag_changed` row appeared in the Event Log** | **VERIFIED** |
 | Event Log panel wired | `components/EventLogPanel.tsx`, `api/system/event-log/route.ts` | `/settings` → Event Log | Panel renders, newest-first, integration filters; phone numbers masked server-side | **VERIFIED** |
 | Zero console errors | dashboard + settings | `p1-verify.mjs` (console + pageerror listeners) | `[console errors] 0 []` | **VERIFIED** |
@@ -26,6 +28,14 @@ Rule: a row is VERIFIED only with **observed output** captured this session. Int
 - Health timeout **180s**, not the spec's 15s: a cold Turbopack build here measured >90s (at 90s the loop timed out on a *healthy* build and wastefully rebuilt, ~4min total). Intent preserved — fail loudly, never open a broken tab.
 - Port **4000** (this repo), not 4600. No local Redis/Postgres to boot: Postgres is Neon (cloud); "workers" = the `jobs-dev` drain loop.
 - Beta flags are served from an **admin-gated** `/api/settings/beta-flags`, not the public `/api/health` as the source spec said. That spec assumed a single-user localhost app; here `/api/system/health` is public (Shell indicator + LB probes, internet-facing in prod), so publishing feature config there would re-open the Phase-5 info-disclosure. Public health stays minimal liveness.
+
+  **Deviation re-verification (owner-mandated — "don't let the deviation silently invalidate an already-VERIFIED row"):**
+  The rows above marked *RE-RUN post-deviation* were re-executed against the new shape, not carried forward. What the audit actually found and fixed:
+  - **My earlier claim was false when I made it.** I reported flags as admin-gated and health as liveness-only; `health/route.ts` still imported `getBetaFlags` and served `betaFlags`, `drivers`, `database.latencyMs`, and `twilio.numberType`. The owner's instruction to confirm is what caught it. **Fixed:** health stripped to `{ok, status, uptime, version, services, timestamp}`; unused import + dead `dbLatency` removed; typecheck 0.
+  - **Consumer audit** (only two read the removed fields): `launch.ps1` (`$health.drivers` L135-136, `$health.betaFlags` L142-144) and `p1-verify.mjs` (L28/49/55). `Shell.tsx` reads only `ok` (safe). `BetaFlagsCard` → `/api/settings/beta-flags` and `EventLogPanel` → `/api/system/event-log` were already correct.
+  - **Launcher repointed** onto new dev-only `apps/web/scripts/launch-status.mjs` (reads `.env` + `app_settings` on-machine; publishes nothing). Cold `launch.ps1` re-run: **exit 0**, status table intact, browser opened.
+  - **`p1-verify.mjs` hardened** to assert the leak stays closed (`[1]`) and that anon flag reads 401 (`[2b]`).
+  - Full re-run: **P1 VERIFY: ALL PASS (24/24)**, `[console errors] 0 []`.
 
 ### P2.0 — dispatchGate (universal send-time compliance gate)  ✅ VERIFIED
 
@@ -54,6 +64,12 @@ Rule: a row is VERIFIED only with **observed output** captured this session. Int
 **Bugs found by running it (not assumed):**
 4. **The whole suite was RED — 18 failing tests — and the INT-1 commit (`6feed53`) had never been run.** Every `sla.test.ts` case died on `No database connection string was provided to neon()`. Root cause: `sql.ts:20` resolves to a throwing `NullishQueryFunction` without `DATABASE_URL`, and `sla.test.ts` (a genuine live-DB test — real `DELETE`, per-conversation row selection, P95 windowing) never adopted the repo's existing live-gate. **Fixed** by adopting the *same* gate as `flows-live.test.ts` (`RUN_LIVE_FLOWS=1 && DATABASE_URL` + `describe.skipIf`) — chosen over mocking `sql`, which would have made every assertion vacuous. Unit suite: 18 red → **0 red**; live run: **18/18 green**.
 5. **`dispatchGate` shipped (`de9219d`) with NO test file**, despite being the universal compliance gate for every channel. **Fixed:** wrote `dispatchGate.test.ts` (17 tests) covering each gate individually, gate order, DST, boundary edges, unknown-area-code most-restrictive, and fail-closed. All passed first run — the implementation was correct, it just had no proof.
+6. **A ghost test on the SMS send path** (found by the owner-requested 37-skip inventory). `sms-gateway.test.ts:295` was named `should suppress opted-out numbers at gateway level` but its only assertion was `expect(result).toBeDefined()` — which passes whether the message is suppressed **or dispatched to an opted-out number**. Its own comments conceded it ("*we just verify the gateway accepted the message*"). It was `skipIf(!DATABASE_URL)`, so it had never run; had it run it would have been a permanently-green false negative on a TCPA-critical path. **Fixed:** replaced with two real tests that mock `checkConsent` at the module boundary (no live DB needed, nothing skipped) — asserting `status:'failed'`, `errorMessage:'opted_out'`, and `primaryProvider.sendCount === 0` (the carrier never saw it), plus a consent-present counter-test proving the gate isn't a blanket block. **Mutation-proven RED:** with the gate stubbed to `if (false)`, the suppression test fails; the old ghost stayed green under the same mutation. Suite 367→**369 passed**, skips 37→**36**.
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Gateway blocks opted-out numbers | `gateway/sms-gateway.ts:147-164` | `vitest run src/app/api/gateway/sms-gateway.test.ts` | `20 passed (20)`, 0 skipped — `status:'failed'`, `errorMessage:'opted_out'`, `sendCount:0` | **VERIFIED** |
+| That test can actually fail | same | mutate gate → `if (false)`, re-run | `× suppresses an opted-out number and never reaches the provider` — RED as required; gate restored (`grep -c "if (!hasConsent)"` → 1) | **VERIFIED** |
 
 **Suite after this checkpoint:** typecheck **0** · unit **367 passed / 37 skipped / 0 failed** (49 files) · INT-1 live **18/18**.
 

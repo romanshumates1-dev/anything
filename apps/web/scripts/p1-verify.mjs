@@ -22,38 +22,50 @@ await ctx.request.post(`${BASE}/api/auth/sign-up/email`, {
 });
 await sql`UPDATE "user" SET role='ADMIN' WHERE email=${email}`;
 
-// ── 1. health: all services ok ───────────────────────────────────────────────
-console.log('\n[1] /api/system/health');
+// ── 1. health: liveness only, all services ok, ZERO config ───────────────────
+console.log('\n[1] /api/system/health (public — liveness only)');
 const h = await (await ctx.request.get(`${BASE}/api/system/health`)).json();
-console.log('   ', JSON.stringify({ ok: h.ok, services: h.services, drivers: h.drivers }));
+console.log('   ', JSON.stringify(h));
 ok(h.ok === true, 'health ok:true');
 for (const s of ['db', 'jobs', 'ai', 'sms']) ok(h.services?.[s] === true, `service ${s} ok`);
+// The public probe is unauthenticated + internet-facing in prod: it must not
+// publish feature/vendor config. Assert the leak stays closed.
+for (const leak of ['betaFlags', 'drivers', 'database', 'twilio']) {
+  ok(h[leak] === undefined, `public health does NOT expose ${leak}`);
+}
 
-// ── 2. each flag toggles + is reflected in health within 1s ──────────────────
-console.log('\n[2] beta flag toggle -> /api/health within 1s');
+// ── 2. each flag toggles + is reflected within 1s (ADMIN route) ──────────────
+console.log('\n[2] beta flag toggle -> /api/settings/beta-flags within 1s');
+// Flags moved off public health (config), so propagation is measured on the
+// admin route that actually serves them.
 // Warm the routes first: in dev, the FIRST hit on a route pays Turbopack
 // compilation (measured ~1.1s vs ~0.47s warm), which would measure the
 // compiler, not flag propagation. The gate is about propagation latency.
 await ctx.request.patch(`${BASE}/api/settings/beta-flags`, {
   data: { speedToLead: false }, headers: { 'content-type': 'application/json' },
 });
-await ctx.request.get(`${BASE}/api/system/health`);
+await ctx.request.get(`${BASE}/api/settings/beta-flags`);
 
 for (const f of FLAGS) {
   const t0 = Date.now();
   await ctx.request.patch(`${BASE}/api/settings/beta-flags`, {
     data: { [f]: true }, headers: { 'content-type': 'application/json' },
   });
-  const after = await (await ctx.request.get(`${BASE}/api/system/health`)).json();
+  const after = await (await ctx.request.get(`${BASE}/api/settings/beta-flags`)).json();
   const ms = Date.now() - t0;
-  ok(after.betaFlags?.[f] === true && ms < 1000, `${f} ON reflected in health in ${ms}ms`);
+  ok((after.flags?.[f] ?? after[f]) === true && ms < 1000, `${f} ON reflected in ${ms}ms`);
   // restore OFF (default-safe state)
   await ctx.request.patch(`${BASE}/api/settings/beta-flags`, {
     data: { [f]: false }, headers: { 'content-type': 'application/json' },
   });
-  const back = await (await ctx.request.get(`${BASE}/api/system/health`)).json();
-  ok(back.betaFlags?.[f] === false, `${f} restored OFF`);
+  const back = await (await ctx.request.get(`${BASE}/api/settings/beta-flags`)).json();
+  ok((back.flags?.[f] ?? back[f]) === false, `${f} restored OFF`);
 }
+
+// ── 2b. flags are NOT readable without an admin session ─────────────────────
+console.log('\n[2b] /api/settings/beta-flags requires admin');
+const anon = await ctx.request.get(`${BASE}/api/settings/beta-flags`, { headers: { cookie: '' } });
+ok(anon.status() === 401 || anon.status() === 403, `anon flags read -> ${anon.status()}`);
 
 // ── 3 + 4. pages render, zero console errors, panels wired ───────────────────
 console.log('\n[3] dashboard + settings render, zero console errors');

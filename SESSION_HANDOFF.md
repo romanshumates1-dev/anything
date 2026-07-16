@@ -2,6 +2,31 @@
 
 _Last session: 2026-07-15 (j). INT-1 SLA instrumentation complete, typecheck 0, 18/18 tests green. Checkpoint reached — awaiting owner review of implement→run→verify→log pattern before INT-3 through P3._
 
+## The 37 skipped tests — full inventory (owner-requested: "skipped tests are where ghost verification hides")
+
+Enumerated from `vitest run --reporter=verbose` (not from memory). 37 skips, 5 files, 3 causes.
+Counts: 18 + 11 + 4 + 3 + 1 = **37** ✓ (suite: 367 passed / 37 skipped / 0 failed, 49 files).
+
+| # | Test(s) | File | What it covers | Why skipped | Tag |
+|---|---|---|---|---|---|
+| 1–18 | all of `sla — INT-1 latency + ack instrumentation` | `utils/__tests__/sla.test.ts` | INT-1: `recordReplyReceived`, `recordAIDispatched` (latest-pending-row-only), `shouldSendAck` anthropic-45s vs ollama-immediate, `wasAckSent`/`markAckSent` idempotency, `computeP95Direct` (null / window / pending-exclusion), the two ack invariants | Needs a real Postgres — `sql` throws without `DATABASE_URL`. Gated `describe.skipIf(!LIVE)` where `LIVE = RUN_LIVE_FLOWS==='1' && !!DATABASE_URL`, the repo's existing live-gate pattern. **Deliberate**: mocking `sql` here would make every assertion vacuous. | **ENV-GATED** |
+| 19–29 | `ResurrectionEngine` — Configuration (3), Opt-Out Enforcement (1), Eligible Lead Finding (2), Resurrection Sending (1), Batch Processing (2), Default Sequences (2) | `outreach/resurrection-engine.test.ts` | A dead-lead re-engagement engine: config CRUD, opt-out skip, day-batch sends | Engine is **DEAD CODE** — backing tables exist in no schema/migration/live DB and it is wired to no runtime path. Hard `it.skip` (not `skipIf`) so they cannot pass-by-accident. Quarantined in the 2026-07 verification sprint; `quarantine-guard.test.ts` holds the line. | **STALE** |
+| 30–33 | `VariantAllocator` — Thompson Sampling (2), Variant Analytics (2) | `outreach/variant-allocator.test.ts` | Thompson-sampling variant weighting + delivery/reply/deal-rate math | Same quarantine: dead code, no backing tables, no runtime path. | **STALE** |
+| 34–36 | `campaign_lifecycle`, `csv_import_10k`, `scheduler_validation` | `__tests__/flows/flows-live.test.ts` | LAYER C end-to-end against real Postgres: lead→campaign→launch→job→inbox→reply→thread; 10k bulk import dedupe; idempotent enqueue | Same `RUN_LIVE_FLOWS=1 + DATABASE_URL` gate. **Not dark** — CI runs these in the dedicated `flows-live` job; they are skipped only in the local no-DB default run. | **ENV-GATED** |
+| 37 | `should suppress opted-out numbers at gateway level` | `gateway/sms-gateway.test.ts:295` | *Claims* gateway-level opt-out suppression | `it.skipIf(!process.env.DATABASE_URL)`. **But see below — this one is not merely skipped, it is a ghost.** | **STALE (ghost)** |
+
+**#37 is the finding.** It is the only skip that sits on a path INT-3/4/2 modify (the SMS send path), so the owner's rule applies: *unskip or replace inside that integration's verification*. On reading it, it doesn't test what its name says. Its body:
+
+```ts
+// we just verify the gateway accepted the message
+const result = await testGateway.send({ leadId: 1, to: '+15551234567', text: 'This might be suppressed' });
+expect(result).toBeDefined();   // <- the ONLY assertion
+```
+
+Its own comments concede it: *"In a real test, we'd mock the sql client's checkConsent query"* / *"we can't easily mock the checkConsent in this test harness."* `expect(result).toBeDefined()` passes whether the message is suppressed **or sent** — it asserts the opposite of its title, and would have gone green on a gateway that dispatches to every opted-out number in the DB. Had it not been `DATABASE_URL`-gated it would have been a permanently-green false negative. **Action: replaced, not unskipped** — real suppression coverage lives in `dispatchGate.test.ts` (17/17, asserts `allow:false, code:'DNC'` on a suppressed number), which is the gate every outbound now passes through at send time.
+
+**Verdict on the other 36:** none cover a path INT-3/4/2 modify. 21 are ENV-GATED and genuinely run (18 verified live 18/18; 3 run in CI's `flows-live` job). 15 are STALE quarantined dead code, correctly hard-skipped so they can't fake green — un-skip only in the PR that makes those engines real.
+
 ## Session (j) — INT-1: SLA latency instrumentation + provider-aware ack-SMS fallback
 
 | # | Check | Result | Evidence |

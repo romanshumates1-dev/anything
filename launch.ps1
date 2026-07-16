@@ -126,24 +126,41 @@ if (-not $health -or $health.ok -ne $true) {
 }
 
 # ── Status table ─────────────────────────────────────────────────────────────
+# Liveness comes from the PUBLIC health probe ({ok, services} — zero config).
+# Drivers + beta flags are CONFIG, so they are NOT published there; this local
+# dev-only reader pulls them straight from .env + the DB on this machine.
+$cfg = @{}
+try {
+  Push-Location (Join-Path $PSScriptRoot 'apps/web')
+  $lines = & cmd.exe /c "node --env-file=.env scripts/launch-status.mjs" 2>$null
+  Pop-Location
+  foreach ($line in $lines) {
+    if ($line -match '^\s*([^=]+)=(.*)$') { $cfg[$Matches[1].Trim()] = $Matches[2].Trim() }
+  }
+} catch { }
+
 Say ""
 Say "  SERVICE   STATUS   DRIVER" 'Cyan'
 Say "  -------   ------   ------" 'DarkGray'
 foreach ($k in $health.services.PSObject.Properties.Name) {
   $v = $health.services.$k
   $d = '-'
-  if ($k -eq 'ai')  { $d = $health.drivers.ai }
-  if ($k -eq 'sms') { $d = $health.drivers.sms }
+  if ($k -eq 'ai')  { $d = $(if ($cfg['ai'])  { $cfg['ai'] }  else { '?' }) }
+  if ($k -eq 'sms') { $d = $(if ($cfg['sms']) { $cfg['sms'] } else { '?' }) }
   Say ("  {0,-9} {1,-8} {2}" -f $k, $(if ($v) { 'ok' } else { 'down' }), $d) $(if ($v) { 'Green' } else { 'Yellow' })
 }
 Say ""
 Say "  BETA FLAGS" 'Cyan'
 Say "  ----------" 'DarkGray'
-if ($health.betaFlags) {
-  foreach ($k in $health.betaFlags.PSObject.Properties.Name) {
-    $on = $health.betaFlags.$k
-    Say ("  {0,-18} {1}" -f $k, $(if ($on) { 'ON' } else { 'off' })) $(if ($on) { 'Green' } else { 'DarkGray' })
+$flagKeys = @($cfg.Keys | Where-Object { $_ -like 'flag.*' } | Sort-Object)
+if ($flagKeys.Count -gt 0) {
+  foreach ($fk in $flagKeys) {
+    $name = $fk -replace '^flag\.', ''
+    $on = ($cfg[$fk] -eq 'on')
+    Say ("  {0,-18} {1}" -f $name, $(if ($on) { 'ON' } else { 'off' })) $(if ($on) { 'Green' } else { 'DarkGray' })
   }
+} else {
+  Say "  (status reader unavailable - flags visible in Settings -> Beta Integrations)" 'DarkGray'
 }
 Say ""
 Say "  web    $baseUrl" 'Green'
