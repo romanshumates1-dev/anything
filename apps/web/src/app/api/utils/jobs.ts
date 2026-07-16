@@ -5,6 +5,7 @@ import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
 import { recordAIDispatched, dispatchAckIfNeeded } from './sla';
+import { processCadenceStep } from './cadenceEngine';
 
 export async function enqueueJob(
   type: string,
@@ -156,6 +157,11 @@ export async function processNextJob() {
             WHERE id = ${conv.id}
           `;
         }
+        break;
+      }
+      case 'cadence_step': {
+        const payload: any = job.payload;
+        await processCadenceStep(payload);
         break;
       }
       default:
