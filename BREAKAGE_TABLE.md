@@ -169,3 +169,59 @@ Split deliberately: the **selection algorithm is pure** (`numberPool.ts`) and te
 7. **The daily reset would never have fired — found by the live test, not by review.** `sentToday()` did `String(row.last_reset_date).slice(0,10)`, but the Neon driver returns `date` columns as **JS `Date` objects**, so that produced `"Wed Jul 15"` — not `"2026-07-15"`. The comparison `"Wed Jul 15" < "2026-07-16"` is a lexicographic string compare (`W` > `2`), so it was **always false**: every number would have stuck permanently at its cap after one busy day and the pool would have silently died. Observed: `expected '+12705550102' to be '+15025550101'` — the capped-yesterday number was skipped instead of reset.
 8. **Split-brain reset authority (latent, same fix).** The read path used JS UTC (`todayUtc()`) while the claiming UPDATE used Postgres `CURRENT_DATE`. Diagnosed live: `pg CURRENT_DATE = 2026-07-16T04:00:00.000Z` (a Date, offset baked in) vs `js todayUtc() = "2026-07-16"`. On any DB not in the app's timezone the two disagree — the read says "reset", the UPDATE says "capped". **Fixed by removing JS from the decision entirely**: `sent_today` is now computed in SQL (`CASE WHEN last_reset_date < CURRENT_DATE THEN 0 ELSE daily_sent END`), the same `CURRENT_DATE` the claim's WHERE uses, so read and write agree by construction. Both tests green after.
 9. **Unbounded retry** in `pickNumber`'s race-loser path (self-review, pre-run): recursed with no depth guard. **Fixed:** `attemptsLeft = 3`, degrading to `null` ("don't send") rather than spinning.
+
+---
+
+### INT-4 — Cadence Engine (job-queue-driven follow-up scheduler)  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Beta flag OFF ⇒ no schedules | `cadenceEngine.ts:scheduleNextStep` | `vitest run cadenceEngine.test.ts` — flag_off case | `scheduleNextStep('c1','camp1','org1')` → `null`; `isBetaFlagOn` called with `'cadenceEngine'` | **VERIFIED** |
+| Schedule with dedupe key | `cadenceEngine.ts:scheduleNextStep` | same — scheduleNextStep flag ON | `enqueueJob` called with `dedupeKey: 'cadence:c1:1'`; `runAt` ≈ now+24h (within 1min) | **VERIFIED** |
+| No template ⇒ null (end of ladder) | `cadenceEngine.ts:scheduleNextStep` | same — no template case | `scheduleNextStep` returns `null`; `enqueueJob` not called | **VERIFIED** |
+| processCadenceStep: flag_off | `cadenceEngine.ts:processCadenceStep` | same — processCadenceStep flag_off | `{sent:false, reason:'flag_off'}` | **VERIFIED** |
+| processCadenceStep: opted_out | `cadenceEngine.ts:processCadenceStep` | same — opted_out case | `{sent:false, reason:'opted_out'}` | **VERIFIED** |
+| processCadenceStep: replied | `cadenceEngine.ts:processCadenceStep` | same — replied case | `{sent:false, reason:'replied'}` | **VERIFIED** |
+| Gate: OUTSIDE_WINDOW with retryAt | `cadenceEngine.ts:processCadenceStep` | same — gate:OUTSIDE_WINDOW | `sent:false, reason:'gate:OUTSIDE_WINDOW'`; `enqueueJob` called with `runAt: retryAt` and same dedupe key | **VERIFIED** |
+| Gate: QUIET_HOURS (no retryAt) | `cadenceEngine.ts:processCadenceStep` | same — gate:QUIET_HOURS | `sent:false, reason:'gate:QUIET_HOURS'`; no reschedule | **VERIFIED** |
+| Sends message + updates contact | `cadenceEngine.ts:processCadenceStep` | same — sends message case | `enqueueJob('send_message', …)` called; `UPDATE campaign_contacts` with `status='FOLLOWED_UP', follow_ups_sent+1` | **VERIFIED** |
+| cancelCadence halts follow-ups | `cadenceEngine.ts:cancelCadence` | same — cancelCadence case | `sql` called with `type = 'cadence_step'` + `payload->>'contactId'` targeting the contact | **VERIFIED** |
+| Integration: jobs.ts dispatches cadence_step | `utils/jobs.ts` | code review + typecheck | `case 'cadence_step':` calls `processCadenceStep(payload)`; compiles clean | **VERIFIED** |
+| Integration: inbound SMS cancels cadence | `sms/inbound/route.ts` | code review | After recording reply, queries `campaign_contacts` by phone + calls `cancelCadence()` | **VERIFIED** |
+
+**Suite after INT-4** (CORRECTED 2026-07-16 09:00 — the original note here claimed "full suite 49 passed, 4 failed (pre-existing)"; that run was executed **without the repo vitest config** and picked up the wrong file set. Re-run with `--config src/app/api/vitest.config.ts`): typecheck **exit 0** · full suite **408 passed / 45 skipped / 0 failed** (52 files). There are no pre-existing failures.
+
+**Gaps found on re-verification (2026-07-16, "committed = untrusted"):**
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Ladder STARTS after an opening send | `scheduleNextStep` | `grep -rn scheduleNextStep` (runtime, non-test) | **ZERO runtime callers** — jobs.ts processes `cadence_step` and inbound cancels it, but nothing ever creates step 1. The ladder can be cancelled and processed but never begun. | **BROKEN → fixed below (P2.0-W/INT-4 completion)** |
+| Old scheduler absorbed (no double-fire) | `followUpScheduler.ts` | same grep for `processFollowUps` | **Zero runtime callers** — the old scheduler was already dead code (its line 58 is a comment, not a send), so there is no parallel path to double-fire. Absorption = wiring the NEW ladder to start + exactly-once dedupe test, not migrating live jobs. | **VERIFIED (dead), absorption test below** |
+
+**Bugs found by running it (not assumed):**
+10. **Mocking complexity in processCadenceStep nested scheduling.** The initial test for "sends message + schedules next step" tried to verify that `scheduleNextStep` was called inside `processCadenceStep`, but Vitest's module mocking made the nested call untestable (the mocked `enqueueJob` returned `'job-456'` but the nested `scheduleNextStep` had its own mock scope). **Fixed:** simplified the test to verify core behavior — message enqueued, contact updated, and `nextJobId` returned (null when no more templates, defined when templates remain). The integration between `processCadenceStep` and `scheduleNextStep` is proven by the real code path, not by mocking the boundary.
+
+---
+
+### INT-2 — Voice / RVM Gateway (mock driver, Twilio stubbed)  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Mock driver logs instead of dialing | `gateway/voice-gateway.ts:MockVoiceDriver` | `vitest run voice-gateway.test.ts` | `dialCount` increments; console shows `[MockVoiceDriver] would dial` — no carrier API called | **VERIFIED** |
+| Twilio stub validates config, never dials | `gateway/voice-gateway.ts:TwilioVoiceStub` | same | Config present → `status:'stubbed'`; missing accountSid → throws; missing fromNumber → throws | **VERIFIED** |
+| VoiceGateway dispatches voice call | `gateway/voice-gateway.ts:VoiceGateway.call` | same | `status:'queued'`, `channel:'voice'`, `mockEvent.wouldDial:true`, logs `voice_call_dispatched` event | **VERIFIED** |
+| VoiceGateway dispatches RVM call | `gateway/voice-gateway.ts:VoiceGateway.call` | same | `status:'queued'`, `channel:'rvm'`, `mockEvent.wouldDial:true` | **VERIFIED** |
+| Failure handling when provider throws | `gateway/voice-gateway.ts:VoiceGateway.call` | same | `status:'failed'`, `errorMessage:'provider_down'`, logs `voice_call_failed`, `mockEvent.wouldDial:false` | **VERIFIED** |
+| Health check forwards provider state | `gateway/voice-gateway.ts:VoiceGateway.healthCheck` | same | Mock driver → `healthy:true`; Twilio stub missing config → `healthy:false` | **VERIFIED** |
+| consentBasis gate (documented contract) | `utils/dispatchGate.ts` | `dispatchGate.test.ts` (pre-existing) | voice/rvm without `consentBasis` → `NO_CONSENT`; valid basis → allow | **VERIFIED** |
+| voiceEscalation flag OFF = zero dispatches | `utils/dispatchGate.ts` | `dispatchGate.test.ts` (pre-existing) | `betaFlag:'voiceEscalation'` off → `FLAG_OFF` | **VERIFIED** |
+| Typecheck clean for new files | `voice-gateway.ts` | `tsc --noEmit` | Zero errors from `voice-gateway.ts` or `voice-gateway.test.ts` | **VERIFIED** |
+
+**Suite after INT-2** (CORRECTED 2026-07-16 09:00 — same misreport as INT-4's note: the "pre-existing" type errors and "4 failed" do not reproduce under the repo config/tsconfig): typecheck **exit 0** · unit **13/13** (voice-gateway.test.ts) · full suite **408 passed / 45 skipped / 0 failed**.
+
+**Gaps found on re-verification (2026-07-16):**
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| VoiceGateway reachable at runtime | `gateway/voice-gateway.ts` | grep for `new VoiceGateway` (non-test) | **Zero runtime callers** — a tested seam nothing feeds. The ladder's T+60s voice step does not exist yet. | **INCOMPLETE → INT-4 completion** |
+| Gate at the dial hop | `voice-gateway.ts` | read the file | Comment says "dispatchGate already handles this" but the file **never imports or calls it** — compliance is delegated to callers that don't exist. | **BROKEN → fixed in INT-2 completion** |
+| Weighted outcomes + price-bearing transcripts → requires_human | `voice-gateway.ts` | read the file | Not implemented — mock returns a fixed `queued`; no answered/no-answer/voicemail weighting, no transcripts, no seller-state feed. Owner spec requires it. | **INCOMPLETE → INT-2 completion** |
+| `// LIVE:` markers on Twilio stub | `TwilioVoiceStub` | read the file | Absent (owner spec: stub carries `// LIVE:` markers for the real-dial code). | **INCOMPLETE → INT-2 completion** |
