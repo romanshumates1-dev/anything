@@ -31,6 +31,10 @@ const FLAG_META: Record<string, { label: string; blurb: string; danger?: string 
     blurb: 'SMS → AI voice call double-tap, with voicemail drop on no-answer.',
     danger: 'Leave OFF until A2P/10DLC clears. Mock driver only — nothing dials live.',
   },
+  negotiationProfiles: {
+    label: 'Negotiation Profiles',
+    blurb: 'Per-list pricing & posture (luxury vs. free-list). Suggests owner-only min/max ranges; the AI still never sends a number.',
+  },
 };
 
 export default function BetaFlagsCard() {

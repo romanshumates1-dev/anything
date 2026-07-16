@@ -35,7 +35,7 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW';
+export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -59,6 +59,16 @@ export interface DispatchRequest {
    * seconds ago is not one, and holding it until morning breaks the flow.
    */
   transactional?: boolean;
+  /**
+   * Phase N: whether this send is COLD outbound (a first-touch to a lead who
+   * has not contacted us). When false-y the field is ignored. A luxury profile
+   * sets `coldOutbound:true` with `profileAllowsCold:false` → the gate SKIPS it
+   * (luxury is inbound/referral only). Inbound replies pass `coldOutbound:false`.
+   */
+  coldOutbound?: boolean;
+  /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
+   *  coldOutbound is true. Default (undefined) = allowed. */
+  profileAllowsCold?: boolean;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -145,6 +155,17 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           timezones: tzs,
         };
       }
+    }
+
+    // 3.5 Phase N: profile forbids cold outbound (luxury = inbound/referral
+    // only). Absolute skip, not a timing deferral — no retryAt.
+    if (req.coldOutbound && req.profileAllowsCold === false) {
+      return {
+        allow: false,
+        code: 'PROFILE_NO_COLD',
+        reason: 'SKIPPED: profile forbids cold outbound (inbound/referral leads only)',
+        timezones: tzs,
+      };
     }
 
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).

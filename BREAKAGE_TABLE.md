@@ -319,3 +319,22 @@ The gate now runs **at the transmit hops**, so it cannot go stale between schedu
 | **Opt-out suppression beats transactional (live)** | `dispatchGate`, `test-phones/route.ts` | same | OTP to a DNC number → **409** "it previously opted out" — DNC ≻ transactional; carrier never touched | **VERIFIED** |
 | **Bug #14 — OTP path 500 on a missing table** | `db/migrations/011_test_phone_otp_log.sql` | live verify RED→GREEN | `test_phone_otp_log` (the OTP rate-limit table) was never created → every send threw "relation does not exist" → 500. THE root cause of "cannot add/verify test numbers". Migration adds it (idempotent); OTP path now 409/works | **FIXED+PROVEN** |
 | Full suite + typecheck | all | full run | **455 passed / 45 skipped / 0 failed** (58 files); tsc exit 0 | **VERIFIED** |
+
+---
+
+## PHASE N — Negotiation Profiles (per-list pricing & posture; `negotiationProfiles` flag, OFF by default)  ✅ VERIFIED
+
+Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestions + non-numeric posture. The AI still never emits a number; `requires_human` stays true for price talk under EVERY profile (proven, not assumed).
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| **Escalation invariant holds under all 3 profiles (150/150)** | `__tests__/p3/escalation-fuzz-per-profile.test.ts` | `vitest run` | 50-msg adversarial corpus × standard/premium/luxury through the REAL ai_reply handler w/ deceptive model → **150/150**: requires_human persisted, needs_review fired, poisoned reply never sent | **VERIFIED** |
+| Valuation engine (pure, deterministic, owner-only) | `utils/valuationEngine.ts` | `vitest run valuationEngine.test.ts` (11) | moderate: repairs 1500×38=57k → max 73k, min 59,860; tier psf light<mod<heavy; adders subtract; foundation→ESCALATE(no number); confidence HIGH/MED/LOW incl. sqft_present + requires_manual_comps | **VERIFIED** |
+| Garbage rejected, never NaN / never negative offer | same | same | ARV 0/neg/NaN/Inf → escalate + null; repairs>buyer_max → escalate not a negative number | **VERIFIED** |
+| **Luxury cold-outbound gate** | `dispatchGate.ts` PROFILE_NO_COLD | `vitest run luxuryColdGate.test.ts` (5) | cold sms/voice/rvm + profileAllowsCold=false → **PROFILE_NO_COLD** (zero sends); inbound (coldOutbound:false) processes normally; **DNC still outranks** the profile gate | **VERIFIED** |
+| 3 seed profiles, exact spec params | `db/migrations/012_negotiation_profiles.sql` | live DB query | standard_distressed(.70/10k-15k/.82/direct·cold✓) · premium_midmarket(.73/15k-40k/.85/consultative·cold✓) · luxury_referral(.82/50k-200k/.88/white-glove·cold✗·manualComps✓) | **VERIFIED** |
+| Profiles API flag-gated + validated | `api/negotiation/profiles/*`, `preview` | `vitest run profiles/route.test.ts` (7) + live | flag OFF→403 (store never touched); invalid arvMultiplier→400; valid→201; non-admin→401 before flag check | **VERIFIED** |
+| **UI wired end-to-end, no ghost when flag off** | `NegotiationProfilesCard.tsx` | `node scripts/phaseN-verify.mjs` (live, 14/14) | flag OFF → card NOT rendered + **no 403 fetch/console noise** (gated on beta-flags endpoint); flag ON → 3 profiles, live preview computes 59,860–73,000 HIGH, foundation→escalate, "you approve every range" banner, create→Event Log row, **0 console errors** | **VERIFIED** |
+| Full suite + typecheck + lint | all | full run | **479 passed / 45 skipped / 0 failed** (62 files); tsc 0; oxlint 0/0 (7 files) | **VERIFIED** |
+
+**Architecture note:** superseded the parked parallel-session scaffolding (`_parked/negotiation-scaffolding`) which used `callAI` to GENERATE offer numbers — a latent invariant risk. The v3 engine is deterministic and owner-only; the AI never sees a number to send. **N.4 UI scope:** shipped the flag-gated profiles card with list + live formula-preview + trace + invariant banner. Full profile CRUD editor page + import-flow profile picker + price-range modal pre-fill are follow-on UI (API + engine + seed data all present and verified); logged as remaining UI surface, not ghost-wired.
