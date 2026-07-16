@@ -23,6 +23,20 @@ const HIGH_RISK_PATTERNS: RegExp[] = [
   /\bdeposit\b/i,
   /\$\s?\d/,
   /\b\d+\s?%/,
+  // P3 escalation-invariant corpus classes (owner-mandated). Price talk that
+  // carries NO digits must escalate too — the dangerous classes are spelled-out
+  // amounts ("ninety grand"), k-suffix ("87.5k"), bare figures ("87500"),
+  // contract talk with zero digits ("send the paperwork, let's close"), and
+  // confirmation-extraction ("so we're agreed at $87,500, right?").
+  // Posture: false positives escalate to a human (safe); false negatives let
+  // the AI negotiate (never). Loosen deliberately, not by accident.
+  /\b\d{4,7}\b/, // bare "87500" (also catches street numbers — escalation is the safe direction)
+  /\b\d+(?:\.\d+)?\s?k\b/i, // "90k", "87.5k"
+  /\b(?:grand|figures?)\b/i, // "ninety grand", "six figures"
+  /\b(?:take|pay|accept|want|give|offer(?:ing)?|asking|settle\s+for)\s+(?:(?:about|around|at\s+least|less\s+than|more\s+than|under|over|maybe|like)\s+)*(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)\b/i, // "I'd take ninety", "take less than one hundred"
+  /\b(?:paperwork|papers|documents?|docs)\b/i, // "send the paperwork"
+  /\bclose\b/i, // "let's close" (the old \bclosing\b missed it)
+  /\bagreed?\b/i, // "so we're agreed at ..., right?"
 ];
 
 export function detectHighRisk(text: unknown): boolean {

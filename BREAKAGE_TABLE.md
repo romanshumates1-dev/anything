@@ -287,3 +287,18 @@ The gate now runs **at the transmit hops**, so it cannot go stale between schedu
 | Suite + typecheck | all | full run | **435 passed / 45 skipped / 0 failed**; `tsc` exit 0 | **VERIFIED** |
 
 **Ladder timing note:** step delays are template-driven (`campaign_message_templates.delay_hours` per campaign). The owner ladder (T+4h → D1/D3/D7/D14) is the recommended template configuration: delay_hours 4/24/72/168/336. The engine enforces ORDER + idempotency + compliance; content/timing stay owner-authored — the engine never invents SMS copy.
+
+---
+
+### INT-2 — COMPLETION: weighted outcomes → existing state machine, escalation invariant hardened  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Weighted answered/no-answer/voicemail | `voice-gateway.ts` `MockVoiceDriver` | `vitest run voice-outcomes.test.ts` (4) | injected rng: 0.05/0.39→answered, 0.41/0.74→no_answer, 0.76/0.99→voicemail; weights sum to 1; deterministic via `rng`/`forceOutcome` | **VERIFIED** |
+| Price-bearing transcripts in the mock corpus | `MOCK_TRANSCRIPTS` | `vitest run escalationInvariant.test.ts` (8) | every `priceBearing:true` line trips `detectHighRisk` — incl. **"I´d take ninety for it"** (zero digits) and "Send the paperwork and let us close" | **VERIFIED** |
+| Answered call ⇒ EXACT sms/inbound transitions | `cadenceEngine.processVoiceStep` | `vitest run cadenceEngine.test.ts` (23) | history append, `requires_human = true`, `needs_review`, `last_reply_at = now()`, cancelCadence (incl. pending voice) — same review queue as price texts, **no voice-specific states** | **VERIFIED** |
+| Voicemail/no-answer ⇒ ladder continues, zero state writes | same | same | voicemail: no `ai_conversations`/`last_reply_at` writes observed | **VERIFIED** |
+| Spoken script states NO numbers | `VOICE_SCRIPT_NO_NUMBERS` | strict regex in escalationInvariant.test.ts | zero digits, zero currency tokens, zero spelled amounts — loosening is a deliberate owner act | **VERIFIED** |
+| **Bug #13 — detector missed 4 of 5 owner corpus classes** | `ai-orchestrator.ts` `HIGH_RISK_PATTERNS` | corpus tests, RED first | before: "87500", "87.5k", "ninety grand", "six figures", "I´d take ninety", "send the paperwork, let´s close" ALL passed undetected (`\bclosing\b` missed "close"). After: 5/5 classes escalate; 4 neutral lines do NOT blanket-escalate. One RED iteration ("take less than one hundred") fixed by widening the connector group | **FIXED+PROVEN** |
+| `// LIVE:` markers on the Twilio voice stub | `TwilioVoiceStub.dial`, `getVoiceGateway` | read | full `calls.create` sketch incl. machineDetection + status webhook, behind `// LIVE:` — nothing dials until the owner flips post-A2P | **VERIFIED** |
+| Suite + typecheck | all | full run | **449 passed / 45 skipped / 0 failed** (57 files); tsc 0 | **VERIFIED** |

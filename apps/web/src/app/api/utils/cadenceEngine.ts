@@ -329,13 +329,53 @@ export async function processVoiceStep(payload: VoicePayload): Promise<{
     return { dialed: false, reason: record.errorMessage || 'provider_failed' };
   }
 
+  // Outcome → state machine. Voice intents take the EXACT transitions SMS
+  // replies already use (owner: never invent voice-specific states):
+  //  - answered + transcript ⇒ the sms/inbound transitions verbatim —
+  //    conversation history append, requires_human=true, needs_review, and
+  //    the ladder halts (last_reply_at + cancelCadence). Price-bearing
+  //    transcripts therefore land in the SAME human-review queue as price
+  //    texts; the AI never answers a number on any channel.
+  //  - voicemail ⇒ the no-numbers script was dropped; ladder continues.
+  //  - no_answer ⇒ nothing; ladder continues.
+  if (record.outcome === 'answered' && record.transcript) {
+    if (payload.leadId) {
+      const [conv] = await sql`
+        INSERT INTO ai_conversations (lead_id, channel, history)
+        VALUES (${payload.leadId}, 'voice', '[]'::jsonb)
+        ON CONFLICT (lead_id) DO UPDATE SET last_message_at = NOW()
+        RETURNING *
+      `;
+      await sql`
+        UPDATE ai_conversations
+        SET history = history || ${JSON.stringify([{ role: 'user', content: record.transcript }])}::jsonb,
+            requires_human = true,
+            status = 'needs_review',
+            last_message_at = NOW()
+        WHERE id = ${conv.id}
+      `;
+    }
+    await sql`
+      UPDATE campaign_contacts
+      SET last_reply_at = now(), updated_at = now()
+      WHERE id = ${payload.contactId}
+    `;
+    await cancelCadence(payload.contactId);
+  }
+
   await logEvent(
     'cadence_voice_step',
     'campaign_contact',
     payload.contactId,
-    { campaignId: payload.campaignId, callUuid: record.callUuid, status: record.status },
+    {
+      campaignId: payload.campaignId,
+      callUuid: record.callUuid,
+      status: record.status,
+      outcome: record.outcome,
+      answered: record.outcome === 'answered',
+    },
     payload.organizationId
   );
 
-  return { dialed: true, reason: record.status };
+  return { dialed: true, reason: record.outcome ?? record.status };
 }

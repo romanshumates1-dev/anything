@@ -38,6 +38,10 @@ export interface VoiceCallRecord {
   dispatchTime: Date;
   completionTime?: Date;
   errorMessage?: string;
+  /** Simulated (mock) or webhook-reported (live) call outcome. */
+  outcome?: VoiceOutcome;
+  /** What the callee said (answered calls only). */
+  transcript?: string;
   /** P2.0-W: set when dispatchGate denied the dial. */
   gateCode?: DenyCode;
   /** When the gate says "not now" (quiet hours), when to retry. */
@@ -50,31 +54,103 @@ export interface VoiceCallRecord {
   };
 }
 
+export type VoiceOutcome = 'answered' | 'no_answer' | 'voicemail';
+
+export interface VoiceDialResult {
+  providerCallId: string;
+  status: string;
+  /** Mock/live call outcome once known. */
+  outcome?: VoiceOutcome;
+  /** What the callee said (answered calls). Feeds the SAME requires_human
+   *  routing SMS replies use — never a voice-specific state. */
+  transcript?: string;
+}
+
 export interface IVoiceProvider {
   name: string;
-  dial(request: VoiceCallRequest): Promise<{ providerCallId: string; status: string }>;
+  dial(request: VoiceCallRequest): Promise<VoiceDialResult>;
   hangup(providerCallId: string): Promise<void>;
   healthCheck(): Promise<{ healthy: boolean; latency: number; details?: string }>;
 }
 
 /**
- * Mock Voice Driver — logs instead of dialing.
- * Used in verification to prove the seam works without real carrier calls.
+ * The spoken/voicemail script. THE INVARIANT: it states NO numbers — no price,
+ * no digits, no currency. P3 fuzzes this with a strict regex; if a legitimate
+ * script ever needs a digit, that is a deliberate owner decision, not a drift.
+ */
+export const VOICE_SCRIPT_NO_NUMBERS =
+  'Hi, this is the DealFlow team following up on the text we sent about your property. ' +
+  'No pressure at all — if selling might make sense, just text us back or pick up next time. ' +
+  'Any price or paperwork conversation happens with a real person on our side. Thanks!';
+
+/** Weighted mock outcomes (owner spec: answered / no-answer / voicemail). */
+export const VOICE_OUTCOME_WEIGHTS: ReadonlyArray<readonly [VoiceOutcome, number]> = [
+  ['answered', 0.4],
+  ['no_answer', 0.35],
+  ['voicemail', 0.25],
+];
+
+/** Mock transcripts for answered calls — deliberately includes PRICE-BEARING
+ *  lines (with and without digits) so verification exercises the escalation
+ *  invariant end-to-end, plus neutral lines that must NOT over-escalate the
+ *  contact state beyond the standard needs_review inbound flag. */
+export const MOCK_TRANSCRIPTS: ReadonlyArray<{ text: string; priceBearing: boolean }> = [
+  { text: 'Who is this? How did you get my number?', priceBearing: false },
+  { text: 'Yes, I own it. Why are you asking?', priceBearing: false },
+  { text: "I'd take ninety for it if you can close fast.", priceBearing: true },
+  { text: 'Would you do 85000 cash?', priceBearing: true },
+  { text: 'Send the paperwork and let us close this week.', priceBearing: true },
+  { text: 'Call my sister, she handles the property.', priceBearing: false },
+];
+
+/**
+ * Mock Voice Driver — logs instead of dialing, and simulates the carrier-side
+ * OUTCOME (weighted answered/no-answer/voicemail with transcripts) so the
+ * downstream state machine can be verified end-to-end with zero real calls.
  */
 export class MockVoiceDriver implements IVoiceProvider {
   name = 'mock-voice';
   dialCount = 0;
 
-  async dial(request: VoiceCallRequest): Promise<{ providerCallId: string; status: string }> {
+  constructor(
+    private opts: {
+      /** Injectable randomness for deterministic tests. */
+      rng?: () => number;
+      /** Pin the outcome (tests). */
+      forceOutcome?: VoiceOutcome;
+      /** Pin the transcript for answered calls (tests). */
+      forceTranscript?: string;
+    } = {}
+  ) {}
+
+  private pickOutcome(): VoiceOutcome {
+    if (this.opts.forceOutcome) return this.opts.forceOutcome;
+    const r = (this.opts.rng ?? Math.random)();
+    let acc = 0;
+    for (const [outcome, w] of VOICE_OUTCOME_WEIGHTS) {
+      acc += w;
+      if (r < acc) return outcome;
+    }
+    return 'no_answer';
+  }
+
+  async dial(request: VoiceCallRequest): Promise<VoiceDialResult> {
     this.dialCount++;
     const providerCallId = `mock_${randomUUID().slice(0, 8)}`;
+    const outcome = this.pickOutcome();
+    const transcript =
+      outcome === 'answered'
+        ? this.opts.forceTranscript ??
+          MOCK_TRANSCRIPTS[Math.floor((this.opts.rng ?? Math.random)() * MOCK_TRANSCRIPTS.length)].text
+        : undefined;
     console.log('[MockVoiceDriver] would dial', {
       to: request.to,
       channel: request.channel,
-      script: request.script?.slice(0, 50),
+      outcome,
+      script: (request.script ?? VOICE_SCRIPT_NO_NUMBERS).slice(0, 50),
       consentBasis: request.consentBasis,
     });
-    return { providerCallId, status: 'queued' };
+    return { providerCallId, status: 'queued', outcome, transcript };
   }
 
   async hangup(_providerCallId: string): Promise<void> {
@@ -99,7 +175,7 @@ export class TwilioVoiceStub implements IVoiceProvider {
     private fromNumber: string | undefined,
   ) {}
 
-  async dial(request: VoiceCallRequest): Promise<{ providerCallId: string; status: string }> {
+  async dial(request: VoiceCallRequest): Promise<VoiceDialResult> {
     // STUB: validate config exists but do not call Twilio API
     if (!this.accountSid || !this.authToken) {
       throw new Error('TwilioVoiceStub: missing accountSid or authToken');
@@ -112,6 +188,16 @@ export class TwilioVoiceStub implements IVoiceProvider {
       from: this.fromNumber,
       channel: request.channel,
     });
+    // LIVE: const client = require('twilio')(this.accountSid, this.authToken);
+    // LIVE: const call = await client.calls.create({
+    // LIVE:   to: request.to,
+    // LIVE:   from: this.fromNumber,
+    // LIVE:   twiml: `<Response><Say>${escapeXml(request.script ?? VOICE_SCRIPT_NO_NUMBERS)}</Say></Response>`,
+    // LIVE:   machineDetection: 'DetectMessageEnd',   // voicemail drop for RVM
+    // LIVE:   statusCallback: `${process.env.PUBLIC_BASE_URL}/api/voice/status`,
+    // LIVE: });
+    // LIVE: return { providerCallId: call.sid, status: call.status };
+    // LIVE: (outcome + transcript then arrive via the status/recording webhooks)
     return { providerCallId: `stub_${randomUUID().slice(0, 8)}`, status: 'stubbed' };
   }
 
@@ -189,6 +275,7 @@ export class VoiceGateway {
         providerCallId: result.providerCallId,
         channel,
         to,
+        outcome: result.outcome,
         script: script?.slice(0, 100),
         campaignId,
         organizationId,
@@ -204,6 +291,8 @@ export class VoiceGateway {
         leadId,
         to,
         dispatchTime: new Date(),
+        outcome: result.outcome,
+        transcript: result.transcript,
         mockEvent: {
           wouldDial: true,
           reason: 'dispatched_to_provider',

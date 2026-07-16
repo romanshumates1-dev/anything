@@ -426,3 +426,53 @@ describe('ABSORPTION — a contact mid-ladder fires each remaining step exactly 
     }
   });
 });
+
+describe('INT-2 — answered voice call takes the EXACT sms/inbound transitions', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const payload = { contactId: 'c1', campaignId: 'camp1', organizationId: 'org1', phone: '+15025550101', leadId: 7, consentBasis: CONSENT_BASIS_ATTESTED };
+
+  const sqlText = (call: any[]) => (Array.isArray(call[0]) ? (call[0] as string[]).join('¶') : String(call[0]));
+
+  it('answered + price-bearing transcript: history append, requires_human, needs_review, ladder halted', async () => {
+    vi.mocked(isBetaFlagOn).mockResolvedValue(true);
+    vi.mocked(sql)
+      .mockResolvedValueOnce([{ id: 'c1', status: 'SENT', opted_out_at: null, last_reply_at: null }]) // freshness
+      .mockResolvedValue([{ id: 'conv9' }]); // conv upsert + the rest
+    mockVoiceCall.mockResolvedValueOnce({
+      callUuid: 'u3', status: 'queued', channel: 'voice', provider: 'mock-voice',
+      leadId: 7, to: payload.phone, dispatchTime: new Date(),
+      outcome: 'answered', transcript: "I'd take ninety for it if you can close fast.",
+    });
+
+    const r = await processVoiceStep(payload);
+    expect(r.dialed).toBe(true);
+    expect(r.reason).toBe('answered');
+
+    const texts = vi.mocked(sql).mock.calls.map(sqlText);
+    // the sms/inbound transitions, verbatim (no voice-specific states):
+    expect(texts.some((t) => t.includes('INSERT INTO ai_conversations'))).toBe(true);
+    expect(texts.some((t) => t.includes("requires_human = true") && t.includes("'needs_review'"))).toBe(true);
+    expect(texts.some((t) => t.includes('UPDATE campaign_contacts') && t.includes('last_reply_at = now()'))).toBe(true);
+    // ladder halted: cancelCadence targets pending cadence + voice jobs
+    expect(texts.some((t) => t.includes("type IN ('cadence_step', 'voice_call')"))).toBe(true);
+    // the transcript itself landed in the conversation history param
+    const histCall = vi.mocked(sql).mock.calls.find((c) => sqlText(c).includes('requires_human = true'));
+    expect(JSON.stringify(histCall?.slice(1))).toContain('ninety for it');
+  });
+
+  it('voicemail: no state transitions, ladder untouched', async () => {
+    vi.mocked(isBetaFlagOn).mockResolvedValue(true);
+    vi.mocked(sql).mockResolvedValueOnce([{ id: 'c1', status: 'SENT', opted_out_at: null, last_reply_at: null }]);
+    mockVoiceCall.mockResolvedValueOnce({
+      callUuid: 'u4', status: 'queued', channel: 'voice', provider: 'mock-voice',
+      leadId: 7, to: payload.phone, dispatchTime: new Date(), outcome: 'voicemail',
+    });
+
+    const r = await processVoiceStep(payload);
+    expect(r.dialed).toBe(true);
+    expect(r.reason).toBe('voicemail');
+    const texts = vi.mocked(sql).mock.calls.map(sqlText);
+    expect(texts.some((t) => t.includes('ai_conversations'))).toBe(false);
+    expect(texts.some((t) => t.includes('last_reply_at = now()'))).toBe(false);
+  });
+});
