@@ -16,6 +16,7 @@ import { enqueueJob } from '@/app/api/utils/jobs';
 import { dispatchGate } from '@/app/api/utils/dispatchGate';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
 import { logEvent } from '@/app/api/utils/logger';
+import { getVoiceGateway } from '@/app/api/gateway/voice-gateway';
 
 export type CadencePayload = {
   contactId: string;
@@ -26,6 +27,100 @@ export type CadencePayload = {
   templateId: string;
   body: string;
 };
+
+/** Consent basis attached to campaign sends when the owner attested the list
+ *  (outreach_campaigns.consent_confirmed_at). Required by the gate for voice/RVM. */
+export const CONSENT_BASIS_ATTESTED = 'manual-list-attested';
+
+export type VoicePayload = {
+  contactId: string;
+  campaignId: string;
+  organizationId: string;
+  phone: string;
+  leadId: number | string | null;
+  consentBasis: string | null;
+};
+
+/**
+ * Queue the OPENING send for every fresh contact of a campaign (the T+0 step —
+ * this is what STARTS the ladder; scheduleNextStep then advances it after each
+ * successful send). Flag-gated: with cadenceEngine OFF this is a no-op, so
+ * starting a campaign behaves exactly as it did pre-INT-4 (status flip only).
+ * Dedupe `open:{campaignId}:{contactId}` is at-most-once EVER — a relaunch can
+ * never resend an opening, even after the original job completed.
+ */
+export async function dispatchOpenings(
+  campaignId: string,
+  organizationId: string
+): Promise<{ queued: number; reason?: string }> {
+  if (!(await isBetaFlagOn('cadenceEngine'))) {
+    return { queued: 0, reason: 'flag_off' };
+  }
+
+  const [campaign] = await sql`
+    SELECT * FROM outreach_campaigns
+    WHERE id = ${campaignId} AND organization_id = ${organizationId}
+  `;
+  if (!campaign) return { queued: 0, reason: 'campaign_not_found' };
+
+  const [opening] = await sql`
+    SELECT * FROM campaign_message_templates
+    WHERE campaign_id = ${campaignId} AND kind = 'OPENING' AND is_active = true
+    ORDER BY sequence_order ASC
+    LIMIT 1
+  `;
+  if (!opening) return { queued: 0, reason: 'no_opening_template' };
+
+  const consentBasis = campaign.consent_confirmed_at ? CONSENT_BASIS_ATTESTED : null;
+
+  const contacts = await sql`
+    SELECT * FROM campaign_contacts
+    WHERE campaign_id = ${campaignId}
+      AND COALESCE(follow_ups_sent, 0) = 0
+      AND status <> 'OPTED_OUT'
+      AND opted_out_at IS NULL
+      AND last_reply_at IS NULL
+  `;
+
+  let queued = 0;
+  let i = 0;
+  for (const c of contacts) {
+    const jobId = await enqueueJob(
+      'send_message',
+      {
+        leadId: c.seller_lead_id || c.buyer_lead_id,
+        to: c.phone,
+        text: opening.body,
+        campaignId,
+        organizationId,
+        contactId: c.id,
+        channel: 'sms',
+        isOpening: true,
+        consentBasis,
+      },
+      // 2s spacing is pacing, not compliance — the gate + pool caps enforce
+      // the real limits at transmit time.
+      { runAt: new Date(Date.now() + i * 2000), dedupeKey: `open:${campaignId}:${c.id}` }
+    );
+    if (jobId) queued++;
+    i++;
+  }
+
+  await logEvent('cadence_openings_queued', 'campaign', campaignId, { queued }, organizationId);
+  return { queued };
+}
+
+/**
+ * Schedule the T+60s voice escalation after a successful OPENING send.
+ * voiceEscalation flag OFF (the default) → no job, zero events.
+ */
+export async function scheduleVoiceStep(payload: VoicePayload): Promise<string | null> {
+  if (!(await isBetaFlagOn('voiceEscalation'))) return null;
+  return enqueueJob('voice_call', payload, {
+    runAt: new Date(Date.now() + 60_000),
+    dedupeKey: `voice:${payload.contactId}:1`,
+  });
+}
 
 /**
  * Schedule the next cadence step for a contact.
@@ -93,7 +188,7 @@ export async function cancelCadence(contactId: string): Promise<void> {
   await sql`
     UPDATE jobs
     SET status = 'cancelled', updated_at = now()
-    WHERE type = 'cadence_step'
+    WHERE type IN ('cadence_step', 'voice_call')
       AND status IN ('pending', 'failed')
       AND payload->>'contactId' = ${contactId}
   `;
@@ -107,6 +202,12 @@ export async function processCadenceStep(payload: CadencePayload): Promise<{
   sent: boolean;
   reason: string;
   nextJobId?: string | null;
+  /** Set on time-based gate denials: jobs.ts defers THE SAME job row to this
+   *  instant. Never re-enqueue with the in-flight dedupe key — the unique
+   *  index spans processing/completed rows, so the insert silently no-ops and
+   *  the step is lost (bug #12, found live against the real index). */
+  deferAt?: Date;
+  gateCode?: string;
 }> {
   // Beta flag guard at send time (not schedule time)
   if (!(await isBetaFlagOn('cadenceEngine'))) {
@@ -135,15 +236,10 @@ export async function processCadenceStep(payload: CadencePayload): Promise<{
     isCadenceStep: true,
   });
   if (!gate.allow) {
-    // Reschedule at retryAt if provided, otherwise let the job fail for retry
-    if (gate.retryAt) {
-      const dedupeKey = `cadence:${payload.contactId}:${payload.sequenceOrder}`;
-      await enqueueJob('cadence_step', payload, {
-        runAt: gate.retryAt,
-        dedupeKey,
-      });
-    }
-    return { sent: false, reason: `gate:${gate.code}` };
+    // Same-row deferral contract: return the gate outcome and let jobs.ts
+    // move THIS job's run_at. (The previous re-enqueue-with-same-dedupe-key
+    // approach silently lost every deferred step — see bug #12.)
+    return { sent: false, reason: `gate:${gate.code}`, gateCode: gate.code, deferAt: gate.retryAt };
   }
 
   // Enqueue the actual send_message job (which goes through the gateway)
@@ -183,4 +279,63 @@ export async function processCadenceStep(payload: CadencePayload): Promise<{
   );
 
   return { sent: true, reason: 'sent', nextJobId };
+}
+
+/**
+ * Process a voice_call job — the ladder's T+60s escalation step.
+ * Same freshness re-checks as an SMS step; the compliance gate itself runs
+ * INSIDE VoiceGateway.call (at the dial hop). Same-row deferral contract as
+ * processCadenceStep: never re-enqueue an in-flight dedupe key.
+ */
+export async function processVoiceStep(payload: VoicePayload): Promise<{
+  dialed: boolean;
+  reason: string;
+  deferAt?: Date;
+  gateCode?: string;
+}> {
+  if (!(await isBetaFlagOn('voiceEscalation'))) {
+    return { dialed: false, reason: 'flag_off' };
+  }
+
+  const [contact] = await sql`
+    SELECT * FROM campaign_contacts WHERE id = ${payload.contactId}
+  `;
+  if (!contact) return { dialed: false, reason: 'contact_deleted' };
+  if (contact.status === 'OPTED_OUT' || contact.opted_out_at) {
+    return { dialed: false, reason: 'opted_out' };
+  }
+  if (contact.last_reply_at) return { dialed: false, reason: 'replied' };
+
+  const gateway = getVoiceGateway();
+  const record = await gateway.call({
+    leadId: payload.leadId ?? 0,
+    to: payload.phone,
+    channel: 'voice',
+    campaignId: payload.campaignId,
+    organizationId: payload.organizationId,
+    contactId: payload.contactId,
+    consentBasis: payload.consentBasis ?? undefined,
+  });
+
+  if (record.gateCode) {
+    return {
+      dialed: false,
+      reason: `gate:${record.gateCode}`,
+      gateCode: record.gateCode,
+      deferAt: record.retryAt,
+    };
+  }
+  if (record.status === 'failed') {
+    return { dialed: false, reason: record.errorMessage || 'provider_failed' };
+  }
+
+  await logEvent(
+    'cadence_voice_step',
+    'campaign_contact',
+    payload.contactId,
+    { campaignId: payload.campaignId, callUuid: record.callUuid, status: record.status },
+    payload.organizationId
+  );
+
+  return { dialed: true, reason: record.status };
 }

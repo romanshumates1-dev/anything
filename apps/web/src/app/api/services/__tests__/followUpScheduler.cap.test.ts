@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { processFollowUps } from '../followUpScheduler';
+// followUpScheduler was absorbed by utils/cadenceEngine (INT-4). This file
+// tests the daily-cap SELECTION semantics with a local model of the query.
 
 const DAILY_CAP = 50;
 

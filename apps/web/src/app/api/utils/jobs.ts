@@ -5,7 +5,7 @@ import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
 import { recordAIDispatched, dispatchAckIfNeeded } from './sla';
-import { processCadenceStep, scheduleNextStep } from './cadenceEngine';
+import { processCadenceStep, processVoiceStep, scheduleNextStep, scheduleVoiceStep } from './cadenceEngine';
 import type { DenyCode } from './dispatchGate';
 
 /**
@@ -23,7 +23,8 @@ const DEFERRABLE: ReadonlySet<DenyCode> = new Set(['QUIET_HOURS', 'OUTSIDE_WINDO
 async function handleGateDenial(
   jobId: number | string,
   code: DenyCode,
-  retryAt: Date | undefined
+  retryAt: Date | undefined,
+  jobType = 'send_message'
 ): Promise<{ success: true; jobId: number | string; type: string; gate: DenyCode }> {
   if (DEFERRABLE.has(code)) {
     const runAt = retryAt ?? new Date(Date.now() + 60 * 60 * 1000);
@@ -43,7 +44,7 @@ async function handleGateDenial(
       WHERE id = ${jobId}
     `;
   }
-  return { success: true, jobId, type: 'send_message', gate: code };
+  return { success: true, jobId, type: jobType, gate: code };
 }
 
 export async function enqueueJob(
@@ -168,6 +169,18 @@ export async function processNextJob() {
         // ladder never begins (found: zero runtime callers at b7dd43e).
         if (payload.contactId && payload.campaignId) {
           await scheduleNextStep(payload.contactId, payload.campaignId, payload.organizationId);
+          // Ladder T+60s: voice escalation after the OPENING send only.
+          // scheduleVoiceStep is voiceEscalation-flag-gated (default OFF).
+          if (payload.isOpening) {
+            await scheduleVoiceStep({
+              contactId: payload.contactId,
+              campaignId: payload.campaignId,
+              organizationId: payload.organizationId,
+              phone: payload.to,
+              leadId: payload.leadId ?? null,
+              consentBasis: payload.consentBasis ?? null,
+            });
+          }
         }
         break;
       }
@@ -214,7 +227,20 @@ export async function processNextJob() {
       }
       case 'cadence_step': {
         const payload: any = job.payload;
-        await processCadenceStep(payload);
+        const step = await processCadenceStep(payload);
+        // Same-row deferral: a time-gated step moves THIS job's run_at. It must
+        // never re-enqueue its own dedupe key (silently no-ops -> step lost).
+        if (step.gateCode) {
+          return await handleGateDenial(job.id, step.gateCode as DenyCode, step.deferAt, 'cadence_step');
+        }
+        break;
+      }
+      case 'voice_call': {
+        const payload: any = job.payload;
+        const call = await processVoiceStep(payload);
+        if (call.gateCode) {
+          return await handleGateDenial(job.id, call.gateCode as DenyCode, call.deferAt, 'voice_call');
+        }
         break;
       }
       default:

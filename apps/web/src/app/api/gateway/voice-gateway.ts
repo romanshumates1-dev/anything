@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { logEvent } from '@/app/api/utils/logger';
+import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
 
 export type VoiceChannel = 'voice' | 'rvm';
 
@@ -37,6 +38,10 @@ export interface VoiceCallRecord {
   dispatchTime: Date;
   completionTime?: Date;
   errorMessage?: string;
+  /** P2.0-W: set when dispatchGate denied the dial. */
+  gateCode?: DenyCode;
+  /** When the gate says "not now" (quiet hours), when to retry. */
+  retryAt?: Date;
   /** Mock-only: the logged event for verification */
   mockEvent?: {
     wouldDial: boolean;
@@ -140,6 +145,41 @@ export class VoiceGateway {
     const callUuid = randomUUID();
     const { leadId, to, channel, script, campaignId, organizationId, contactId } = request;
 
+    // UNIVERSAL DISPATCH GATE (P2.0-W) — at the dial hop, not delegated to
+    // callers. (An earlier version *documented* gate coverage in a comment
+    // while never calling it; the gate runs here so no caller can forget.)
+    const gate = await dispatchGate({
+      phone: to,
+      channel,
+      betaFlag: 'voiceEscalation',
+      consentBasis: request.consentBasis,
+    });
+    if (!gate.allow) {
+      await logEvent('voice_call_suppressed', 'voice', String(leadId), {
+        callUuid,
+        channel,
+        to,
+        reason: gate.code,
+        detail: gate.reason,
+        campaignId,
+        organizationId,
+        contactId,
+      });
+      return {
+        callUuid,
+        status: 'failed',
+        channel,
+        provider: this.config.primaryProvider.name,
+        leadId,
+        to,
+        dispatchTime: new Date(),
+        errorMessage: gate.code,
+        gateCode: gate.code,
+        retryAt: gate.retryAt,
+        mockEvent: { wouldDial: false, reason: `gate:${gate.code}`, script },
+      };
+    }
+
     try {
       const result = await this.config.primaryProvider.dial(request);
 
@@ -203,4 +243,26 @@ export class VoiceGateway {
   async healthCheck(): Promise<{ healthy: boolean; latency: number; details?: string }> {
     return this.config.primaryProvider.healthCheck();
   }
+}
+
+let voiceGateway: VoiceGateway | null = null;
+
+/**
+ * Runtime voice gateway. MOCK DRIVER ONLY until A2P clears and the owner
+ * flips to live — nothing here can dial a carrier.
+ *
+ * // LIVE: to go live, replace MockVoiceDriver with the real Twilio driver:
+ * // LIVE:   primaryProvider: new TwilioVoiceStub(   // <- swap stub for a real adapter
+ * // LIVE:     process.env.TWILIO_ACCOUNT_SID || '',
+ * // LIVE:     process.env.TWILIO_AUTH_TOKEN || '',
+ * // LIVE:     process.env.TWILIO_VOICE_FROM_NUMBER || undefined,
+ * // LIVE:   ),
+ * // LIVE: and implement TwilioVoiceStub.dial via client.calls.create({...}).
+ * // LIVE: Owner flips voiceEscalation ON only after 10DLC/A2P approval.
+ */
+export function getVoiceGateway(): VoiceGateway {
+  if (!voiceGateway) {
+    voiceGateway = new VoiceGateway({ primaryProvider: new MockVoiceDriver() });
+  }
+  return voiceGateway;
 }

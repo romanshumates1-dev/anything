@@ -269,3 +269,21 @@ The gate now runs **at the transmit hops**, so it cannot go stale between schedu
 | Suite + typecheck + lint | all | full run | **425 passed / 45 skipped / 0 failed**; `tsc` 0; oxlint 0/0 on the 5 touched files | **VERIFIED** |
 
 **INT-3 VERIFY: ALL PASS (18/18 checks).** Cleanup ran (test number + cap setting + verify admin removed).
+
+---
+
+### INT-4 — COMPLETION: ladder start + voice step + absorption + the lost-step fix  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| **Bug #12 — gate-deferred steps were silently LOST** | `cadenceEngine.ts` (was: re-enqueue w/ same dedupe key) | live probe against the real `uniq_jobs_dedupe_key` index | processing row holds the key → old re-enqueue returned **0 rows** (dropped); jobs.ts then marked the original completed → follow-up gone forever. **Fix: same-row deferral** — `processCadenceStep`/`processVoiceStep` surface `gateCode+deferAt`, jobs.ts moves THIS row: observed `{"status":"pending","future":true}`, **exactly 1 row under the key** | **FIXED+PROVEN** |
+| Ladder STARTS: openings queued on campaign ACTIVE | `cadenceEngine.dispatchOpenings`, outreach start route | `vitest run cadenceEngine.test.ts` (21) | flag OFF → `{queued:0, reason:flag_off}` (start behaves exactly pre-INT-4); with OPENING template → per-contact `send_message` jobs, dedupe `open:{camp}:{contact}` at-most-once-EVER (relaunch dedupes to 0); `consentBasis` derived from `consent_confirmed_at` | **VERIFIED** |
+| T+60s voice escalation step | `scheduleVoiceStep`, jobs.ts opening hook | same | voiceEscalation OFF → null + zero enqueues; ON → `voice_call` at +59–61.5s, dedupe `voice:{contact}:1`; scheduled ONLY after a successful OPENING send | **VERIFIED** |
+| Voice step freshness + gate at dial hop | `processVoiceStep`, `voice-gateway.ts` | `vitest run voice-gateway.test.ts` (15) + cadence tests | replied contact → never dials; gate deny → `dialCount 0`, `voice_call_suppressed` logged, `gateCode+retryAt` surfaced for same-row deferral | **VERIFIED** |
+| Reply cancels the WHOLE ladder incl. pending voice | `cancelCadence` | cadence tests | cancel query now targets `type IN (cadence_step, voice_call)` — a reply 30s after the opening kills the T+60s call | **VERIFIED** |
+| followUpScheduler absorbed | deleted `services/followUpScheduler.ts` | `grep processFollowUps` (0 callers, dead import in its cap test removed) | dead engine with the false BullMQ comment retired; cadenceEngine reads the SAME tables (`campaign_message_templates`/`follow_ups_sent`), so configured ladders carry over with no data migration | **VERIFIED** |
+| ABSORPTION: mid-ladder fires each remaining step exactly once | cadence tests + live index | absorption test + `scheduler_validation` (CI live) | `follow_ups_sent=2` → 3 concurrent schedule attempts ALL target `cadence:c1:3` (never :1/:2/:4); index collapses to **one** job (`[j3, null, null]`) | **VERIFIED** |
+| Vacuous tests removed | `voice-gateway.test.ts` | read + suite | two `expect(true)` "documented contract" tests deleted — superseded by real wiring tests | **VERIFIED** |
+| Suite + typecheck | all | full run | **435 passed / 45 skipped / 0 failed**; `tsc` exit 0 | **VERIFIED** |
+
+**Ladder timing note:** step delays are template-driven (`campaign_message_templates.delay_hours` per campaign). The owner ladder (T+4h → D1/D3/D7/D14) is the recommended template configuration: delay_hours 4/24/72/168/336. The engine enforces ORDER + idempotency + compliance; content/timing stay owner-authored — the engine never invents SMS copy.

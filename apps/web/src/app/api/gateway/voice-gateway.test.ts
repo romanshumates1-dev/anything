@@ -13,6 +13,14 @@ vi.mock('@/app/api/utils/logger', () => ({
   logEvent: vi.fn(),
 }));
 
+// P2.0-W: VoiceGateway.call now runs the universal dispatchGate at the dial
+// hop. Default ALLOW keeps the driver/record tests deterministic; the wiring
+// describe below overrides it to prove denial means zero dials.
+const { mockVoiceDispatchGate } = vi.hoisted(() => ({
+  mockVoiceDispatchGate: vi.fn(async () => ({ allow: true as const, timezones: [] as string[] })),
+}));
+vi.mock('@/app/api/utils/dispatchGate', () => ({ dispatchGate: mockVoiceDispatchGate }));
+
 import { logEvent } from '@/app/api/utils/logger';
 import {
   VoiceGateway,
@@ -199,19 +207,35 @@ describe('INT-2 — Voice / RVM Gateway', () => {
     });
   });
 
-  describe('dispatchGate integration (via existing gate tests)', () => {
-    // The actual dispatchGate tests for voice/rvm live in dispatchGate.test.ts.
-    // This section documents the INT-2 contract that the gateway relies on.
-    it('voice channel requires consentBasis (documented)', () => {
-      // dispatchGate.test.ts: '3. NO_CONSENT — voice/rvm without a valid consentBasis is skipped'
-      // This is the gate that prevents voice calls without consent.
-      expect(true).toBe(true); // contract documented
-    });
+});
 
-    it('voice channel respects voiceEscalation beta flag (documented)', () => {
-      // dispatchGate.test.ts: 'Flag OFF ⇒ zero dispatches' with betaFlag: 'voiceEscalation'
-      // This ensures the voiceEscalation flag controls all voice/RVM traffic.
-      expect(true).toBe(true); // contract documented
+describe('P2.0-W: dispatchGate wiring at the dial hop', () => {
+  beforeEach(() => {
+    mockVoiceDispatchGate.mockReset();
+    mockVoiceDispatchGate.mockResolvedValue({ allow: true, timezones: [] });
+  });
+
+  it('calls the gate with channel + consentBasis BEFORE any dial', async () => {
+    const driver = new MockVoiceDriver();
+    const gw = new VoiceGateway({ primaryProvider: driver });
+    await gw.call({ leadId: 1, to: '+15025550101', channel: 'voice', consentBasis: 'manual-list-attested' });
+    expect(mockVoiceDispatchGate).toHaveBeenCalledWith({
+      phone: '+15025550101', channel: 'voice',
+      betaFlag: 'voiceEscalation', consentBasis: 'manual-list-attested',
     });
+    expect(driver.dialCount).toBe(1);
+  });
+
+  it('gate denial: ZERO dials, gateCode + retryAt surfaced, suppression logged', async () => {
+    const retryAt = new Date(Date.now() + 3600_000);
+    mockVoiceDispatchGate.mockResolvedValue({ allow: false, code: 'NO_CONSENT', reason: 'no basis', retryAt, timezones: [] });
+    const driver = new MockVoiceDriver();
+    const gw = new VoiceGateway({ primaryProvider: driver });
+    const rec = await gw.call({ leadId: 1, to: '+15025550101', channel: 'rvm' });
+    expect(driver.dialCount).toBe(0); // the carrier is never touched
+    expect(rec.status).toBe('failed');
+    expect(rec.gateCode).toBe('NO_CONSENT');
+    expect(rec.retryAt).toEqual(retryAt);
+    expect(vi.mocked(logEvent)).toHaveBeenCalledWith('voice_call_suppressed', 'voice', '1', expect.objectContaining({ reason: 'NO_CONSENT' }));
   });
 });
