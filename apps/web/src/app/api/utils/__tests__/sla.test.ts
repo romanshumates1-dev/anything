@@ -12,7 +12,20 @@ import {
 } from '../sla';
 import { __resetAiConfigCache } from '../ai-settings';
 
-describe('sla — INT-1 latency + ack instrumentation', () => {
+/**
+ * These are LIVE-DB tests: they exercise real SQL semantics (per-conversation
+ * "latest pending row" selection, P95 windowing, ack idempotency) against the
+ * real `inbound_latency` table — mocking `sql` would make every assertion
+ * vacuous. So they follow the SAME activation gate as the Layer C flow runner
+ * (`flows-live.test.ts`): skipped in the plain unit suite (no DATABASE_URL,
+ * where `sql` is a throwing NullishQueryFunction), executed in CI's Layer C job
+ * and locally via:
+ *   RUN_LIVE_FLOWS=1 node --env-file=.env ./node_modules/.bin/vitest run \
+ *     --config src/app/api/vitest.config.ts src/app/api/utils/__tests__/sla.test.ts
+ */
+const LIVE = process.env.RUN_LIVE_FLOWS === '1' && !!process.env.DATABASE_URL;
+
+describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
   beforeEach(async () => {
     // Clean slate for every test
     await sql`DELETE FROM inbound_latency`;

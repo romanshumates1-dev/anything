@@ -25,6 +25,37 @@ Rule: a row is VERIFIED only with **observed output** captured this session. Int
 **Deliberate spec deviations (with evidence):**
 - Health timeout **180s**, not the spec's 15s: a cold Turbopack build here measured >90s (at 90s the loop timed out on a *healthy* build and wastefully rebuilt, ~4min total). Intent preserved — fail loudly, never open a broken tab.
 - Port **4000** (this repo), not 4600. No local Redis/Postgres to boot: Postgres is Neon (cloud); "workers" = the `jobs-dev` drain loop.
+- Beta flags are served from an **admin-gated** `/api/settings/beta-flags`, not the public `/api/health` as the source spec said. That spec assumed a single-user localhost app; here `/api/system/health` is public (Shell indicator + LB probes, internet-facing in prod), so publishing feature config there would re-open the Phase-5 info-disclosure. Public health stays minimal liveness.
+
+### P2.0 — dispatchGate (universal send-time compliance gate)  ✅ VERIFIED
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| 5 gates, in order, fail-closed | `utils/dispatchGate.ts` | `vitest run … __tests__/dispatchGate.test.ts` | **17/17 passed (72ms)**, first run | **VERIFIED** |
+| Gate ORDER: DNC ≻ FLAG_OFF ≻ NO_CONSENT ≻ QUIET_HOURS | `dispatchGate.ts:114-153` | suppressed + flag-off + voice + 11pm simultaneously | returned `code:'DNC'` (not FLAG_OFF/NO_CONSENT/QUIET_HOURS) — DNC outranks all | **VERIFIED** |
+| DNC suppresses **every** channel, permanently | `isSuppressed()` → `compliance_records` | gate called for sms/voice/rvm with suppressed target | all three `allow:false, code:'DNC'` | **VERIFIED** |
+| Flag OFF ⇒ zero dispatches | `betaFlags.isBetaFlagOn` | `cadenceEngine` flag off | `allow:false, code:'FLAG_OFF'` | **VERIFIED** |
+| consentBasis gate (voice/RVM only) | `VALID_CONSENT_BASES` | voice/rvm w/ missing + bogus basis; sms w/o basis | missing→`NO_CONSENT`, `'i-said-so'`→`NO_CONSENT`; **sms allowed w/o basis**; both valid bases→allow | **VERIFIED** |
+| Quiet hours 8am–9pm lead-local + retryAt | `isWithinQuietHours`, `nextAllowed` | 7am/8am/8pm/9pm boundary probes; deny at 11pm | 7am deny · 8am allow (inclusive) · 8pm allow · 9pm deny (exclusive); `retryAt` lands **inside** quiet hours | **VERIFIED** |
+| Send-window snap — cadence steps ONLY | `isWithinSendWindow` | 12:00 local (legal hour, between windows) | non-cadence → **allow**; `isCadenceStep:true` → `OUTSIDE_WINDOW`, `retryAt` inside **both** a window and quiet hours | **VERIFIED** |
+| **DST-safe** (no offset drift) | `localHourIn` (Intl), `nextAllowed` 15-min probe | 2026-03-08 spring-forward; EDT vs EST same local hour | 06:00Z→**1am EST**, 07:00Z→**3am EDT** (02:00 correctly does not exist); 16:00Z Jul & 17:00Z Jan both →**12** | **VERIFIED** |
+| **Unknown area code ⇒ most restrictive** | `area-codes.timezonesForPhone` | known `+1502…` vs unmapped `+1999…` | known→**1 zone**; unknown→**all US zones**. 8am ET (=5am PT) → `[NY]` allow but `[NY,LA]` **deny**; 8pm PT (=11pm ET) → `[LA]` allow but `[NY,LA]` **deny** | **VERIFIED** |
+| Fails CLOSED on error | `dispatchGate` catch | suppression lookup throws | `allow:false` (denies, does not send) | **VERIFIED** |
+
+### INT-1 — Speed-to-Lead latency + provider-aware ack  ✅ VERIFIED (live DB)
+
+| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|---|
+| Latency instrumentation + P95, live DB | `utils/sla.ts`, `db/migrations/009_sla_latency.sql` | `RUN_LIVE_FLOWS=1 DATABASE_URL=… vitest run … __tests__/sla.test.ts` | **18/18 passed (3.07s)** against real Neon `inbound_latency` | **VERIFIED** |
+| reply_received → ai_dispatched recorded | `recordReplyReceived`, `recordAIDispatched` | live inserts/updates | row created w/ `reply_received_at`; updated w/ `ai_dispatched_at` + provider; only the **most recent pending row per conversation** updated | **VERIFIED** |
+| Rolling P95 (env-agnostic, tells the truth) | `computeP95Direct` | live window fixtures | P95 computed correctly over the window; **pending rows (`ai_dispatched_at IS NULL`) excluded**; null when no completed dispatches | **VERIFIED** |
+| Provider-aware ack (Decision 1b) | `ANTHROPIC_ACK_THRESHOLD_MS=45_000`, `OLLAMA_ACK_IMMEDIATE` | live threshold cases | anthropic: **no ack <45s**, **ack ≥45s** (boundary `>=` inclusive); **ollama: always acks immediately**; `markAckSent` idempotent (one row) | **VERIFIED** |
+
+**Bugs found by running it (not assumed):**
+4. **The whole suite was RED — 18 failing tests — and the INT-1 commit (`6feed53`) had never been run.** Every `sla.test.ts` case died on `No database connection string was provided to neon()`. Root cause: `sql.ts:20` resolves to a throwing `NullishQueryFunction` without `DATABASE_URL`, and `sla.test.ts` (a genuine live-DB test — real `DELETE`, per-conversation row selection, P95 windowing) never adopted the repo's existing live-gate. **Fixed** by adopting the *same* gate as `flows-live.test.ts` (`RUN_LIVE_FLOWS=1 && DATABASE_URL` + `describe.skipIf`) — chosen over mocking `sql`, which would have made every assertion vacuous. Unit suite: 18 red → **0 red**; live run: **18/18 green**.
+5. **`dispatchGate` shipped (`de9219d`) with NO test file**, despite being the universal compliance gate for every channel. **Fixed:** wrote `dispatchGate.test.ts` (17 tests) covering each gate individually, gate order, DST, boundary edges, unknown-area-code most-restrictive, and fail-closed. All passed first run — the implementation was correct, it just had no proof.
+
+**Suite after this checkpoint:** typecheck **0** · unit **367 passed / 37 skipped / 0 failed** (49 files) · INT-1 live **18/18**.
 
 
 Live-app defect ledger. Rows are worked in journey order; auth gate outranks all.
