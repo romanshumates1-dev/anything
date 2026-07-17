@@ -1,19 +1,5 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-16 (m) — owner-ordered SAVE POINT executed. Branch `feat/mvp-prelaunch` pushed to GitHub at the save commit; typecheck 0; suite 479 passed / 45 skipped / 0 failed._
-
-## Session (m) — v3 progress + save point
-
-**DONE & VERIFIED (v3):** Phase R (full v2 plan re-verified; P3 fuzz 50/50 + live 7/7; bug #14 OTP table) · Phase N complete (150/150 per-profile fuzz, valuation engine 11/11, luxury cold gate 5/5, live 14/14) · Phase C verifiable pieces (worker drains live; migrate.mjs 13/13 idempotent after 2 self-found splitter bugs) · save-point fixes (#17: 2 sweep typecheck breaks).
-
-**REMAINING (v3):**
-- Phase C runtime: `docker compose up` smoke + fuzz-in-container + worker-restart — **OWNER-BLOCKED: install Docker Desktop (WSL2)**, then `.\launch.ps1 --docker`.
-- Phase D: green CI run URL (**owner: `gh auth login`** or check Actions tab — the push triggered a run); un-comment the docker CI job once a Docker-capable runner/GHCR decision is made; image tag push.
-- Phase Q evidence: route-by-route console matrix + Lighthouse scores (sweep code landed in `aeb875e`; per-route observed output not yet captured).
-- Phase F: final DoD checklist run + 20-step manual QA execution once C/D unblock.
-
-**Standing invariants unchanged:** escalation invariant supreme (now proven 200 fuzz runs total); voice mock-only, flags OFF; dispatchGate universal (incl. PROFILE_NO_COLD).
-
 _Last session: 2026-07-16 (k). INT-4 Cadence Engine + INT-2 Voice/RVM complete (commits b7dd43e, 9f59499). Next: P3 (atomic verification) or owner review._
 
 ## Session (k) — INT-2: Voice / RVM Gateway (mock driver, Twilio stubbed)

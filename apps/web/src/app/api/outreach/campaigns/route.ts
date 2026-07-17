@@ -16,25 +16,25 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const {
-      direction,
-      name,
-      dailyVolumeMax,
-      durationDays,
-      openingMessage,
-      followUps = [],
-      contacts,
-      linkedSellerLeadId,
-      testMode = false,
-      dncScrubEnabled = true,
-      litigatorScrubEnabled = true,
-      aiNegotiationEnabled = true,
-      aiValuationEnabled = true,
-      resurrectionEnabled = true,
-      abVariantsEnabled = false,
-      budgetCap,
-      selectedTestPhones = [],
-    } = body as {
+     const {
+       direction,
+       name,
+       dailyVolumeMax,
+       durationDays,
+       openingMessage,
+       followUps = [],
+       contacts,
+       linkedSellerLeadId,
+       testMode = false,
+       dncScrubEnabled = true,
+       litigatorScrubEnabled = true,
+       aiNegotiationEnabled = true,
+       aiValuationEnabled = true,
+       resurrectionEnabled = true,
+       abVariantsEnabled = false,
+       budgetCap,
+       selectedTestPhones = [],
+     } = body as {
       direction: 'SELLER' | 'BUYER';
       name: string;
       dailyVolumeMax: number;

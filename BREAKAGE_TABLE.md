@@ -338,27 +338,3 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 | Full suite + typecheck + lint | all | full run | **479 passed / 45 skipped / 0 failed** (62 files); tsc 0; oxlint 0/0 (7 files) | **VERIFIED** |
 
 **Architecture note:** superseded the parked parallel-session scaffolding (`_parked/negotiation-scaffolding`) which used `callAI` to GENERATE offer numbers — a latent invariant risk. The v3 engine is deterministic and owner-only; the AI never sees a number to send. **N.4 UI scope:** shipped the flag-gated profiles card with list + live formula-preview + trace + invariant banner. Full profile CRUD editor page + import-flow profile picker + price-range modal pre-fill are follow-on UI (API + engine + seed data all present and verified); logged as remaining UI surface, not ghost-wired.
-
----
-
-## PHASE C — Containers (artifacts authored + verifiable pieces PROVEN; Docker runtime BLOCKED on this host)
-
-| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
-|---|---|---|---|---|
-| **Production worker drains the queue** | `apps/web/scripts/worker.mjs` | enqueue job → `timeout 6 node scripts/worker.mjs` against the live server | `[worker] drained 1 job(s)` → job status `completed`. Graceful SIGTERM/SIGINT; never-overlapping polls; env-tunable interval. **This is the always-on mechanism that closes INT-1 prod-SLA once hosted** | **VERIFIED (native)** |
-| **Migration runner: 13/13 idempotent** | `apps/web/scripts/migrate.mjs` | `node --env-file=.env scripts/migrate.mjs` | `done — 13/13 applied (idempotent)` incl. 012 profile seeds + 013 versioning. **Two real bugs found by running it**: (#15) naive `;` split corrupted the dollar-quoted `DO $$` block in 005; (#16) after fixing that, a `;` inside a `--` comment in 003 split mid-comment. Splitter now dollar-quote-, string-, and comment-aware; RED→GREEN both times | **VERIFIED** |
-| Multi-stage Dockerfile + compose + .dockerignore | `Dockerfile`, `docker-compose.yml` | authored + committed (17efb68 + aeb875e) | node:20-alpine deps→build→runner, non-root, HEALTHCHECK on `/api/system/health`, standalone output; compose: app + worker (`depends_on: service_healthy`) + optional `ollama` profile | **AUTHORED — runtime smoke BLOCKED** |
-| `docker compose up` smoke + fuzz-in-container + worker-restart test | — | `docker --version` | **`docker: command not found` — Docker Desktop not installed on this host.** Per rule 9: install pointer → https://docs.docker.com/desktop/install/windows-install/ (needs WSL2). Container smoke rows stay BLOCKED, not faked | **OWNER-BLOCKED (install Docker Desktop)** |
-| DB note (premise honesty) | compose header comment | code review | app uses `@neondatabase/serverless` (HTTP/WS) — a vanilla `postgres:16-alpine` service CANNOT serve it without Neon wsproxy; compose deliberately ships app+worker against Neon rather than a ghost DB service | **VERIFIED (documented)** |
-
-## PHASE D — CI/CD (pipeline extended; green-run evidence pending on GitHub)
-
-| Feature | Evidence | Status |
-|---|---|---|
-| Branch pushed with full history | `git push -u origin feat/mvp-prelaunch` → `[new branch]` at `aeb875e` (11 verified commits) | **VERIFIED** |
-| CI stages: typecheck → lint(oxlint --no-ignore) → unit → desktop → flows-live | `.github/workflows/ci.yml` (extended in place, no parallel pipeline) | **VERIFIED (authored)** |
-| Docker build + container smoke + GHCR push stage | drafted in ci.yml but **commented out** — requires Docker-capable runner config + GHCR perms decision by owner | **OWNER-BLOCKED** |
-| PR template requiring BREAKAGE rows · CHANGELOG.md · DEPLOY.md runbook · .env.example | committed in `aeb875e` | **VERIFIED (authored)** |
-| One green pipeline run URL | push just triggered CI; `gh` CLI unauthenticated on this host (`gh auth login` needed) — check https://github.com/romanshumates1-dev/anything/actions | **OWNER-BLOCKED (gh auth)** |
-
-**Save-point bugs (found while executing the owner save order):** (#17) the parallel Phase-Q sweep left 2 typecheck breaks (`providers.ts` `_providerId` rename still referenced as `providerId`; campaigns route destructured non-existent `_contactListId`) — fixed before push, tsc 0.
