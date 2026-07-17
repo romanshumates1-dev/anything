@@ -1,0 +1,27 @@
+# Build context trimming — keep the image small and the build fast.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/out
+**/coverage
+**/.vercel
+**/playwright-report
+**/test-results
+**/e2e/.proof
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+_parked
+obra-superpowers
+_superpowers
+mcp-servers
+docs
+**/.DS_Store
+**/*.pid
+**/.jobs-dev.pid
+apps/desktop
+apps/mobile

@@ -74,3 +74,8 @@ launch-run.log
 launch-run.err.log
 dev-clean.log
 .claude/
+
+# session/dev logs (transient)
+apps/web/*.log
+_superpowers/
+obra-superpowers/

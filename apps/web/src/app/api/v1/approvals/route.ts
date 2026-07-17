@@ -14,17 +14,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const limit = Math.min(Number(searchParams.get('limit')) || 50, 100);
     const offset = Number(searchParams.get('offset')) || 0;
-    const status = searchParams.get('status');
+    const _status = searchParams.get('status');
 
-    let query = sql`
-      SELECT id, type, negotiation_id, contract_id, context, status, requested_at, expires_at, answered_at
-      FROM human_approvals
-      WHERE organization_id = ${organizationId}
-    `;
-    if (status) {
-      query = sql`WHERE organization_id = ${organizationId} AND status = ${status}`;
-    }
-
+    // Use the WHERE condition directly with optional filter — the old `query`
+    // variable was dead code (reassigned but never read).
     const approvals = await sql`
       SELECT id, type, negotiation_id, contract_id, context, status, requested_at, expires_at, answered_at
       FROM human_approvals

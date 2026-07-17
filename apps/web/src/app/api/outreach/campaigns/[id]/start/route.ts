@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
+import { dispatchOpenings } from '@/app/api/utils/cadenceEngine';
 
 export async function POST(
   request: NextRequest,
@@ -68,7 +69,16 @@ export async function POST(
 
     await logEvent('campaign_started', 'campaign', campaignId, { status: newStatus, startDate, endDate, dncScrubEnabled: campaign.dnc_scrub_enabled }, session.user.id);
 
-    return NextResponse.json({ id: campaignId, status: newStatus, startDate, endDate });
+    // INT-4: an ACTIVE campaign queues its OPENING sends (T+0), which start the
+    // cadence ladder. Flag-gated inside dispatchOpenings — with cadenceEngine
+    // OFF this returns {queued:0, reason:'flag_off'} and behaviour is exactly
+    // the pre-INT-4 status flip.
+    let cadence: { queued: number; reason?: string } = { queued: 0, reason: 'not_active' };
+    if (newStatus === 'ACTIVE') {
+      cadence = await dispatchOpenings(campaignId, organizationId);
+    }
+
+    return NextResponse.json({ id: campaignId, status: newStatus, startDate, endDate, cadence });
   } catch (error: any) {
     console.error('POST /api/outreach/campaigns/[id]/start error', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

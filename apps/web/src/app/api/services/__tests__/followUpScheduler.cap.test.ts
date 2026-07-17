@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { processFollowUps } from '../followUpScheduler';
+// followUpScheduler was absorbed by utils/cadenceEngine (INT-4). This file
+// tests the daily-cap SELECTION semantics with a local model of the query.
 
 const DAILY_CAP = 50;
 
@@ -11,7 +12,7 @@ async function scheduleDailyCampaign(params: {
   enqueueJob: (type: string, payload: any) => Promise<number>;
   dailyVolumeMax?: number;
 }) {
-  const { organizationId, contacts, now, enqueueJob, dailyVolumeMax = DAILY_CAP } = params;
+  const { contacts, enqueueJob, dailyVolumeMax = DAILY_CAP } = params;
 
   // Filter candidates that are past their delay and under daily cap.
   // This mirrors the intent without hitting the DB: pick up to dailyVolumeMax.

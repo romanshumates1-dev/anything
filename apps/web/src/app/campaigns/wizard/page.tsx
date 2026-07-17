@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, Loader2, ArrowLeft, Rocket, Save, Clock, ShieldCheck, TestTube, DollarSign } from 'lucide-react';
+import { AlertTriangle, Loader2, ArrowLeft, Rocket, Save, Clock, ShieldCheck, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 
 type WizardStep = 'basics' | 'sending' | 'followups' | 'compliance';

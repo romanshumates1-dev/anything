@@ -1,3 +1,5 @@
+import { AREA_CODES, areaCodeOf, type GeoPoint } from './area-codes';
+
 export type TrustLevel = 'low' | 'medium' | 'high';
 
 export type ThroughputConfig = {
@@ -115,4 +117,125 @@ export function getTrustLevelFromNumberType(
   if (numberType === '10dlc') return 'medium';
   if (numberType === 'toll-free') return 'medium';
   return 'high';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INT-3 — local-presence selection (pure; DB I/O lives in numberPoolStore.ts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Owner Decision 2: the carrier limit is not the reputation-safe limit for cold
+ * outreach, so the sends-per-number-per-day used is
+ *   min(rotationCap, computeDailyCapacity(number))
+ * `rotationCap` is the tunable reputation guard; the carrier number is the hard
+ * ceiling we must never exceed. Both are surfaced per-number in the UI.
+ */
+export const DEFAULT_ROTATION_CAP = 125;
+
+/** Default send-window hours used for capacity math (10-11am + 2-4pm ≈ 3h of
+ *  window, but capacity is quoted over the full lead-local day the gate allows). */
+export const DEFAULT_WINDOW_HOURS = 13; // 8am-9pm quiet-hours span
+
+export type PoolCandidate = {
+  phoneNumber: string;
+  numberType: NumberPoolEntry['numberType'];
+  trustLevel: TrustLevel;
+  dailySent: number;
+  active: boolean;
+};
+
+export type DailyCap = {
+  rotationCap: number;
+  carrierCap: number;
+  effective: number;
+  limitedBy: 'rotation' | 'carrier';
+};
+
+export function effectiveDailyCap(
+  entry: Pick<PoolCandidate, 'numberType' | 'trustLevel'>,
+  rotationCap: number,
+  windowHours: number = DEFAULT_WINDOW_HOURS
+): DailyCap {
+  const carrierCap =
+    entry.numberType === '10dlc'
+      ? computeDailyCapacity(DEFAULT_THROUGHPUT[entry.trustLevel], windowHours)
+      : Math.floor(computeThroughputCeiling(entry.numberType) * windowHours * 3600);
+
+  const effective = Math.min(rotationCap, carrierCap);
+  return {
+    rotationCap,
+    carrierCap,
+    effective,
+    limitedBy: rotationCap <= carrierCap ? 'rotation' : 'carrier',
+  };
+}
+
+/** Great-circle distance in km. Region centroids are metro-level approximations
+ *  (see area-codes.ts) — this ranks candidates, it does not locate anybody. */
+function distanceKm(a: GeoPoint, b: GeoPoint): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Pick the best local-presence number for a lead.
+ *
+ * Order (owner-specified): exact area code → nearest region → least-used.
+ * Locality intentionally outranks usage-balancing: a same-area-code number is
+ * the entire point of local presence, so a busy local number beats an idle
+ * out-of-region one. Usage only breaks ties within a locality tier.
+ *
+ * Returns null when nothing is eligible (all capped / inactive / empty pool) —
+ * callers must treat null as "do not send", never as "send from anything".
+ */
+export function selectNumber(
+  pool: PoolCandidate[],
+  leadPhone: string | null | undefined,
+  rotationCap: number = DEFAULT_ROTATION_CAP,
+  windowHours: number = DEFAULT_WINDOW_HOURS
+): PoolCandidate | null {
+  const eligible = pool.filter(
+    (n) => n.active && n.dailySent < effectiveDailyCap(n, rotationCap, windowHours).effective
+  );
+  if (eligible.length === 0) return null;
+
+  const leastUsed = (list: PoolCandidate[]) =>
+    list.reduce((best, n) => (n.dailySent < best.dailySent ? n : best));
+
+  const leadAc = areaCodeOf(leadPhone);
+
+  // 1. exact area-code match
+  if (leadAc) {
+    const exact = eligible.filter((n) => areaCodeOf(n.phoneNumber) === leadAc);
+    if (exact.length > 0) return leastUsed(exact);
+  }
+
+  // 2. nearest region by centroid distance
+  const leadGeo = leadAc ? AREA_CODES[leadAc] : undefined;
+  if (leadGeo) {
+    const located = eligible
+      .map((n) => {
+        const ac = areaCodeOf(n.phoneNumber);
+        const geo = ac ? AREA_CODES[ac] : undefined;
+        return geo ? { n, km: distanceKm(leadGeo, geo) } : null;
+      })
+      .filter((x): x is { n: PoolCandidate; km: number } => x !== null);
+
+    if (located.length > 0) {
+      const nearestKm = Math.min(...located.map((x) => x.km));
+      // Ties at the same distance fall through to least-used.
+      return leastUsed(located.filter((x) => x.km === nearestKm).map((x) => x.n));
+    }
+  }
+
+  // 3. unknown area code (or no located candidates) → least-used.
+  // We do NOT guess a locality here: claiming local presence we cannot support
+  // is worse than a neutral number.
+  return leastUsed(eligible);
 }

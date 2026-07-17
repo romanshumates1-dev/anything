@@ -7,11 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Users,
-  MessageSquare,
-  TrendingUp,
   ShieldCheck,
   AlertTriangle,
-  FileText,
   Activity,
   Loader2,
 } from 'lucide-react';

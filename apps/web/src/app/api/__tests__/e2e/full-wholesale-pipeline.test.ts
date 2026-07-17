@@ -32,9 +32,6 @@ import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';
 import * as campaignLeads from '../../campaigns/[id]/leads/route';
 import * as launch from '../../campaigns/[id]/launch/route';
-import * as inbound from '../../sms/inbound/route';
-import * as bulk from '../../leads/bulk/route';
-import { processInboundSms } from '@/app/api/services/inboundSms';
 import { parseLeadsCsv } from '../../utils/ingestion';
 
 function jsonReq(url: string, body: unknown) {
@@ -89,3 +86,4 @@ describe('FULL PIPELINE: seller acquisition through buyer assignment', () => {
     expect(enqueueJob).toHaveBeenCalledTimes(1);
   });
 });
+

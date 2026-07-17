@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import sql from '@/app/api/utils/sql';
 import {
   recordReplyReceived,
@@ -7,7 +7,6 @@ import {
   wasAckSent,
   markAckSent,
   computeP95Direct,
-  dispatchAckIfNeeded,
   ANTHROPIC_ACK_THRESHOLD_MS,
 } from '../sla';
 import { __resetAiConfigCache } from '../ai-settings';
@@ -15,7 +14,7 @@ import { __resetAiConfigCache } from '../ai-settings';
 /**
  * These are LIVE-DB tests: they exercise real SQL semantics (per-conversation
  * "latest pending row" selection, P95 windowing, ack idempotency) against the
- * real `inbound_latency` table — mocking `sql` would make every assertion
+ * real `inbound_latency` table â€” mocking `sql` would make every assertion
  * vacuous. So they follow the SAME activation gate as the Layer C flow runner
  * (`flows-live.test.ts`): skipped in the plain unit suite (no DATABASE_URL,
  * where `sql` is a throwing NullishQueryFunction), executed in CI's Layer C job
@@ -25,7 +24,7 @@ import { __resetAiConfigCache } from '../ai-settings';
  */
 const LIVE = process.env.RUN_LIVE_FLOWS === '1' && !!process.env.DATABASE_URL;
 
-describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
+describe.skipIf(!LIVE)('sla â€” INT-1 latency + ack instrumentation', () => {
   beforeEach(async () => {
     // Clean slate for every test
     await sql`DELETE FROM inbound_latency`;
@@ -36,7 +35,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     await sql`DELETE FROM inbound_latency`;
   });
 
-  // ── 1. recordReplyReceived ──
+  // â”€â”€ 1. recordReplyReceived â”€â”€
   it('creates a latency row with reply_received_at set', async () => {
     const id = await recordReplyReceived(101, 202);
     expect(id).toBeGreaterThan(0);
@@ -49,7 +48,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(row.ack_sent_at).toBeNull();
   });
 
-  // ── 2. recordAIDispatched ──
+  // â”€â”€ 2. recordAIDispatched â”€â”€
   it('updates the latest pending row with ai_dispatched_at and provider', async () => {
     await recordReplyReceived(101, 202);
     await recordAIDispatched(101, 'anthropic');
@@ -74,7 +73,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(rows[1].ai_dispatched_at).toBeInstanceOf(Date); // latest row updated
   });
 
-  // ── 3. shouldSendAck ──
+  // â”€â”€ 3. shouldSendAck â”€â”€
   it('anthropic: does NOT ack within 45s threshold', () => {
     const received = new Date(Date.now() - 10_000); // 10s ago
     expect(shouldSendAck('anthropic', received)).toBe(false);
@@ -98,7 +97,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(shouldSendAck('ollama', longAgo)).toBe(true);
   });
 
-  // ── 4. wasAckSent / markAckSent ──
+  // â”€â”€ 4. wasAckSent / markAckSent â”€â”€
   it('wasAckSent returns false before ack, true after', async () => {
     await recordReplyReceived(101, 202);
     expect(await wasAckSent(101)).toBe(false);
@@ -117,7 +116,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(rows[0].ack_sent_at).toBeInstanceOf(Date);
   });
 
-  // ── 5. computeP95Direct ──
+  // â”€â”€ 5. computeP95Direct â”€â”€
   it('returns null when no completed dispatches exist', async () => {
     const p95 = await computeP95Direct();
     expect(p95).toBeNull();
@@ -183,7 +182,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(p95_72h).toBe(9750);
   });
 
-  // ── 6. dispatchAckIfNeeded ──
+  // â”€â”€ 6. dispatchAckIfNeeded â”€â”€
   it('ollama: sends ack immediately (no latency row needed for shouldSendAck)', async () => {
     // This tests the pure shouldSendAck logic; the full dispatchAckIfNeeded
     // requires DB + gateway mocking which we test at integration level.
@@ -201,7 +200,7 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(shouldSendAck('anthropic', received)).toBe(true);
   });
 
-  // ── 7. Invariant: prospect never sits in silence ──
+  // â”€â”€ 7. Invariant: prospect never sits in silence â”€â”€
   it('invariant: ollama always acks (50s/gen > human patience)', () => {
     // The invariant is: for ollama, ack ALWAYS fires before AI response.
     // This is enforced by shouldSendAck returning true for ollama at t=0.
@@ -216,3 +215,4 @@ describe.skipIf(!LIVE)('sla — INT-1 latency + ack instrumentation', () => {
     expect(shouldSendAck('anthropic', t0)).toBe(false);
   });
 });
+

@@ -1,7 +1,6 @@
 import sql from '@/app/api/utils/sql';
-import { logEvent } from '@/app/api/utils/logger';
 import { isOptOutMessage } from './optOutDetection';
-import { checkConsent, registerOptOut } from '@/app/api/utils/compliance';
+import { registerOptOut } from '@/app/api/utils/compliance';
 
 export async function processInboundSms(params: {
   from: string;
@@ -9,7 +8,7 @@ export async function processInboundSms(params: {
   body: string;
   organizationId: string;
 }) {
-  const { from, to, body, organizationId } = params;
+  const { from, body, organizationId } = params;
   const trimmedBody = body.trim();
 
   // --- 1. OPT-OUT GATE (must run first, always) ---

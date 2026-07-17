@@ -3,7 +3,7 @@
  * Reads real assigned throughput values from environment variables (set after Twilio A2P approval)
  */
 
-import { type ThroughputConfig, DEFAULT_THROUGHPUT, type TrustLevel } from './numberPool';
+import { type ThroughputConfig, type TrustLevel } from './numberPool';
 
 /**
  * Get the real assigned A2P throughput config from env vars

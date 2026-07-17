@@ -16,10 +16,7 @@ export interface ParsedContact {
   error?: string;
 }
 
-const STRONG_YES = /\b(yes|yeah|yep|i am|interested|selling|sell it|i'm in|let'?s talk)\b/i;
-const STRONG_NO = /\b(no|not interested|not selling|don'?t want|never)\b/i;
-
-export function parseContactList(rawText: string, defaultCountry = 'US'): ParsedContact[] {
+export function parseContactList(rawText: string): ParsedContact[] {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const results: ParsedContact[] = [];
 
@@ -27,7 +24,7 @@ export function parseContactList(rawText: string, defaultCountry = 'US'): Parsed
     // Try CSV parse first (handles quoted fields)
     let parts: string[];
     if (line.includes(',') || line.includes('\t')) {
-      parts = splitCsvLine(line).map(p => p.trim()).filter((p, idx, arr) => p !== '' || idx > 0);
+      parts = splitCsvLine(line).map(p => p.trim()).filter((p, idx) => p !== '' || idx > 0);
     } else {
       parts = [line];
     }
@@ -38,7 +35,7 @@ export function parseContactList(rawText: string, defaultCountry = 'US'): Parsed
     if (parts.length >= 2) {
       // Determine which part is phone (contains 7+ digits)
       const digitsA = parts[0].replace(/\D/g, '');
-      const digitsB = parts[1].replace(/\D/g, '');
+      const _digitsB = parts[1].replace(/\D/g, '');
       if (digitsA.length >= 7) {
         phoneRaw = parts[0];
         name = parts.slice(1).join(' ');

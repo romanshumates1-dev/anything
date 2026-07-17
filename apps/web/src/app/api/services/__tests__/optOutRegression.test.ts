@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isOptOutMessage, OPT_OUT_PATTERNS } from '../optOutDetection';
+import { isOptOutMessage } from '../optOutDetection';
 
-const enqueueJob = vi.fn(async (_type: string, _payload: any) => 1);
+
 
 describe('opt-out regression: STOP mid-campaign blocks future sends', () => {
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe('opt-out regression: STOP mid-campaign blocks future sends', () => {
 
     expect(isOptOutMessage('STOP')).toBe(true);
 
-    const eligibleForSend = (c: any) => !isOptOutMessage('STOP');
+    const eligibleForSend = (_c: any) => !isOptOutMessage('STOP');
     expect(eligibleForSend(optedOutContact)).toBe(false);
   });
 

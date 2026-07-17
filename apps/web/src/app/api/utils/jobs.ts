@@ -5,6 +5,47 @@ import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
 import { recordAIDispatched, dispatchAckIfNeeded } from './sla';
+import { processCadenceStep, processVoiceStep, scheduleNextStep, scheduleVoiceStep } from './cadenceEngine';
+import type { DenyCode } from './dispatchGate';
+
+/**
+ * P2.0-W: what to do with a job whose send was denied by dispatchGate.
+ * - Time-based denials (quiet hours / send window) are DEFERRED: the job goes
+ *   back to pending at the gate's retryAt with its attempt refunded — being
+ *   held for compliance is not a failure and must not burn retries or
+ *   dead-letter the send.
+ * - Absolute denials (DNC / flag off / no consent) COMPLETE the job as
+ *   suppressed: retrying cannot change the outcome, and a dead-letter would
+ *   read as an error when the system did exactly the right thing.
+ */
+const DEFERRABLE: ReadonlySet<DenyCode> = new Set(['QUIET_HOURS', 'OUTSIDE_WINDOW'] as DenyCode[]);
+
+async function handleGateDenial(
+  jobId: number | string,
+  code: DenyCode,
+  retryAt: Date | undefined,
+  jobType = 'send_message'
+): Promise<{ success: true; jobId: number | string; type: string; gate: DenyCode }> {
+  if (DEFERRABLE.has(code)) {
+    const runAt = retryAt ?? new Date(Date.now() + 60 * 60 * 1000);
+    await sql`
+      UPDATE jobs
+      SET status = 'pending', run_at = ${runAt}, locked_until = NULL,
+          attempts = GREATEST(attempts - 1, 0),
+          error_message = ${'deferred:' + code},
+          updated_at = ${new Date()}
+      WHERE id = ${jobId}
+    `;
+  } else {
+    await sql`
+      UPDATE jobs
+      SET status = 'completed', error_message = ${'suppressed:' + code},
+          updated_at = ${new Date()}
+      WHERE id = ${jobId}
+    `;
+  }
+  return { success: true, jobId, type: jobType, gate: code };
+}
 
 export async function enqueueJob(
   type: string,
@@ -109,11 +150,37 @@ export async function processNextJob() {
             VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${JSON.stringify({ gatewayStatus: result.status, providerMessageId: result.providerId, errorMessage: result.errorMessage }) })
             ON CONFLICT (id) DO NOTHING
           `;
+          if (result.gateCode) {
+            // Gate denial is not a provider failure — defer or suppress.
+            return await handleGateDenial(job.id, result.gateCode, result.retryAt);
+          }
           if (result.status !== 'dispatched') {
             throw new Error(result.errorMessage || 'gateway_dispatch_failed');
           }
         } else {
-          await sendMessage(payload);
+          const fallback = await sendMessage(payload);
+          if (fallback.status === 'suppressed' && (fallback as any).gateCode) {
+            return await handleGateDenial(job.id, (fallback as any).gateCode, (fallback as any).retryAt);
+          }
+        }
+        // INT-4: a successful outbound send is what starts (or advances) the
+        // cadence ladder. scheduleNextStep is flag-gated and dedupe-keyed, so
+        // calling it after EVERY send is idempotent — without this call the
+        // ladder never begins (found: zero runtime callers at b7dd43e).
+        if (payload.contactId && payload.campaignId) {
+          await scheduleNextStep(payload.contactId, payload.campaignId, payload.organizationId);
+          // Ladder T+60s: voice escalation after the OPENING send only.
+          // scheduleVoiceStep is voiceEscalation-flag-gated (default OFF).
+          if (payload.isOpening) {
+            await scheduleVoiceStep({
+              contactId: payload.contactId,
+              campaignId: payload.campaignId,
+              organizationId: payload.organizationId,
+              phone: payload.to,
+              leadId: payload.leadId ?? null,
+              consentBasis: payload.consentBasis ?? null,
+            });
+          }
         }
         break;
       }
@@ -155,6 +222,24 @@ export async function processNextJob() {
                 last_message_at = NOW()
             WHERE id = ${conv.id}
           `;
+        }
+        break;
+      }
+      case 'cadence_step': {
+        const payload: any = job.payload;
+        const step = await processCadenceStep(payload);
+        // Same-row deferral: a time-gated step moves THIS job's run_at. It must
+        // never re-enqueue its own dedupe key (silently no-ops -> step lost).
+        if (step.gateCode) {
+          return await handleGateDenial(job.id, step.gateCode as DenyCode, step.deferAt, 'cadence_step');
+        }
+        break;
+      }
+      case 'voice_call': {
+        const payload: any = job.payload;
+        const call = await processVoiceStep(payload);
+        if (call.gateCode) {
+          return await handleGateDenial(job.id, call.gateCode as DenyCode, call.deferAt, 'voice_call');
         }
         break;
       }

@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MessageSquare, User, Bot } from 'lucide-react';
 import Link from 'next/link';

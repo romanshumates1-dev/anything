@@ -189,3 +189,38 @@ describe('gate ORDER + fail-closed', () => {
     expect(d.allow).toBe(false);
   });
 });
+
+describe('transactional sends (P2.0-W) — time gates skipped, absolute gates never', () => {
+  const elevenPm = atLocalHour('America/New_York', 23);
+
+  it('a transactional send is allowed at 11pm (quiet hours skipped)', async () => {
+    const d = await dispatchGate({
+      phone: '+15025550123', channel: 'sms', transactional: true, now: elevenPm,
+    });
+    expect(d.allow).toBe(true);
+  });
+
+  it('the same send WITHOUT transactional is denied at 11pm (proves the flag is load-bearing)', async () => {
+    const d = await dispatchGate({ phone: '+15025550123', channel: 'sms', now: elevenPm });
+    expect(d.allow).toBe(false);
+    expect((d as any).code).toBe('QUIET_HOURS');
+  });
+
+  it('DNC still suppresses a transactional send — opted out means nothing, ever', async () => {
+    mockSql.mockResolvedValue([{ 1: 1 }]); // suppressed
+    const d = await dispatchGate({
+      phone: '+15025550123', channel: 'sms', transactional: true, now: elevenPm,
+    });
+    expect(d.allow).toBe(false);
+    expect((d as any).code).toBe('DNC');
+  });
+
+  it('beta flag OFF still suppresses a transactional send', async () => {
+    isBetaFlagOn.mockResolvedValue(false);
+    const d = await dispatchGate({
+      phone: '+15025550123', channel: 'sms', betaFlag: 'speedToLead', transactional: true, now: elevenPm,
+    });
+    expect(d.allow).toBe(false);
+    expect((d as any).code).toBe('FLAG_OFF');
+  });
+});

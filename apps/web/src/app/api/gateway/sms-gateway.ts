@@ -13,15 +13,12 @@
 import { randomUUID } from 'node:crypto';
 import sql from '@/app/api/utils/sql';
 import { checkConsent } from '@/app/api/utils/compliance';
+import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
+import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
+import { pickNumber, activePoolCount } from '@/app/api/utils/numberPoolStore';
 import { logEvent } from '@/app/api/utils/logger';
 import { CircuitBreaker } from './circuit-breaker';
-import {
-  ISMSProvider,
-  TwilioAdapter,
-  TelnyxAdapter,
-  BandwidthAdapter,
-  DeliveryStatus,
-} from './providers';
+import { ISMSProvider, DeliveryStatus } from './providers';
 
 export interface GatewayMessage {
   leadId: number | string;
@@ -33,6 +30,14 @@ export interface GatewayMessage {
   campaignId?: string;
   organizationId?: string;
   contactId?: string;
+  /** P2.0-W: which beta integration this send belongs to (omit for core sends). */
+  betaFlag?: BetaFlagKey;
+  /** P2.0-W: passed through to dispatchGate (meaningful for voice/rvm callers). */
+  consentBasis?: string | null;
+  /** P2.0-W: cadence steps additionally snap to send windows at the gate. */
+  isCadenceStep?: boolean;
+  /** P2.0-W: recipient-requested send (OTP) — skips time gates only, never DNC. */
+  transactional?: boolean;
 }
 
 export interface GatewayDeliveryRecord {
@@ -46,6 +51,10 @@ export interface GatewayDeliveryRecord {
   deliveryTime?: Date;
   errorCode?: string;
   errorMessage?: string;
+  /** P2.0-W: set when dispatchGate denied the send; callers branch on this. */
+  gateCode?: DenyCode;
+  /** P2.0-W: when the gate says "not now" (quiet hours/window), when to retry. */
+  retryAt?: Date;
 }
 
 export interface GatewayConfig {
@@ -119,7 +128,41 @@ export class SMSGateway {
 
   async send(message: GatewayMessage): Promise<GatewayDeliveryRecord> {
     const messageUuid = message.messageUuid || randomUUID();
-    const { leadId, to, text, campaignLeadId, conversationThread, campaignId, organizationId, contactId } = message;
+    const { leadId, to, text, conversationThread, campaignId, organizationId, contactId } = message;
+
+    // 0. UNIVERSAL DISPATCH GATE (P2.0-W) — every SMS that leaves this system
+    // passes here AT TRANSMIT TIME. A cadence step gated when its job was
+    // processed can still drain minutes later; this is the check that cannot
+    // go stale. Gate order (DNC ≻ flag ≻ consent ≻ quiet hours ≻ window) and
+    // fail-closed behaviour live in dispatchGate itself.
+    const gate = await dispatchGate({
+      phone: to,
+      channel: 'sms',
+      betaFlag: message.betaFlag,
+      consentBasis: message.consentBasis,
+      isCadenceStep: message.isCadenceStep,
+      transactional: message.transactional,
+    });
+    if (!gate.allow) {
+      await logEvent('message_suppressed_gateway', 'message', String(leadId), {
+        messageUuid,
+        to,
+        reason: gate.code,
+        detail: gate.reason,
+        retryAt: gate.retryAt?.toISOString(),
+      });
+      return {
+        messageUuid,
+        status: 'failed',
+        provider: 'gateway',
+        leadId,
+        to,
+        dispatchTime: new Date(),
+        errorMessage: gate.code,
+        gateCode: gate.code,
+        retryAt: gate.retryAt,
+      };
+    }
 
     // 1. IDEMPOTENCY CHECK
     if (this.config.idempotencyEnabled !== false) {
@@ -202,6 +245,47 @@ export class SMSGateway {
       }
     }
 
+    // 3.5 INT-3 LOCAL PRESENCE — pick a from-number matching the lead's area
+    // code. Placed AFTER every abort-style check so a blocked send never burns
+    // a pool slot (pickNumber atomically claims one against the daily cap).
+    // Semantics (owner Decision 2 + null-means-don't-send):
+    //   - flag OFF            → default sender, untouched behaviour
+    //   - transactional (OTP) → default sender (local presence is for outreach)
+    //   - pool EMPTY          → feature unconfigured: default sender + warn event
+    //   - pool CAPPED         → hold the send (retry after the UTC-midnight
+    //                           reset) — never "send from anything"
+    let localFrom: string | undefined;
+    if (!message.transactional && (await isBetaFlagOn('localPresence'))) {
+      const picked = await pickNumber(to);
+      if (picked) {
+        localFrom = picked;
+      } else if ((await activePoolCount()) > 0) {
+        const retryAt = new Date(new Date().setUTCHours(24, 0, 30, 0)); // just past the daily reset
+        await logEvent('local_presence_exhausted', 'message', String(leadId), {
+          messageUuid,
+          to,
+          retryAt: retryAt.toISOString(),
+        });
+        return {
+          messageUuid,
+          status: 'failed',
+          provider: 'gateway',
+          leadId,
+          to,
+          dispatchTime: new Date(),
+          errorMessage: 'LOCAL_PRESENCE_EXHAUSTED',
+          gateCode: 'OUTSIDE_WINDOW', // deferrable class: jobs re-run it at retryAt
+          retryAt,
+        };
+      } else {
+        await logEvent('local_presence_unconfigured', 'message', String(leadId), {
+          messageUuid,
+          to,
+          detail: 'localPresence flag is ON but the number pool has no active numbers',
+        });
+      }
+    }
+
     // 4. SELECT PROVIDER (sticky or primary)
     let provider = this.selectProvider(conversationThread || String(leadId));
 
@@ -222,7 +306,7 @@ export class SMSGateway {
       }
 
       try {
-        const providerId = await provider.send(to, text, messageUuid);
+        const providerId = await provider.send(to, text, messageUuid, localFrom);
 
         // Record successful dispatch
         dispatchRecord = {

@@ -1,7 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# DealFlow AI — one-command local launch (MVP v2, P1)
-#   .\launch.ps1        (or double-click launch.bat)
-#   .\launch.ps1 -Clean (force a cold rebuild)
+# DealFlow AI — one-command local launch (MVP v2, P1 + Phase C)
+#   .\launch.ps1             (plain mode: yarn dev + jobs-dev)
+#   .\launch.ps1 -Clean      (force a cold rebuild)
+#   .\launch.ps1 -Docker     (container mode: docker compose up)
+#
+# IMPORTANT: Docker mode requires DATABASE_URL to point at Neon (cloud), NOT a
+# local postgres container. The @neondatabase/serverless driver uses HTTP/WS
+# protocol and cannot connect to vanilla Postgres directly. See DEPLOY.md.
 #
 # Boots the full local dev stack, health-checks it, and only then opens the
 # browser. NEVER opens a broken tab: if /api/system/health doesn't report
@@ -23,7 +28,75 @@
 # cold-compiles in ~20-40s here; 15s would fail spuriously. Intent kept — fail
 # loudly, never open a broken tab.
 # ─────────────────────────────────────────────────────────────────────────────
-param([switch]$Clean)
+param([switch]$Clean, [switch]$Docker)
+
+function Start-DockerStack {
+  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Fail "Docker is not installed. Install Docker Desktop and WSL2, then retry."
+  }
+
+  Say "  > starting services via docker compose..." 'Yellow'
+  Push-Location $root
+  $out = & cmd.exe /c "docker compose up -d" 2>&1
+  Pop-Location
+
+  # Check for missing DATABASE_URL (Neon serverless incompatibility)
+  $envEntry = Get-Content (Join-Path $root '.env') -ErrorAction SilentlyContinue | Where-Object { $_ -match 'DATABASE_URL=' }
+  if (-not $envEntry) {
+    Say "  ! WARNING: DATABASE_URL not found in .env" 'Yellow'
+    Say "  ! The compose uses Neon serverless driver which requires DATABASE_URL to point at Neon (cloud)." 'Yellow'
+    Say "  ! See DEPLOY.md for details." 'Yellow'
+  }
+
+  # Wait for health
+  Say "  > waiting for services (up to 90s)..." 'Yellow'
+  $deadline = (Get-Date).AddSeconds(90)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $r = Invoke-RestMethod -Uri "$baseUrl/api/system/health" -TimeoutSec 5 -ErrorAction Stop
+      if ($r.ok -eq $true) {
+        Write-Host ""
+        return $r
+      }
+    } catch { }
+    Start-Sleep -Milliseconds 2000
+    Write-Host "." -NoNewline -ForegroundColor DarkGray
+  }
+  Write-Host ""
+  return $null
+}
+
+# Docker mode entry point
+if ($Docker) {
+  Say ""
+  Say "  DealFlow AI - container launch" 'Cyan'
+  Say "  ------------------------------" 'DarkGray'
+
+  $health = Start-DockerStack
+  if (-not $health -or $health.ok -ne $true) {
+    Say "  X container health check FAILED" 'Red'
+    Say "  --- last lines of docker compose logs ---" 'DarkGray'
+    & cmd.exe /c "docker compose logs --tail 20" 2>$null | ForEach-Object { Say "     $_" 'DarkGray' }
+    Fail "docker compose health check failed"
+  }
+
+  Say ""
+  Say "  SERVICE   STATUS" 'Cyan'
+  Say "  -------   ------" 'DarkGray'
+  foreach ($k in $health.services.PSObject.Properties.Name) {
+    $v = $health.services.$k
+    Say ("  {0,-9} {1}" -f $k, $(if ($v) { 'ok' } else { 'FAILING' })) $(if ($v) { 'Green' } else { 'Red' })
+  }
+  Say ""
+  Say "  web    $baseUrl" 'Green'
+  Say "  logs   docker compose logs" 'DarkGray'
+  Say ""
+
+  Start-Process $baseUrl
+  Say "  + opened $baseUrl" 'Green'
+  Say ""
+  exit 0
+}
 
 $ErrorActionPreference = 'Stop'
 $root    = $PSScriptRoot
@@ -126,24 +199,41 @@ if (-not $health -or $health.ok -ne $true) {
 }
 
 # ── Status table ─────────────────────────────────────────────────────────────
+# Liveness comes from the PUBLIC health probe ({ok, services} — zero config).
+# Drivers + beta flags are CONFIG, so they are NOT published there; this local
+# dev-only reader pulls them straight from .env + the DB on this machine.
+$cfg = @{}
+try {
+  Push-Location (Join-Path $PSScriptRoot 'apps/web')
+  $lines = & cmd.exe /c "node --env-file=.env scripts/launch-status.mjs" 2>$null
+  Pop-Location
+  foreach ($line in $lines) {
+    if ($line -match '^\s*([^=]+)=(.*)$') { $cfg[$Matches[1].Trim()] = $Matches[2].Trim() }
+  }
+} catch { }
+
 Say ""
 Say "  SERVICE   STATUS   DRIVER" 'Cyan'
 Say "  -------   ------   ------" 'DarkGray'
 foreach ($k in $health.services.PSObject.Properties.Name) {
   $v = $health.services.$k
   $d = '-'
-  if ($k -eq 'ai')  { $d = $health.drivers.ai }
-  if ($k -eq 'sms') { $d = $health.drivers.sms }
+  if ($k -eq 'ai')  { $d = $(if ($cfg['ai'])  { $cfg['ai'] }  else { '?' }) }
+  if ($k -eq 'sms') { $d = $(if ($cfg['sms']) { $cfg['sms'] } else { '?' }) }
   Say ("  {0,-9} {1,-8} {2}" -f $k, $(if ($v) { 'ok' } else { 'down' }), $d) $(if ($v) { 'Green' } else { 'Yellow' })
 }
 Say ""
 Say "  BETA FLAGS" 'Cyan'
 Say "  ----------" 'DarkGray'
-if ($health.betaFlags) {
-  foreach ($k in $health.betaFlags.PSObject.Properties.Name) {
-    $on = $health.betaFlags.$k
-    Say ("  {0,-18} {1}" -f $k, $(if ($on) { 'ON' } else { 'off' })) $(if ($on) { 'Green' } else { 'DarkGray' })
+$flagKeys = @($cfg.Keys | Where-Object { $_ -like 'flag.*' } | Sort-Object)
+if ($flagKeys.Count -gt 0) {
+  foreach ($fk in $flagKeys) {
+    $name = $fk -replace '^flag\.', ''
+    $on = ($cfg[$fk] -eq 'on')
+    Say ("  {0,-18} {1}" -f $name, $(if ($on) { 'ON' } else { 'off' })) $(if ($on) { 'Green' } else { 'DarkGray' })
   }
+} else {
+  Say "  (status reader unavailable - flags visible in Settings -> Beta Integrations)" 'DarkGray'
 }
 Say ""
 Say "  web    $baseUrl" 'Green'

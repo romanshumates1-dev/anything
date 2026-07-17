@@ -6,11 +6,10 @@ import {
   DEFAULT_THROUGHPUT,
   computeThroughputCeiling,
   getTrustLevelFromNumberType,
-  type TrustLevel,
   type ThroughputConfig,
 } from '../numberPool';
 
-describe('numberPool — 10DLC A2P throughput model', () => {
+describe('numberPool â€” 10DLC A2P throughput model', () => {
   const TCPA_WINDOW_HOURS = 13; // 8am-9pm recipient local
 
   describe('DEFAULT_THROUGHPUT scenarios', () => {
@@ -42,16 +41,16 @@ describe('numberPool — 10DLC A2P throughput model', () => {
     });
   });
 
-  describe('computeDailyCapacity — min(MPS × windowSec, tMobileDailyCap)', () => {
-    it('returns T-Mobile cap when MPS × windowSec exceeds it', () => {
+  describe('computeDailyCapacity â€” min(MPS Ã— windowSec, tMobileDailyCap)', () => {
+    it('returns T-Mobile cap when MPS Ã— windowSec exceeds it', () => {
       const config = DEFAULT_THROUGHPUT.low;
       const capacity = computeDailyCapacity(config, TCPA_WINDOW_HOURS);
-      // MPS=1 × 46800sec = 46800, but T-Mobile cap=2000 → result=2000
+      // MPS=1 Ã— 46800sec = 46800, but T-Mobile cap=2000 â†’ result=2000
       expect(capacity).toBe(2000);
     });
 
     it('respects MPS limit when it is the bottleneck', () => {
-      // Contrived example: MPS=1, windowHours=1 → 3600 < 2000 T-Mobile cap
+      // Contrived example: MPS=1, windowHours=1 â†’ 3600 < 2000 T-Mobile cap
       const config: ThroughputConfig = {
         mps: 1,
         tMobileDailyCap: 10000,
@@ -64,19 +63,19 @@ describe('numberPool — 10DLC A2P throughput model', () => {
     it('scales correctly with high-trust MPS', () => {
       const config = DEFAULT_THROUGHPUT.high;
       const capacity = computeDailyCapacity(config, TCPA_WINDOW_HOURS);
-      // MPS=50 × 46800sec = 2,340,000, but T-Mobile cap=50000 → result=50000
+      // MPS=50 Ã— 46800sec = 2,340,000, but T-Mobile cap=50000 â†’ result=50000
       expect(capacity).toBe(50000);
     });
 
     it('handles fractional hours (e.g., 2.5-hour send window)', () => {
       const config = DEFAULT_THROUGHPUT.medium;
       const capacity = computeDailyCapacity(config, 2.5);
-      // MPS=10 × 9000sec = 90000, but T-Mobile cap=10000 → result=10000
+      // MPS=10 Ã— 9000sec = 90000, but T-Mobile cap=10000 â†’ result=10000
       expect(capacity).toBe(10000);
     });
   });
 
-  describe('Volume feasibility — canFitDailyVolume', () => {
+  describe('Volume feasibility â€” canFitDailyVolume', () => {
     describe('10DLC number type', () => {
       it('accepts 50 msgs/day at any trust level', () => {
         expect(canFitDailyVolume(50, TCPA_WINDOW_HOURS, '10dlc', 'low')).toBe(true);
@@ -134,13 +133,13 @@ describe('numberPool — 10DLC A2P throughput model', () => {
         expect(ceiling).toBe(100);
       });
 
-      it('accepts large volumes (100 MPS × 46800 = 4.68M)', () => {
+      it('accepts large volumes (100 MPS Ã— 46800 = 4.68M)', () => {
         expect(canFitDailyVolume(4680000, TCPA_WINDOW_HOURS, 'short-code')).toBe(true);
       });
     });
   });
 
-  describe('requiredNumbersForVolume — how many numbers needed', () => {
+  describe('requiredNumbersForVolume â€” how many numbers needed', () => {
     describe('10DLC', () => {
       it('requires 1 number for 50/day at low trust', () => {
         expect(requiredNumbersForVolume(50, TCPA_WINDOW_HOURS, '10dlc', 'low')).toBe(1);
@@ -174,7 +173,7 @@ describe('numberPool — 10DLC A2P throughput model', () => {
 
     describe('toll-free', () => {
       it('requires 1 number for 100000/day (10 MPS capacity)', () => {
-        // 10 MPS × 46800 = 468000 capacity per number
+        // 10 MPS Ã— 46800 = 468000 capacity per number
         expect(requiredNumbersForVolume(100000, TCPA_WINDOW_HOURS, 'toll-free')).toBe(1);
       });
 
@@ -185,7 +184,7 @@ describe('numberPool — 10DLC A2P throughput model', () => {
     });
   });
 
-  describe('computeThroughputCeiling — base MPS by number type', () => {
+  describe('computeThroughputCeiling â€” base MPS by number type', () => {
     it('10dlc: 1 MPS (overridden by trust level config)', () => {
       expect(computeThroughputCeiling('10dlc')).toBe(1);
     });
@@ -204,20 +203,20 @@ describe('numberPool — 10DLC A2P throughput model', () => {
   });
 
   describe('getTrustLevelFromNumberType', () => {
-    it('10dlc → medium trust', () => {
+    it('10dlc â†’ medium trust', () => {
       expect(getTrustLevelFromNumberType('10dlc')).toBe('medium');
     });
 
-    it('toll-free → medium trust', () => {
+    it('toll-free â†’ medium trust', () => {
       expect(getTrustLevelFromNumberType('toll-free')).toBe('medium');
     });
 
-    it('short-code → high trust', () => {
+    it('short-code â†’ high trust', () => {
       expect(getTrustLevelFromNumberType('short-code')).toBe('high');
     });
   });
 
-  describe('Volume planning table — 3 trust scenarios', () => {
+  describe('Volume planning table â€” 3 trust scenarios', () => {
     const volumes = [50, 100, 1000, 5000];
 
     it('low trust: shows where 5000/day exceeds capacity', () => {
@@ -249,7 +248,7 @@ describe('numberPool — 10DLC A2P throughput model', () => {
   });
 
   describe('Real-world throughput scenarios', () => {
-    it('a 13-hour TCPA window at low trust → ~2000 msgs max', () => {
+    it('a 13-hour TCPA window at low trust â†’ ~2000 msgs max', () => {
       const config = DEFAULT_THROUGHPUT.low;
       const capacity = computeDailyCapacity(config, TCPA_WINDOW_HOURS);
       // Even with MPS=1 spread over 13h, T-Mobile cap is the bottleneck
@@ -259,21 +258,21 @@ describe('numberPool — 10DLC A2P throughput model', () => {
     it('6-hour send window (9am-3pm) still hits T-Mobile cap at low trust', () => {
       const config = DEFAULT_THROUGHPUT.low;
       const capacity = computeDailyCapacity(config, 6);
-      // MPS=1 × 21600sec = 21600, but T-Mobile cap=2000 → result=2000
+      // MPS=1 Ã— 21600sec = 21600, but T-Mobile cap=2000 â†’ result=2000
       expect(capacity).toBe(2000);
     });
 
     it('medium trust with reduced window: MPS is bottleneck', () => {
       const config = DEFAULT_THROUGHPUT.medium;
       const capacity = computeDailyCapacity(config, 1);
-      // MPS=10 × 3600sec = 36000, vs T-Mobile cap=10000 → result=10000
+      // MPS=10 Ã— 3600sec = 36000, vs T-Mobile cap=10000 â†’ result=10000
       expect(capacity).toBe(10000);
     });
 
     it('high trust with tight window: MPS limit kicks in', () => {
       const config = DEFAULT_THROUGHPUT.high;
       const capacity = computeDailyCapacity(config, 0.5);
-      // MPS=50 × 1800sec = 90000, but T-Mobile cap=50000 → result=50000
+      // MPS=50 Ã— 1800sec = 90000, but T-Mobile cap=50000 â†’ result=50000
       expect(capacity).toBe(50000);
     });
   });
@@ -306,3 +305,4 @@ describe('numberPool — 10DLC A2P throughput model', () => {
     });
   });
 });
+

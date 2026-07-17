@@ -166,7 +166,7 @@ export function generateAudit(): AuditReport {
   const overallScore = verifiedScores.length > 0 ? Math.min(...verifiedScores) : 0;
 
   // Critical risks (top 5)
-  const allRisks = allComponents.flatMap((c) =>
+  const _allRisks = allComponents.flatMap((c) =>
     c.risks.map((r) => ({
       risk: r,
       component: c.name,

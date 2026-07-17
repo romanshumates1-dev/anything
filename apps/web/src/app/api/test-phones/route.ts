@@ -62,14 +62,23 @@ export async function POST(request: Request) {
     // Send OTP via gateway (exempt from campaign caps)
     try {
       const gateway = await getGateway();
-      await gateway.send({
+      const otpResult = await gateway.send({
         leadId: 0,
         to: phone,
         text: `Your DealFlow verification code is: ${otpCode}. Valid for 10 minutes.`,
         campaignId: 'otp-verify',
         organizationId: orgId,
         contactId: phone,
+        // Recipient-requested verification code: skips quiet-hours only.
+        // DNC still applies — a suppressed number gets nothing, ever.
+        transactional: true,
       });
+      if (otpResult.gateCode) {
+        return Response.json(
+          { error: `Cannot send to this number (${otpResult.gateCode === 'DNC' ? 'it previously opted out' : otpResult.gateCode})` },
+          { status: 409 }
+        );
+      }
     } catch (error: any) {
       console.error('OTP send failed:', error);
       return Response.json({ error: 'Failed to send OTP' }, { status: 500 });

@@ -1,12 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, FileText, Send } from 'lucide-react';
+import { Loader2, FileText } from 'lucide-react';
 
 export default function ContractsPage() {
   const { data: session, isPending: authLoading } = useSession();

@@ -35,7 +35,7 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW';
+export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -51,6 +51,24 @@ export interface DispatchRequest {
   consentBasis?: string | null;
   /** Cadence steps additionally snap to send windows. */
   isCadenceStep?: boolean;
+  /**
+   * Recipient-requested, non-marketing sends (e.g. the OTP a user just asked
+   * for on their own phone). Skips quiet-hours/send-window ONLY — DNC, beta
+   * flag, and consent checks always run. TCPA quiet hours restrict
+   * solicitations; a verification code the recipient explicitly requested
+   * seconds ago is not one, and holding it until morning breaks the flow.
+   */
+  transactional?: boolean;
+  /**
+   * Phase N: whether this send is COLD outbound (a first-touch to a lead who
+   * has not contacted us). When false-y the field is ignored. A luxury profile
+   * sets `coldOutbound:true` with `profileAllowsCold:false` → the gate SKIPS it
+   * (luxury is inbound/referral only). Inbound replies pass `coldOutbound:false`.
+   */
+  coldOutbound?: boolean;
+  /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
+   *  coldOutbound is true. Default (undefined) = allowed. */
+  profileAllowsCold?: boolean;
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -139,7 +157,22 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       }
     }
 
+    // 3.5 Phase N: profile forbids cold outbound (luxury = inbound/referral
+    // only). Absolute skip, not a timing deferral — no retryAt.
+    if (req.coldOutbound && req.profileAllowsCold === false) {
+      return {
+        allow: false,
+        code: 'PROFILE_NO_COLD',
+        reason: 'SKIPPED: profile forbids cold outbound (inbound/referral leads only)',
+        timezones: tzs,
+      };
+    }
+
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
+    // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
+    if (req.transactional) {
+      return { allow: true, timezones: tzs };
+    }
     if (!isWithinQuietHours(tzs, at)) {
       const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d)) ?? undefined;
       return { allow: false, code: 'QUIET_HOURS', reason: 'Outside 8am-9pm lead-local', retryAt, timezones: tzs };
