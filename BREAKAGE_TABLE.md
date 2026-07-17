@@ -391,3 +391,21 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 | Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
 
 **Premise correction (rule 1/5 — no duplicate feature):** v4 B1 specs a NEW `verified_numbers` table, but `test_phone_numbers WHERE verified=true` already IS that allowlist. Building a parallel table would be a ghost duplicate. **Phase T will read the existing table as its demo-mode allowlist** — not a new one.
+
+---
+
+## PHASE H (v4) — System Health page (was: does not exist)  ✅ VERIFIED
+
+Admin `/system-health`: single aggregation endpoint `GET /api/system/dashboard` (admin-gated) powers 8 service tiles, 10s auto-refresh, green/amber/red with thresholds documented in the route. Reuses BetaFlagsCard + EventLogPanel. Nothing leaks onto the public liveness probe (split preserved).
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Dashboard aggregates 8 tiles | `api/system/dashboard/route.ts` | live admin GET | **8 tiles** returned: db, jobs, worker, ai, sms, voice, quietHours, numberPool; each with green/amber/red + overall | **VERIFIED** |
+| DB tile (latency) | same | live | `green (67ms)` — thresholds green<300 / amber<1500 / red on error | **VERIFIED** |
+| Admin-gated (public split preserved) | same | `curl /api/system/dashboard` (no session) | **401**; page `/system-health` 200 (client auth) | **VERIFIED** |
+| Page renders tiles, console clean | `system-health/page.tsx` | Playwright admin load | tiles grid + jobs tile render; **0 console errors** | **VERIFIED** |
+| **Kill-worker → jobs tile RED (≤1 refresh)** | dashboard `jobsTile` | killed jobs-dev PID + inserted overdue job | jobs tile computed **red** (due 1, oldest lag **203s** > 120s threshold). Worker restarted → back to **green** (due 0, lag 0s) | **VERIFIED** |
+| Beta flags panel + Event Log tail | reuse existing components | page | both mount on the page | **VERIFIED** |
+| Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
+
+**Design:** the jobs tile's oldest-pending-lag IS the worker liveness signal (a dead worker makes lag climb) — no separate heartbeat table needed. SMS tile shows mock/twilio-demo/twilio-live (amber on live = pre-A2P caution); quiet-hours tile is labeled server-clock (the gate enforces per-lead local time per-send).
