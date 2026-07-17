@@ -409,3 +409,20 @@ Admin `/system-health`: single aggregation endpoint `GET /api/system/dashboard` 
 | Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
 
 **Design:** the jobs tile's oldest-pending-lag IS the worker liveness signal (a dead worker makes lag climb) — no separate heartbeat table needed. SMS tile shows mock/twilio-demo/twilio-live (amber on live = pre-A2P caution); quiet-hours tile is labeled server-clock (the gate enforces per-lead local time per-send).
+
+---
+
+## PHASE V (v4) — profit-floor + two-sided assignability economics  ✅ VERIFIED (core)
+
+Extends the Phase-N valuation engine with the realistic-wholesale fee economics the owner asked for ($3k floor). Pure/deterministic, owner-facing only — the escalation invariant is untouched (AI never emits these numbers).
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Fee bands: $3k floor / $10k target / $30k stretch (defaults + per-profile) | `valuationEngine.ts feeEconomics` | `vitest run dealEconomics.test.ts` (12) | defaults 3000/10000/30000; luxury override 50k/100k/200k; market_multiplier 1.5× → 4500/15000/45000 | **VERIFIED** |
+| Two-sided seller+buyer math | `computeDealEconomics` | same | ARV 200k/repairs 40k → buyer_max 100k, seller_max 97k (clears $3k floor), seller_suggest 90k (hits $10k target), opener 73.8k; buyer ask_min contract+floor, ask_open min(contract+stretch, buyer_max) | **VERIFIED** |
+| **7–14-day assignability guarantee** | `computeDealEconomics` | same | ASSIGNABLE ⇔ contract + floor ≤ buyer_max: at seller_suggest→assignable; at seller_max (fee==floor)→assignable (boundary); override above seller_max→**THIN DEAL + not assignable** with warning in trace | **VERIFIED** |
+| Never NaN / garbage rejected | same | same | ARV 0 / negative repairs → `valid:false`, assignable null | **VERIFIED** |
+| Bands persisted per profile | `migration 015`, store `toProfile` | live DB | standard 3k/10k/30k · premium 5k/25k/40k · luxury 50k/100k/200k; `market_multiplier` on campaigns | **VERIFIED** |
+| Full suite + typecheck | all | run | **495 passed / 45 skipped / 0 failed** (66 files); tsc 0; migrate 15/15 | **VERIFIED** |
+
+**Scope (honest):** delivered the deterministic economics CORE (the "$3k–30k fee, realistic price, assignable in the inspection window" math). **Remaining Phase V:** inspection-period countdown clock on the contract card + day-3/day-N−2 urgency notifications (UI + scheduled hooks), and **Phase A** (bounded autonomous negotiation: `computeNextOffer` ladder + dispatchGate numeric guard + 100/100 ceiling fuzz + 20/20 guard + flag-off 150/150 regression) — logged as the next build, not started.
