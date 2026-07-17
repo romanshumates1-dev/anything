@@ -1,6 +1,22 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-16 (k). INT-4 Cadence Engine + INT-2 Voice/RVM complete (commits b7dd43e, 9f59499). Next: P3 (atomic verification) or owner review._
+_Last session: 2026-07-17 (n) — v4 prompt. Phases G, B1, H, V-core VERIFIED + pushed. typecheck 0; suite 495 passed / 45 skipped / 0 failed._
+
+## Session (n) — v4 (globe / verify-numbers / system-health / valuation economics)
+
+**DONE & VERIFIED (v4), each committed + pushed:**
+- **Phase G — globe fixed** (af1c0c5): root cause was NO land geometry (not a texture 404) — the 2D canvas only drew ocean+graticule+dots. Now fills continents/countries/islands from bundled Natural Earth 50m (`/public/geo/land-50m.json`, 961KB, no CDN) via `build-geo.mjs`. Screenshots: `e2e/.proof/globe.png` (continents + Caribbean islands), `globe-fallback.png` (labeled fallback). Loading + hard-fail states; console clean.
+- **Phase B1 — verify-numbers fixed** (0d97cd2): THREE real bugs — #14 missing `test_phone_otp_log` (mig 011), **#18 missing `test_phone_numbers.attempts` column** → add INSERT 500 (mig 014), **#19 DELETE read `params.id` sync** (Next 16 Promise) → 404. Live add→verify→delete ALL PASS; otp-limits 8/8. Reuses `test_phone_numbers WHERE verified=true` as the Phase-T allowlist (no duplicate table).
+- **Phase H — System Health page** (6a18855): admin `/system-health`, 8-tile `GET /api/system/dashboard`, 10s refresh, green/amber/red. Kill-worker → jobs tile RED (lag 203s) → restart → green.
+- **Phase V core — economics** (5faef2b): `feeEconomics` ($3k/$10k/$30k) + `computeDealEconomics` (two-sided, 7-14-day assignability, THIN-DEAL). 12/12; mig 015 seeds bands per profile.
+
+**REMAINING (v4):**
+- **Phase A** — bounded autonomous negotiation (flag-gated invariant override): `computeNextOffer` pure ladder, dispatchGate NUMERIC GUARD, 100/100 ceiling fuzz + 20/20 guard-block + flag-off 150/150 regression, per-lead toggle UI. **Largest remaining; not started.**
+- **Phase T** — twilio-demo driver + allowlist gate. Buildable; headline real-send verify is COMPLIANCE-BLOCKED pre-A2P (safety property is verifiable now).
+- **Phase V remainder** — inspection-clock UI + urgency notifications.
+- Docker/gh-blocked: container + CI green-run.
+
+_Prior: 2026-07-16 (k). INT-4 Cadence + INT-2 Voice complete (b7dd43e, 9f59499)._
 
 ## Session (k) — INT-2: Voice / RVM Gateway (mock driver, Twilio stubbed)
 
