@@ -338,3 +338,19 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 | Full suite + typecheck + lint | all | full run | **479 passed / 45 skipped / 0 failed** (62 files); tsc 0; oxlint 0/0 (7 files) | **VERIFIED** |
 
 **Architecture note:** superseded the parked parallel-session scaffolding (`_parked/negotiation-scaffolding`) which used `callAI` to GENERATE offer numbers — a latent invariant risk. The v3 engine is deterministic and owner-only; the AI never sees a number to send. **N.4 UI scope:** shipped the flag-gated profiles card with list + live formula-preview + trace + invariant banner. Full profile CRUD editor page + import-flow profile picker + price-range modal pre-fill are follow-on UI (API + engine + seed data all present and verified); logged as remaining UI surface, not ghost-wired.
+
+---
+
+## PHASE Q — Pre-launch atomic debug + SaaS polish (verified slices + honest gaps)
+
+| Item | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|
+| **Q.2 route console matrix** | `node --env-file=.env scripts/route-sweep.mjs` (admin, live server) | **14/14 authenticated routes: status 200, 0 console errors, real heading (no blank panes)** — dashboard/readiness/analytics/leads/import/crm/inbox/campaigns/wizard/approvals/contracts/lead-finder/settings/users. Branded 404 renders (status 404, notFound text). **TOTAL app console errors: 0** | **VERIFIED** |
+| Q.1 secret-in-bundle | grep every `'use client'` component for `process.env.<NON-PUBLIC>` | **zero hits** — no client component references a server secret (only NEXT_PUBLIC_/NODE_ENV) | **VERIFIED** |
+| Q.1 typecheck 0 · lint 0 | `tsc -p tsconfig.typecheck.json` (4GB heap); `oxlint --no-ignore` | tsc **exit 0**; oxlint **0 errors** (40 warnings in test files only) | **VERIFIED** |
+| Q.3 branded error boundary + 404 | `src/app/error.tsx`, `not-found.tsx` + route sweep | both present; 404 verified rendering in the sweep | **VERIFIED** |
+| Q.3 leads CSV export | `src/app/api/leads/export/route.ts` | route present (sweep); end-to-end download not yet driven | **PARTIAL — authored, not driven** |
+| Q.4 design tokens | `src/app/api/utils/design-tokens.ts` | tokens file present (sweep); full hardcoded-hex replacement across components NOT audited | **PARTIAL** |
+| **Q.1 error envelope / zod / general rate-limit** | grep repo | **NOT-BUILT**: no shared error-envelope helper; **zero zod usage** anywhere in the API; rate-limiting only ad-hoc (OTP, v1/auth), not on auth+public generally. The sweep commit `aeb875e` did NOT deliver these despite the plan naming them | **NOT-BUILT (honest)** |
+| **Q Lighthouse perf target** | prod-build Lighthouse (FINAL_STATE, sweep) | a11y **91–96 (meets ≥90)**; **perf 66–77 — BELOW the ≥85 target** on /campaigns, /wizard, /inbox. NOT met; logged, not claimed | **BELOW TARGET (honest)** |
+| Q.2 per-surface loading/empty/error states | route sweep confirms render + no errors | routes render populated; exhaustive empty/error-state audit per data surface not performed | **PARTIAL** |
