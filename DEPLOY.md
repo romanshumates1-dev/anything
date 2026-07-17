@@ -162,21 +162,28 @@ Vercel then shows the exact DNS records for step 1.
 
 ## 5. Background job runner in prod (NOT `yarn jobs:dev`)
 
-`yarn jobs:dev` is dev-only. In prod the queue is drained by **Vercel Cron**, already
-wired: `apps/web/vercel.json` is committed with
+`yarn jobs:dev` is dev-only. `apps/web/vercel.json` ships a **DAILY** cron:
 
 ```json
-{ "crons": [ { "path": "/api/jobs/process", "schedule": "* * * * *" } ] }
+{ "crons": [ { "path": "/api/jobs/process", "schedule": "0 8 * * *" } ] }
 ```
 
-Vercel Cron issues a **GET** every minute with `Authorization: Bearer $CRON_SECRET`.
-The `/api/jobs/process` route accepts BOTH that bearer (cron) and the
-`x-job-runner-secret: $JOB_RUNNER_SECRET` header (the dev poller / docker), and
-handles GET + POST — so just set `CRON_SECRET` in Vercel and it works with no extra
-config. (Minute-level cron needs Vercel **Pro**; on Hobby, either accept the reduced
-frequency or run a GitHub Actions scheduled workflow that `curl`s the prod URL with
-the `x-job-runner-secret` header from a repo secret. A small Fly.io/Railway worker
-running the `scripts/jobs-dev.mjs` poll loop against the prod URL also works.)
+**Why daily, not every-minute:** Vercel **Hobby** caps cron frequency at once per day —
+an every-minute schedule (`* * * * *`) makes the deploy FAIL with
+*"Cron jobs on the Hobby plan can run at most once per day."* (This was the Vercel
+launch error, fixed 2026-07-17 by changing the schedule.) The daily cron is only a
+**safety-net drain**.
+
+**Real-time draining is the always-on WORKER, not the cron.** Cadence steps, `ai_reply`,
+and sends need seconds-to-minutes latency, which a daily cron cannot provide. In prod,
+run the **worker container** (`apps/web/scripts/worker.mjs`) on Fly.io/Railway — it polls
+`POST {APP_URL}/api/jobs/process` every `JOB_POLL_INTERVAL_MS` (default 3s) with the
+`x-job-runner-secret` header. That is what closes the INT-1 Speed-to-Lead SLA.
+
+**If you want minute-level draining ON Vercel:** upgrade to **Pro** and set the schedule
+back to `* * * * *`. The `/api/jobs/process` route accepts both the cron `Authorization:
+Bearer $CRON_SECRET` and the worker `x-job-runner-secret: $JOB_RUNNER_SECRET`, and handles
+GET + POST — so set `CRON_SECRET` in Vercel and it works with no extra config either way.
 
 ---
 
