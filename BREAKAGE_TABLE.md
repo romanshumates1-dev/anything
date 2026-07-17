@@ -354,3 +354,19 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 | **Q.1 error envelope / zod / general rate-limit** | grep repo | **NOT-BUILT**: no shared error-envelope helper; **zero zod usage** anywhere in the API; rate-limiting only ad-hoc (OTP, v1/auth), not on auth+public generally. The sweep commit `aeb875e` did NOT deliver these despite the plan naming them | **NOT-BUILT (honest)** |
 | **Q Lighthouse perf target** | prod-build Lighthouse (FINAL_STATE, sweep) | a11y **91–96 (meets ≥90)**; **perf 66–77 — BELOW the ≥85 target** on /campaigns, /wizard, /inbox. NOT met; logged, not claimed | **BELOW TARGET (honest)** |
 | Q.2 per-surface loading/empty/error states | route sweep confirms render + no errors | routes render populated; exhaustive empty/error-state audit per data surface not performed | **PARTIAL** |
+
+---
+
+## PHASE G — 3D globe blank-blue-mesh FIX (v4)  ✅ VERIFIED (screenshot evidence)
+
+**Root cause (diagnosed by reading, NOT the texture-404 the prompt guessed):** `CampaignGlobe.tsx` is a hand-rolled 2D canvas orthographic projection (no three.js). Its `draw()` rendered only an ocean gradient + graticule + prospect dots — **no land/country geometry existed anywhere in the code** (no TopoJSON, no TextureLoader, no `map:`). The blue-sphere-with-grid was all it was ever coded to draw. Matches the prompt's alternate hypothesis: "a plain color material with no map at all."
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| **Happy path: continents/countries/islands render** | `CampaignGlobe.tsx`, `public/geo/land-50m.json`, `scripts/build-geo.mjs` | `node scripts/globe-geo-verify.mjs` → `e2e/.proof/globe.png` (viewed) | Screenshot shows N/S America, Africa, Europe, **Caribbean islands**, country borders, graticule, dark ocean + muted-green land. Prospect dot overlay still projects correctly | **VERIFIED** |
+| Bundled data, ZERO external CDN | `public/geo/land-50m.json` (committed) | `GET /geo/land-50m.json` | 200, **1617 rings**, 961KB. Natural Earth 50m (world-atlas@2) fetched ONCE at author time via `build-geo.mjs` (manual TopoJSON arc decoder, no runtime dep) and committed. 1352 island rings preserved (50m not 110m) | **VERIFIED** |
+| Console clean on happy path | analytics route | globe-geo-verify | `console clean (0)` | **VERIFIED** |
+| **Hard-failure fallback (impossible-blank guard)** | `CampaignGlobe.tsx` | `page.route('**/geo/land-50m.json').abort()` → `e2e/.proof/globe-fallback.png` (viewed) | Screenshot shows graticule + **"geo data unavailable / (showing grid only)"** label; console logged **`[globe] GEO LOAD FAILED: <reason>`**. Blank blue is now impossible | **VERIFIED** |
+| Loading state | `CampaignGlobe.tsx` | code + render | "loading geography…" shimmer until the asset applies | **VERIFIED** |
+| Rotation/interaction/overlays untouched | `CampaignGlobe.tsx` | screenshot + code | same `project()`, drag/auto-rotate, prospect dots all preserved (dot visible on US coast) | **VERIFIED** |
+| Typecheck | — | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
