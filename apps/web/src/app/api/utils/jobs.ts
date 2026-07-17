@@ -6,6 +6,7 @@ import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
 import { recordAIDispatched, dispatchAckIfNeeded } from './sla';
 import { processCadenceStep, processVoiceStep, scheduleNextStep, scheduleVoiceStep } from './cadenceEngine';
+import { processInspectionUrgency } from './inspectionClock';
 import type { DenyCode } from './dispatchGate';
 
 /**
@@ -241,6 +242,12 @@ export async function processNextJob() {
         if (call.gateCode) {
           return await handleGateDenial(job.id, call.gateCode as DenyCode, call.deferAt, 'voice_call');
         }
+        break;
+      }
+      case 'inspection_urgency': {
+        // Phase V-R: day-3 / day-N−2 unassigned-contract notifications.
+        // Exactly-once via dedupe keys at enqueue; fresh state check at fire time.
+        await processInspectionUrgency(job.payload as any);
         break;
       }
       default:

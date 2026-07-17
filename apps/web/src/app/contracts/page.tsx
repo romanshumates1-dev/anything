@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText } from 'lucide-react';
+import InspectionClockChip from '@/components/contracts/InspectionClockChip';
 
 export default function ContractsPage() {
   const { data: session, isPending: authLoading } = useSession();
@@ -66,6 +67,12 @@ export default function ContractsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-1">
+                  {/* Phase V-R: inspection-window countdown (7–14 days to assign) */}
+                  <InspectionClockChip
+                    createdAt={contract.created_at}
+                    inspectionDays={contract.inspection_days}
+                    assignedAt={contract.assigned_at}
+                  />
                   <p className="text-sm text-gray-500">Direction: {contract.direction}</p>
                   <p className="text-sm text-gray-500">Created: {new Date(contract.created_at).toLocaleDateString()}</p>
                   {contract.signed_at && (

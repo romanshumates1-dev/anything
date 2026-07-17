@@ -426,3 +426,18 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 | Full suite + typecheck | all | run | **495 passed / 45 skipped / 0 failed** (66 files); tsc 0; migrate 15/15 | **VERIFIED** |
 
 **Scope (honest):** delivered the deterministic economics CORE (the "$3k–30k fee, realistic price, assignable in the inspection window" math). **Remaining Phase V:** inspection-period countdown clock on the contract card + day-3/day-N−2 urgency notifications (UI + scheduled hooks), and **Phase A** (bounded autonomous negotiation: `computeNextOffer` ladder + dispatchGate numeric guard + 100/100 ceiling fuzz + 20/20 guard + flag-off 150/150 regression) — logged as the next build, not started.
+
+---
+
+## PHASE V-R (v5) — inspection clock UI + urgency notifications  ✅ VERIFIED
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Clock math: calendar-day, owner-tz, DST-safe | `utils/inspectionClockCore.ts` | `vitest run inspectionClock.test.ts` (16) | signing day = day 1; 11pm-signed → day 2 next morning (calendar, not 24h blocks); Nov fall-back counts 7 days exactly; window clamped 7–14 | **VERIFIED** |
+| Stage ramp green→amber→red→expired | same | fake-clock transitions | day4 green (6 left) → day5 amber (5 ≤ half) → day8 red (2 left) → day11 expired | **VERIFIED** |
+| **Chip renders all stages live** | `InspectionClockChip.tsx`, contracts page + API | `node scripts/vr-verify.mjs` → `e2e/.proof/inspection-clock.png` (viewed) | screenshot shows **"Day 1 of 10 — 9 days to assign" (green), "Day 6 of 10 — 4 days" (amber), "Day 8 of 10 — 2 days" (red)** + Assigned chip; console clean | **VERIFIED** |
+| Day-N−2 floor math | `lowestViableAsk` | unit + live | lowest ask = contract + $3k floor ($85k → **$88,000**); cut never negative at boundary; unknown price → null → "recommend exit/renegotiation", no fake number | **VERIFIED** |
+| Urgency hooks exactly-once | `scheduleInspectionUrgency`, jobs case `inspection_urgency` | live: insert job w/ dedupe key → real drain loop fires handler | **exactly ONE** PENDING `human_approvals` row (INSPECTION_FINAL) carrying $88,000; re-schedule with same key → still one (index collapse); assigned contract → **zero** notifications | **VERIFIED** |
+| Restart-safe | dedupe keys on the durable jobs table | design + live re-schedule test | same-key re-add no-ops; state re-checked at fire time | **VERIFIED** |
+| Migration 016 idempotent (with rollback note) | `016_inspection_clock.sql` | `migrate.mjs` | **16/16 applied**; inspection_days CHECK 7–14 | **VERIFIED** |
+| Suite + typecheck | all | full run | **511 passed / 45 skipped / 0 failed** (67 files); tsc 0 | **VERIFIED** |

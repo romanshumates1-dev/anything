@@ -16,6 +16,17 @@ _Last session: 2026-07-17 (n) — v4 prompt. Phases G, B1, H, V-core VERIFIED + 
 - **Phase V remainder** — inspection-clock UI + urgency notifications.
 - Docker/gh-blocked: container + CI green-run.
 
+## Skip inventory refresh (v5 rule — the 37 → 45 delta, +8 explained)
+
+Enumerated from `vitest --reporter=verbose` (not memory): 45 = 18 sla + 11 resurrection + 4 variant-allocator + 3 flows-live + **9 numberPoolStore**.
+
+| Delta | File | Covers | Why skipped | Tag |
+|---|---|---|---|---|
+| **+9** | `utils/__tests__/numberPoolStore.test.ts` | INT-3 pool store live-DB behaviour: atomic cap claim, lazy daily reset, rotation-cap round-trip, concurrent pick race, listPoolUsage | Repo live-gate pattern `describe.skipIf(!LIVE)` (`RUN_LIVE_FLOWS=1` + `DATABASE_URL`); verified **9/9 live** at build time (e246910); runs in CI's `flows-live` job | **ENV-GATED** |
+| **−1** | `gateway/sms-gateway.test.ts` ghost | (was: fake opted-out suppression test) | replaced with 2 real mocked tests in `75ad85f` — no longer skipped | resolved |
+
+Standing-rule check: none of the 45 sit on paths V-R/A/T modify (dispatchGate's own suite is 21/21 unskipped; the numeric guard lands with NEW tests in Phase A). numberPoolStore is adjacent to the gateway but not modified by these phases.
+
 _Prior: 2026-07-16 (k). INT-4 Cadence + INT-2 Voice complete (b7dd43e, 9f59499)._
 
 ## Session (k) — INT-2: Voice / RVM Gateway (mock driver, Twilio stubbed)

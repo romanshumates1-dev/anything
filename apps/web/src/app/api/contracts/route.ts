@@ -19,7 +19,8 @@ export async function GET() {
   try {
     const org = (session.user as any).organizationId || 'default';
     const rows = await sql`
-      SELECT id, direction, status, signed_at, created_at
+      SELECT id, direction, status, signed_at, created_at,
+             inspection_days, assigned_at
       FROM contracts
       WHERE organization_id = ${org}
       ORDER BY created_at DESC
