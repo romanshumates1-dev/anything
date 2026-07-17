@@ -370,3 +370,24 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 | Loading state | `CampaignGlobe.tsx` | code + render | "loading geography…" shimmer until the asset applies | **VERIFIED** |
 | Rotation/interaction/overlays untouched | `CampaignGlobe.tsx` | screenshot + code | same `project()`, drag/auto-rotate, prospect dots all preserved (dot visible on US coast) | **VERIFIED** |
 | Typecheck | — | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
+
+---
+
+## PHASE B1 (v4) — "can't add/verify test #s" FIXED  ✅ VERIFIED (3 real bugs, diagnosis-first)
+
+**Diagnosis (rule 4, before any fix):** the routes (GET/POST/verify/DELETE) and the settings UI were all already wired — this was NOT a ghost feature. Three concrete DB/route bugs made add/verify/delete fail:
+
+| Bug | Root cause | Fix | Evidence |
+|---|---|---|---|
+| **#14** | `test_phone_otp_log` table never created → OTP rate-limit query 500s on add | migration 011 | live add → 409 not 500 (P3 verify) |
+| **#18** | `test_phone_numbers.attempts` column never created, but POST INSERT + verify route both reference it → add INSERT 500s for any normal number (P3's DNC number short-circuited to 409 before the INSERT, hiding it) | migration 014 (`ADD COLUMN IF NOT EXISTS attempts`) | live add + verify now green |
+| **#19** | DELETE route read `props.params.id` synchronously; Next 16 `params` is a Promise → `undefined` → matched no row → 404 (same class as the API-key revocation fix) | `await props.params` | live DELETE → 200, row removed |
+
+| Feature | How verified | Actual observed result | Status |
+|---|---|---|---|
+| Verify state machine | `vitest run otp-limits.test.ts` | **8/8**: rate-limit (4th/hr→429), cap (6th number→400), wrong code→400+attempts, attempts≥3→429 (code invalidated), expiry→400, valid→verified 200 | **VERIFIED** |
+| Full add→verify→delete cycle (live, no real SMS) | live script: seed known OTP, drive real routes | wrong code→400 · correct→**verified 200** · GET list includes it · **DELETE→200** · row removed | **VERIFIED** |
+| Migration runner idempotent | `node scripts/migrate.mjs` | **14/14 applied** (restored the dollar-quote/comment-aware splitter that the tree churn had dropped) | **VERIFIED** |
+| Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
+
+**Premise correction (rule 1/5 — no duplicate feature):** v4 B1 specs a NEW `verified_numbers` table, but `test_phone_numbers WHERE verified=true` already IS that allowlist. Building a parallel table would be a ghost duplicate. **Phase T will read the existing table as its demo-mode allowlist** — not a new one.

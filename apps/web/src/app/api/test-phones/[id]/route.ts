@@ -3,12 +3,15 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 
-export async function DELETE(request: Request, props: { params: { id: string } }) {
+export async function DELETE(request: Request, props: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { id } = props.params;
+    // Next 16: params is a Promise — reading it synchronously yields undefined,
+    // so the DELETE matched no row and always 404'd (bug #19, same class as the
+    // API-key revocation fix). Await it.
+    const { id } = await props.params;
     const orgId = session.user.id;
 
     const [phone] = await sql`
