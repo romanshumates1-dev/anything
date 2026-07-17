@@ -757,13 +757,20 @@ yarn playwright install chromium
 | F.2 | Oxlint clean | `oxlint --no-ignore apps/web/src` | 0 errors | ✅ PASS | FINAL_STATE.md §"Phase Q" |
 | F.3 | Unit suite green | `vitest run` | 479/45/0 | ✅ PASS | FINAL_STATE.md §"Test counts" |
 | F.4 | E2E journey green | `playwright test e2e/journey.spec.ts` | 3/3 consecutive | ✅ PASS | BREAKAGE_TABLE.md §P3 |
-| F.5 | All routes HTTP 200 | `curl http://localhost:4000/{route}` | 200 on 10 routes | ✅ PASS | BREAKAGE_TABLE.md §P1 row 1 |
+| F.5 | All routes HTTP 200 + rendered | `scripts/route-sweep.mjs` | 200 + heading on 14 routes | ✅ PASS | BREAKAGE_TABLE.md §Phase Q (14/14, 0 console errors) |
 | F.6 | Health endpoint | `GET /api/system/health` | {"ok":true} | ✅ PASS | FINAL_STATE.md §P1 row 2 |
-| F.7 | Dockerfile valid | `docker build .` (CI) | successful | ✅ CI | `.github/workflows/ci.yml` docker job |
-| F.8 | Compose valid | `docker compose up` (CI) | healthy | ✅ CI | `.github/workflows/ci.yml` smoke step |
-| F.9 | Container smoke test | Escalation fuzz in container | 150/150 | ✅ CI-GUARANTEED | BREAKAGE_TABLE.md §P3 |
-| F.10 | No console errors | Browser console audit | 0 errors | ✅ PASS | `p1-verify.mjs` output |
+| F.7 | Dockerfile valid | `docker build .` | successful | ⛔ **NOT RUN** | Docker not installed on the build host (`docker: command not found`). Dockerfile authored + reviewed; never built. |
+| F.8 | Compose valid | `docker compose up` | healthy | ⛔ **NOT RUN** | Same — compose authored; the CI docker job is drafted but **commented out** in `ci.yml`. |
+| F.9 | Container smoke (fuzz in container) | fuzz inside `docker run` | 150/150 | ⛔ **NOT RUN in a container** | The 150/150 per-profile fuzz IS verified — but **natively via vitest**, not in a container. Container execution is blocked on Docker. Do not read the native pass as container-verified. |
+| F.10 | No console errors | `route-sweep.mjs` (14 routes) | 0 errors | ✅ PASS | 14/14 routes 0 console errors, BREAKAGE_TABLE §Phase Q |
 
-**Owner unblocks F.4-F.9 by:**
-1. Running the CI pipeline (push to main triggers docker job)
-2. OR providing a valid `TEST_DATABASE_URL` secret for the e2e job to pass (current status: BLOCKED per `LAUNCH_VERIFICATION_CHECKLIST.md` §1.5)
+> **Integrity correction (2026-07-16, session m):** F.7–F.9 previously read
+> "✅ CI" / "✅ CI-GUARANTEED". Those were prose-only claims — Docker is not
+> installed on this host and the CI docker job is commented out, so none of
+> them ever executed. Corrected to NOT RUN per the evidence law (rule 8). The
+> escalation fuzz is genuinely green, but natively, not in a container.
+
+**Owner unblocks the remaining Phase F rows by:**
+1. **Install Docker Desktop (WSL2)** → `.\launch.ps1 --docker` → run `route-sweep.mjs` + the escalation fuzz against the containers → flip F.7–F.9 + the INT-1 prod-latency row.
+2. **`gh auth login`** (or watch the Actions tab) → capture the green CI run URL for Phase D; un-comment the docker CI job once GHCR perms are decided.
+3. E2E `flows-live` job needs a `TEST_DATABASE_URL` secret (a throwaway Neon branch).
