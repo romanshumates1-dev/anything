@@ -1,6 +1,13 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-17 (n) — v4 prompt. Phases G, B1, H, V-core VERIFIED + pushed. typecheck 0; suite 495 passed / 45 skipped / 0 failed._
+_Last session: 2026-07-17 (o) — v5. **V-R + Phase-A core VERIFIED + pushed** (4dbc7ed, 0b8ae66). typecheck 0; suite **530 passed / 45 skipped / 0 failed**; migrate 17/17._
+
+## Session (o) — v5 (inspection clock + bounded negotiation core)
+
+- **V-R** (4dbc7ed): calendar-day owner-tz DST-safe clock (16/16); chip live on /contracts (screenshot, all 4 stages); day-3 + day-N−2 urgency exactly-once via `inspect:{id}:day3|final` dedupe (live-proven: one approval row, re-schedule collapses, assigned→zero); day-N−2 carries the lowest viable ask (contract + $3k floor = $88,000 on $85k).
+- **Phase A core** (0b8ae66): pure `computeNextOffer` (100/100 ceiling fuzz, mutation-proven RED); `{OFFER}` slot injection; dispatchGate NUMERIC_GUARD (20/20 adversarial blocks, zero sends, escalation rows); sessions (preconditions server-side off a real ANSWERED owner_range_requests row; unparseable → escalate never guess; restart-safe `negoffer:{s}:{r}` dedupe; pause cancels queue); **flag-off 150/150 regression green in the same run**. Remaining: A.4 UI panel (API tested; no stub shipped).
+
+**NEXT (v5 order):** T-safety (twilio-demo driver + allowlist gate w/ SDK-mocked zero-call proof, webhook signature tests, OWNER-GATED headline row) → Q route-matrix additions → C/D on host unblock (Docker, `gh auth login`, A2P) → F.
 
 ## Session (n) — v4 (globe / verify-numbers / system-health / valuation economics)
 
