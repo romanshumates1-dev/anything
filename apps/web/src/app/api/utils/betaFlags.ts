@@ -16,7 +16,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles'] as const;
+export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation'] as const;
 export type BetaFlagKey = (typeof BETA_FLAG_KEYS)[number];
 export type BetaFlags = Record<BetaFlagKey, boolean>;
 
@@ -28,6 +28,11 @@ export const DEFAULT_BETA_FLAGS: BetaFlags = {
   // Phase N: per-list pricing/posture. OFF by default — unparks the DEFERRED
   // valuation item SAFELY (owner-only suggestions; AI still never emits a number).
   negotiationProfiles: false,
+  // Phase A: bounded autonomous negotiation — the DELIBERATE, per-lead,
+  // owner-approved-range-only invariant override. OFF by default, never
+  // auto-enabled; absent flag+approval+assignability, escalation behavior is
+  // byte-for-byte unchanged.
+  boundedNegotiation: false,
 };
 
 const SETTINGS_KEY = 'beta_flags';

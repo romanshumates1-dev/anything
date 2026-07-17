@@ -144,6 +144,8 @@ export async function processNextJob() {
             campaignId: payload.campaignId,
             organizationId: payload.organizationId,
             contactId: payload.contactId,
+            // Phase A: numeric-guard context rides with bounded-mode sends.
+            boundedNegotiation: payload.boundedNegotiation,
           });
           // Log gateway result for auditability
           await sql`

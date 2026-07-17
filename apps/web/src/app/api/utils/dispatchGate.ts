@@ -35,7 +35,7 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD';
+export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -69,6 +69,19 @@ export interface DispatchRequest {
   /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
    *  coldOutbound is true. Default (undefined) = allowed. */
   profileAllowsCold?: boolean;
+  /**
+   * Phase A: bounded-negotiation numeric guard. Present ONLY on bounded-mode
+   * conversation sends. The final outbound text is parsed; any dollar amount
+   * ≠ the computed offer, outside the approved range, or any spelled-amount
+   * token → the send is BLOCKED (NUMERIC_GUARD). Defense-in-depth: the model
+   * cannot leak a bad number even under adversarial prompting.
+   */
+  boundedNegotiation?: {
+    text: string;
+    computedOfferCents: number;
+    approvedMinCents: number;
+    approvedMaxCents: number;
+  };
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -152,6 +165,21 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           allow: false,
           code: 'NO_CONSENT',
           reason: `SKIPPED: no consent basis for ${req.channel} (need one of ${VALID_CONSENT_BASES.join(' | ')})`,
+          timezones: tzs,
+        };
+      }
+    }
+
+    // 3.4 Phase A: numeric guard on bounded-negotiation sends. Absolute block —
+    // a leaked number is a compliance/authority breach, never retried as-is.
+    if (req.boundedNegotiation) {
+      const { numericGuard } = await import('./negotiationEngine');
+      const verdict = numericGuard(req.boundedNegotiation.text, req.boundedNegotiation);
+      if (!verdict.ok) {
+        return {
+          allow: false,
+          code: 'NUMERIC_GUARD',
+          reason: `NUMERIC GUARD BLOCKED: ${verdict.reason}`,
           timezones: tzs,
         };
       }

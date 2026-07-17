@@ -441,3 +441,24 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 | Restart-safe | dedupe keys on the durable jobs table | design + live re-schedule test | same-key re-add no-ops; state re-checked at fire time | **VERIFIED** |
 | Migration 016 idempotent (with rollback note) | `016_inspection_clock.sql` | `migrate.mjs` | **16/16 applied**; inspection_days CHECK 7–14 | **VERIFIED** |
 | Suite + typecheck | all | full run | **511 passed / 45 skipped / 0 failed** (67 files); tsc 0 | **VERIFIED** |
+
+---
+
+## PHASE A (v5) — bounded autonomous negotiation, core  ✅ VERIFIED (UI panel = logged remaining surface)
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| **100/100 ceiling fuzz on COMPUTED numbers** | `negotiationEngine.computeNextOffer`, `__tests__/p3/ceiling-fuzz.test.ts` | `vitest run` | 50 seller + 50 buyer randomized adversarial sequences: seller never exceeds max, buyer never dips below floor, concessions strictly decreasing (40→25→15→10% of remaining gap), walk-away at bound; degenerate geometry → immediate walk-away | **VERIFIED** |
+| Fuzz bites (mutation) | same | clamp removed ×3 overshoot | `offer 17656171 EXCEEDS max 17089057` → RED; restored → green. (First probe at ×1.8 was too weak — 0.4×1.8=0.72 of gap never crosses; documented so nobody mistakes probe strength for fuzz weakness) | **VERIFIED** |
+| **20/20 numeric-guard blocks** | `numericGuard` + gate | same | confirm-above-max, wrong-number, multi-number, bare digits, k-suffix, spelled-amount injections, slot-evasion — **all 20 blocked**; the one legitimate shape (prose + injected `{OFFER}` slot = computed figure) passes | **VERIFIED** |
+| Template-slot injection (model never types the number) | `injectOffer`, `OFFER_SLOT` | unit | exactly-one-slot enforced (0 or 2 slots → throw); `$87,500` formatting canonical | **VERIFIED** |
+| Guard wired at the chokepoint | `dispatchGate` NUMERIC_GUARD (3.4), `sms-gateway` | gateway test | denial → **zero provider sends**, `numeric_guard_blocked` event, `NUMERIC_GUARD_BLOCK` human_approvals escalation row; final text + sessionId reach the gate | **VERIFIED** |
+| Preconditions (A.0) server-side | `startSession`, sessions route | session tests 12/12 | flag OFF → refused (store untouched); no owner approval → refused; invalid range → refused; route resolves the range from a real ANSWERED `owner_range_requests` row | **VERIFIED** |
+| Counter flow | `advanceRound`, `parseCounterCents` | same | inside bound → **agreed** + NEGOTIATION_AGREED approval (no counter-offer sent); unparseable ("my cousin says…", word-amounts) → **paused + escalated, nothing sent — never guesses**; past max rounds → walk-away + notification | **VERIFIED** |
+| Restart no-duplicate-offer | dedupe `negoffer:{session}:{round}` | same | 3 repeated attempts at the same round → the SAME key every time (jobs unique index collapses) | **VERIFIED** |
+| Pause / take-over cancels queue | `pauseSession` + route | same | status→paused; pending `negoffer:*` jobs → cancelled (2 cancelled in test); pause route deliberately NOT flag-gated | **VERIFIED** |
+| **Flag-off regression** | escalation fuzzes | full run | 50/50 baseline + **150/150 per-profile UNCHANGED** in the same suite run | **VERIFIED** |
+| Migration 017 idempotent | `negotiation_sessions` + partial unique active index | migrate | **17/17 applied** | **VERIFIED** |
+| Suite + typecheck | all | full run | **530 passed / 45 skipped / 0 failed** (69 files); tsc 0 | **VERIFIED** |
+
+**Remaining surface (honest, not ghost-wired):** A.4 UI — per-lead toggle (visible only under preconditions), live timeline, inline pause button. The API it will call (`GET/POST /api/negotiation/sessions`, `POST …/pause`) is built, precondition-enforcing, and tested; no UI stub was shipped.
