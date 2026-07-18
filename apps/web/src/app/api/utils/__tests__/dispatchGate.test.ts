@@ -40,11 +40,23 @@ function atLocalHour(tz: string, hour: number, isoDay = '2026-07-15'): Date {
   throw new Error(`no instant found for ${tz} hour ${hour}`);
 }
 
+// Bug #22: CI's live jobs export DISPATCH_SKIP_QUIET_HOURS=1 job-wide, and the
+// Layer C job runs THIS file too — the ambient env made the deterministic
+// quiet-hours deny tests fail ('expected true to be false'). Strip it per test
+// and RESTORE after, so this file is env-independent without stripping the env
+// from other files sharing the worker process (flows-live needs it).
+let ambientSkip: string | undefined;
 beforeEach(() => {
+  ambientSkip = process.env.DISPATCH_SKIP_QUIET_HOURS;
+  delete process.env.DISPATCH_SKIP_QUIET_HOURS;
   mockSql.mockReset();
   mockSql.mockResolvedValue([]); // default: not suppressed
   isBetaFlagOn.mockReset();
   isBetaFlagOn.mockResolvedValue(true); // default: flag on
+});
+afterEach(() => {
+  if (ambientSkip !== undefined) process.env.DISPATCH_SKIP_QUIET_HOURS = ambientSkip;
+  else delete process.env.DISPATCH_SKIP_QUIET_HOURS;
 });
 
 describe('timezone helpers — DST-correct via Intl', () => {
