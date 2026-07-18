@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Files that MUST stay LF regardless of core.autocrlf on Windows checkouts.
+# A CRLF .dockerignore makes BuildKit parse each pattern with a trailing \r
+# (node_modules\r), matching nothing → 556MB node_modules leaks into the build
+# context. Shell/mjs scripts and SQL migrations also break with CRLF.
+.dockerignore   text eol=lf
+Dockerfile      text eol=lf
+*.sh            text eol=lf
+*.mjs           text eol=lf
+*.sql           text eol=lf
