@@ -11,7 +11,14 @@ _Last session: 2026-07-17 (o) — v5. **V-R + Phase-A core VERIFIED + pushed** (
 
 **CI/CD unblocked this session** (owner ran `gh auth login`; I reused the machine's git token for gh reads). PR #4 opened → CI now RUNS (was invalid YAML → 0s). **Web ✓ Desktop ✓**; fixed bug #20 (Layer C `inbound_latency does not exist` — stale schema.sql bootstrap; both DB jobs now apply base + migrations/*.sql via glob). Green-run confirmation pending re-run.
 
-**NEXT (v5 order):** confirm CI fully green → A.4 UI panel (negotiation toggle/timeline/pause) → Q route-matrix additions (system-health, contracts clock, demo banner, negotiation) → Phase C on Docker install → Phase F DoD. Owner TODO unchanged: Docker Desktop, A2P.
+- **Phase A.4** (0f923d1): NegotiationPanel on the inbox thread — flag-gated (no ghost UI), live timeline (round/opener/last-offer/counter/clamp), Pause/take-over cancels queued sends. Live 9/9, screenshot `e2e/.proof/negotiation-panel.png`. **Phase A now complete.**
+- **Phase Q** (218c492): route console matrix +`/system-health` → 15 routes, 0 console errors, 0 blank panes, branded 404.
+
+**CI green run achieved:** [run 29622545353](https://github.com/romanshumates1-dev/anything/actions/runs/29622545353) — Web ✓ Desktop ✓ Layer C ✓ E2E ✓ (Phase D DoD). Fixed bug #20 (stale schema.sql bootstrap; both DB jobs now glob `migrations/*.sql`).
+
+**CI flake note:** rapid successive pushes cancel in-flight runs mid-transaction (`cancel-in-progress: true`) on the SHARED Neon test branch, which can leave `flows-live` campaign_lifecycle dirty → spurious red. Mitigation = don't push in quick succession; let each run finish. The flow passes locally with `RUN_LIVE_FLOWS=1` and passed green when run uninterrupted.
+
+**REMAINING (v5):** Phase C containers (OWNER-BLOCKED: install Docker Desktop + WSL2) · Phase F final DoD (mostly closeable now; CI-link ✓, image-tag stays open until Docker). Owner TODO: Docker Desktop, A2P (unblocks T headline + live drivers).
 
 ## Session (n) — v4 (globe / verify-numbers / system-health / valuation economics)
 
