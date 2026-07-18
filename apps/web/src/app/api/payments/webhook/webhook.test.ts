@@ -14,6 +14,7 @@ vi.mock('@/app/api/utils/logger', () => ({
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { POST } from './route';
+import { resetStripeProvider } from '@/app/api/services/stripeProvider';
 
 function createMockRequest(body: any, signature = 'any'): Request {
   return new Request('http://localhost:4000/api/payments/webhook', {
@@ -29,16 +30,17 @@ function createMockRequest(body: any, signature = 'any'): Request {
 describe('Payments Webhook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStripeProvider();
   });
 
   it('processes payment_intent.succeeded and marks ledger paid', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM payments_ledger')) return [];
-      if (query.includes('SELECT id, contract_id, amount_cents, status FROM payments_ledger')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from payments_ledger')) return [];
+      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 100000, status: 'sent' }];
       }
-      if (query.includes('UPDATE payments_ledger')) return [];
+      if (query.includes('update payments_ledger')) return [];
       return [];
     });
 
@@ -57,6 +59,7 @@ describe('Payments Webhook', () => {
   it('rejects tampered signature for live provider', async () => {
     const originalProvider = process.env.STRIPE_PROVIDER;
     process.env.STRIPE_PROVIDER = 'live';
+    resetStripeProvider();
 
     const response = await POST(createMockRequest(
       { type: 'payment_intent.succeeded', id: 'evt_1', data: { object: { id: 'pi_1', amount: 1000, currency: 'usd', status: 'succeeded' } } },
@@ -68,12 +71,13 @@ describe('Payments Webhook', () => {
     expect(data.error).toBe('Invalid signature');
 
     process.env.STRIPE_PROVIDER = originalProvider;
+    resetStripeProvider();
   });
 
   it('returns 200 idempotent for duplicate events', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM payments_ledger')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from payments_ledger')) {
         return [{ exists: true }];
       }
       return [];
@@ -92,9 +96,9 @@ describe('Payments Webhook', () => {
 
   it('holds payment on amount mismatch', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM payments_ledger')) return [];
-      if (query.includes('SELECT id, contract_id, amount_cents, status FROM payments_ledger')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from payments_ledger')) return [];
+      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 50000, status: 'sent' }];
       }
       return [];
@@ -115,9 +119,9 @@ describe('Payments Webhook', () => {
 
   it('returns 404 for unknown payment intent', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM payments_ledger')) return [];
-      if (query.includes('SELECT id, contract_id, amount_cents, status FROM payments_ledger')) return [];
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from payments_ledger')) return [];
+      if (query.includes('select id') && query.includes('payments_ledger')) return [];
       return [];
     });
 
@@ -132,12 +136,12 @@ describe('Payments Webhook', () => {
 
   it('processes payment_intent.payment_failed', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM payments_ledger')) return [];
-      if (query.includes('SELECT id, contract_id, amount_cents, status FROM payments_ledger')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from payments_ledger')) return [];
+      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 100000, status: 'sent' }];
       }
-      if (query.includes('UPDATE payments_ledger')) return [];
+      if (query.includes('update payments_ledger')) return [];
       return [];
     });
 

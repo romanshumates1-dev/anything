@@ -107,7 +107,7 @@ export async function backfillStageTransitions(): Promise<number> {
       WHERE lead_id IS NOT NULL AND to_stage IS NOT NULL
     `;
 
-    return result.count || 0;
+    return result.length || 0;
   } catch (error) {
     console.error('[stageTransitionRecorder] Backfill failed', error);
     return 0;

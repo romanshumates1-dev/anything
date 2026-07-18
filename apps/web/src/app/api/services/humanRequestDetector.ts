@@ -50,7 +50,7 @@ const FALSE_POSITIVE_TRAPS = [
   "owner's manual",
   'owner manual',
   'owners manual',
-  'owner\'s guide',
+  "owner's guide",
   'owner guide',
   'call me maybe',
   'call me later',
@@ -109,11 +109,11 @@ export function detectHumanRequestLLM(text: string): HumanRequestResult {
 
   // Heuristic patterns for phrasing variants
   const patterns = [
-    /\b(?:connect|put|get|transfer)\s+(?:me|us)\s+(?:to|with|in touch)\s+(?:a\s+)?(?:real\s+)?(?:person|human|agent|representative)\b/,
+    /\b(?:connect|put|get|transfer)\s+(?:me|us)\s+(?:to|with|in\s+touch)(?:\s+with)?\s+(?:a\s+)?(?:real\s+)?(?:person|human|agent|representative)\b/,
     /\b(?:i\s+)?(?:want|need|would\s+like|am\s+looking)\s+(?:to\s+)?(?:speak|talk|chat)\s+(?:to|with)\s+(?:a\s+)?(?:real\s+)?(?:person|human|agent|representative)\b/,
     /\b(?:can\s+)?(?:i\s+)?(?:speak|talk)\s+(?:to|with)\s+(?:a\s+)?(?:real\s+)?(?:person|human|someone|representative)\s+(?:there|please|now)?\b/,
     /\b(?:is\s+)?(?:there\s+)?(?:a\s+)?(?:real\s+)?(?:person|human|someone)\s+(?:i\s+)?(?:can\s+)?(?:speak|talk)\s+(?:to|with)\b/,
-    /\b(?:this\s+)?(?:is\s+)?(?:not\s+)?(?:helpful|working|what\s+I\s+wanted)\s*(?:\.\.\.)?\s*(?:i\s+)?(?:want|need)\s+(?:a\s+)?(?:real\s+)?(?:person|human)\b/,
+    /\b(?:not\s+)?(?:helpful|working|what\s+i\s+wanted)\b.*\b(?:want|need)\s+(?:a\s+)?(?:real\s+)?(?:person|human)\b/,
   ];
 
   for (const pattern of patterns) {

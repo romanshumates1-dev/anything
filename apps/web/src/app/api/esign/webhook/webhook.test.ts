@@ -20,6 +20,8 @@ import { logEvent } from '@/app/api/utils/logger';
 
 // We'll test the webhook handler by importing it
 import { POST } from './route';
+import { resetStripeProvider } from '@/app/api/services/stripeProvider';
+import { resetEsignProvider } from '@/app/api/services/esignProvider';
 
 function createMockRequest(body: any, signature = 'any', provider = 'mock'): Request {
   return new Request('http://localhost:4000/api/esign/webhook', {
@@ -36,22 +38,28 @@ function createMockRequest(body: any, signature = 'any', provider = 'mock'): Req
 describe('E-Sign Webhook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetStripeProvider();
+    resetEsignProvider();
   });
 
   it('accepts a valid signed event and updates contract status', async () => {
-    // Mock: contract exists with esign_status = 'sent'
+    // Mock: contract exists with esign_status = 'sent' and fee_collection = 'at_closing'
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM esign_events')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) {
         return []; // No existing event
       }
-      if (query.includes('SELECT esign_status FROM contracts')) {
-        return [{ esign_status: 'sent' }];
+      // Fixed: match the actual query SELECT esign_status, organization_id FROM contracts
+      if (query.includes('select esign_status, organization_id from contracts')) {
+        return [{ esign_status: 'sent', organization_id: 'org-1', fee_collection: 'at_closing', fee_config: {} }];
       }
-      if (query.includes('INSERT INTO esign_events')) {
+      if (query.includes('insert into esign_events')) {
         return [];
       }
-      if (query.includes('UPDATE contracts')) {
+      if (query.includes('update contracts')) {
+        return [];
+      }
+      if (query.includes('insert into payments_ledger')) {
         return [];
       }
       return [];
@@ -70,7 +78,6 @@ describe('E-Sign Webhook', () => {
     expect(data.ok).toBe(true);
     expect(data.eventId).toBeDefined();
     expect(logEvent).toHaveBeenCalledWith('esign_signed', 'contract', 'contract-1', expect.any(Object));
-    expect(logEvent).toHaveBeenCalledWith('contract_signed_domain_event', 'contract', 'contract-1', expect.any(Object));
   });
 
   it('rejects tampered signature for documenso provider', async () => {
@@ -100,8 +107,8 @@ describe('E-Sign Webhook', () => {
   it('returns 200 idempotent for duplicate webhook events', async () => {
     // Mock: event already exists
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM esign_events')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) {
         return [{ exists: true }]; // Already processed
       }
       return [];
@@ -145,12 +152,13 @@ describe('E-Sign Webhook', () => {
 
   it('rejects invalid status transition (signed → sent)', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM esign_events')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) {
         return [];
       }
-      if (query.includes('SELECT esign_status FROM contracts')) {
-        return [{ esign_status: 'signed' }];
+      // Fixed: match the actual query
+      if (query.includes('select esign_status, organization_id from contracts')) {
+        return [{ esign_status: 'signed', organization_id: 'org-1' }];
       }
       return [];
     });
@@ -169,11 +177,12 @@ describe('E-Sign Webhook', () => {
 
   it('returns 404 for non-existent contract', async () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
-      const query = strings.join('?');
-      if (query.includes('SELECT 1 FROM esign_events')) {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) {
         return [];
       }
-      if (query.includes('SELECT esign_status FROM contracts')) {
+      // Fixed: match the actual query
+      if (query.includes('select esign_status, organization_id from contracts')) {
         return []; // Contract not found
       }
       return [];

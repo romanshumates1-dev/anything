@@ -1,6 +1,6 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-17 (o) — v5. **V-R + Phase-A core VERIFIED + pushed** (4dbc7ed, 0b8ae66). typecheck 0; suite **530 passed / 45 skipped / 0 failed**; migrate 17/17._
+_Last session: 2026-07-18 (p) — v6. **P1-P3-P4 integration + P5 scripts VERIFIED + pushed**. typecheck 0; suite **584 passed / 2 skipped / 0 failed**; all webhook tests fixed._
 
 ## Session (o) — v5 (inspection clock + bounded negotiation core)
 

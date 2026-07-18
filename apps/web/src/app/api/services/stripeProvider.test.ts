@@ -19,7 +19,7 @@ describe('MockStripeProvider', () => {
     });
 
     expect(result.paymentLink).toContain('/api/payments/mock-checkout');
-    expect(result.paymentLink).toContain('pi=mock_');
+    expect(result.paymentLink).toContain('pi=pi_mock_');
     expect(result.paymentLink).toContain('contractId=contract-1');
     expect(result.paymentIntentId).toMatch(/^pi_mock_/);
     expect(result.status).toBe('created');

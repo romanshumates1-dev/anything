@@ -11,6 +11,7 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { getEsignProvider, type EsignProviderType } from '@/app/api/services/esignProvider';
+import { getStripeProvider } from '@/app/api/services/stripeProvider';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
 
     // Check current contract status for transition validity
     const contractRows = await sql`
-      SELECT esign_status FROM contracts WHERE id = ${payload.contract_id}
+      SELECT esign_status, organization_id FROM contracts WHERE id = ${payload.contract_id}
     `;
 
     if (contractRows.length === 0) {
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
     }
 
     const currentStatus = contractRows[0].esign_status || 'pending';
+    const orgId = contractRows[0].organization_id || 'default';
 
     if (!isValidTransition(currentStatus, payload.event_type)) {
       console.warn(`[esign/webhook] Invalid transition: ${currentStatus} → ${payload.event_type} for contract ${payload.contract_id}`);
@@ -142,14 +144,36 @@ export async function POST(request: Request) {
       eventData: payload.event_data,
     });
 
-    // If signed, emit domain event for Phase P2 (fee collection)
+    // If signed, create payment if fee_collection = collect_now
     if (payload.event_type === 'signed') {
-      // Phase P2 will consume this: check fee_collection setting and create payment if collect_now
-      await logEvent('contract_signed_domain_event', 'contract', payload.contract_id, {
-        envelopeId: payload.envelope_id,
-        signedAt: payload.signed_at || new Date().toISOString(),
-        source: 'esign_webhook',
-      });
+      const contract = contractRows[0];
+      if (contract.fee_collection === 'collect_now') {
+        // Determine amount from fee_config or use a default
+        const feeConfig = contract.fee_config || {};
+        const amountCents = feeConfig.value || 1000000; // Default $10,000
+
+        // Create payment via mock provider
+        const stripeProvider = getStripeProvider();
+        const paymentResult = await stripeProvider.createPaymentLink({
+          contractId: payload.contract_id,
+          organizationId: orgId,
+          amountCents,
+          description: `Assignment Fee - Contract ${payload.contract_id}`,
+        });
+
+        const ledgerId = `pay_${crypto.randomUUID()}`;
+        await sql`
+          INSERT INTO payments_ledger (id, contract_id, amount_cents, stripe_payment_intent_id, status)
+          VALUES (${ledgerId}, ${payload.contract_id}, ${amountCents}, ${paymentResult.paymentIntentId}, 'sent')
+        `;
+
+        await logEvent('payment_created_on_sign', 'contract', payload.contract_id, {
+          ledgerId,
+          amountCents,
+          paymentIntentId: paymentResult.paymentIntentId,
+          source: 'esign_webhook',
+        });
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, eventId }), {
