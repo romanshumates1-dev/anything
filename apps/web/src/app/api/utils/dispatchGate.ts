@@ -22,6 +22,7 @@
 import sql from '@/app/api/utils/sql';
 import { timezonesForPhone } from '@/app/api/utils/area-codes';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
+import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 
 export type DispatchChannel = 'sms' | 'voice' | 'rvm';
 
@@ -35,7 +36,7 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD';
+export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD' | 'DEMO_NOT_VERIFIED';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -155,6 +156,22 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
     // 2. Beta flag — an OFF integration emits zero events.
     if (req.betaFlag && !(await isBetaFlagOn(req.betaFlag))) {
       return { allow: false, code: 'FLAG_OFF', reason: `Beta flag ${req.betaFlag} is off`, timezones: tzs };
+    }
+
+    // 2.5 Phase T: demo-mode allowlist. When the SMS driver is in twilio-demo
+    // mode, a recipient NOT in the verified-numbers allowlist is SKIPPED before
+    // any provider is touched. This is the safety property that makes cold
+    // lists physically unable to receive demo traffic. (DNC above still wins.)
+    if (req.channel === 'sms' && (await isBetaFlagOn('twilioDemo')) && getTwilioConfig() !== null) {
+      const { isVerifiedDemoRecipient } = await import('./smsMode');
+      if (!(await isVerifiedDemoRecipient(req.phone))) {
+        return {
+          allow: false,
+          code: 'DEMO_NOT_VERIFIED',
+          reason: 'SKIPPED: demo mode, recipient not verified',
+          timezones: tzs,
+        };
+      }
     }
 
     // 3. consentBasis — voice/RVM only.

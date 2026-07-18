@@ -11,7 +11,7 @@ import { mkdirSync } from 'fs';
 const BASE = 'http://localhost:4000';
 const sql = neon(process.env.DATABASE_URL);
 const email = `p1-${Date.now()}@dealswiftautomation.com`;
-const FLAGS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles'];
+const FLAGS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo'];
 let failures = 0;
 const ok = (c, m) => { console.log(`  ${c ? 'PASS' : 'FAIL'}  ${m}`); if (!c) failures++; };
 

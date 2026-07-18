@@ -16,7 +16,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation'] as const;
+export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo'] as const;
 export type BetaFlagKey = (typeof BETA_FLAG_KEYS)[number];
 export type BetaFlags = Record<BetaFlagKey, boolean>;
 
@@ -33,6 +33,10 @@ export const DEFAULT_BETA_FLAGS: BetaFlags = {
   // auto-enabled; absent flag+approval+assignability, escalation behavior is
   // byte-for-byte unchanged.
   boundedNegotiation: false,
+  // Phase T: twilio-demo driver — exercises the REAL Twilio API but ONLY to
+  // verified numbers (allowlist-only). OFF by default. There is no legit cheap
+  // high-limit bypass of A2P for cold traffic — demo is allowlist-only, period.
+  twilioDemo: false,
 };
 
 const SETTINGS_KEY = 'beta_flags';

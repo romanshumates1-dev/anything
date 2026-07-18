@@ -462,3 +462,30 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 | Suite + typecheck | all | full run | **530 passed / 45 skipped / 0 failed** (69 files); tsc 0 | **VERIFIED** |
 
 **Remaining surface (honest, not ghost-wired):** A.4 UI — per-lead toggle (visible only under preconditions), live timeline, inline pause button. The API it will call (`GET/POST /api/negotiation/sessions`, `POST …/pause`) is built, precondition-enforcing, and tested; no UI stub was shipped.
+
+---
+
+## PHASE T-safety (v5) — twilio-demo driver, allowlist gate (headline OWNER-GATED)  ✅ VERIFIED
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| SMS mode resolver (mock/twilio-demo/twilio-live) | `utils/smsMode.ts` | `vitest run demoAllowlist.test.ts` (7) | mode from config + `twilioDemo` flag; reused by the System Health SMS tile | **VERIFIED** |
+| **Demo allowlist gate (safety property)** | `dispatchGate` step 2.5, `smsMode.isVerifiedDemoRecipient` | same | demo ON + recipient NOT in `test_phone_numbers(verified=true)` → **DEMO_NOT_VERIFIED**; verified → allowed; demo OFF / mock → allowlist not consulted; **DNC still outranks**; voice/rvm not demo-gated | **VERIFIED** |
+| **Skipped send = ZERO SDK calls** | gateway + real gate | same (spy provider) | real dispatchGate returns DEMO_NOT_VERIFIED → `sdkCalls === 0`, `gateCode DEMO_NOT_VERIFIED`. Cold lists physically cannot receive demo traffic | **VERIFIED** |
+| Reuses B1 allowlist (no duplicate table) | `test_phone_numbers WHERE verified=true` | code | the verified-numbers table IS the allowlist | **VERIFIED** |
+| Inbound webhook signature validation | `sms/inbound/route.ts`, `twilio-inbound.test.ts` | existing suite | valid signature → parsed + enqueued; tampered → **403** | **VERIFIED** |
+| `twilioDemo` flag OFF by default | `betaFlags.ts` | flag defaults | OFF; toggles live via admin route | **VERIFIED** |
+| Demo banner (amber, allowlist-only copy) | `DemoModeBanner.tsx` in Shell | code + typecheck | renders only when flag ON; "DEMO MODE — messages deliver only to your verified numbers. No cheap A2P bypass" | **VERIFIED** |
+| System Health SMS tile shows mode | `system/dashboard smsTile` (Phase H) | H verify | mock / twilio-demo / twilio-live | **VERIFIED** |
+| toll-free driver STUB + `// LIVE:` markers | `providers.ts TollFreeStub` | code | same ISMSProvider interface; verificationStatus gate (unverified→throws); full `calls`/`messages.create` sketch behind `// LIVE:` | **VERIFIED** |
+| **Headline: real send → SID (OWNER-GATED, A2P)** | `demoHeadline.ownergated.test.ts` | `describe.skipIf(!ARMED)` | pre-written, TAGGED not forgotten; one-command path documented (`RUN_DEMO_HEADLINE=1 … yarn workspace web test -- demoHeadline`); arming-contract test always runs | **OWNER-GATED (A2P)** |
+| Suite + typecheck | all | full run | **538 passed / 46 skipped / 0 failed**; tsc 0 | **VERIFIED** |
+
+**Honest engineering note (encoded in `smsMode.ts` + banner copy):** there is NO legitimate cheap high-limit bypass of A2P for cold traffic — unregistered routes get carrier-filtered. Demo = allowlist-only. The legit higher-throughput path is toll-free verification (stub + DEPLOY.md).
+
+## CI/CD (Phase D) — pipeline now RUNS (was invalid YAML → 0s failures)
+
+| Item | Evidence | Status |
+|---|---|---|
+| Workflow valid + triggers | PR #4 → run **29620039261** went `in_progress` (not 0s); **Web ✓ · Desktop ✓** | **VERIFIED** |
+| **Bug #20 (CI infra)** — Layer C failed: `relation "inbound_latency" does not exist` | schema.sql bootstrap was **stale** (missing migrations 009–017); e2e job's hardcoded migration list stopped at 012. **Fixed:** both DB jobs now apply `schema.sql + campaign-pipeline + migrations/*.sql` via a glob loop (psql handles dollar-quotes/comments; migrations idempotent) | **FIXED (re-run pending)** |

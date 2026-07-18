@@ -197,16 +197,25 @@ jobs:
       # Apply the schema idempotently against the test branch.
       # All tables use CREATE TABLE IF NOT EXISTS so this is safe to re-run.
       # PGSSLMODE=require is inherited from the job-level env block.
-      - name: Bootstrap test schema
-        run: psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
+      # schema.sql + campaign-pipeline are the BASE tables; migrations 001–017
+      # add everything after (inbound_latency, number_pool, negotiation_*,
+      # contracts.inspection_days, …). psql applies the migration files natively
+      # (dollar-quotes + comments), and every migration is idempotent
+      # (IF NOT EXISTS / ON CONFLICT), so this is safe and complete. Without the
+      # migrations the live-gated suite (sla.test.ts etc.) hits missing tables.
+      - name: Bootstrap test schema (base + all migrations)
+        run: |
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/campaign-pipeline-schema.sql
+          for f in apps/web/db/migrations/*.sql; do
+            echo "── applying $f"
+            psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "$f"
+          done
 
-      # Run ONLY the live flow test file by name pattern. Vitest matches the
-      # pattern against file paths, so "flows-live" targets only
-      # flows-live.test.ts and skips the mocked Layer A/B suite entirely.
-      # assertFlowPassed() inside the test calls expect([]).toEqual([]) on the
-      # first failing step, naming the step + reason in the CI log.
+      # RUN_LIVE_FLOWS=1 + a real DATABASE_URL un-gates every live test
+      # (flows-live + sla + numberPoolStore); all need the migrated schema above.
       - name: Run live flow tests (Layer C)
-        run: yarn workspace web test -- flows-live
+        run: yarn workspace web test
 
 # ─────────────────────────────────────────────────────────────
 # JOB 3 — E2E: the 10-step campaign→inbox→approvals journey via Playwright
@@ -284,22 +293,16 @@ jobs:
       # (CREATE ... IF NOT EXISTS, guarded CREATE TYPE via DO blocks, guarded
       # ALTERs). If any statement errors on a fresh DB, psql exits non-zero and
       # this step fails the merge — this IS the deployable-schema guard.
-      - name: Bootstrap test schema
+      - name: Bootstrap test schema (base + ALL migrations, glob-ordered)
         run: |
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/campaign-pipeline-schema.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/001_add_missing_tables.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/002_pause_ai.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/003_auth_tables.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/004_assignment_fee.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/005_user_roles.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/006_lead_finder.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/007_app_settings.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/008_lead_finder_states.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/009_sla_latency.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/010_number_pool.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/011_test_phone_otp_log.sql
-          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/012_negotiation_profiles.sql
+          # Glob so new migrations are picked up automatically (was a hardcoded
+          # list that stopped at 012 and silently missed 013–017).
+          for f in apps/web/db/migrations/*.sql; do
+            echo "── applying $f"
+            psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       # @playwright/test is not in the lockfile (registry TLS-blocked in the
       # authoring env); install it here + the bundled chromium browser.
