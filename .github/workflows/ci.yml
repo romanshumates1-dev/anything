@@ -156,6 +156,12 @@ jobs:
       # job-runner and SMS webhook auth checks pass without real secrets.
       JOB_RUNNER_SECRET: "flow-runner-secret"
       SMS_INBOUND_SECRET: "flow-runner-secret"
+      # Isolate the send-PIPELINE flows from wall-clock quiet hours: without this
+      # the campaign_lifecycle send is (correctly) deferred whenever CI runs
+      # after 9pm lead-local, flaking 'process_jobs: expected pending to be
+      # completed'. Quiet-hours itself is covered deterministically in
+      # dispatchGate.test.ts. Prod never sets this.
+      DISPATCH_SKIP_QUIET_HOURS: "1"
       PGSSLMODE: require
 
     steps:
@@ -253,6 +259,8 @@ jobs:
       TWILIO_ACCOUNT_SID: ACe2eci00000000000000000000000000
       TWILIO_AUTH_TOKEN: e2e-ci-twilio-auth-token
       PW_CHANNEL: chromium
+      # Same wall-clock isolation as Layer C (see that job's note).
+      DISPATCH_SKIP_QUIET_HOURS: "1"
       PGSSLMODE: require
 
     steps:

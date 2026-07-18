@@ -213,9 +213,17 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       };
     }
 
+    // TEST-ONLY determinism: the live flow suite (flows-live/e2e) exercises the
+    // send PIPELINE, not quiet-hours (dispatchGate.test.ts covers that with an
+    // injected clock). Wall-clock quiet hours made those flows fail whenever CI
+    // ran after 9pm lead-local. DISPATCH_SKIP_QUIET_HOURS=1 skips ONLY the two
+    // time gates (quiet hours + send window); DNC / flag / consent / demo /
+    // numeric-guard / profile all still apply. Prod NEVER sets this env.
+    const skipTimeGates = process.env.DISPATCH_SKIP_QUIET_HOURS === '1';
+
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
     // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
-    if (req.transactional) {
+    if (req.transactional || skipTimeGates) {
       return { allow: true, timezones: tzs };
     }
     if (!isWithinQuietHours(tzs, at)) {

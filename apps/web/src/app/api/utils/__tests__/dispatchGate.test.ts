@@ -8,7 +8,7 @@
  * the gate's branching is exercised without a DB. The timezone helpers are pure
  * and tested directly against real IANA zones via Intl (no mocks, no fakes).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { mockSql } = vi.hoisted(() => ({ mockSql: vi.fn(async () => [] as any) }));
 vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
@@ -222,5 +222,35 @@ describe('transactional sends (P2.0-W) — time gates skipped, absolute gates ne
     });
     expect(d.allow).toBe(false);
     expect((d as any).code).toBe('FLAG_OFF');
+  });
+});
+
+describe('DISPATCH_SKIP_QUIET_HOURS (test-only determinism) — skips time gates ONLY', () => {
+  const elevenPm = atLocalHour('America/New_York', 23);
+  afterEach(() => { delete process.env.DISPATCH_SKIP_QUIET_HOURS; });
+
+  it('override ON: an 11pm send is allowed (quiet hours skipped)', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect(d.allow).toBe(true);
+  });
+
+  it('override does NOT weaken DNC', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    mockSql.mockResolvedValue([{ 1: 1 }]); // suppressed
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect((d as any).code).toBe('DNC');
+  });
+
+  it('override does NOT weaken FLAG_OFF', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    isBetaFlagOn.mockResolvedValue(false);
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', betaFlag: 'cadenceEngine', now: elevenPm });
+    expect((d as any).code).toBe('FLAG_OFF');
+  });
+
+  it('override OFF (default): 11pm still QUIET_HOURS', async () => {
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect((d as any).code).toBe('QUIET_HOURS');
   });
 });
