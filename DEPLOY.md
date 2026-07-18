@@ -121,25 +121,22 @@ Variables). Never commit values; `apps/web/.env` is gitignored.
 
 ## 3. Apply the database schema to prod Neon (idempotent — the deploy test)
 
-Against the **prod** `DATABASE_URL`, apply in order (all statements are idempotent —
-`IF NOT EXISTS` / `ON CONFLICT`, proven on a fresh DB by the CI e2e bootstrap):
+Against the **prod** `DATABASE_URL`, apply the base schema then ALL migrations.
+Everything is idempotent (`IF NOT EXISTS` / `ON CONFLICT`), proven on a fresh DB
+by the CI Layer-C + e2e bootstrap.
 
+**Recommended (one command — applies every `migrations/*.sql` in order):**
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/schema.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/campaign-pipeline-schema.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/001_add_missing_tables.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/002_pause_ai.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/003_auth_tables.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/004_assignment_fee.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/005_user_roles.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/006_lead_finder.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/007_app_settings.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/008_lead_finder_states.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/009_sla_latency.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/010_number_pool.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/011_test_phone_otp_log.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f apps/web/db/migrations/012_negotiation_profiles.sql
+node apps/web/scripts/migrate.mjs   # globs migrations/*.sql (dollar-quote & comment aware)
 ```
+`migrate.mjs` uses the neon serverless driver over `DATABASE_URL`, so it needs a
+Neon URL (same one the app uses). It reports `done — N/N applied (idempotent)`.
+
+Alternatively apply each `apps/web/db/migrations/*.sql` with `psql -f` in numeric
+order (001 → 017+). The glob is preferred so new migrations are never missed —
+this list previously drifted (stopped at 012) while 013–017 shipped.
 
 The owner (`roman.shumate@dealswiftautomation.com`) becomes ADMIN automatically:
 migration 005 upgrades the row if it exists, and the better-auth `user.create` hook
@@ -313,3 +310,29 @@ git push origin main
 
 _Not legal advice: confirm SMS/marketing compliance (10DLC registration, opt-in
 language, quiet hours) and Lead Finder source terms with counsel before launch._
+---
+
+## 7. Toll-free verification — the legit higher-throughput path (Phase T)
+
+There is **no legitimate cheap/high-limit bypass of A2P for cold traffic** —
+unregistered routes get carrier-filtered and create compliance exposure. Two
+supported paths:
+
+1. **10DLC / A2P** (what you're registering) — for standard local-number
+   business SMS. Required before any `twilio-live` cold send.
+2. **Toll-free verification** — a genuinely higher-throughput lane, verified
+   separately from A2P. Faster to approve than a fully-vetted 10DLC campaign and
+   supports higher daily volumes. The `TollFreeStub` driver
+   (`smsProvider` mode `toll-free`) is stubbed with `// LIVE:` markers and
+   config fields (`TOLL_FREE_NUMBER`, `TOLL_FREE_VERIFICATION_STATUS`).
+
+**To verify a toll-free number:** in the Twilio console, buy a toll-free number →
+Messaging → Toll-Free Verification → submit business + use-case + opt-in proof.
+Approval is typically days. Once `TOLL_FREE_VERIFICATION_STATUS=verified`, wire
+the real send in `TollFreeStub.send` (replace the `// LIVE:` block) and select
+the `toll-free` driver.
+
+**`twilioDemo` (allowlist-only) is for exercising the real Twilio API TODAY,
+safely** — it delivers ONLY to numbers you've verified in the Test Numbers page.
+It is not a production path; it's how you prove the end-to-end pipeline before
+A2P clears.
