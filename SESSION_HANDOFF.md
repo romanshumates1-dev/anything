@@ -7,7 +7,11 @@ _Last session: 2026-07-17 (o) — v5. **V-R + Phase-A core VERIFIED + pushed** (
 - **V-R** (4dbc7ed): calendar-day owner-tz DST-safe clock (16/16); chip live on /contracts (screenshot, all 4 stages); day-3 + day-N−2 urgency exactly-once via `inspect:{id}:day3|final` dedupe (live-proven: one approval row, re-schedule collapses, assigned→zero); day-N−2 carries the lowest viable ask (contract + $3k floor = $88,000 on $85k).
 - **Phase A core** (0b8ae66): pure `computeNextOffer` (100/100 ceiling fuzz, mutation-proven RED); `{OFFER}` slot injection; dispatchGate NUMERIC_GUARD (20/20 adversarial blocks, zero sends, escalation rows); sessions (preconditions server-side off a real ANSWERED owner_range_requests row; unparseable → escalate never guess; restart-safe `negoffer:{s}:{r}` dedupe; pause cancels queue); **flag-off 150/150 regression green in the same run**. Remaining: A.4 UI panel (API tested; no stub shipped).
 
-**NEXT (v5 order):** T-safety (twilio-demo driver + allowlist gate w/ SDK-mocked zero-call proof, webhook signature tests, OWNER-GATED headline row) → Q route-matrix additions → C/D on host unblock (Docker, `gh auth login`, A2P) → F.
+- **T-safety** (3e7b6c6): demo allowlist gate (dispatchGate DEMO_NOT_VERIFIED, reuses B1 verified-numbers); **skipped send = ZERO SDK calls** (spy at boundary, 7/7); twilioDemo flag OFF default + amber banner; TollFreeStub `// LIVE:`; inbound sig 403 covered; **headline OWNER-GATED (A2P)** pre-written + tagged. Suite 538/46/0.
+
+**CI/CD unblocked this session** (owner ran `gh auth login`; I reused the machine's git token for gh reads). PR #4 opened → CI now RUNS (was invalid YAML → 0s). **Web ✓ Desktop ✓**; fixed bug #20 (Layer C `inbound_latency does not exist` — stale schema.sql bootstrap; both DB jobs now apply base + migrations/*.sql via glob). Green-run confirmation pending re-run.
+
+**NEXT (v5 order):** confirm CI fully green → A.4 UI panel (negotiation toggle/timeline/pause) → Q route-matrix additions (system-health, contracts clock, demo banner, negotiation) → Phase C on Docker install → Phase F DoD. Owner TODO unchanged: Docker Desktop, A2P.
 
 ## Session (n) — v4 (globe / verify-numbers / system-health / valuation economics)
 
