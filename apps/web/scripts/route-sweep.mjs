@@ -14,6 +14,8 @@ const ROUTES = [
   '/dashboard', '/dashboard/readiness', '/analytics', '/leads', '/leads/import',
   '/crm', '/inbox', '/campaigns', '/campaigns/wizard', '/approvals', '/contracts',
   '/lead-finder', '/settings', '/settings/users',
+  // v5 additions to the route matrix:
+  '/system-health', // Phase H
 ];
 
 const browser = await chromium.launch({ channel: process.env.PW_CHANNEL || 'msedge' });

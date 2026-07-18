@@ -503,3 +503,10 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 | **Pause / take-over cancels queue** | pause route + `pauseSession` | live | button → route `200 {paused:true, cancelledJobs:1}`; queued `negoffer:*` job → **cancelled**; session → **paused** | **VERIFIED** |
 | Console clean | thread page | a4-verify | 0 console errors | **VERIFIED** |
 | Suite + typecheck | all | full run | **538 passed / 46 skipped / 0 failed**; tsc 0 | **VERIFIED** |
+
+## PHASE Q (v5) — route matrix incl. new surfaces  ✅ VERIFIED
+
+| Feature | How verified | Actual observed result | Status |
+|---|---|---|---|
+| Route console matrix (15 routes) | `node scripts/route-sweep.mjs` | **0 app console errors across 15 routes, 0 blank panes**, branded 404 renders. Includes v5's `/system-health` | **VERIFIED** |
+| Flag-gated component surfaces | own verify scripts | contracts inspection chip (vr-verify), demo banner (Phase T), negotiation panel (a4-verify) — each console-clean in its own live run; `/inbox/[leadId]` clean via a4-verify | **VERIFIED** |
