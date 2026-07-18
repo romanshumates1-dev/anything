@@ -1,0 +1,2 @@
+[jobs-dev] polling http://localhost:4000/api/jobs/process every 3000ms
+[jobs-dev] processed 1 job(s)
