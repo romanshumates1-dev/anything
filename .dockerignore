@@ -1,26 +1,19 @@
-# Build context trimming — keep the image small and the build fast.
-# Bare AND globbed: Docker's matcher does NOT reliably exclude a top-level dir
-# with only `**/foo`, so list both (the monorepo root node_modules is ~1GB and
-# was bloating the context to 1.1GB+ / 10min "transferring context").
 node_modules
+apps/web/node_modules
+apps/desktop/node_modules
+apps/mobile/node_modules
 **/node_modules
 .next
+apps/web/.next
 **/.next
 **/.turbo
 **/dist
 **/out
-# A separate project's SQLite DBs living under the repo (see the storage note) —
-# never part of the image.
-odysseus
-**/*.db
-**/*.sqlite
-# Build INPUT only (the derived land-50m.json ships; the raw topo does not).
-apps/web/public/geo/countries-50m.topo.json
 **/coverage
 **/.vercel
 **/playwright-report
 **/test-results
-**/e2e/.proof
+apps/web/e2e/.proof
 **/*.log
 **/.env
 **/.env.*
@@ -28,18 +21,16 @@ apps/web/public/geo/countries-50m.topo.json
 .git
 **/.git
 .github
+.claude
 _parked
 obra-superpowers
 _superpowers
-# The cloned superpowers skill repos + scratch dirs each carry a full .git —
-# they were bloating the build context past 150MB. None are needed in the image.
-.claude
 testytest
 odysseus
 mcp-servers
 docs
-**/.DS_Store
-**/*.pid
-**/.jobs-dev.pid
+**/*.db
+**/*.sqlite
+apps/web/public/geo/countries-50m.topo.json
 apps/desktop
 apps/mobile
