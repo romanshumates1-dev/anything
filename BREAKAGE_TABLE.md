@@ -491,3 +491,15 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 | **Bug #20 (CI infra)** — Layer C failed: `relation "inbound_latency" does not exist` | schema.sql bootstrap was **stale** (missing migrations 009–017); e2e job's hardcoded migration list stopped at 012. **Fixed:** both DB jobs now apply `schema.sql + campaign-pipeline + migrations/*.sql` via a glob loop (psql handles dollar-quotes/comments; migrations idempotent) | **FIXED (re-run pending)** |
 
 **GREEN PIPELINE RUN (Phase D DoD):** run **29620039261**→fixed→**[29622545353 completed success](https://github.com/romanshumates1-dev/anything/actions/runs/29622545353)** — Web ✓ · Desktop ✓ · Layer C (live DB) ✓ · E2E (Playwright 10-step) ✓ — on PR #4 (feat/mvp-prelaunch → main). No image tag yet (GHCR/Docker job deferred until Docker on host).
+
+---
+
+## PHASE A.4 (v5) — bounded-negotiation UI panel  ✅ VERIFIED (screenshot)
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Panel gated on flag (no ghost UI) | `NegotiationPanel.tsx`, inbox thread | `node scripts/a4-verify.mjs` (9/9) | flag OFF → panel **not rendered**; flag ON → renders | **VERIFIED** |
+| **Live timeline** | same | screenshot `e2e/.proof/negotiation-panel.png` (viewed) | Seller Side · active · Round 2 · Opened $73,800 · Last offer $81,000 · Prospect counter $120,000 · **Ceiling (max) $97,000** (clamp line) | **VERIFIED** |
+| **Pause / take-over cancels queue** | pause route + `pauseSession` | live | button → route `200 {paused:true, cancelledJobs:1}`; queued `negoffer:*` job → **cancelled**; session → **paused** | **VERIFIED** |
+| Console clean | thread page | a4-verify | 0 console errors | **VERIFIED** |
+| Suite + typecheck | all | full run | **538 passed / 46 skipped / 0 failed**; tsc 0 | **VERIFIED** |
