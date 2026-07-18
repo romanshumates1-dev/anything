@@ -34,3 +34,9 @@ docs
 apps/web/public/geo/countries-50m.topo.json
 apps/desktop
 apps/mobile
+.yarn/berry
+.yarn/cache
+.yarn/unplugged
+.yarn/install-state.gz
+**/.yarn/berry
+**/.yarn/cache
