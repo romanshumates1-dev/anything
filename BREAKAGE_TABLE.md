@@ -489,3 +489,5 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 |---|---|---|
 | Workflow valid + triggers | PR #4 → run **29620039261** went `in_progress` (not 0s); **Web ✓ · Desktop ✓** | **VERIFIED** |
 | **Bug #20 (CI infra)** — Layer C failed: `relation "inbound_latency" does not exist` | schema.sql bootstrap was **stale** (missing migrations 009–017); e2e job's hardcoded migration list stopped at 012. **Fixed:** both DB jobs now apply `schema.sql + campaign-pipeline + migrations/*.sql` via a glob loop (psql handles dollar-quotes/comments; migrations idempotent) | **FIXED (re-run pending)** |
+
+**GREEN PIPELINE RUN (Phase D DoD):** run **29620039261**→fixed→**[29622545353 completed success](https://github.com/romanshumates1-dev/anything/actions/runs/29622545353)** — Web ✓ · Desktop ✓ · Layer C (live DB) ✓ · E2E (Playwright 10-step) ✓ — on PR #4 (feat/mvp-prelaunch → main). No image tag yet (GHCR/Docker job deferred until Docker on host).
