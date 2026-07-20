@@ -8107,6 +8107,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:>=8.1.0":
+  version: 26.1.1
+  resolution: "@types/node@npm:26.1.1"
+  dependencies:
+    undici-types: "npm:~8.3.0"
+  checksum: 10c0/25ac5093195736dd074d5027adbba85617bc951d5a41506ebd3b9073048acb7233613f3822d5f9b9447f9c0841c91f6387c46283916767e3ef79f23917452c46
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^20":
   version: 20.19.37
   resolution: "@types/node@npm:20.19.37"
@@ -19033,7 +19042,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"qs@npm:^6.14.1":
+"qs@npm:^6.11.0, qs@npm:^6.14.1":
   version: 6.15.3
   resolution: "qs@npm:6.15.3"
   dependencies:
@@ -21395,6 +21404,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"stripe@npm:^17.7.0":
+  version: 17.7.0
+  resolution: "stripe@npm:17.7.0"
+  dependencies:
+    "@types/node": "npm:>=8.1.0"
+    qs: "npm:^6.11.0"
+  checksum: 10c0/df67c6d455bd0dd87140640924c220fa9581fc00c3267d171f407c8d088f946f61e3ae7e88a89e7dd705b10fd5254630fc943222eb6f003390ebafbd391f81b2
+  languageName: node
+  linkType: hard
+
 "structured-headers@npm:^0.4.1":
   version: 0.4.1
   resolution: "structured-headers@npm:0.4.1"
@@ -22181,6 +22200,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"undici-types@npm:~8.3.0":
+  version: 8.3.0
+  resolution: "undici-types@npm:8.3.0"
+  checksum: 10c0/c8aa7e2fbebfce519654dafadc0ece59be888d2ccaf180fb4495da875e7b536d2456345c384069c7e6f3e9c9ab7435f074957da306f142343eee86ff8048855a
+  languageName: node
+  linkType: hard
+
 "undici@npm:^6.18.2":
   version: 6.24.1
   resolution: "undici@npm:6.24.1"
@@ -22742,6 +22768,7 @@ __metadata:
     react-hook-form: "npm:^7.72.0"
     recharts: "npm:3.8.0"
     sonner: "npm:^2.0.7"
+    stripe: "npm:^17.7.0"
     tailwind-merge: "npm:^3.2.0"
     tailwindcss: "npm:^4.0.0"
     twilio: "npm:^6.0.2"

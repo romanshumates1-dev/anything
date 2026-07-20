@@ -2,6 +2,7 @@ import type Stripe from 'stripe';
 
 import sql from '@/app/api/utils/sql';
 import { getStripe, planForPriceId } from '@/app/api/utils/stripe';
+import { reportError } from '@/app/api/utils/monitoring';
 
 /**
  * Stripe webhook — the ONLY place subscription state is mutated from Stripe.
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
     }
     return Response.json({ received: true });
   } catch (err) {
-    console.error(`[stripe webhook] handler error for ${event.type}`, err);
+    await reportError(err, { scope: 'billing.webhook', meta: { type: event.type, eventId: event.id } });
     // 500 so Stripe retries; the idempotency row lets the retry replay safely
     // only if this row is cleared — but since we already claimed it, clear it so
     // the retry re-processes (the state change did not complete).

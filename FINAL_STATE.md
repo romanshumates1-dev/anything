@@ -28,9 +28,16 @@ asserted:
 **Full-project verification pasted (session (p)):** `tsc -p tsconfig.typecheck.json --noEmit` → **exit 0**;
 `vitest run` → **511 passed / 46 skipped / 0 failed** (63 files); +32 new billing tests, zero regressions.
 
-**Not yet proven live (environment-blocked, see `SESSION_HANDOFF.md` session (p)):** migration apply against a
-real DB, Stripe test-mode webhook round-trip, metered-cap end-to-end. These are the next session's
-first targets once a DB/registry network path exists. `yarn.lock` needs a `stripe` reconcile.
+**SMS/billing production-hardening (same session) — all 7 runbook gaps closed, unit-verified:**
+G-1 Twilio delivery-status callback route · G-2 gateway-injected `MockSmsProvider` zero-cost proof
+(real gateway + real `/api/sms/status`, no bypass) · G-3 durable idempotency (migration 015) · G-4
+boot-time env validation (`instrumentation.ts`) · G-5 per-send segment metering + Twilio spend ·
+G-6 `reportError` monitoring seam · G-7 `stripe` reconciled into `yarn.lock`. Full suite **545 passed
+/ 46 skipped / 0 failed**; details in `docs/GO_LIVE_CHECKLIST.md` + `SESSION_HANDOFF.md`.
+
+**Not yet proven live (owner-only — credentials/financial/10DLC, cannot be done by the agent):**
+migration apply against a real DB, Stripe test-mode + live webhook round-trip, one real delivered SMS
+with its status callback + metered usage, and 10DLC approval. See `docs/GO_LIVE_CHECKLIST.md` §5.
 
 ## AI provider — config-driven, one code path
 

@@ -37,6 +37,21 @@ Built the paid-SaaS spine: one source of truth for the 3 tiers, the pure money-m
 
 > **On "true production validation":** none of the above is production-*validated* — that requires live infra, live Stripe/Twilio credentials, an **approved 10DLC campaign** (external, multi-week), and one real delivered SMS observed with its status callback + metered usage. Those steps are owner-only (credentials/financial/regulatory) and cannot be performed by the agent. The runbook is what the owner executes to get there; the twilio_test + Stripe-test proofs (§3–§4) are the maximum provable state beforehand.
 
+### Gap close-out (same session) — all 7 code gaps fixed, in 5 phases
+
+Built out every remaining code gap from the runbook's register, one commit per phase, each typecheck-clean + unit-tested:
+
+| Gap | Fix | Key files | Tests |
+|---|---|---|---|
+| **G-2** mock-provider zero-cost proof | `SMS_MODE=mock` injects `MockSmsProvider` into the REAL gateway; `simulateDeliveryProgression` POSTs signed callbacks to the real `/api/sms/status` (no bypass) | `gateway/mock-provider.ts`, `utils/sms-mode.ts`, `utils/twilio-webhook.ts` (`signTwilioRequest`), `jobs.ts` | 3/3 |
+| **G-3** durable idempotency | Durable L2 store behind the Map (survives restart/multi-instance); optional/injected so gateway's 30 tests unchanged | migration `015_sms_idempotency.sql`, `gateway/sms-idempotency-store.ts` | 3/3 |
+| **G-4** boot env validation | Hand-rolled validator; prod boot aborts with a named list; worker fail-fasts too | `utils/env-validation.ts`, `src/instrumentation.ts`, `scripts/worker.mjs` | 9/9 |
+| **G-5** per-send metering | Metered by real GSM-7/UCS-2 segment count in the worker (launch keeps the gate); Twilio spend recorded | `config/sms-segments.ts`, `entitlement.ts` (`meterSmsSend`), `jobs.ts`, launch route | 11/11 |
+| **G-6** monitoring seam | `reportError` (structured log + optional `MONITORING_WEBHOOK_URL`); worker process-level handlers; wired into Stripe webhook | `utils/monitoring.ts`, `billing/webhook/route.ts`, `worker.mjs` | 3/3 |
+| **G-7** lockfile | `yarn install --mode=update-lockfile` added `stripe@17.7.0` (+ deps) to `yarn.lock` with the yarn checksum (link step skipped → junction untouched) | `yarn.lock` | n/a |
+
+**Verification after all phases:** `tsc` exit 0; full suite **545 passed / 46 skipped / 0 failed** (72 files; +34 tests over the 511 at the start of the gap work); migrations 014 + 015 validated through the real `splitSql`; commits `fccae8d` (G-2) · `84b7f81` (G-3) · `25da172` (G-4) · `6fa09e5` (G-5) · G-6/G-7 in the close-out commit. Only owner-only live/10DLC steps remain (see runbook §5).
+
 ## Session (m) — v3 progress + save point
 
 **DONE & VERIFIED (v3):** Phase R (full v2 plan re-verified; P3 fuzz 50/50 + live 7/7; bug #14 OTP table) · Phase N complete (150/150 per-profile fuzz, valuation engine 11/11, luxury cold gate 5/5, live 14/14) · Phase C verifiable pieces (worker drains live; migrate.mjs 13/13 idempotent after 2 self-found splitter bugs) · save-point fixes (#17: 2 sweep typecheck breaks).

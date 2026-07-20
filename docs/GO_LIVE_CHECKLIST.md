@@ -114,13 +114,13 @@ Each step: **actor · action · verification-that-proves-it.**
 |---|---|---|---|---|
 | 1 | Deploy production backend | owner | Deploy web + worker to the platform (Docker/compose exists — see `SESSION_HANDOFF`) with the prod origin set | `GET /api/system/health` → `{ok:true,...,services:{db,jobs,ai,sms}}` |
 | 2 | Connect production database | owner | Set `DATABASE_URL` to prod Neon; run `node apps/web/scripts/migrate.mjs` | Migrate log shows `001`→`014` applied; `SELECT count(*) FROM subscriptions` succeeds |
-| 3 | Production env vars | owner | Fill every var in `.env.example` in the platform secret store (never in git) | Boot succeeds; **see Gap G-4** (no boot-time env validation yet — a missing var may surface late) |
+| 3 | Production env vars | owner | Fill every var in `.env.example` in the platform secret store (never in git) | ✅ G-4 fixed: boot validates required env — a missing var aborts startup in production with a NAMED list (`instrumentation.ts` → `assertEnv`) |
 | 4 | Stripe live mode | **owner only** | Put `sk_live_…` + live `whsec_…` + live Price ids in secrets; add the live webhook endpoint in the Stripe dashboard | `stripeMode()` returns `live`; a live webhook test delivery → 200 |
 | 5 | Production Twilio | **owner only** | Live Account SID/Auth Token; **fund the account / enable auto-recharge** | Twilio console balance > 0; `getTwilioConfig()` truthy in prod |
 | 6 | Complete 10DLC approval | **owner + carriers** | Register Brand + Campaign in The Campaign Registry; attach purchased numbers to a Messaging Service; set `TWILIO_MESSAGING_SERVICE_SID` | Twilio console: campaign status **APPROVED**; numbers attached to the service |
 | 7 | Send one real SMS | **owner only** | With consent, launch a 1-lead campaign to a number you own | `message_events.status='dispatched'`, `sid LIKE 'SM%'`; phone receives it |
 | 8 | Verify delivery callback | owner | Set `PUBLIC_WEBHOOK_URL` (or `TWILIO_STATUS_CALLBACK_URL`) so the adapter tells Twilio to call `…/api/sms/status` | ✅ route built + unit-verified (G-1 fixed). After a real send, `message_events.status` advances `dispatched`→`sent`→`delivered`; `audit_logs.action='message_status_callback'`. End-to-end observation still needs live/twilio_test creds |
-| 9 | Verify usage metering | owner | After the send, check the period counter | `SELECT count FROM usage_counters WHERE user_id='<uid>' AND metric='sms_segments' AND period=to_char(now(),'YYYY-MM')` increased by the segments sent. ⚠️ currently metered at **launch** (projected), not on delivered segment — see Gap G-5 |
+| 9 | Verify usage metering | owner | After the send, check the period counter | ✅ G-5 fixed: metered per **actual send** (real GSM-7/UCS-2 segment count) in the worker. `SELECT count FROM usage_counters WHERE user_id='<uid>' AND metric='sms_segments' AND period=to_char(now(),'YYYY-MM')` and `SELECT SUM(cost_cents) FROM twilio_spend_ledger WHERE user_id='<uid>'` both reflect real segments/spend |
 | 10 | Verify billing | owner | Confirm the subscription funds the usage | `subscriptions.status IN ('trialing','active')`; entitlement `checkUsage` returns `allowed` while under cap |
 | 11 | Verify subscription quota enforcement | owner | Launch a campaign that would exceed the plan's SMS allowance | Launch returns **402** with `error.code='USAGE_CAP'`; `audit_logs` has `campaign_launch_blocked`. Proven server-side at [`launch/route.ts`](../apps/web/src/app/api/campaigns/[id]/launch/route.ts) |
 | 12 | Verify logs & monitoring | owner | Exercise a send + a failure | `audit_logs` rows: `message_dispatched_gateway`, `message_suppressed*`, `campaign_started`; worker logs unhandled-rejection free. ⚠️ no external APM wired (Gap G-6) |
@@ -134,12 +134,12 @@ These were found by reading the real code this session. Each blocks or limits a 
 | ID | Gap | Evidence (file:line) | Blocks | Fix |
 |---|---|---|---|---|
 | **G-1** | ~~No Twilio delivery-status callback route.~~ **FIXED (session p) — implemented + unit-verified.** | Route [`sms/status/route.ts`](../apps/web/src/app/api/sms/status/route.ts) (signature-verified, out-of-order guarded, idempotent); `statusCallback` wired in [`providers.ts`](../apps/web/src/app/api/gateway/providers.ts:73) via `twilioStatusCallbackUrl()`; tests [`status/route.test.ts`](../apps/web/src/app/api/sms/status/route.test.ts) 5/5. | ~~Step 8~~ — now unblocked pending live/twilio_test creds | Done. Owner sets `PUBLIC_WEBHOOK_URL`/`TWILIO_STATUS_CALLBACK_URL` + registers the URL on the Messaging Service. |
-| **G-2** | **No gateway-injected `MockSmsProvider`.** The "mock" mode is a *separate* seam (`messaging.ts sendMessage`), so CI never exercises the real gateway/circuit-breaker/message_events path. | mock branch at [`messaging.ts:118-131`](../apps/web/src/app/api/utils/messaging.ts:118); gateway only ever gets `TwilioAdapter` at [`jobs.ts:82`](../apps/web/src/app/api/utils/jobs.ts:82) | Part-B Mode-1 zero-cost gateway proof | Add `MockSmsProvider implements ISMSProvider`; inject into `getGateway()` when `SMS_MODE=mock`; POST simulated callbacks to the G-1 route with a valid signature. |
-| **G-3** | **Idempotency is in-memory (`Map`).** Multi-instance prod deploys won't dedupe across workers. | [`sms-gateway.ts:79-84`](../apps/web/src/app/api/gateway/sms-gateway.ts:79) (comment: "for production, use Redis") | Exactly-once sends at scale | Back idempotency with `message_events.id` (unique) or a Redis key. |
-| **G-4** | **No boot-time env validation.** A missing required var surfaces at first use, not at startup. | no zod env schema found | Step 3 confidence | Add a zod env schema that exits with a named error on boot (web + worker). |
-| **G-5** | **Usage metered at launch (projected), not per delivered segment.** | `consumeUsage(... 'sms_segments', queued)` at [`launch/route.ts`](../apps/web/src/app/api/campaigns/[id]/launch/route.ts) | Precise metering (step 9) | Also meter on real send/segment count in the gateway result handler; reconcile against `twilio_spend_ledger`. |
-| **G-6** | **No external monitoring/APM wired.** Only `audit_logs` + stdout. | grep: no Sentry/APM | Step 12 (monitoring) | Decision item — wire an error tracker + queue-depth metric, or accept audit_logs + platform logs. |
-| **G-7** | **`yarn.lock` not reconciled for `stripe`.** `package.json` declares `stripe@^17.7.0`; lockfile not updated (install was TLS-blocked). | `SESSION_HANDOFF` session (p) | Clean `yarn install --immutable` in CI/deploy | Run `yarn install` where the registry is reachable. |
+| **G-2** | ~~No gateway-injected MockSmsProvider.~~ **FIXED.** SMS_MODE=mock injects `MockSmsProvider` into the REAL gateway; simulated callbacks POST to the real `/api/sms/status` (signature verified, no bypass). | [`mock-provider.ts`](../apps/web/src/app/api/gateway/mock-provider.ts), [`jobs.ts` getGateway](../apps/web/src/app/api/utils/jobs.ts); tests `mock-provider.test.ts` 3/3 | — | Done. |
+| **G-3** | ~~In-memory Map idempotency.~~ **FIXED.** Durable L2 store behind the Map (survives restart / multi-instance). | [`sms-idempotency-store.ts`](../apps/web/src/app/api/gateway/sms-idempotency-store.ts), migration 015; tests 3/3 | — | Done. (Not a distributed pre-dispatch lock — same-instant race remains, documented.) |
+| **G-4** | ~~No boot-time env validation.~~ **FIXED.** Hand-rolled validator; prod boot aborts with a named list. | [`env-validation.ts`](../apps/web/src/app/api/utils/env-validation.ts), [`instrumentation.ts`](../apps/web/src/instrumentation.ts); tests 9/9 | — | Done. |
+| **G-5** | ~~Metered at launch (projected).~~ **FIXED.** Metered per real send by actual segment count; Twilio spend recorded. | [`sms-segments.ts`](../apps/web/src/config/sms-segments.ts), `meterSmsSend` in [`entitlement.ts`](../apps/web/src/app/api/utils/entitlement.ts); tests 11/11 | — | Done. |
+| **G-6** | ~~No monitoring seam.~~ **FIXED.** `reportError` (structured log + optional `MONITORING_WEBHOOK_URL`); worker has process-level handlers. | [`monitoring.ts`](../apps/web/src/app/api/utils/monitoring.ts), wired into the Stripe webhook + worker; tests 3/3 | — | Done. A full APM/Sentry SDK remains an optional owner decision. |
+| **G-7** | ~~`yarn.lock` not reconciled for stripe.~~ **FIXED.** `yarn install --mode=update-lockfile` added `stripe@17.7.0` (+ deps) with the yarn checksum. | `yarn.lock` | — | Done. A full `yarn install --immutable` in CI is the final confirmation (needs registry + link step). |
 
 ---
 
@@ -158,11 +158,14 @@ These were found by reading the real code this session. Each blocks or limits a 
 ## 8. Bottom line
 
 The **code path is mode-invariant test↔live** (§1, proven at file:line), the **billing/quota
-enforcement is real and server-side** (steps 10–11), the **Stripe test-mode round trip is runnable
-now** (§4), and the **delivery-status callback route now exists and is unit-verified** (G-1 fixed).
-What stands between here and a fully validated production system is: the owner-only credential +
-funding + **10DLC approval** steps (§5, external and multi-week), and the remaining gaps G-2..G-7
-(mock-provider fidelity, Redis idempotency, boot env validation, per-delivery metering, monitoring,
-lockfile). No part of this can be truthfully marked "production-validated" until the owner runs §5
-against live infra with an approved 10DLC campaign and observes one real delivered message with its
-status callback and metered usage.
+enforcement is real and server-side** (steps 10–11), and the **Stripe test-mode round trip is
+runnable now** (§4). **All seven code gaps (G-1..G-7) are now fixed and unit-verified** — delivery
+callback route, gateway MockSmsProvider zero-cost proof, durable idempotency, boot env validation,
+per-send segment metering, monitoring seam, and the `stripe` lockfile entry.
+
+What remains is **not code**: the owner-only credential + funding + **10DLC approval** steps (§5,
+external and multi-week). No part of this can be truthfully marked "production-validated" until the
+owner runs §5 against live infra with an approved 10DLC campaign and observes one real delivered
+message with its status callback and metered usage. The code is as ready as it can be made without
+that live pass; the twilio_test (§3) + Stripe-test (§4) suites are the maximum provable state before
+carrier approval.
