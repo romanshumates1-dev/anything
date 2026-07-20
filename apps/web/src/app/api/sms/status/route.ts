@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 import { validateTwilioSignature, twilioStatusCallbackUrl } from '@/app/api/utils/twilio-webhook';
+import { isMockSmsMode, mockSmsAuthToken } from '@/app/api/utils/sms-mode';
 import { logEvent } from '@/app/api/utils/logger';
 import type { DeliveryStatus } from '@/app/api/gateway/providers';
 
@@ -45,8 +46,11 @@ const RANK: Record<string, number> = {
 };
 
 export async function POST(request: Request) {
-  const twilioConfig = getTwilioConfig();
-  if (!twilioConfig?.authToken) {
+  // Real Twilio auth token when configured; in mock mode, the shared mock token
+  // (the MockSmsProvider signs its simulated callbacks with the same one) so the
+  // signature-verification path below still runs — no bypass.
+  const authToken = getTwilioConfig()?.authToken ?? (isMockSmsMode() ? mockSmsAuthToken() : null);
+  if (!authToken) {
     return Response.json(
       { error: { code: 'SMS_UNCONFIGURED', message: 'Twilio not configured; cannot verify callback' } },
       { status: 503 }
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
   const valid = validateTwilioSignature({
     url: fullUrl,
     signature: request.headers.get('x-twilio-signature') || '',
-    authToken: twilioConfig.authToken,
+    authToken,
     params,
   });
   if (!valid) {

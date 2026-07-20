@@ -1,5 +1,23 @@
 import crypto from 'node:crypto';
 
+/**
+ * The canonical Twilio signature over a request: HMAC-SHA1(authToken) of
+ * `url` + each param sorted-by-key and concatenated `k1v1k2v2…`, base64.
+ * ONE implementation so the signer and verifier can never diverge.
+ */
+export function signTwilioRequest(input: {
+  url: string;
+  authToken: string;
+  params: Record<string, string>;
+}): string {
+  const { url, authToken, params } = input;
+  const data = Object.keys(params)
+    .sort()
+    .map((k) => `${k}${params[k]}`)
+    .join('');
+  return crypto.createHmac('sha1', authToken).update(`${url}${data}`).digest('base64');
+}
+
 export function validateTwilioSignature(input: {
   url: string;
   signature: string;
@@ -8,21 +26,7 @@ export function validateTwilioSignature(input: {
 }): boolean {
   const { url, signature, authToken, params } = input;
 
-  const sorted = Object.keys(params)
-    .sort()
-    .reduce<Record<string, string>>((acc, key) => {
-      acc[key] = params[key];
-      return acc;
-    }, {});
-
-  const data = Object.entries(sorted)
-    .map(([k, v]) => `${k}${v}`)
-    .join('');
-
-  const expected = crypto
-    .createHmac('sha1', authToken)
-    .update(`${url}${data}`)
-    .digest('base64');
+  const expected = signTwilioRequest({ url, authToken, params });
 
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expected);

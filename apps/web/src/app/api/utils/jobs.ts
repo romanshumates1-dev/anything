@@ -1,6 +1,9 @@
 import sql from '@/app/api/utils/sql';
 import { SMSGateway } from '@/app/api/gateway/sms-gateway';
 import { TwilioAdapter } from '@/app/api/gateway/providers';
+import { MockSmsProvider, simulateDeliveryProgression } from '@/app/api/gateway/mock-provider';
+import { isMockSmsMode } from './sms-mode';
+import { twilioStatusCallbackUrl } from './twilio-webhook';
 import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
@@ -79,13 +82,20 @@ let smsGateway: SMSGateway | null = null;
 
 export async function getGateway(): Promise<SMSGateway> {
   if (!smsGateway) {
+      // SMS_MODE=mock injects the MockSmsProvider into the SAME gateway, so the
+      // real gateway path (circuit breakers, idempotency, dispatchGate,
+      // message_events) is exercised at zero cost. Otherwise the real Twilio
+      // adapter (twilio_test vs live differ only by credentials).
+      const primaryProvider = isMockSmsMode()
+        ? new MockSmsProvider()
+        : new TwilioAdapter(
+            process.env.TWILIO_ACCOUNT_SID || '',
+            process.env.TWILIO_AUTH_TOKEN || '',
+            process.env.TWILIO_FROM_NUMBER || undefined,
+            process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
+          );
       smsGateway = new SMSGateway({
-        primaryProvider: new TwilioAdapter(
-          process.env.TWILIO_ACCOUNT_SID || '',
-          process.env.TWILIO_AUTH_TOKEN || '',
-          process.env.TWILIO_FROM_NUMBER || undefined,
-          process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
-        ),
+        primaryProvider,
         complianceCheckEnabled: true,
         idempotencyEnabled: true,
         // test-mode enforcement is DB-driven (test_phone_numbers table in sms-gateway.ts)
@@ -132,7 +142,7 @@ export async function processNextJob() {
         // sendMessage seam (which simulates delivery when SMS_PROVIDER_URL is
         // unset) — otherwise a deploy without Twilio env silently dead-letters
         // every send instead of using the documented mock path.
-        if (payload.channel === 'sms' && getTwilioConfig()) {
+        if (payload.channel === 'sms' && (getTwilioConfig() || process.env.SMS_MODE === 'mock')) {
           const gateway = await getGateway();
           const result = await gateway.send({
             leadId: payload.leadId,
@@ -150,6 +160,15 @@ export async function processNextJob() {
             VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${JSON.stringify({ gatewayStatus: result.status, providerMessageId: result.providerId, errorMessage: result.errorMessage }) })
             ON CONFLICT (id) DO NOTHING
           `;
+          // Mock mode: fire the simulated delivery progression (queued→sent→
+          // delivered) at the REAL /api/sms/status route so message_events
+          // advances exactly as it would with Twilio. Best-effort and only when
+          // a base URL is configured (skipped in unit tests / no-server envs).
+          if (result.status === 'dispatched' && result.providerId && isMockSmsMode() && twilioStatusCallbackUrl()) {
+            void simulateDeliveryProgression({ sid: result.providerId, to: payload.to }).catch((e) =>
+              console.warn('[jobs] mock delivery simulation failed', e?.message)
+            );
+          }
           if (result.gateCode) {
             // Gate denial is not a provider failure — defer or suppress.
             return await handleGateDenial(job.id, result.gateCode, result.retryAt);
