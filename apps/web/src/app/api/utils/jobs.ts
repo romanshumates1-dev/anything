@@ -3,6 +3,7 @@ import { SMSGateway } from '@/app/api/gateway/sms-gateway';
 import { TwilioAdapter } from '@/app/api/gateway/providers';
 import { MockSmsProvider, simulateDeliveryProgression } from '@/app/api/gateway/mock-provider';
 import { DbIdempotencyStore } from '@/app/api/gateway/sms-idempotency-store';
+import { meterSmsSend } from './entitlement';
 import { isMockSmsMode } from './sms-mode';
 import { twilioStatusCallbackUrl } from './twilio-webhook';
 import { sendMessage } from './messaging';
@@ -179,10 +180,22 @@ export async function processNextJob() {
           if (result.status !== 'dispatched') {
             throw new Error(result.errorMessage || 'gateway_dispatch_failed');
           }
+          // G-5: meter the ACTUAL segments sent against the billing user's plan.
+          // Best-effort — a metering error must never fail an already-sent SMS.
+          if (payload.billingUserId) {
+            await meterSmsSend(payload.billingUserId, String(payload.text ?? ''), {
+              messageSid: result.providerId,
+            }).catch((e) => console.warn('[jobs] meterSmsSend failed', e?.message));
+          }
         } else {
           const fallback = await sendMessage(payload);
           if (fallback.status === 'suppressed' && (fallback as any).gateCode) {
             return await handleGateDenial(job.id, (fallback as any).gateCode, (fallback as any).retryAt);
+          }
+          if (fallback.status === 'sent' && payload.billingUserId) {
+            await meterSmsSend(payload.billingUserId, String(payload.text ?? '')).catch((e) =>
+              console.warn('[jobs] meterSmsSend failed', e?.message)
+            );
           }
         }
         // INT-4: a successful outbound send is what starts (or advances) the

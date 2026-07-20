@@ -32,6 +32,7 @@ import {
   trueTwilioCostCents,
   wouldExceedCap,
 } from '@/config/billing-math';
+import { smsSegmentCount } from '@/config/sms-segments';
 
 export type UsageCategory = 'campaign' | 'registration';
 
@@ -139,6 +140,33 @@ export async function recordTwilioSpend(
     INSERT INTO twilio_spend_ledger (user_id, period, segments, cost_cents, category, message_sid)
     VALUES (${userId}, ${period}, ${segments}, ${costCents}, ${category}, ${messageSid ?? null})
   `;
+}
+
+/**
+ * Meter ONE actually-sent SMS (G-5): increment the segment counter for the
+ * billing period AND record the true Twilio spend, using the message's real
+ * segment count (GSM-7 vs UCS-2). This replaces the launch-time projection —
+ * the launch route still GATES on the projected count, but the number that
+ * lands in usage/spend is now the number actually sent.
+ *
+ * Registration-grace traffic is metered into its own category so it never
+ * counts against the plan cap (periodTwilioCostCents/getUsageCount read the
+ * 'campaign' category only).
+ */
+export async function meterSmsSend(
+  userId: string,
+  text: string,
+  opts: { messageSid?: string; category?: UsageCategory } = {}
+): Promise<{ segments: number; costCents: number }> {
+  const segments = smsSegmentCount(text);
+  if (segments <= 0) return { segments: 0, costCents: 0 };
+  const category = opts.category ?? 'campaign';
+  const sub = await getSubscription(userId);
+  const period = periodTag(sub);
+  const costCents = trueTwilioCostCents(segments, twilioCostPerSegmentCents());
+  await consumeUsage(userId, period, 'sms_segments', segments, category);
+  await recordTwilioSpend(userId, period, segments, costCents, category, opts.messageSid);
+  return { segments, costCents };
 }
 
 export async function periodTwilioCostCents(userId: string, period: string): Promise<number> {

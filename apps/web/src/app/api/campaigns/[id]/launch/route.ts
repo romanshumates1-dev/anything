@@ -4,7 +4,7 @@ import { headers } from 'next/headers';
 import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
-import { checkUsage, consumeUsage, getSubscription, periodTag } from '../../../utils/entitlement';
+import { checkUsage } from '../../../utils/entitlement';
 
 /**
  * Launch a campaign:
@@ -125,6 +125,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           channel: 'sms',
           to: m.phone,
           text,
+          // G-5: the billing subject, so the worker meters the ACTUAL segments
+          // sent against this user's allowance (launch only gated a projection).
+          billingUserId: session.user.id,
         },
         { runAt, dedupeKey: `send:${campaignId}:${m.lead_id}` }
       );
@@ -138,12 +141,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WHERE id = ${campaignId}
     `;
 
-    // Meter the sends we actually queued against the SMS allowance for this
-    // billing period (registration-grace traffic would pass category first).
-    if (queued > 0) {
-      const sub = await getSubscription(session.user.id);
-      await consumeUsage(session.user.id, periodTag(sub), 'sms_segments', queued);
-    }
+    // Metering happens per-send in the worker now (G-5) using each message's real
+    // segment count — the launch gate above only reserves against a projection.
 
     await logEvent(
       'campaign_started',
