@@ -7,6 +7,7 @@ import { useSession } from "@/lib/auth-client";
 import { SidebarProvider, Sidebar, SidebarInset, SidebarHeader, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
+import DemoModeBanner from "@/components/DemoModeBanner";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
@@ -175,6 +176,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
+          <DemoModeBanner />
           <main className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">{children}</div>
           </main>

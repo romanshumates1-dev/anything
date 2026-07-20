@@ -33,6 +33,10 @@ function toProfile(r: Row): NegotiationProfile {
     minFee: Number(r.min_fee),
     feeTargetMax: Number(r.fee_target_max),
     openerPctOfMax: Number(r.opener_pct_of_max),
+    // Phase V fee economics — undefined-safe so pre-015 rows still work.
+    feeFloor: r.fee_floor != null ? Number(r.fee_floor) : undefined,
+    feeTarget: r.fee_target != null ? Number(r.fee_target) : undefined,
+    feeStretch: r.fee_stretch != null ? Number(r.fee_stretch) : undefined,
     tone: r.tone,
     cadenceOverrides: r.cadence_overrides ?? {},
     allowsColdOutbound: r.allows_cold_outbound,

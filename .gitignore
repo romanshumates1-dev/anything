@@ -75,7 +75,6 @@ launch-run.err.log
 dev-clean.log
 .claude/
 
-# session/dev logs (transient)
-apps/web/*.log
-_superpowers/
-obra-superpowers/
+# geo build input (only the derived land-50m.json ships)
+apps/web/public/geo/countries-50m.topo.json
+apps/web/jobs-restart.log

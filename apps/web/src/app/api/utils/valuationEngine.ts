@@ -32,6 +32,29 @@ export interface NegotiationProfileParams {
   feeTargetMax: number;
   openerPctOfMax: number;
   requiresManualComps: boolean;
+  // Phase V fee economics (defaults applied by feeEconomics() when absent).
+  /** Absolute minimum acceptable assignment profit. Default $3,000. */
+  feeFloor?: number;
+  /** Target assignment fee for owner-facing suggestions. Default $10,000. */
+  feeTarget?: number;
+  /** Upper band the buyer-side opener reaches for. Default $30,000. */
+  feeStretch?: number;
+}
+
+export const DEFAULT_FEE_FLOOR = 3000;
+export const DEFAULT_FEE_TARGET = 10000;
+export const DEFAULT_FEE_STRETCH = 30000;
+
+/** Resolve fee bands with realistic wholesale defaults ($3k floor / $10k target
+ *  / $30k stretch). Luxury profiles pass their own larger bands. Optional
+ *  market_multiplier calibrates for state-level fee norms. */
+export function feeEconomics(p: NegotiationProfileParams, marketMultiplier = 1): { floor: number; target: number; stretch: number } {
+  const m = Number.isFinite(marketMultiplier) && marketMultiplier > 0 ? marketMultiplier : 1;
+  return {
+    floor: Math.round((finitePositive(p.feeFloor) ? p.feeFloor : DEFAULT_FEE_FLOOR) * m),
+    target: Math.round((finitePositive(p.feeTarget) ? p.feeTarget : Math.max(p.minFee, DEFAULT_FEE_TARGET)) * m),
+    stretch: Math.round((finitePositive(p.feeStretch) ? p.feeStretch : Math.max(p.feeTargetMax, DEFAULT_FEE_STRETCH)) * m),
+  };
 }
 
 export interface ValuationInputs {
@@ -142,4 +165,82 @@ export function computeValuation(
   trace.push('These are SUGGESTIONS — you approve every range. The AI never sends a number.');
 
   return { suggestMin, suggestMax, confidence, escalate: false, formulaTrace: trace };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase V — two-sided deal economics + the 7-14-day assignability guarantee.
+// Seller range and buyer range are ONE system: the ranges are constructed so a
+// deal signed at seller_suggest can always be assigned to a cash buyer while
+// still clearing the fee floor within the inspection window.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface DealEconInputs {
+  arv: number;
+  repairs: number; // resolved repair total (from computeValuation or owner-entered)
+  /** Signed/target contract price (buyer-side math needs it; omit pre-contract). */
+  contractPrice?: number;
+  /** State-level fee calibration; default 1. */
+  marketMultiplier?: number;
+}
+
+export interface DealEconomics {
+  buyerMax: number;          // what cash buyers actually pay
+  sellerMax: number;         // buyer_max − fee_floor (worst case you still clear the floor)
+  sellerSuggest: number;     // buyer_max − fee_target (owner-facing suggested max)
+  sellerOpener: number;      // seller_suggest × opener_pct
+  buyerAskMin: number | null;   // contract + fee_floor (after contract)
+  buyerAskOpen: number | null;  // min(contract + fee_stretch, buyer_max)
+  fees: { floor: number; target: number; stretch: number };
+  /** ASSIGNABLE ⇔ contract + fee_floor ≤ buyer_max. */
+  assignable: boolean | null;
+  /** True when the owner overrode above seller_max (projected fee < floor). */
+  thinDeal: boolean;
+  formulaTrace: string[];
+  valid: boolean;
+}
+
+export function computeDealEconomics(inputs: DealEconInputs, profile: NegotiationProfileParams): DealEconomics {
+  const fees = feeEconomics(profile, inputs.marketMultiplier ?? 1);
+  const trace: string[] = [];
+
+  if (!finitePositive(inputs.arv) || !(Number.isFinite(inputs.repairs) && inputs.repairs >= 0)) {
+    return {
+      buyerMax: 0, sellerMax: 0, sellerSuggest: 0, sellerOpener: 0,
+      buyerAskMin: null, buyerAskOpen: null, fees, assignable: null, thinDeal: false,
+      formulaTrace: ['ARV/repairs invalid — cannot compute economics; escalate.'], valid: false,
+    };
+  }
+
+  const buyerMax = Math.round(inputs.arv * profile.arvMultiplier - inputs.repairs);
+  const sellerMax = buyerMax - fees.floor;
+  const sellerSuggest = buyerMax - fees.target;
+  const sellerOpener = Math.round(sellerSuggest * profile.openerPctOfMax);
+  trace.push(`Buyer max: ${money(inputs.arv)} × ${profile.arvMultiplier} − ${money(inputs.repairs)} = ${money(buyerMax)}`);
+  trace.push(`Seller max (still clears floor): ${money(buyerMax)} − ${money(fees.floor)} floor = ${money(sellerMax)}`);
+  trace.push(`Seller suggested max: ${money(buyerMax)} − ${money(fees.target)} target = ${money(sellerSuggest)}`);
+  trace.push(`Seller opener: ${money(sellerSuggest)} × ${profile.openerPctOfMax} = ${money(sellerOpener)}`);
+
+  let buyerAskMin: number | null = null;
+  let buyerAskOpen: number | null = null;
+  let assignable: boolean | null = null;
+  let thinDeal = false;
+
+  if (finitePositive(inputs.contractPrice)) {
+    const cp = inputs.contractPrice;
+    buyerAskMin = cp + fees.floor;
+    buyerAskOpen = Math.min(cp + fees.stretch, buyerMax);
+    // The 7-14-day guarantee: assignable ⇔ we can still net the floor selling to a cash buyer.
+    assignable = cp + fees.floor <= buyerMax;
+    thinDeal = cp > sellerMax; // owner override above seller_max ⇒ projected fee < floor
+    trace.push(`Buyer ask (min): contract ${money(cp)} + ${money(fees.floor)} floor = ${money(buyerAskMin)}`);
+    trace.push(`Buyer ask (open): min(contract + ${money(fees.stretch)} stretch, buyer max) = ${money(buyerAskOpen)}`);
+    trace.push(`Assignable (contract + floor ≤ buyer max): ${assignable ? 'YES' : 'NO — disposition risk'}`);
+    if (thinDeal) trace.push(`⚠ THIN DEAL: contract ${money(cp)} > seller max ${money(sellerMax)} — projected fee < ${money(fees.floor)} floor.`);
+  }
+
+  return {
+    buyerMax, sellerMax, sellerSuggest, sellerOpener,
+    buyerAskMin, buyerAskOpen, fees, assignable, thinDeal,
+    formulaTrace: trace, valid: true,
+  };
 }

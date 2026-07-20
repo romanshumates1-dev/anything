@@ -22,6 +22,7 @@
 import sql from '@/app/api/utils/sql';
 import { timezonesForPhone } from '@/app/api/utils/area-codes';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
+import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 
 export type DispatchChannel = 'sms' | 'voice' | 'rvm';
 
@@ -35,7 +36,7 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD';
+export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD' | 'DEMO_NOT_VERIFIED';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -69,6 +70,19 @@ export interface DispatchRequest {
   /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
    *  coldOutbound is true. Default (undefined) = allowed. */
   profileAllowsCold?: boolean;
+  /**
+   * Phase A: bounded-negotiation numeric guard. Present ONLY on bounded-mode
+   * conversation sends. The final outbound text is parsed; any dollar amount
+   * ≠ the computed offer, outside the approved range, or any spelled-amount
+   * token → the send is BLOCKED (NUMERIC_GUARD). Defense-in-depth: the model
+   * cannot leak a bad number even under adversarial prompting.
+   */
+  boundedNegotiation?: {
+    text: string;
+    computedOfferCents: number;
+    approvedMinCents: number;
+    approvedMaxCents: number;
+  };
   /** Injectable clock for tests. */
   now?: Date;
 }
@@ -144,6 +158,22 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       return { allow: false, code: 'FLAG_OFF', reason: `Beta flag ${req.betaFlag} is off`, timezones: tzs };
     }
 
+    // 2.5 Phase T: demo-mode allowlist. When the SMS driver is in twilio-demo
+    // mode, a recipient NOT in the verified-numbers allowlist is SKIPPED before
+    // any provider is touched. This is the safety property that makes cold
+    // lists physically unable to receive demo traffic. (DNC above still wins.)
+    if (req.channel === 'sms' && (await isBetaFlagOn('twilioDemo')) && getTwilioConfig() !== null) {
+      const { isVerifiedDemoRecipient } = await import('./smsMode');
+      if (!(await isVerifiedDemoRecipient(req.phone))) {
+        return {
+          allow: false,
+          code: 'DEMO_NOT_VERIFIED',
+          reason: 'SKIPPED: demo mode, recipient not verified',
+          timezones: tzs,
+        };
+      }
+    }
+
     // 3. consentBasis — voice/RVM only.
     if (req.channel === 'voice' || req.channel === 'rvm') {
       const basis = (req.consentBasis ?? '') as ConsentBasis;
@@ -152,6 +182,21 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           allow: false,
           code: 'NO_CONSENT',
           reason: `SKIPPED: no consent basis for ${req.channel} (need one of ${VALID_CONSENT_BASES.join(' | ')})`,
+          timezones: tzs,
+        };
+      }
+    }
+
+    // 3.4 Phase A: numeric guard on bounded-negotiation sends. Absolute block —
+    // a leaked number is a compliance/authority breach, never retried as-is.
+    if (req.boundedNegotiation) {
+      const { numericGuard } = await import('./negotiationEngine');
+      const verdict = numericGuard(req.boundedNegotiation.text, req.boundedNegotiation);
+      if (!verdict.ok) {
+        return {
+          allow: false,
+          code: 'NUMERIC_GUARD',
+          reason: `NUMERIC GUARD BLOCKED: ${verdict.reason}`,
           timezones: tzs,
         };
       }
@@ -168,9 +213,17 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       };
     }
 
+    // TEST-ONLY determinism: the live flow suite (flows-live/e2e) exercises the
+    // send PIPELINE, not quiet-hours (dispatchGate.test.ts covers that with an
+    // injected clock). Wall-clock quiet hours made those flows fail whenever CI
+    // ran after 9pm lead-local. DISPATCH_SKIP_QUIET_HOURS=1 skips ONLY the two
+    // time gates (quiet hours + send window); DNC / flag / consent / demo /
+    // numeric-guard / profile all still apply. Prod NEVER sets this env.
+    const skipTimeGates = process.env.DISPATCH_SKIP_QUIET_HOURS === '1';
+
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
     // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
-    if (req.transactional) {
+    if (req.transactional || skipTimeGates) {
       return { allow: true, timezones: tzs };
     }
     if (!isWithinQuietHours(tzs, at)) {

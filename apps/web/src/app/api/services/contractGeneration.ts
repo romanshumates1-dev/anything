@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { scheduleInspectionUrgency } from '@/app/api/utils/inspectionClock';
 
 export async function generateContractFromTemplate(params: {
   organizationId: string;
@@ -35,12 +36,21 @@ export async function generateContractFromTemplate(params: {
   // const pdfBuffer = await renderHtmlToPdf(filled);
 
   const contractId = crypto.randomUUID();
+  // Phase V-R: inspection clock starts at creation. Price (dollars) → cents for
+  // the day-N−2 lowest-viable-ask math; window defaults to 10 days (7–14).
+  const inspectionDays = 10;
+  const priceCents = Number.isFinite(Number(fillData.price)) && Number(fillData.price) > 0
+    ? Math.round(Number(fillData.price) * 100)
+    : null;
   await sql`
-    INSERT INTO contracts (id, organization_id, template_id, direction, filled_body, status)
-    VALUES (${contractId}, ${organizationId}, ${templateId}, ${direction}, ${filled}, 'PENDING_SIGNATURE')
+    INSERT INTO contracts (id, organization_id, template_id, direction, filled_body, status, inspection_days, contract_price_cents)
+    VALUES (${contractId}, ${organizationId}, ${templateId}, ${direction}, ${filled}, 'PENDING_SIGNATURE', ${inspectionDays}, ${priceCents})
   `;
 
   await logEvent('contract_generated', 'contract', contractId, { templateId, direction, price: fillData.price }, organizationId);
+
+  // Urgency hooks (day 3 + day N−2), idempotent via dedupe keys.
+  await scheduleInspectionUrgency(contractId, organizationId, new Date(), inspectionDays);
 
   return { contractId };
 }

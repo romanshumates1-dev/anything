@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText } from 'lucide-react';
+import InspectionClockChip from '@/components/contracts/InspectionClockChip';
+import ContractTimeline from '@/components/contracts/ContractTimeline';
 
 export default function ContractsPage() {
   const { data: session, isPending: authLoading } = useSession();
@@ -65,11 +67,27 @@ export default function ContractsPage() {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-1">
+                <CardContent className="space-y-3">
+                  {/* Phase V-R: inspection-window countdown (7–14 days to assign) */}
+                  <InspectionClockChip
+                    createdAt={contract.created_at}
+                    inspectionDays={contract.inspection_days}
+                    assignedAt={contract.assigned_at}
+                  />
                   <p className="text-sm text-gray-500">Direction: {contract.direction}</p>
                   <p className="text-sm text-gray-500">Created: {new Date(contract.created_at).toLocaleDateString()}</p>
                   {contract.signed_at && (
                     <p className="text-sm text-gray-500">Signed: {new Date(contract.signed_at).toLocaleDateString()}</p>
+                  )}
+
+                  {/* Phase P1: e-sign timeline */}
+                  {contract.esign_status && contract.esign_status !== 'pending' && (
+                    <div className="pt-2 border-t border-gray-100">
+                      <ContractTimeline
+                        events={contract.esign_events || []}
+                        currentStatus={contract.esign_status}
+                      />
+                    </div>
                   )}
                 </CardContent>
               </Card>

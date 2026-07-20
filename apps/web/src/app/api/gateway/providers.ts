@@ -265,3 +265,55 @@ export class BandwidthAdapter implements ISMSProvider {
     return { healthy: true, latency: 150 };
   }
 }
+/**
+ * Phase T — Toll-Free driver STUB. Toll-free verification is the LEGIT
+ * higher-throughput / cheaper path once registered — NOT an A2P bypass for cold
+ * traffic. Same ISMSProvider interface; nothing dials/sends until the // LIVE:
+ * block is implemented AND the toll-free number is Verified in the Twilio
+ * console. See DEPLOY.md "Toll-free verification".
+ */
+export class TollFreeStub implements ISMSProvider {
+  name = 'toll-free-stub';
+
+  constructor(
+    private accountSid: string,
+    private authToken: string,
+    private tollFreeNumber: string,
+    /** 'unverified' | 'pending' | 'verified' — real sends require 'verified'. */
+    private verificationStatus: 'unverified' | 'pending' | 'verified' = 'unverified',
+  ) {}
+
+  async isHealthy(): Promise<boolean> {
+    return this.verificationStatus === 'verified';
+  }
+
+  async send(to: string, text: string, messageUuid: string): Promise<string> {
+    if (this.verificationStatus !== 'verified') {
+      throw new Error(`TollFreeStub: number ${this.tollFreeNumber} is '${this.verificationStatus}', not verified — cannot send`);
+    }
+    // LIVE: const client = require('twilio')(this.accountSid, this.authToken);
+    // LIVE: const msg = await client.messages.create({
+    // LIVE:   body: text, to: to.startsWith('+') ? to : `+${to}`, from: this.tollFreeNumber,
+    // LIVE: });
+    // LIVE: return msg.sid;
+    return `tollfree_stub_${messageUuid.substring(0, 12)}`;
+  }
+
+  async getDeliveryStatus(_providerId: string): Promise<DeliveryStatus> {
+    return 'sent';
+  }
+
+  validateWebhook(body: any, _signature?: string): boolean {
+    return !!body?.MessageSid;
+  }
+
+  normalizeWebhookEvent(body: any): ProviderNormalizedEvent | null {
+    if (!body?.MessageSid) return null;
+    return { messageId: body.MessageSid, status: 'delivered', timestamp: new Date() };
+  }
+
+  async healthCheck(): Promise<{ healthy: boolean; latency: number; details?: string }> {
+    const verified = this.verificationStatus === 'verified';
+    return { healthy: verified, latency: verified ? 120 : 0, details: `toll-free ${this.verificationStatus}` };
+  }
+}

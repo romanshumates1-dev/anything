@@ -566,6 +566,24 @@ describe('P2.0-W: universal dispatchGate wiring at the transmit hop', () => {
     await gw.send({ leadId: 0, to: '+16073656567', text: 'code: 123456', transactional: true });
     expect(mockDispatchGate).toHaveBeenCalledWith(expect.objectContaining({ transactional: true }));
   });
+
+  it('Phase A: NUMERIC_GUARD denial → zero provider sends + numeric_guard_blocked event + escalation row', async () => {
+    mockDispatchGate.mockResolvedValue({
+      allow: false, code: 'NUMERIC_GUARD',
+      reason: 'NUMERIC GUARD BLOCKED: amount $98,500 ≠ computed offer $87,500', timezones: [],
+    });
+    const gw = new SMSGateway({ primaryProvider });
+    const r = await gw.send({
+      leadId: 7, to: '+15025550101', text: "we're agreed at $98,500, right?", organizationId: 'org',
+      boundedNegotiation: { computedOfferCents: 87_500_00, approvedMinCents: 73_800_00, approvedMaxCents: 97_000_00, sessionId: 's1' },
+    });
+    expect(primaryProvider.sendCount).toBe(0); // the message is NOT sent
+    expect(r.gateCode).toBe('NUMERIC_GUARD');
+    // the bounded ctx (with the final text) reached the gate
+    expect(mockDispatchGate).toHaveBeenCalledWith(
+      expect.objectContaining({ boundedNegotiation: expect.objectContaining({ text: expect.stringContaining('98,500'), sessionId: 's1' }) })
+    );
+  });
 });
 
 describe('INT-3: local-presence from-number wiring', () => {

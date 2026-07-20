@@ -4,18 +4,45 @@
  * Self-contained 3D-style campaign globe (canvas, orthographic projection — no
  * three.js/globe.gl dependency, so nothing to install and a tiny footprint).
  * Rotatable (drag) + gentle auto-rotate (disabled under prefers-reduced-motion).
- * Glowing dots at APPROXIMATE prospect regions (area-code centroids), colored
- * per campaign, pulsing on recent activity. Back-facing points are hidden.
+ *
+ * PHASE G FIX: previously this drew only an ocean gradient + graticule + dots —
+ * no land geometry existed anywhere, so the sphere was a featureless blue mesh.
+ * It now fills continents/countries/islands from a BUNDLED Natural Earth 50m
+ * asset (/public/geo/land-50m.json, committed — zero external CDN, which is the
+ * failure mode we avoid), projected through the same orthographic project() so
+ * rotation/interaction and the prospect-dot overlay are untouched. Blank blue
+ * is now an impossible state: while the asset loads we show a "loading
+ * geography…" shimmer, and on load failure we draw a labeled procedural
+ * fallback and log `[globe] GEO LOAD FAILED`.
  */
 import { useEffect, useRef, useState } from 'react';
 
 export interface GlobePoint { lat: number; lng: number; region: string; count: number; active: boolean }
 export interface GlobeCampaign { id: string; name: string; color: string; points: GlobePoint[] }
 
+// Colors align with the product's dark-surface palette (design tokens): deep
+// ocean, muted land, low-contrast borders + graticule, so it reads as the
+// product, not a stock NASA photo.
+const C = {
+  oceanInner: '#1e3a5f',
+  oceanOuter: '#0b1a2e',
+  land: '#2f6d55',
+  landLit: '#3c8a6c',
+  border: 'rgba(180,220,205,0.35)',
+  graticule: 'rgba(120,160,200,0.16)',
+};
+
+type GeoStatus = 'loading' | 'ready' | 'failed';
+type Ring = number[][]; // [[lng,lat], ...]
+
 export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[] }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rot = useRef({ lng: 0, dragging: false, lastX: 0, vel: 0.15 });
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('loading');
+  const geoRings = useRef<Ring[] | null>(null);
+  const geoStatusRef = useRef<GeoStatus>('loading');
+  const geoFailReason = useRef<string>('');
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -23,6 +50,33 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
     const onChange = () => setReducedMotion(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Fetch the bundled land geometry ONCE. The running draw loop reads the ref,
+  // so land appears as soon as this resolves without restarting the animation.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/geo/land-50m.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { rings?: Ring[] };
+        if (!data?.rings?.length) throw new Error('empty or malformed geo asset');
+        if (cancelled) return;
+        geoRings.current = data.rings;
+        geoStatusRef.current = 'ready';
+        setGeoStatus('ready');
+      } catch (err: any) {
+        if (cancelled) return;
+        const reason = err?.message || String(err);
+        geoFailReason.current = reason;
+        geoStatusRef.current = 'failed';
+        setGeoStatus('failed');
+        // Impossible-blank-state guard: a visible, logged failure — never silent blue.
+        console.error(`[globe] GEO LOAD FAILED: ${reason}`);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -60,15 +114,60 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
 
       // Ocean sphere
       const grad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.2, cx, cy, R);
-      grad.addColorStop(0, '#1e3a5f');
-      grad.addColorStop(1, '#0b1a2e');
+      grad.addColorStop(0, C.oceanInner);
+      grad.addColorStop(1, C.oceanOuter);
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.fillStyle = grad;
       ctx.fill();
 
+      // ── LAND (Phase G): fill continents/countries/islands from the bundled
+      // Natural Earth 50m rings, projected through the SAME orthographic map.
+      // Only front-facing sub-paths (z>0) are drawn; clipping to the sphere
+      // keeps everything on the globe. ──────────────────────────────────────
+      const rings = geoRings.current;
+      if (geoStatusRef.current === 'ready' && rings) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.fillStyle = C.land;
+        ctx.strokeStyle = C.border;
+        ctx.lineWidth = 0.6;
+        for (const ring of rings) {
+          // Split the ring into runs of consecutive front-facing points.
+          let run: Array<[number, number]> = [];
+          const flush = () => {
+            if (run.length >= 3) {
+              ctx.beginPath();
+              ctx.moveTo(run[0][0], run[0][1]);
+              for (let i = 1; i < run.length; i++) ctx.lineTo(run[i][0], run[i][1]);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+            run = [];
+          };
+          for (const [lng, lat] of ring) {
+            const { sx, sy, z } = project(lat, lng);
+            if (z > 0) run.push([sx, sy]);
+            else flush();
+          }
+          flush();
+        }
+        // Subtle day-side lightening so the sphere reads 3D.
+        const lit = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.35, R * 0.1, cx, cy, R);
+        lit.addColorStop(0, 'rgba(255,255,255,0.10)');
+        lit.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = lit;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Graticule (lat/lng grid) — gives the rotating-3D read.
-      ctx.strokeStyle = 'rgba(120,160,200,0.18)';
+      ctx.strokeStyle = C.graticule;
       ctx.lineWidth = 1;
       for (let latLine = -60; latLine <= 60; latLine += 30) {
         ctx.beginPath();
@@ -89,6 +188,27 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
           if (!started) { ctx.moveTo(sx, sy); started = true; } else ctx.lineTo(sx, sy);
         }
         ctx.stroke();
+      }
+
+      // Loading / hard-failure states — never a silent blue sphere.
+      if (geoStatusRef.current !== 'ready') {
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = '12px system-ui, sans-serif';
+        if (geoStatusRef.current === 'loading') {
+          const a = 0.4 + 0.35 * Math.sin(t / 12); // shimmer
+          ctx.fillStyle = `rgba(200,220,240,${a})`;
+          ctx.fillText('loading geography…', cx, cy);
+        } else {
+          // Procedural fallback: the graticule above still drew, so it is
+          // visibly a globe, plus an explicit label.
+          ctx.fillStyle = 'rgba(255,190,190,0.9)';
+          ctx.fillText('geo data unavailable', cx, cy - 6);
+          ctx.fillStyle = 'rgba(255,190,190,0.6)';
+          ctx.font = '10px system-ui, sans-serif';
+          ctx.fillText('(showing grid only)', cx, cy + 10);
+        }
+        ctx.restore();
       }
 
       // Glowing prospect dots (front hemisphere only).
