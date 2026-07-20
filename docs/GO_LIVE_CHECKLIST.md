@@ -108,6 +108,14 @@ Actor: **owner/dev** with Stripe **test** keys.
 
 ## 5. Production validation runbook (owner-only) — mapped to your 12 steps
 
+> **One-command runner:** `apps/web/scripts/verify-production.mjs` executes most of this
+> matrix and prints PASS/FAIL/SKIP. Run it **in your deployed environment** (where the env/secrets
+> live — they never leave your box):
+> `cd apps/web && node --env-file=.env scripts/verify-production.mjs --user <a-subscriber-id>`
+> It is read-only / non-billable by default: twilio_test sends use TEST creds + magic numbers ($0),
+> Stripe checks are read-only, and a REAL billable SMS only fires with `--allow-live-send --to +1…`.
+> Steps 4–7 that need live credentials or a real send stay owner-driven.
+
 Each step: **actor · action · verification-that-proves-it.**
 
 | # | Your step | Actor | Action | Verification (proof) |
