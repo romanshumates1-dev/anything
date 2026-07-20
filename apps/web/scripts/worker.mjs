@@ -23,8 +23,15 @@ const SECRET = process.env.JOB_RUNNER_SECRET || '';
 const INTERVAL_MS = Number(process.env.JOB_POLL_INTERVAL_MS || 3000);
 const BATCH = Number(process.env.JOB_BATCH || 25);
 
+// G-4: fail fast on missing required worker env (mirrors validateEnv('worker')
+// in src/app/api/utils/env-validation.ts; kept inline because this is a .mjs
+// entrypoint that can't import the TS module).
 if (!SECRET) {
   console.error('[worker] JOB_RUNNER_SECRET not set — refusing to start (the drain endpoint would reject every call).');
+  process.exit(1);
+}
+if (process.env.NODE_ENV === 'production' && !process.env.APP_URL) {
+  console.error('[worker] APP_URL not set in production — refusing to start (would drain the wrong origin).');
   process.exit(1);
 }
 
