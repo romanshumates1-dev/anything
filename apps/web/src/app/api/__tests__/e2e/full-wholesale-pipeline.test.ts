@@ -67,9 +67,15 @@ describe('FULL PIPELINE: seller acquisition through buyer assignment', () => {
     res = await campaignLeads.POST(jsonReq('http://t/api/campaigns/1/leads', { leadId: 1 }), { params: Promise.resolve({ id: '1' }) } as any);
     expect(res.status).toBe(200);
 
-    mockSql.mockResolvedValueOnce([{ id: 1, message_template: 'hi', daily_volume_max: 5, throttle_per_minute: 1 }])
-      .mockResolvedValueOnce([{ campaign_lead_id: 1, lead_id: 1, phone: '+15555550100' }])
-      .mockResolvedValueOnce([{ id: 1 }]);
+    mockSql.mockResolvedValueOnce([{ id: 1, message_template: 'hi', daily_volume_max: 5, throttle_per_minute: 1 }]) // SELECT campaign
+      .mockResolvedValueOnce([{ campaign_lead_id: 1, lead_id: 1, phone: '+15555550100' }]) // SELECT members
+      // Entitlement gate (checkUsage for sms_segments): getSubscription -> none
+      // (Starter defaults, cap 1818), getUsageCount -> 0, periodTwilioCostCents
+      // -> 0. Under cap, so the launch proceeds.
+      .mockResolvedValueOnce([]) // getSubscription
+      .mockResolvedValueOnce([]) // getUsageCount
+      .mockResolvedValueOnce([]) // periodTwilioCostCents
+      .mockResolvedValueOnce([{ id: 1 }]); // INSERT ai_conversations RETURNING conv
     res = await launch.POST(jsonReq('http://t/api/campaigns/1/launch', {}), { params: Promise.resolve({ id: '1' }) } as any);
     expect(res.status).toBe(200);
     expect(enqueueJob).toHaveBeenCalledTimes(1);

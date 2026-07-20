@@ -1,6 +1,37 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-16 (m) — owner-ordered SAVE POINT executed. Branch `feat/mvp-prelaunch` pushed to GitHub at the save commit; typecheck 0; suite 479 passed / 45 skipped / 0 failed._
+_Last session: 2026-07-20 (p) — SaaS monetization foundation (billing tiers). Single-source plan config + pure money-math + billing schema + entitlement/usage-metering gate + Stripe adapter/5 routes + server-side usage-cap enforcement. Full-project typecheck **exit 0**; suite **511 passed / 46 skipped / 0 failed** (63 files); migration 014 validated through the real `splitSql`. Live-DB / Docker / desktop paths environment-blocked (detailed below). Branch `claude/superpowers-saas-tiers-eaba76`._
+
+## Session (p) — SaaS Monetization Foundation (billing tiers)
+
+Built the paid-SaaS spine: one source of truth for the 3 tiers, the pure money-math that keeps every plan margin-safe, the DB schema, the entitlement/usage-metering gate, the Stripe adapter + 5 billing routes, and server-side usage enforcement on the campaign send path. Design rule throughout: **going live is a credentials change, not a code change** — the same code path runs with Stripe test keys or live keys; only `STRIPE_SECRET_KEY` + `STRIPE_PRICE_*` differ.
+
+| Piece | File(s) | Verification |
+|---|---|---|
+| Plan config — single source of truth | `apps/web/src/config/plans.ts` (+ `plans.test.ts`) | 14/14 unit: 3 tiers, 2–3× markup band, derived SMS allowance, cap-before-spend per metered tier, public-plan shape |
+| Pure money-math | `apps/web/src/config/billing-math.ts` (+ `billing-math.test.ts`) | 14/14 unit: markup 2–3×, cap-before-spend invariant across a spread of budgets/markups, exact profit split (25/75, 50/50, 90/10) remainder-to-company, boundaries |
+| Billing schema | `apps/web/db/migrations/014_billing.sql` | Through the repo's own `splitSql`: 20 statements, 3 `DO $$` blocks balanced → runner applies cleanly |
+| Entitlement + usage metering + Twilio-budget cap | `apps/web/src/app/api/utils/entitlement.ts` (+ `entitlement.test.ts`) | 5 tests (1 DB-gated skip): `isActiveStatus`, `periodTag`, registration-grace early-return (DB-free) |
+| Stripe adapter — one client | `apps/web/src/app/api/utils/stripe.ts` | Single client, server-only key, loud on missing config; `stripeMode()` derives test/live from key prefix |
+| Billing routes | `apps/web/src/app/api/billing/{plans,subscription,checkout,portal,webhook}/route.ts` | Full-project typecheck exit 0; webhook: signature-verified (403 on tamper), idempotent replay guard, activation + re-purchase path |
+| Pricing UI wired to config | `apps/web/src/app/(marketing)/pricing/page.tsx` | Reads `getPublicPlans()` — no second hardcoded price list; renders concrete per-tier caps |
+| Profit-split legal page | `apps/web/src/app/(marketing)/legal/profit-split/page.tsx` | Renders split tiers from `billing-math` (text can't drift from arithmetic); attorney-review template banner |
+| Server-side usage enforcement | `apps/web/src/app/api/campaigns/[id]/launch/route.ts` | Cap gate before enqueue (402 + logged when over cap) + `consumeUsage` metering after; null-sub defaults to Starter caps |
+| Env contract | `apps/web/.env.example` | Added `STRIPE_*`, `TWILIO_COST_PER_SEGMENT_CENTS`, `LEGAL_ENTITY_*`, `SUPPORT_EMAIL` |
+
+**Verification pasted this session:**
+- `tsc -p tsconfig.typecheck.json --noEmit` → **exit 0** (whole project, incl. all new billing code + Stripe SDK types).
+- `vitest run --config src/app/api/vitest.config.ts` → **511 passed / 46 skipped / 0 failed**, 63 files (~32s). +32 new billing/entitlement tests over the 479 baseline; zero regressions.
+- Migration 014 through a verbatim copy of `migrate.mjs`'s `splitSql` → **PASS** (all `$$` blocks balanced).
+
+**Bug found by running it (not assumed):** adding the entitlement gate to the launch route inserted `getSubscription`'s `sql` call into the sequential-mock chain of `full-wholesale-pipeline.test.ts`, shifting the mock meant for the conversation INSERT → `conv` undefined → 500. Code was correct (gating is intended); the **test's mock sequence was stale**. Fixed the test to mock the 3 new entitlement reads in order. Suite green again. (Logged in `BREAKAGE_TABLE.md`.)
+
+**Environment blockers — NOT silently skipped, genuinely unrunnable here:**
+- **Dependency install** — `yarn install` fails on recurring OpenSSL GCM TLS errors fetching the registry (1881/2094 zips cached, then TLS aborts). **Worked around** by junctioning the worktree `node_modules` → main checkout `D:\anything\node_modules` (identical lockfile); that is how typecheck+tests ran. `stripe@17.7.0` (absent from main too) was fetched via a single `npm pack` (one TLS connection succeeds) and extracted into the junction target; `require('stripe')` verified. **OPEN ITEM:** `package.json` declares `stripe@^17.7.0` but `yarn.lock` was NOT updated — run `yarn install` to reconcile the lockfile when the network allows.
+- **Live DB / migration apply** — no local Neon endpoint; Docker daemon down; no Postgres image local; pull hits the same TLS wall. Migration correctness proven statically; the DB-gated entitlement integration test is written and **skips** (not passes) without `DATABASE_URL`.
+- **Dev server / Playwright / Stripe test-mode live calls / desktop .exe** — not run this session; depend on the above.
+
+**Scope note:** this session covered only the monetization/billing-tiers foundation (worktree `superpowers-saas-tiers`). Untouched from the two-prompt mega-spec: Prompt 1 Phases 1/2/4/6 (marketing pages, reviews, admin panel, desktop rebuild) and Prompt 2 Parts A–F (Playwright/twilio_test E2E).
 
 ## Session (m) — v3 progress + save point
 

@@ -1,5 +1,37 @@
 # DealFlow AI — Verified Milestone (`v1.1.0-verified`)
 
+## SaaS Monetization Foundation (session (p), 2026-07-20) — billing tiers, one code path
+
+The paid-SaaS spine. Like the AI provider below, it has **one code path** — going live is a
+credentials change, not a code change. The same Stripe code runs with test keys (`sk_test_…`) or
+live keys (`sk_live_…`); `stripeMode()` derives the mode from the key prefix and nothing branches
+on it. Every price, cap, and Twilio budget lives in **one** module (`config/plans.ts`); the pricing
+page, the entitlement gate, and the profit-split legal page all read from it, so the marketing
+number, the enforced cap, and the money-math can never drift apart.
+
+**Single source of truth → derived, margin-safe caps.** `config/billing-math.ts` holds the pure
+money-math; `config/plans.ts` derives each tier's SMS allowance from its funded Twilio budget so the
+plan **caps out before the budget is exhausted** (the owner invariant). Proven by unit tests, not
+asserted:
+
+| Capability | Entry point | How proven | Mode |
+|---|---|---|---|
+| 3 tiers + 2–3× markup band + derived allowance | `config/plans.ts` | `plans.test.ts` 14/14 | unit |
+| Markup 2–3×, cap-before-spend, exact profit split (25/75, 50/50, 90/10) | `config/billing-math.ts` | `billing-math.test.ts` 14/14 | unit |
+| Entitlement / usage metering / registration-grace exemption | `api/utils/entitlement.ts` | `entitlement.test.ts` 5 (1 DB-gated skip) | unit |
+| Billing schema (subscriptions, usage_counters, billing_events, grace) | `db/migrations/014_billing.sql` | real `splitSql`: 20 stmts, 3 balanced `DO $$` | static |
+| One Stripe client, server-only, loud-on-missing | `api/utils/stripe.ts` | full-project `tsc` exit 0 | typecheck |
+| Checkout / portal / subscription / plans / webhook | `api/billing/*/route.ts` | `tsc` exit 0; webhook = sig-verify 403-on-tamper + idempotent replay guard + activation/re-purchase | typecheck + design |
+| Pricing UI reads config (no duplication) | `(marketing)/pricing/page.tsx` | reads `getPublicPlans()`; `tsc` exit 0 | typecheck |
+| Server-side usage-cap enforcement on send path | `api/campaigns/[id]/launch/route.ts` | cap gate → 402 + logged when over; `consumeUsage` meters queued sends; `tsc` exit 0; suite green | typecheck + suite |
+
+**Full-project verification pasted (session (p)):** `tsc -p tsconfig.typecheck.json --noEmit` → **exit 0**;
+`vitest run` → **511 passed / 46 skipped / 0 failed** (63 files); +32 new billing tests, zero regressions.
+
+**Not yet proven live (environment-blocked, see `SESSION_HANDOFF.md` session (p)):** migration apply against a
+real DB, Stripe test-mode webhook round-trip, metered-cap end-to-end. These are the next session's
+first targets once a DB/registry network path exists. `yarn.lock` needs a `stripe` reconcile.
+
 ## AI provider — config-driven, one code path
 
 The runtime AI has ONE entry point (`callAI` in `apps/web/src/app/api/utils/ai-provider.ts`)

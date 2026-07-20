@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
+import { checkUsage, consumeUsage, getSubscription, periodTag } from '../../../utils/entitlement';
 
 /**
  * Launch a campaign:
@@ -41,6 +42,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WHERE cl.campaign_id = ${campaignId}
       AND cl.status = 'pending'
     `;
+
+    // Entitlement gate (server-side, before any send is enqueued): the sends
+    // about to fire must fit under the launching user's SMS allowance. The cap
+    // is the margin-safe derived allowance, so we can never queue more messaging
+    // than the subscription funds (owner rule: cap out before the Twilio cost).
+    // A user with no subscription row defaults to the Starter caps.
+    const sendable = (members as { phone: string | null }[]).filter((m) => m.phone).length;
+    const usage = await checkUsage(session.user.id, 'sms_segments', sendable);
+    if (!usage.allowed) {
+      await logEvent('campaign_launch_blocked', 'campaign', campaignId.toString(), {
+        reason: usage.reason,
+        cap: usage.cap,
+        current: usage.current,
+        requested: sendable,
+      }, session.user.id);
+      return Response.json(
+        {
+          error: {
+            code: 'USAGE_CAP',
+            message: usage.reason ?? 'SMS usage cap reached for this billing period.',
+            cap: usage.cap,
+            current: usage.current,
+            remaining: usage.remaining,
+          },
+        },
+        { status: 402 }
+      );
+    }
 
     const text = campaign.message_template;
     // Scheduler throttling: respect the campaign's daily cap and per-minute rate.
@@ -108,6 +137,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       SET status = 'launched', updated_at = NOW()
       WHERE id = ${campaignId}
     `;
+
+    // Meter the sends we actually queued against the SMS allowance for this
+    // billing period (registration-grace traffic would pass category first).
+    if (queued > 0) {
+      const sub = await getSubscription(session.user.id);
+      await consumeUsage(session.user.id, periodTag(sub), 'sms_segments', queued);
+    }
 
     await logEvent(
       'campaign_started',
