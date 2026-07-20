@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { SMSGateway } from '@/app/api/gateway/sms-gateway';
 import { TwilioAdapter } from '@/app/api/gateway/providers';
 import { MockSmsProvider, simulateDeliveryProgression } from '@/app/api/gateway/mock-provider';
+import { DbIdempotencyStore } from '@/app/api/gateway/sms-idempotency-store';
 import { isMockSmsMode } from './sms-mode';
 import { twilioStatusCallbackUrl } from './twilio-webhook';
 import { sendMessage } from './messaging';
@@ -98,6 +99,8 @@ export async function getGateway(): Promise<SMSGateway> {
         primaryProvider,
         complianceCheckEnabled: true,
         idempotencyEnabled: true,
+        // G-3: durable idempotency so dedup survives restarts / multiple workers.
+        idempotencyStore: new DbIdempotencyStore(),
         // test-mode enforcement is DB-driven (test_phone_numbers table in sms-gateway.ts)
         // — no hardcoded allowlist here.
       });
