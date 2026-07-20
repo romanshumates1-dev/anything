@@ -8,7 +8,9 @@
  * the gateway router, which owns routing, queueing, failover, and observability.
  */
 
-export type DeliveryStatus = 
+import { twilioStatusCallbackUrl } from '@/app/api/utils/twilio-webhook';
+
+export type DeliveryStatus =
   | 'queued'
   | 'dispatched'
   | 'sent'
@@ -74,6 +76,13 @@ export class TwilioAdapter implements ISMSProvider {
       body: text,
       to: toE164,
     };
+    // Ask Twilio to POST delivery-status callbacks (queued→sent→delivered) to
+    // our status route so message_events advances past 'dispatched'. Env-gated:
+    // unset (mock/local) → no callback requested, behaviour unchanged.
+    const statusCallback = twilioStatusCallbackUrl();
+    if (statusCallback) {
+      createParams.statusCallback = statusCallback;
+    }
     if (from) {
       // INT-3 local presence: an explicit pool number beats the messaging
       // service (whose whole job is picking a sender — we already picked one).
