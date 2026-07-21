@@ -5,9 +5,11 @@
 -- from earlier migrations
 -- ============================================================================
 
--- First, create a default organization for existing data
-INSERT INTO public.organizations (id, name, slug)
-VALUES ('org_default', 'Default Organization', 'default-org')
+-- First, create a default organization for existing data.
+-- owner_user_id is NOT NULL in the legacy 001 shape and has no FK; 'system'
+-- marks this synthetic backfill org (BREAKAGE_TABLE #23 follow-on fix).
+INSERT INTO public.organizations (id, name, owner_user_id, slug)
+VALUES ('org_default', 'Default Organization', 'system', 'default-org')
 ON CONFLICT (id) DO NOTHING;
 
 -- Add organization_id to leads (the only table missing it)

@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS public.revenue_sharing (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Ensure percentages add to 100
+-- Ensure percentages add to 100 (drop-then-add so the file is idempotent --
+-- the migrator re-applies every file on every run; BREAKAGE_TABLE #26)
+ALTER TABLE public.revenue_sharing DROP CONSTRAINT IF EXISTS chk_revenue_sharing_total;
 ALTER TABLE public.revenue_sharing 
 ADD CONSTRAINT chk_revenue_sharing_total 
 CHECK (platform_percentage + partner_percentage = 100);

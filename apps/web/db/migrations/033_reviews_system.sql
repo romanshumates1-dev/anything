@@ -1,4 +1,5 @@
-# Migration 033 - Reviews System
+-- Migration 033 - Reviews System
+-- (header was markdown '#' — invalid SQL, broke the canonical migrator; BREAKAGE_TABLE #24)
 
 -- Reviews table for customer ratings and testimonials
 CREATE TABLE IF NOT EXISTS public.reviews (
@@ -12,11 +13,15 @@ CREATE TABLE IF NOT EXISTS public.reviews (
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   verified_customer boolean NOT NULL DEFAULT false,
   is_demo boolean NOT NULL DEFAULT false,
-  admin_note text,
-  
-  -- Ensure one review per user
-  UNIQUE (user_id, status)
+  admin_note text
 );
+
+-- "One review per user" was originally written as UNIQUE (user_id, status),
+-- which actually allows one row PER STATUS per user (up to 3). Converge every
+-- DB (fresh or already-created) to a true per-user unique. NULL user_id rows
+-- (demo seed) are exempt by Postgres NULL semantics. BREAKAGE_TABLE #25.
+ALTER TABLE public.reviews DROP CONSTRAINT IF EXISTS reviews_user_id_status_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_reviews_user ON public.reviews (user_id);
 
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON public.reviews (status);

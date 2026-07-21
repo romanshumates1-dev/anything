@@ -1,4 +1,5 @@
-# Migration 034 - Contact Messages + Admin Audit Log
+-- Migration 034 - Contact Messages + Admin Audit Log
+-- (header was markdown '#' — invalid SQL, broke the canonical migrator; BREAKAGE_TABLE #24)
 
 -- Contact messages table for form submissions
 CREATE TABLE IF NOT EXISTS public.contact_messages (
