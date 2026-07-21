@@ -2,13 +2,14 @@
  * Main process entry point.
  *
  * Boot sequence:
- *   1. Enforce a single instance (focus the existing window on re-launch,
+ *   1. Load environment from .env (if present) for local development.
+ *   2. Enforce a single instance (focus the existing window on re-launch,
  *      forwarding any deep link passed on the second instance's argv).
- *   2. Register the dealflow:// protocol as the default handler.
- *   3. Harden the default session + global process crash guards.
- *   4. On 'ready': register IPC, build the menu, create the window + tray,
+ *   3. Register the dealflow:// protocol as the default handler.
+ *   4. Harden the default session + global process crash guards.
+ *   5. On 'ready': register IPC, build the menu, create the window + tray,
  *      begin update checks, and monitor connectivity.
- *   5. Handle macOS 'activate' + 'open-url', and honour minimize-to-tray on
+ *   6. Handle macOS 'activate' + 'open-url', and honour minimize-to-tray on
  *      window-all-closed.
  */
 import { app, BrowserWindow, net, powerMonitor } from "electron";

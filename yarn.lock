@@ -20443,6 +20443,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "root-workspace-0b6124@workspace:."
   dependencies:
+    "@playwright/test": "npm:1.61.1"
     eslint: "npm:^9.27.0"
     oxfmt: "npm:^0.35.0"
     oxlint: "npm:^1.50.0"

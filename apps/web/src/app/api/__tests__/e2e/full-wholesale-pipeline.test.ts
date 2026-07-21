@@ -28,6 +28,11 @@ vi.mock('@/lib/auth', () => ({
 const { fn: logEvent } = vi.hoisted(() => ({ fn: vi.fn(async () => {}) }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
+const { fn: getOrganization } = vi.hoisted(() => ({ fn: vi.fn(async () => ({ id: 'org_default', name: 'Default', slug: 'default' })) }));
+vi.mock('@/lib/organization-context', () => ({
+  getOrganization: (...args: any[]) => (getOrganization as any)(...args),
+}));
+
 import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';
 import * as campaignLeads from '../../campaigns/[id]/leads/route';

@@ -25,16 +25,7 @@ files:
 removePackageScripts: true
 asar: true
 
-# ---------------------------------------------------------------------------
-# Auto-update feed. electron-updater reads this generic provider.
-# Point `url` at wherever you host release artifacts + latest*.yml manifests.
-# ---------------------------------------------------------------------------
-publish:
-  - provider: generic
-    url: https://downloads.dealflow.ai/desktop/${channel}
-    channel: latest
-
-# ---------------------------- Windows --------------------------------------
+# Disable code signing on Windows for non-admin environments
 win:
   target:
     - target: nsis
@@ -43,6 +34,9 @@ win:
         - arm64
   icon: assets/icon.ico
   artifactName: ${productName}-${version}-${arch}-Setup.${ext}
+  # Skip code signing when running without admin privileges
+  verifyUpdateCodeSignature: false
+  sign: false
 
 nsis:
   oneClick: false

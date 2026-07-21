@@ -4,8 +4,17 @@
  * Values are resolved once at startup. Environment variables allow the same
  * binary to point at local dev, staging, or production without a rebuild.
  */
+import { config } from "dotenv";
 import { app } from "electron";
 import path from "node:path";
+
+// Load .env file for local development (silently ignores if missing)
+// This happens at module evaluation time, before any config values are read.
+try {
+  config({ path: path.join(__dirname, "..", "..", ".env") });
+} catch {
+  // .env is optional - fall back to environment or defaults
+}
 
 import type { AppSettings } from "../shared/ipc";
 

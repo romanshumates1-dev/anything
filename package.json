@@ -30,6 +30,7 @@
     "desktop:dist:linux": "yarn workspace desktop dist:linux"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "eslint": "^9.27.0",
     "oxfmt": "^0.35.0",
     "oxlint": "^1.50.0",

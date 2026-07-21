@@ -120,20 +120,35 @@ export function createMainWindow(): BrowserWindow {
     icon: iconPath(),
     autoHideMenuBar: false,
     titleBarStyle: IS_MAC ? "hiddenInset" : "default",
-    webPreferences: {
-      preload: paths.preload,
-      // --- Security-critical flags (Electron hardening checklist) ---
-      contextIsolation: true,
-      nodeIntegration: false,
-      nodeIntegrationInWorker: false,
-      nodeIntegrationInSubFrames: false,
-      sandbox: true,
-      webviewTag: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      experimentalFeatures: false,
-      spellcheck: true,
-    },
+   webPreferences: {
+       preload: paths.preload,
+       // --- Security-critical flags (Electron hardening checklist) ---
+       contextIsolation: true,
+       nodeIntegration: false,
+       nodeIntegrationInWorker: false,
+       nodeIntegrationInSubFrames: false,
+       sandbox: true,
+       webviewTag: false,
+       webSecurity: true,
+       allowRunningInsecureContent: false,
+       experimentalFeatures: false,
+       spellcheck: true,
+     },
+   session: {
+     webRequest: {
+       onHeadersReceived: {
+         urls: [getSettings().appUrl],
+         callback: (details: any, callback: (response: any) => void) => {
+           callback({
+             responseHeaders: {
+               ...details.responseHeaders,
+               "Content-Security-Policy": `${details.responseHeaders["content-security-policy"] || "default-src 'self';"} style-src 'self' 'unsafe-inline'`,
+             },
+           });
+         },
+       },
+     },
+   },
   });
 
   mainWindow = win;

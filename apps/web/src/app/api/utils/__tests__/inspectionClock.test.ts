@@ -98,9 +98,9 @@ describe('scheduleInspectionUrgency — exactly-once by dedupe key', () => {
     const created = new Date('2026-07-01T14:00:00Z');
     await scheduleInspectionUrgency('c-1', 'org-1', created, 10);
     expect(mockEnqueue).toHaveBeenCalledTimes(2);
-    const [t1, p1, o1] = mockEnqueue.mock.calls[0];
-    const [t2, p2, o2] = mockEnqueue.mock.calls[1];
-    expect(t1).toBe('inspection_urgency');
+    const [_t1, p1, o1] = mockEnqueue.mock.calls[0];
+    const [_t2, p2, o2] = mockEnqueue.mock.calls[1];
+    expect(_t1).toBe('inspection_urgency');
     expect(p1.kind).toBe('day3');
     expect(o1.dedupeKey).toBe('inspect:c-1:day3');
     expect(o1.runAt.getTime()).toBe(created.getTime() + 3 * 86_400_000);
@@ -119,7 +119,6 @@ describe('scheduleInspectionUrgency — exactly-once by dedupe key', () => {
 
 describe('processInspectionUrgency — fresh state at fire time', () => {
   beforeEach(() => vi.clearAllMocks());
-  const payload = { contactless: undefined as never } as any;
 
   it('assigned contract → no notification', async () => {
     mockSql.mockResolvedValueOnce([{ id: 'c-1', status: 'PENDING_SIGNATURE', assigned_at: new Date(), inspection_days: 10 }]);
