@@ -96,10 +96,12 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-900">Compliance</h3>
+              {/* Only practices we enforce in code — never certification claims
+                  we don't hold (SOC 2 / 10DLC / A2P badges removed, bug #31). */}
               <ul className="mt-4 space-y-3">
-                <li><span className="text-sm text-gray-600">SOC 2</span></li>
-                <li><span className="text-sm text-gray-600">10DLC Registered</span></li>
-                <li><span className="text-sm text-gray-600">A2P Compliant</span></li>
+                <li><Link href="/trust" className="text-sm text-gray-600 hover:text-blue-700">Messaging Practices</Link></li>
+                <li><Link href="/legal/sms-terms" className="text-sm text-gray-600 hover:text-blue-700">SMS Terms</Link></li>
+                <li><Link href="/legal/disclaimers" className="text-sm text-gray-600 hover:text-blue-700">Disclaimers</Link></li>
               </ul>
             </div>
           </div>

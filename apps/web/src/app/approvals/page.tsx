@@ -110,6 +110,7 @@ function ApprovalCard({ approval, onAction }: { approval: any; onAction: (arg0: 
   const [customRange, setCustomRange] = useState('');
   const context = approval.context || {};
   const isRange = approval.type === 'owner_range';
+  const isContact = approval.type === 'contact_message';
 
   return (
     <Card className={`border-none shadow-sm ${approval.status === 'PENDING' ? 'border-l-4 border-l-red-500' : ''}`}>
@@ -128,6 +129,11 @@ function ApprovalCard({ approval, onAction }: { approval: any; onAction: (arg0: 
                   <strong>Property:</strong> {context.address || 'Unknown address'}<br />
                   <strong>AI Suggested Range:</strong> ${context.ai_min?.toLocaleString()} – ${context.ai_max?.toLocaleString()}
                 </>
+              ) : isContact ? (
+                <>
+                  <strong>{context.name || 'Unknown'}</strong> &lt;{context.email || 'no email'}&gt;<br />
+                  <strong>Subject:</strong> {context.subject || '(no subject)'}
+                </>
               ) : (
                 <><strong>Contract</strong> ready for signature</>
               )}
@@ -142,7 +148,7 @@ function ApprovalCard({ approval, onAction }: { approval: any; onAction: (arg0: 
               onClick={() => onAction({ id: approval.id, action: 'accept', range: context.ai_max })}
               disabled={onAction.toString().includes('mutate') && false}
             >
-              <Check className="h-4 w-4 mr-1" /> Accept Suggestion
+              <Check className="h-4 w-4 mr-1" /> {isContact ? 'Mark Reviewed' : 'Accept Suggestion'}
             </Button>
             {isRange && (
               <div className="flex gap-1">

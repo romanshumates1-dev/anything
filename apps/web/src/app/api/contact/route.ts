@@ -60,8 +60,37 @@ export async function POST(request: Request) {
       subject,
     });
 
-    // TODO: Send notification email/webhook to operator
-    // Will be implemented via SUPPORT_EMAIL webhook in Phase 1 completion
+    // Operator notification — two channels, both reusing existing surfaces:
+    // 1) human_approvals row -> shows in the owner's /approvals inbox + count
+    //    badge (same queue as owner-range/contract approvals; org 'default'
+    //    matches the approvals view's session fallback).
+    // 2) optional webhook POST when CONTACT_NOTIFY_WEBHOOK_URL is set (Slack/
+    //    Zapier-style). Failures are logged, never surfaced to the visitor.
+    try {
+      await sql`
+        INSERT INTO human_approvals (id, organization_id, type, context, status)
+        VALUES (${crypto.randomUUID()}, 'default', 'contact_message',
+                ${JSON.stringify({ contact_id: id, name, email, subject })}, 'PENDING')
+      `;
+    } catch (notifyErr) {
+      console.error('contact: approvals-inbox notification failed', notifyErr);
+    }
+    const webhookUrl = process.env.CONTACT_NOTIFY_WEBHOOK_URL;
+    if (webhookUrl) {
+      try {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            text: `New contact message from ${name} <${email}>: ${subject}`,
+            contact_id: id,
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch (webhookErr) {
+        console.error('contact: operator webhook failed', webhookErr);
+      }
+    }
 
     return Response.json({ success: true, id }, { status: 201 });
   } catch (error) {
