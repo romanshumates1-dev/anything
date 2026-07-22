@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
+import { getOrganization } from '@/lib/organization-context';
 
 /**
  * Phase 4 handoff — "Create campaign from segment".
@@ -20,6 +21,15 @@ export async function POST(request: Request) {
   if (!admin.ok) return admin.response;
 
   try {
+    // organization_id is NOT NULL on leads (migration 030) — this insert never
+    // set it at all, so every handoff failed outright (same class as the
+    // identical bug fixed in /api/leads/bulk — BREAKAGE_TABLE #35 follow-on).
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const orgId = organization.id;
+
     const b = (await request.json().catch(() => ({}))) as {
       leadIds?: unknown;
       filter?: { county?: string; category?: string; recordType?: string; minScore?: number };
@@ -76,8 +86,8 @@ export async function POST(request: Request) {
       // Insert into the EXISTING leads table (importer's output shape). No
       // phone/email — skip-trace resolves contact downstream.
       const [lead] = await sql`
-        INSERT INTO leads (type, name, email, phone, status, source, metadata)
-        VALUES (${sl.category}, ${name}, ${null}, ${null}, 'new', ${'lead-finder'}, ${JSON.stringify(metadata)})
+        INSERT INTO leads (type, name, email, phone, status, source, metadata, organization_id)
+        VALUES (${sl.category}, ${name}, ${null}, ${null}, 'new', ${'lead-finder'}, ${JSON.stringify(metadata)}, ${orgId})
         RETURNING id
       `;
       await sql`

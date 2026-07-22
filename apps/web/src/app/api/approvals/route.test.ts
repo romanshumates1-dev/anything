@@ -15,12 +15,18 @@ vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
 const { getSession } = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession: (...a: any[]) => getSession(...a) } } }));
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
+// Phase 5: the route resolves org via getOrganization() (real membership
+// lookup), not session.user.organizationId (which better-auth never sets --
+// that was bug #35, the tenant-scoping fallback-to-'default' bug).
+const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
+vi.mock('@/lib/organization-context', () => ({ getOrganization: (...a: any[]) => getOrganization(...a) }));
 
 import { GET } from './route';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSession.mockResolvedValue({ user: { id: 'u1', organizationId: 'org-1' } });
+  getSession.mockResolvedValue({ user: { id: 'u1' } });
+  getOrganization.mockResolvedValue({ id: 'org-1', name: 'Org One', slug: 'org-one' });
 });
 
 describe('GET /api/approvals', () => {

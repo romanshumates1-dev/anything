@@ -147,10 +147,13 @@ export async function processNextJob() {
             // Phase A: numeric-guard context rides with bounded-mode sends.
             boundedNegotiation: payload.boundedNegotiation,
           });
-          // Log gateway result for auditability
+          // Log gateway result for auditability. provider_message_id (the
+          // Twilio MessageSid) is now a real column, not just buried in
+          // metadata — the status-callback receiver (BREAKAGE_TABLE #33)
+          // correlates inbound delivery updates back to this row by it.
           await sql`
-            INSERT INTO message_events (id, organization_id, campaign_id, contact_id, direction, status, provider, metadata)
-            VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${JSON.stringify({ gatewayStatus: result.status, providerMessageId: result.providerId, errorMessage: result.errorMessage }) })
+            INSERT INTO message_events (id, organization_id, campaign_id, contact_id, direction, status, provider, provider_message_id, metadata)
+            VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${result.providerId ?? null}, ${JSON.stringify({ gatewayStatus: result.status, errorMessage: result.errorMessage }) })
             ON CONFLICT (id) DO NOTHING
           `;
           if (result.gateCode) {

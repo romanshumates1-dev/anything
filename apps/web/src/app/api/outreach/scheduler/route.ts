@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 
@@ -16,7 +17,11 @@ export async function POST(_request: NextRequest) {
   }
 
   try {
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

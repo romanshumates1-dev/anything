@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '../../utils/logger';
 import { recordRun } from '../../utils/execution-ledger';
@@ -26,6 +27,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    // organization_id is NOT NULL on leads (migration 030) — this insert never
+    // set it at all, so every bulk import failed outright (BREAKAGE_TABLE #35
+    // follow-on: distinct from the fallback-string bug, this one is a flat
+    // missing-required-column bug).
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const orgId = organization.id;
+
     const body = await request.json();
     const text = typeof body.text === 'string' ? body.text : '';
     const source = body.source === 'paste' ? 'paste' : 'csv';
@@ -52,8 +63,11 @@ export async function POST(request: Request) {
     const hashes = unique.map((u) => u.dedupeHash).filter((h) => h.length > 0);
     let existing = new Set<string>();
     if (hashes.length > 0) {
+      // Scoped to this org — a dedupe hash matching another tenant's lead is
+      // not a duplicate for THIS import (cross-tenant dedupe was another audit
+      // finding under bug #35).
       const rows = await sql`
-        SELECT DISTINCT dedupe_hash FROM leads WHERE dedupe_hash = ANY(${hashes})
+        SELECT DISTINCT dedupe_hash FROM leads WHERE dedupe_hash = ANY(${hashes}) AND organization_id = ${orgId}
       `;
       existing = new Set(rows.map((r: any) => r.dedupe_hash));
     }
@@ -74,12 +88,12 @@ export async function POST(request: Request) {
       const values: any[] = [];
       const placeholders = part
         .map((l, idx) => {
-          const b = idx * 6;
-          values.push(l.name, l.type, l.email, l.phone, l.source, l.dedupeHash || null);
-          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6})`;
+          const b = idx * 7;
+          values.push(l.name, l.type, l.email, l.phone, l.source, l.dedupeHash || null, orgId);
+          return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7})`;
         })
         .join(',');
-      const query = `INSERT INTO leads (name, type, email, phone, source, dedupe_hash) VALUES ${placeholders} RETURNING id`;
+      const query = `INSERT INTO leads (name, type, email, phone, source, dedupe_hash, organization_id) VALUES ${placeholders} RETURNING id`;
       const rows = await sql(query, values);
       inserted += rows.length;
     }

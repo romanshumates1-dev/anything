@@ -183,6 +183,7 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
 const ACCESS_GATE_EXEMPT_PREFIXES = [
   '/api/auth',
   '/api/sms/inbound',
+  '/api/sms/status',
   '/api/jobs/process',
   '/api/system',
   '/api/openapi',

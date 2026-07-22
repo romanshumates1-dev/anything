@@ -7,6 +7,7 @@
  */
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { getStripeProvider } from '@/app/api/services/stripeProvider';
@@ -21,7 +22,11 @@ export async function GET(request: Request) {
   const contractId = searchParams.get('contractId');
 
   try {
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
 
     let rows;
     if (contractId) {
@@ -69,7 +74,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'amountCents must be positive' }, { status: 400 });
     }
 
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
 
     // Verify contract exists and belongs to this org
     const contractRows = await sql`

@@ -74,6 +74,13 @@ export class TwilioAdapter implements ISMSProvider {
       body: text,
       to: toE164,
     };
+    // Delivery-status callbacks had nowhere to land (BREAKAGE_TABLE #33) --
+    // no statusCallback was ever set, so message_events could never advance
+    // past its dispatch-time status even with Twilio's real webhooks enabled.
+    const publicUrl = process.env.PUBLIC_WEBHOOK_URL;
+    if (publicUrl) {
+      createParams.statusCallback = `${publicUrl.replace(/\/$/, '')}/api/sms/status`;
+    }
     if (from) {
       // INT-3 local presence: an explicit pool number beats the messaging
       // service (whose whole job is picking a sender — we already picked one).
@@ -112,7 +119,13 @@ export class TwilioAdapter implements ISMSProvider {
   }
 
   validateWebhook(body: any, _signature?: string): boolean {
-    // Verify Twilio webhook signature (uses auth token)
+    // NOT cryptographic verification (`!!body.MessageSid` was previously
+    // documented as if it were — BREAKAGE_TABLE #33/#34). Confirmed zero
+    // runtime callers: this interface method has no request URL to sign over,
+    // so it cannot do real HMAC verification. The REAL, exercised signature
+    // check lives inline in /api/sms/inbound and /api/sms/status (same
+    // validateTwilioSignature helper, which does have the URL). Left as a
+    // presence check only; do not treat this method as a security boundary.
     return !!body.MessageSid;
   }
 

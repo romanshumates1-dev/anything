@@ -5,10 +5,21 @@
  * a link pointing here. The user clicks "Pay Now" to simulate a successful
  * payment, which fires the same webhook path production would.
  */
-import sql from '@/app/api/utils/sql';
-import { logEvent } from '@/app/api/utils/logger';
+import { escapeHtml } from '@/app/api/utils/escapeHtml';
 
 export async function GET(request: Request) {
+  // Hard production gate (BREAKAGE_TABLE #34): STRIPE_PROVIDER defaults to
+  // 'mock', so this page and /complete were reachable — and would actually
+  // flip a payment to paid — in a production deploy that hadn't explicitly
+  // configured live Stripe. The pi_mock_ prefix check alone is not a real
+  // gate once mock is the default provider.
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(JSON.stringify({ error: 'Not available in production' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const { searchParams } = new URL(request.url);
   const paymentIntentId = searchParams.get('pi');
   const contractId = searchParams.get('contractId');
@@ -21,7 +32,8 @@ export async function GET(request: Request) {
     });
   }
 
-  // Only process mock PI IDs
+  // Only process mock PI IDs (defense in depth — the real gate is the
+  // NODE_ENV check above).
   if (!paymentIntentId.startsWith('pi_mock_')) {
     return new Response(JSON.stringify({ error: 'Invalid PI ID for mock endpoint' }), {
       status: 400,
@@ -53,13 +65,13 @@ export async function GET(request: Request) {
   <div class="card">
     <div class="badge">🧪 MOCK CHECKOUT</div>
     <h1>Assignment Fee Payment</h1>
-    <p>Contract #{contractId.slice(0, 8)}…</p>
+    <p>Contract #${escapeHtml(contractId.slice(0, 8))}…</p>
     <div class="amount">$${amountDollars}</div>
     <p>This is a mock payment page for development.</p>
     <form action="/api/payments/mock-checkout/complete" method="POST">
-      <input type="hidden" name="pi" value="${paymentIntentId}" />
-      <input type="hidden" name="contractId" value="${contractId}" />
-      <input type="hidden" name="amount" value="${amount}" />
+      <input type="hidden" name="pi" value="${escapeHtml(paymentIntentId)}" />
+      <input type="hidden" name="contractId" value="${escapeHtml(contractId)}" />
+      <input type="hidden" name="amount" value="${escapeHtml(amount)}" />
       <button type="submit" class="btn btn-primary">Pay $${amountDollars}</button>
     </form>
     <p class="note">No real payment will be processed. This simulates a successful Stripe Checkout session.</p>

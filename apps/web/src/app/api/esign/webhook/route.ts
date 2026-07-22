@@ -46,7 +46,12 @@ export async function POST(request: Request) {
   try {
     const body = await request.text();
     const signature = request.headers.get('x-esign-signature') || '';
-    const provider = (request.headers.get('x-esign-provider') || 'mock') as EsignProviderType;
+    // The provider used for verification MUST come from server config, never
+    // a client-supplied header (BREAKAGE_TABLE #34): a caller could previously
+    // send `x-esign-provider: mock` to force the accept-all mock verifier
+    // regardless of which real provider (documenso/docusign) the deployment
+    // actually uses, bypassing signature verification entirely.
+    const provider: EsignProviderType = (process.env.ESIGN_PROVIDER || 'mock') as EsignProviderType;
 
     // Verify webhook signature
     const provider_ = getEsignProvider({ type: provider });

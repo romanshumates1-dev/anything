@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport';
@@ -110,7 +111,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid contacts after parsing', failures: invalidRows }, { status: 400 });
     }
 
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const campaignId = crypto.randomUUID();
     const openingMessageId = crypto.randomUUID();
 
@@ -170,7 +175,11 @@ export async function GET() {
   }
 
   try {
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const rows = await sql`
       SELECT 
         oc.*,

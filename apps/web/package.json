@@ -4,7 +4,7 @@
 	"scripts": {
 		"dev": "next dev --port 4000",
 		"build": "next build",
-		"start": "next start",
+		"start": "next start --port 4000",
 		"typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
 		"test": "vitest run --config src/app/api/vitest.config.ts",
 		"test:watch": "vitest --config src/app/api/vitest.config.ts",

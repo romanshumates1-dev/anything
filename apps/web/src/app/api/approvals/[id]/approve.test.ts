@@ -19,6 +19,11 @@ vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 const { enqueueJob } = vi.hoisted(() => ({ enqueueJob: vi.fn(async () => 1) }));
 vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob }));
+// Phase 5: the route resolves org via getOrganization() (real membership
+// lookup), not session.user.organizationId (bug #35 — better-auth never sets
+// that field, so it always fell back to the string 'default').
+const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
+vi.mock('@/lib/organization-context', () => ({ getOrganization: (...a: any[]) => getOrganization(...a) }));
 
 import { POST } from './route';
 
@@ -31,7 +36,8 @@ const queryText = (needle: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSession.mockResolvedValue({ user: { id: 'u1', organizationId: 'org-1' } });
+  getSession.mockResolvedValue({ user: { id: 'u1' } });
+  getOrganization.mockResolvedValue({ id: 'org-1', name: 'Org One', slug: 'org-one' });
 });
 
 describe('POST /api/approvals/[id] — owner-range accept', () => {

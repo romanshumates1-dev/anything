@@ -5,12 +5,26 @@
  * generates a signing link pointing here. Clicking "simulate sign" triggers this
  * endpoint, which behaves identically to the real e-sign webhook path.
  *
- * In production/CI this route is inert — it only responds to mock envelope IDs.
+ * The prior "safety check" (envelope id must start with mock_env_) was NOT a
+ * real production gate (BREAKAGE_TABLE #34): ESIGN_PROVIDER defaults to
+ * 'mock', so EVERY contract's envelope id is mock_env_* unless an operator
+ * has explicitly configured a real provider — meaning any unauthenticated
+ * caller who knew/guessed a contractId could mark it signed in production.
+ * Now hard-gated on NODE_ENV !== 'production', matching the pattern already
+ * used by the demo-review seed script.
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { escapeHtml } from '@/app/api/utils/escapeHtml';
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(JSON.stringify({ error: 'Not available in production' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const { searchParams } = new URL(request.url);
   const envelopeId = searchParams.get('envelopeId');
   const contractId = searchParams.get('contractId');
@@ -22,7 +36,8 @@ export async function GET(request: Request) {
     });
   }
 
-  // Only process mock envelope IDs (safety check — real providers never use mock_ prefix)
+  // Only process mock envelope IDs (defense in depth — the real gate above is
+  // the NODE_ENV check; this just keeps the endpoint scoped to mock data).
   if (!envelopeId.startsWith('mock_env_')) {
     return new Response(JSON.stringify({ error: 'Invalid envelope ID for mock endpoint' }), {
       status: 400,
@@ -73,7 +88,7 @@ export async function GET(request: Request) {
     <div class="badge">✓ SIGNED</div>
     <h1>Document Signed</h1>
     <p>The contract has been signed successfully. This window can be closed.</p>
-    <p style="font-size: 0.875rem; color: #999;">Contract: ${contractId.slice(0, 8)}… | Envelope: ${envelopeId.slice(0, 16)}…</p>
+    <p style="font-size: 0.875rem; color: #999;">Contract: ${escapeHtml(contractId.slice(0, 8))}… | Envelope: ${escapeHtml(envelopeId.slice(0, 16))}…</p>
   </div>
 </body>
 </html>`,

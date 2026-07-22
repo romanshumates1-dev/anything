@@ -23,6 +23,14 @@ vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 const { logEvent } = vi.hoisted(() => ({ logEvent: vi.fn(async () => {}) }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent }));
 
+// Phase 5: the route resolves org via getOrganization() (real membership
+// lookup), not session.user.organizationId (bug #35 — better-auth never sets
+// that field, so it always silently fell back to the string 'default',
+// collapsing every tenant's data together). Mocked here so it doesn't consume
+// a slot from the hand-seeded mockSql call sequence below.
+const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
+vi.mock('@/lib/organization-context', () => ({ getOrganization: (...a: any[]) => getOrganization(...a) }));
+
 // NOTE: compliance-audit is intentionally NOT mocked — we want to observe the
 // actual INSERT it emits onto the mocked sql.
 import { POST } from './route';
@@ -50,7 +58,8 @@ function seedHappyPath(dncEnabled: boolean) {
 describe('Item 2 — DNC compliance audit on campaign start', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSession.mockResolvedValue({ user: { id: 'user-1', organizationId: 'org-1' } });
+    getSession.mockResolvedValue({ user: { id: 'user-1' } });
+    getOrganization.mockResolvedValue({ id: 'org-1', name: 'Org One', slug: 'org-one' });
   });
 
   it('writes DNC_SCRUB_DISABLED with correct fields when DNC is off', async () => {
@@ -87,12 +96,14 @@ describe('Item 2 — DNC compliance audit on campaign start', () => {
     expect(JSON.parse(metaJson).confirmationText).toBe('DNC scrub is enabled by default for this campaign');
   });
 
-  it('falls back organizationId to "default" when session has none', async () => {
-    getSession.mockResolvedValue({ user: { id: 'user-9' } });
-    seedHappyPath(false);
-    await POST(req('camp-1'), { params: { id: 'camp-1' } } as any);
-    const [, orgId] = findComplianceInsert()!;
-    expect(orgId).toBe('default');
+  it('403s (no silent "default" fallback) when the user has no organization membership', async () => {
+    // Bug #35: this used to silently fall back to the literal string
+    // 'default', collapsing every unmatched user into one fake tenant. Now a
+    // user with no resolvable organization is refused outright.
+    getOrganization.mockResolvedValue(null);
+    const res = await POST(req('camp-1'), { params: { id: 'camp-1' } } as any);
+    expect(res.status).toBe(403);
+    expect(findComplianceInsert()).toBeFalsy();
   });
 
   it('writes NO audit row when the campaign is not found (404)', async () => {

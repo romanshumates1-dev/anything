@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { processInboundSms } from '@/app/api/services/inboundSms';
@@ -15,7 +16,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { from, to, message } = body as { from: string; to: string; message: string };
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
 
     if (!from || !message) {
       return NextResponse.json({ error: 'Missing from or message' }, { status: 400 });
