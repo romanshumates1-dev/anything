@@ -30,6 +30,7 @@ export const metadata: Metadata = {
 };
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
+  const legalEntityName = process.env.LEGAL_ENTITY_NAME || process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME;
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -108,8 +109,12 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
           <div className="mt-8 border-t pt-8">
             <p className="text-sm text-gray-500">
               &copy; {new Date().getFullYear()} DealFlow AI. All rights reserved.
-              <br />
-              <span className="text-gray-400">{process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME || '[LEGAL_ENTITY_NAME]'}</span>
+              {legalEntityName && (
+                <>
+                  <br />
+                  <span className="text-gray-400">{legalEntityName}</span>
+                </>
+              )}
             </p>
           </div>
         </div>
