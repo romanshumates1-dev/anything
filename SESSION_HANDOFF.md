@@ -1,6 +1,27 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-21 (r) — Prompt 1 Phase 0 COMPLETE: parallel-session work landed (c8c2744), migration chain repaired (34/34 idempotent x2), full audit docs/AUDIT_2026-07-21.md, bugs #23-#36 logged._
+_Last session: 2026-07-22 (r, continued) — Prompt 1 Phases 0-6 COMPLETE: audit, marketing/reviews/legal/admin repair, hardening re-pass, desktop v1.0.1 rebuilt + draft-released. 40 migrations applied idempotently; suite 618/21/0. Phase 7 (closeout) next._
+
+## Session (r) — 2026-07-22 — Prompt 1 Phase 6 (Desktop rebuild + release)
+
+**What happened**
+- Committed 4 previously-uncommitted desktop files sitting since Phase 0 (parallel session's CSP fix for shadcn/ui Sidebar inline styles) — found and fixed a real TS error they introduced (`details.responseHeaders` possibly undefined) and confirmed the fix moved CSP-relaxation logic from a non-functional `BrowserWindow` constructor shape into the real Electron API (`session.webRequest.onHeadersReceived`).
+- Verified desktop web-origin resolution is already env-based (`DEALFLOW_APP_URL`, prod default `https://dealswiftautomation.com`, localhost only in dev) — no change needed, Phase 6 requirement already satisfied.
+- Version bumped 1.0.0 → 1.0.1. Full rebuild: icons → clean → esbuild bundle → electron-builder NSIS (win x64 + arm64).
+- **Hit the known symlink-privilege build blocker** (electron-builder's winCodeSign package contains macOS dylib symlinks; extracting them needs `SeCreateSymbolicLinkPrivilege`, which a non-admin Windows session lacks) — the same issue session (q) had previously documented. **Did not attempt to work around it myself** (system-settings changes are owner-gated); the owner enabled Developer Mode directly, which grants the symlink privilege to standard users. Build succeeded immediately after.
+- **3 installers produced**: `DealFlow AI-1.0.1-Setup.exe` (169MB, combined x64+arm64 — recommended), `-x64-Setup.exe` (82MB), `-arm64-Setup.exe` (88MB). `SHA256SUMS.txt` generated for all three.
+- **Smoke test**: launched the unpacked binary directly (`win-unpacked/DealFlow AI.exe`) — confirmed a genuine 4-process Electron tree (main + GPU + network-utility + sandboxed renderer) alive after 5s, then cleanly closed. This proves the packaged binary boots without crashing; it does **not** prove UI correctness (this session's screenshot/visual-verification tooling was confirmed broken back in Phase 1) — see the manual checklist below for what still needs a human pass.
+- **Draft GitHub release created** (confirmed with the owner first, given it pushes a new tag + ~340MB of binaries to the remote): `desktop-v1.0.1`, all 4 assets uploaded and size-verified against local files byte-for-byte. Draft — not publicly visible until published.
+- **Auto-update: NOT configured, logged as a decision item (per Prompt 1's explicit instruction not to half-implement it).** `electron-updater` is a dependency and `src/main/updater.ts` contains real orchestration logic whose own comment says it "checks the generic feed declared in electron-builder.yml" — but `electron-builder.yml` has no `publish` block, so no `latest.yml` feed metadata is ever generated. The runtime code assumes a feed that doesn't exist. **Owner decision needed**: pick a distribution channel (GitHub-releases generic provider is the simplest fit given releases are already used) and add the corresponding `publish:` block to `electron-builder.yml`.
+
+**Manual smoke checklist (owner/human pass — visual verification this session's tooling could not perform):**
+1. Install: run `DealFlow AI-1.0.1-Setup.exe` from the draft release (or `win-unpacked/DealFlow AI.exe` directly) — confirm the NSIS installer completes and creates a Start Menu entry.
+2. Launch: open the installed app — confirm a window renders (not blank/white), title bar shows "DealFlow AI".
+3. Loads app origin: confirm it navigates to the configured `DEALFLOW_APP_URL` (production origin unless `DEALFLOW_APP_URL` is overridden) and doesn't show the offline fallback page.
+4. Login works: sign in with a real account, confirm the dashboard renders post-login.
+5. One campaign screen renders: navigate to `/campaigns`, confirm the list/wizard renders without a blank pane or console error (open DevTools via the app's menu if available).
+
+**Signing note**: unsigned (`sign: false`, no certificate configured) — Windows SmartScreen will warn "unrecognized publisher" on first run. Known, documented, not a build defect.
 
 ## Session (r) — 2026-07-21 — Prompt 1 (Production Readiness) Phase 0
 

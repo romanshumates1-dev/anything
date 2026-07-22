@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "DealFlow AI",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DealFlow AI — cross-platform desktop application for the real-estate SaaS.",
   "author": {
     "name": "DealFlow AI"
