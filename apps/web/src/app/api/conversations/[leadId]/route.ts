@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
 /**
@@ -18,6 +19,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ lead
       return Response.json({ error: 'Invalid lead id' }, { status: 400 });
     }
 
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+
+    // Bug #35 (IDOR): previously had no org filter at all — any authenticated
+    // user could read any other org's lead conversation by guessing a
+    // sequential lead id.
     const [conv] = await sql`
       SELECT
         c.id,
@@ -32,7 +41,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ lead
         l.type AS lead_type
       FROM ai_conversations c
       JOIN leads l ON l.id = c.lead_id
-      WHERE c.lead_id = ${id}
+      WHERE c.lead_id = ${id} AND l.organization_id = ${organization.id}
       LIMIT 1
     `;
 

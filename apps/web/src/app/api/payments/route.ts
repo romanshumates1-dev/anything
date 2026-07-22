@@ -30,12 +30,18 @@ export async function GET(request: Request) {
 
     let rows;
     if (contractId) {
+      // Bug #35: this branch previously filtered on contract_id alone, with
+      // no organization check at all — any authenticated user from ANY org
+      // could read another org's payment amounts/Stripe ids by passing a
+      // different contractId. Joined to contracts for the same org filter
+      // the unfiltered branch below already applies.
       rows = await sql`
-        SELECT id, contract_id, buyer_id, amount_cents, currency,
-               stripe_payment_intent_id, status, reason, created_at, paid_at, refunded_at
-        FROM payments_ledger
-        WHERE contract_id = ${contractId}
-        ORDER BY created_at DESC
+        SELECT pl.id, pl.contract_id, pl.buyer_id, pl.amount_cents, pl.currency,
+               pl.stripe_payment_intent_id, pl.status, pl.reason, pl.created_at, pl.paid_at, pl.refunded_at
+        FROM payments_ledger pl
+        JOIN contracts c ON c.id = pl.contract_id
+        WHERE pl.contract_id = ${contractId} AND c.organization_id = ${org}
+        ORDER BY pl.created_at DESC
       `;
     } else {
       rows = await sql`

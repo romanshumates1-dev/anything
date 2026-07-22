@@ -1,5 +1,61 @@
 # BREAKAGE_TABLE.md — DealFlow AI
 
+## Session 2026-07-22 (s) — Closing out Prompt 1's explicitly-deferred items
+
+Picked up exactly where the Phase 7 closeout (session r) left off: the items FINAL_STATE.md
+marked ❌ with a stated reason, not a re-verification of anything already ✅. Each fix below
+was written against the ORIGINAL buggy code first, confirmed RED (mutation-proven — reverted
+the fix, watched the new test fail for the right reason, restored it), then GREEN.
+
+**Stripe webhook signature verification (real, not a stub):** `LiveStripeProvider.verifyWebhook`
+compared `params.signature === 'stripe-valid'` literally. Replaced with the real Stripe HMAC
+scheme (`t=<ts>,v1=<hex_hmac>` over `${ts}.${body}`, SHA-256, constant-time compare, ±300s
+replay tolerance) in a new `stripe-webhook.ts` util — no `stripe` SDK dependency, pure
+`node:crypto`, matching the existing `twilio-webhook.ts` pattern. 13 tests (was 10): valid
+signed payload, tampered body, malformed header, stale timestamp, missing secret.
+
+**Durable rate limiting:** `rateLimitByUser` (contact/review submission guards) was an
+in-memory Map — resets every restart, near-zero protection on serverless. New migration 041
+(`rate_limits` table, composite PK) + a single atomic `INSERT ... ON CONFLICT DO UPDATE` per
+call (concurrent racers serialize on the row's unique constraint, no read-then-write race).
+Live concurrency proof against the real dev DB: 5 racers on a limit-of-2 bucket → exactly 2
+allowed, row count=5.
+
+**Bug #36 cluster (outreach/funnel subsystem) — all 5 defects fixed:** 5 `/api/outreach/
+campaigns/[id]/*` routes (pause/resume/stats/cancel/contacts) read `params.id` synchronously
+against a Next 16 Promise → always 404; `contacts/route.ts`'s batch INSERT built placeholder
+numbers from `idx*4` but each row binds 5 args → every row past the first corrupted; the
+OPENING template INSERT omitted `campaign_id` (silently NULL, nullable column) so
+`dispatchOpenings` could never find it; the scheduler marked contacts SENT with zero calls to
+`enqueueJob` (bookkeeping fiction, no message ever sent); `/api/funnel` joined a
+`stage_transitions.contract_id` column that doesn't exist (500 on every call — the table keys
+off `lead_id`/`campaign_id`, not contracts). 25 new tests, full suite 653/22/0 at this
+checkpoint. **Separately flagged, not fixed here:** `recordStageTransition` (the writer P4's
+funnel table depends on) has zero runtime callers anywhere — the table is permanently empty in
+practice even with the join fixed. Spun off as its own task (too large to bundle in).
+
+**Systematic IDOR sweep — every dynamic `[id]`/`[leadId]` API route, by hand, not sampled:**
+
+| Route | Verdict | Note |
+|---|---|---|
+| `admin/users/[id]` | SAFE | Global super-admin surface by design (requireAdmin manages all users) |
+| `approvals/[id]` | SAFE | Already `AND organization_id = ${org}` on every query |
+| `campaigns/[id]/launch`, `campaigns/[id]/leads` | **VULNERABLE — flagged, not fixed** | The underlying `campaigns`/`campaign_leads` tables (base schema.sql) have **no `organization_id` column at all** — migration 030 added tenant scoping to `leads` and explicitly called it "the only table missing it," skipping `campaigns`. This is the OLD pre-multi-tenant campaign system, still reachable from `/campaigns` in the UI (not dead code) and used by `flows-live.test.ts`. Properly fixing it means a migration + backfill strategy + touching the core proven send path — too large/risky to bundle into an IDOR pass; spun off separately (see spawned task). |
+| `conversations/[leadId]` | **FIXED this session** | No org filter at all → any authenticated user could read any org's lead conversation by guessing a sequential id. Now joins `leads.organization_id` |
+| `conversations/thread/[leadId]` | **FIXED this session** | Same class of gap on the lead lookup |
+| `crm/contacts/[id]` | SAFE | Already `AND cc.organization_id = ${org}` |
+| `lead-finder/sources/[id]` | SAFE-BY-DESIGN | `lead_sources` is a shared, admin-gated catalog of external data sources (KY/NC/GA/MO), not per-org tenant data — no organization_id column by design (migration 006) |
+| `leads/[id]/ai` | **FIXED this session** | Bug #35 named this route explicitly. No org filter on SELECT or UPDATE → any authenticated user could pause/unpause AI on any org's lead |
+| `negotiation/profiles/[id]` | SAFE-BY-DESIGN | `negotiation_profiles` is a global pricing-strategy catalog assigned to campaigns, not owned by an org — no organization_id column |
+| `negotiation/sessions/[id]/pause` | SAFE (current trust model) | `requireAdmin()` checks a GLOBAL `user.role` + the domain-lock, not per-org membership — this app's admin model is one trusted internal team running the whole platform (multi-tenant is explicitly OUT OF SCOPE per the project spec), so cross-org admin reach is the intended model here, not a boundary violation |
+| `settings/api-keys/[id]` | SAFE | Already `AND organization_id = ${orgId}` (proven live, session e / bug #16) |
+| `test-phones/[id]`, `test-phones/[id]/verify` | SAFE | Already `AND organization_id = ${orgId}` |
+| `payments?contractId` (query param, same IDOR class) | **FIXED this session** | Bug #35 named this explicitly. The `contractId`-filtered branch had NO org check at all (the unfiltered branch below it did) — any authenticated user could read another org's payment amounts/Stripe ids by passing a different contractId |
+
+15 new tests across 4 fixed routes (payments, conversations×2, leads/ai), each mutation-proven
+RED against the original code before the fix. Full suite 668 passed / 22 skipped / 0 failed;
+typecheck 0; oxlint 0/0 on touched files.
+
 ## MVP v2 verification matrix (Option B — substance lifted onto the real platform)
 
 Rule: a row is VERIFIED only with **observed output** captured this session. Intentions are not verification.

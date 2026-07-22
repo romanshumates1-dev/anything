@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
 /**
@@ -29,13 +30,24 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }
 
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+
+    // Bug #35 (IDOR): previously had no org filter — any authenticated user
+    // could read any other org's lead thread by guessing a sequential id.
+    const [lead] = await sql`SELECT phone FROM leads WHERE id = ${leadId} AND organization_id = ${organization.id} LIMIT 1`;
+    if (!lead) {
+      return NextResponse.json([]);
+    }
+
     const [conv] = await sql`
       SELECT id, lead_id, history, status, last_message_at
       FROM ai_conversations
       WHERE lead_id = ${leadId}
       LIMIT 1
     `;
-    const [lead] = await sql`SELECT phone FROM leads WHERE id = ${leadId} LIMIT 1`;
 
     const phone = lead?.phone ?? null;
     const history: Array<{ role: string; content: string }> = conv?.history ?? [];
