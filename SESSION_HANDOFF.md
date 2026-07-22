@@ -1,6 +1,40 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-22 (r, continued) — Prompt 1 Phases 0-6 COMPLETE: audit, marketing/reviews/legal/admin repair, hardening re-pass, desktop v1.0.1 rebuilt + draft-released. 40 migrations applied idempotently; suite 618/21/0. Phase 7 (closeout) next._
+_Last session: 2026-07-22 (r) — **Prompt 1 (Production Readiness Sprint) COMPLETE, Phases 0-7.** 8 commits (c8c2744 through closeout), 43 bugs found (#23-#43 + Phase 0's #23-28 opened, all subsequent phases closed what they touched — see BREAKAGE_TABLE.md for the full itemized ledger). Suite 618 passed / 21 skipped / 0 failed. Desktop v1.0.1 packaged + draft-released. Full DoD checklist below. **Prompt 2 (E2E verification) is reserved for a FRESH session per the original instruction — do not start it here.**_
+
+## Session (r) — 2026-07-22 — Prompt 1 Phase 7 (Closeout)
+
+**Final state of all three handoff files as of this commit:**
+- `FINAL_STATE.md` — fully rewritten (the pre-existing version contained claims this sprint disproved, e.g. e-sign/Stripe webhook signature verification "✅" when bug #34 proved both forgeable). Now a single capability matrix, every ✅ backed by a `BREAKAGE_TABLE.md` proof reference, every ❌ with a stated reason.
+- `BREAKAGE_TABLE.md` — the complete, chronological evidence ledger for this sprint (Phase 0 audit through Phase 6 desktop release). Nothing in it is intention-only; every row cites an observed command/output.
+- `SESSION_HANDOFF.md` (this file) — phase-by-phase narrative, below.
+
+**Carry-over items from before this sprint, still open (not part of Prompt 1's scope, noted for continuity):**
+- Docker image build — last known state: engine was down mid-session before this sprint began; not re-attempted this sprint (out of Prompt 1's scope).
+- `deploy.ps1` cold-run — **now proven working** as part of Phase 5/6 (bug #43 fix + verification): full migrate → build → health-check-green cycle, multiple times.
+- `scripts/watchdog.ps1` — untouched this sprint, was already committed and working as of the last check.
+- A 231-file nested `anything/anything/` repo self-copy, flagged in Phase 0 as a decision item, was deleted with owner confirmation.
+
+**Phase-by-phase DoD checklist** (✅ = done + proven this sprint, ❌ = explicit reason, no silent skips):
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 0 — Repo audit | ✅ | `docs/AUDIT_2026-07-21.md`; migration chain repaired 34→40 files, idempotent; bugs #23-28 opened |
+| 1 — Marketing pages | ✅ (screenshots ❌, environment blocker) | link-check 22/22; contact round-trip live-proven; pricing DB-sourced; screenshots undone — tooling broken, honestly placeholdered |
+| 2 — Reviews & ratings | ✅ | bug #27 closed + 5 more found/fixed; submit→moderate→publish live-proven; FTC demo-segregation proven |
+| 3 — Legal & compliance | ✅ | bugs #31/#32 closed; signup/re-accept/messaging-gate acceptance rows proven; real-Twilio STOP→suppression→blocked-send proven |
+| 4 — Admin panel | ✅ | bugs #29/#30 closed; UI built from scratch; 403-loop 17/17; ban lifecycle + refund + GDPR/force-reset all live-proven |
+| 5 — Hardening re-pass | ✅ (4 items explicitly deferred, reasons logged) | bugs #28/#33/#34/#35/#43 closed; bug #36, durable rate-limiting, secrets-bundle grep, full IDOR suite explicitly OPEN with reasons |
+| 6 — Desktop .exe | ✅ (auto-update ❌, owner decision; UI visual pass ❌, needs human) | v1.0.1 built, packaged, draft-released, checksummed; process-tree boot proof; owner-gated blocker handled correctly (paused, owner enabled Dev Mode, retried clean) |
+| 7 — Closeout | ✅ | this update |
+
+**Full pipeline, final run this session:** typecheck 0 (apps/web); suite 618 passed / 21 skipped / 0 failed (80 files); oxlint 0 errors / 23 pre-existing warnings outside this sprint's touched files (full-tree sweep, none introduced this sprint); production build + cold health-check via `deploy.ps1` green; desktop typecheck 0, NSIS package built.
+
+**Standing invariants, confirmed unchanged:** no live SMS pre-A2P (Twilio trial number (607) 365-6567 only); escalation invariant supreme; beta flags OFF; PR #4 remains DRAFT, not merged; no secrets printed/committed this sprint.
+
+**Recommended next step:** run Prompt 2 (E2E verification: test infra, `SMS_MODE` three-mode proof, Twilio magic numbers, `GO_LIVE_CHECKLIST.md`) in a **fresh session**, per the original instruction. This session's context is now very large; starting fresh gives Prompt 2 full budget and a clean read of the state this file + BREAKAGE_TABLE.md + FINAL_STATE.md describe.
+
+---
 
 ## Session (r) — 2026-07-22 — Prompt 1 Phase 6 (Desktop rebuild + release)
 
