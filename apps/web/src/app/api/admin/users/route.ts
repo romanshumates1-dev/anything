@@ -17,6 +17,9 @@ export async function GET() {
         u.name,
         u.email,
         u.role,
+        u.banned,
+        u.ban_reason,
+        u.suspended_until,
         u."createdAt" AS created_at,
         (SELECT MAX(s."createdAt") FROM session s WHERE s."userId" = u.id) AS last_login_at,
         (SELECT COUNT(*)::int FROM session s WHERE s."userId" = u.id AND s."expiresAt" > now()) AS active_sessions

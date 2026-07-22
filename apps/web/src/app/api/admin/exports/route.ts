@@ -45,13 +45,13 @@ export async function GET(request: Request) {
             o.id,
             o.name,
             o.slug,
-            o."createdAt" as created_at,
-            (SELECT COUNT(*)::int FROM "user" u WHERE u.organization_id = o.id) as member_count,
+            o.created_at,
+            (SELECT COUNT(*)::int FROM organization_members m WHERE m.organization_id = o.id) as member_count,
             os.status as subscription_status,
             os.trial_ends_at
           FROM organizations o
           LEFT JOIN organization_subscriptions os ON os.organization_id = o.id
-          ORDER BY o."createdAt" DESC
+          ORDER BY o.created_at DESC
           LIMIT 10000
         `;
         csv = formatCSV(rows, ['id', 'name', 'slug', 'created_at', 'member_count', 'subscription_status', 'trial_ends_at']);

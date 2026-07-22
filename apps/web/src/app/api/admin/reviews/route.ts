@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
+import { adminAudit } from '@/app/api/utils/adminAudit';
 
 /**
  * Admin reviews moderation endpoint.
@@ -78,11 +79,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Log to audit
+    // Domain-specific audit trail (review_audit_log) + the platform-wide
+    // admin_audit_log (Phase 4: every admin mutation writes there too).
     await sql`
       INSERT INTO review_audit_log (id, actor_id, action, review_id, reason, ip)
       VALUES ('rev_audit_' || gen_random_uuid()::text, ${admin.userId}, ${action}, ${reviewId}, ${reason || null}, ${getClientIP(request)})
     `;
+    await adminAudit({
+      actorId: admin.userId,
+      action: `review_${action}d`,
+      targetType: 'review',
+      targetId: reviewId,
+      metadata: { reason: reason || null },
+      ip: getClientIP(request),
+    });
 
     // Log event
     await logEvent(`review_${action}d`, 'review', reviewId, {

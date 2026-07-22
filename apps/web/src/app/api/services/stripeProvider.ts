@@ -35,6 +35,17 @@ export interface VerifyWebhookParams {
   signature: string;
 }
 
+export interface RefundParams {
+  paymentIntentId: string;
+  amountCents?: number; // omit for full refund
+  reason?: string;
+}
+
+export interface RefundResult {
+  refundId: string;
+  status: string; // 'succeeded' | 'pending' | ...
+}
+
 export interface WebhookEvent {
   type: string;
   id: string;
@@ -56,6 +67,7 @@ export interface StripeProvider {
   createPaymentLink(params: CreatePaymentParams): Promise<PaymentResult>;
   verifyWebhook(params: VerifyWebhookParams): boolean;
   parseWebhookEvent(body: string, signature: string): WebhookEvent;
+  refund(params: RefundParams): Promise<RefundResult>;
 }
 
 // ─── Mock Provider ───────────────────────────────────────────────────────────
@@ -92,6 +104,20 @@ export class MockStripeProvider implements StripeProvider {
 
   parseWebhookEvent(body: string, _signature: string): WebhookEvent {
     return JSON.parse(body);
+  }
+
+  async refund(params: RefundParams): Promise<RefundResult> {
+    // No money moves — returns a realistic mock refund id so the full
+    // admin-refund path (ledger mirror + entitlement + audit) can be exercised
+    // and tested end-to-end without Stripe. Live refunds require test/live keys.
+    const refundId = `re_mock_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+    await logEvent('payment_refunded', 'payment', params.paymentIntentId, {
+      provider: 'mock',
+      refundId,
+      amountCents: params.amountCents ?? null,
+      reason: params.reason ?? null,
+    });
+    return { refundId, status: 'succeeded' };
   }
 }
 
@@ -143,6 +169,24 @@ export class LiveStripeProvider implements StripeProvider {
     // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
     // return stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!);
     return JSON.parse(body);
+  }
+
+  async refund(params: RefundParams): Promise<RefundResult> {
+    // LIVE: Replace with a real Stripe refund (OWNER-GATED on live/test keys):
+    // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    // const r = await stripe.refunds.create({
+    //   payment_intent: params.paymentIntentId,
+    //   amount: params.amountCents, // omit for full
+    //   reason: 'requested_by_customer',
+    // });
+    // return { refundId: r.id, status: r.status ?? 'pending' };
+    const refundId = `re_live_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+    await logEvent('payment_refunded', 'payment', params.paymentIntentId, {
+      provider: 'live',
+      refundId,
+      note: 'LIVE: Replace with real Stripe refunds.create',
+    });
+    return { refundId, status: 'pending' };
   }
 }
 

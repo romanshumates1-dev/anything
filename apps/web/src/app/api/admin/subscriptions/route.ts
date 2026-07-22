@@ -24,7 +24,7 @@ export async function GET() {
         os.current_period_start,
         os.current_period_end,
         os.cancel_at_period_end,
-        os.stripe_subscription_id,
+        os.payment_processor_subscription_id AS stripe_subscription_id,
         o.id as organization_id,
         o.name as organization_name,
         o.slug as organization_slug,

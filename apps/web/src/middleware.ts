@@ -5,6 +5,7 @@ import {
   isEmailDomainAllowed,
 } from '@/app/api/utils/access-control';
 import { REQUIRED_ACCEPTANCE_VERSIONS, ACCEPTANCE_DOC_TYPES } from '@/lib/legal-versions';
+import { isAccessDenied } from '@/lib/user-status';
 
 /**
  * Two independent server-side gates run here, on the edge, before any route
@@ -124,7 +125,8 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
   const prefix = key.split('_').slice(0, 2).join('_') + '_';
 
   const [record] = await sql`
-    SELECT k.id, k.revoked, k.rate_limit_per_min, u.email AS owner_email, u.role AS owner_role
+    SELECT k.id, k.revoked, k.rate_limit_per_min, u.email AS owner_email, u.role AS owner_role,
+           u.banned AS owner_banned, u.suspended_until AS owner_suspended_until
     FROM api_keys k
     LEFT JOIN "user" u ON u.id = k.created_by
     WHERE k.key_hash = ${keyHash} AND k.prefix = ${prefix}
@@ -135,13 +137,15 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
     return NextResponse.json({ error: 'Invalid or revoked API key' }, { status: 401 });
   }
 
-  // Domain-lock layer 4: keys are only VALID for allowed-domain users with an
-  // approved role. Fail closed on ownerless keys (created_by no longer
-  // resolves to a user) — reissue under a live admin account instead.
+  // Domain-lock layer 4 + ban gate: keys are only VALID for allowed-domain,
+  // approved-role, NON-banned users. Fail closed on ownerless keys (created_by
+  // no longer resolves) — reissue under a live admin account instead. Banning
+  // a user thus rejects their API tokens too (Phase 4 DoD).
   if (
     !record.owner_email ||
     !isEmailDomainAllowed(record.owner_email) ||
-    !hasRequiredRole(record.owner_role)
+    !hasRequiredRole(record.owner_role) ||
+    isAccessDenied({ banned: record.owner_banned, suspended_until: record.owner_suspended_until })
   ) {
     return NextResponse.json({ error: 'API key owner is not authorized' }, { status: 403 });
   }
@@ -194,6 +198,8 @@ interface SessionUserRow {
   id: string;
   email: string;
   role: string | null;
+  banned: boolean;
+  suspended_until: string | null;
 }
 
 /**
@@ -215,7 +221,7 @@ async function lookupSessionUser(req: NextRequest): Promise<SessionUserRow | nul
   if (!token) return null;
 
   const [row] = await sql`
-    SELECT u.id, u.email, u.role
+    SELECT u.id, u.email, u.role, u.banned, u.suspended_until
     FROM session s
     JOIN "user" u ON u.id = s."userId"
     WHERE s.token = ${token} AND s."expiresAt" > now()
@@ -249,6 +255,20 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
   if (!user) return NextResponse.next();
 
   const isApi = pathname.startsWith('/api/');
+
+  // Ban gate (Phase 4): a banned or currently-suspended user is rejected even
+  // on an already-minted session. Deleting their session rows on ban makes
+  // this immediate; this check also covers a session that outlived the DELETE
+  // and rejects the account regardless of role/domain.
+  if (isAccessDenied(user)) {
+    if (isApi) {
+      return NextResponse.json(
+        { error: 'Account suspended', code: 'ACCOUNT_BANNED' },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL('/access-restricted', req.url));
+  }
 
   if (!isEmailDomainAllowed(user.email)) {
     if (isApi) {
@@ -317,6 +337,7 @@ export function middleware(req: NextRequest): Promise<NextResponse> {
 export const config = {
   matcher: [
     '/api/:path*',
+    '/admin/:path*',
     '/dashboard/:path*',
     '/campaigns/:path*',
     '/inbox/:path*',

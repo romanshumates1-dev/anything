@@ -29,6 +29,7 @@ import {
   isEmailDomainAllowed,
   isSeedAdminEmail,
 } from '@/app/api/utils/access-control';
+import { isAccessDenied } from '@/lib/user-status';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -162,12 +163,17 @@ export const auth = betterAuth({
       create: {
         // Domain lock, layer 2 (session): even if an out-of-domain account
         // somehow exists in the DB, it can never mint a session. Fresh DB
-        // read — no trust in the incoming object.
+        // read — no trust in the incoming object. Also the ban gate (Phase 4):
+        // a banned or currently-suspended user cannot mint a new session, so a
+        // fresh login attempt is rejected server-side.
         before: async (session) => {
-          const { rows } = await pool.query('SELECT email FROM "user" WHERE id = $1 LIMIT 1', [
-            session.userId,
-          ]);
-          if (!rows[0] || !isEmailDomainAllowed(rows[0].email)) return false;
+          const { rows } = await pool.query(
+            'SELECT email, banned, suspended_until FROM "user" WHERE id = $1 LIMIT 1',
+            [session.userId]
+          );
+          const u = rows[0];
+          if (!u || !isEmailDomainAllowed(u.email)) return false;
+          if (isAccessDenied(u)) return false;
           return { data: session };
         },
       },

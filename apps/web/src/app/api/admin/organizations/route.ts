@@ -20,12 +20,12 @@ export async function GET() {
         o.id,
         o.name,
         o.slug,
-        o."createdAt" as created_at,
-        (SELECT COUNT(*)::int FROM "user" u WHERE u.organization_id = o.id) as member_count,
+        o.created_at,
+        (SELECT COUNT(*)::int FROM organization_members m WHERE m.organization_id = o.id) as member_count,
         (SELECT COUNT(*)::int FROM leads l WHERE l.organization_id = o.id) as lead_count,
         (SELECT os.status FROM organization_subscriptions os WHERE os.organization_id = o.id ORDER BY os.created_at DESC LIMIT 1) as subscription_status
       FROM organizations o
-      ORDER BY o."createdAt" DESC
+      ORDER BY o.created_at DESC
       LIMIT 500
     `;
 
@@ -49,7 +49,10 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
-    const { name, status } = body;
+    // 'status' was previously destructured but silently ignored (Phase 0
+    // audit note); org-level ban/status is superseded by user-level ban
+    // (Phase 4), so only `name` is a valid update field here.
+    const { name } = body;
 
     // Verify organization exists
     const [existing] = await sql`
