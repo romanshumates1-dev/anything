@@ -1,5 +1,65 @@
 # BREAKAGE_TABLE.md — DealFlow AI
 
+## Session 2026-07-22 (t) — Closing session (s)'s 2 spun-off items + real screenshots
+
+Picked up session (s)'s 2 spun-off items (`recordStageTransition` wiring, legacy
+`campaigns`/`campaign_leads` IDOR gap) plus the still-open `/how-it-works` screenshots.
+Full detail and commit hashes are in SESSION_HANDOFF.md's session (t) section — this
+entry records the specific evidence, not a repeat of the narrative.
+
+**`/how-it-works` screenshots (commit `163ed6a`):** 5 real Playwright captures at
+1280x720, session-email banner clipped. Surfaced 375 orphaned rows across 10 tables
+(`organization_id='default'`, the exact phantom string bug #35 fixed elsewhere) —
+owner-confirmed before running the bulk repair (`scripts/backfill-default-org-id.mjs`).
+Suite re-run after: 668/22/0, unchanged — pure data fix.
+
+**`recordStageTransition` wiring (commit `bc969fd`):** RED (against original code, 9
+test files): 15 failed / 21 passed. GREEN (after fix): 36/36. Full suite: 712/22/0.
+Live-DB proof: real funnel counts `{"ENGAGED":1,"NEGOTIATING":1,"CONTACTED":1,"NEW":1}`
+after a throwaway lead's real lifecycle, row deleted after. Independently re-verified
+by a second agent (re-ran RED→GREEN itself, read all 9 diffs) — verdict: real wiring
+confirmed, but the commit's "typecheck exit 0" claim was FALSE (see below).
+
+**Legacy `campaigns`/`campaign_leads` org-scoping (commit `ceb5496`, migration 042):**
+RED (against original routes): 11 failed. GREEN (after fix): 18 passed. Independently
+re-verified by a second agent, who re-swapped the pre-fix route back in and re-ran the
+new tests itself: 4 failed/2 passed (RED) → 6/6 (GREEN) — matches. Retirement was
+investigated and rejected: `flows.test.ts`/`full-wholesale-pipeline.test.ts`/
+`flows-live.test.ts` directly exercise these route handlers as the tested pipeline;
+deleting them would have broken real, passing, DB-backed coverage.
+
+**Adversarial verification caught a real inaccuracy:** both commits claimed a clean
+typecheck. Both independent verifiers ran the real compiler and got 56 errors, not 0.
+Root cause: `npx tsc --noEmit` is unreliable in this environment — running it directly
+returns npm's own stub (`This is not the tsc command you are looking for`, exit 1, zero
+real typechecking) rather than the actual compiler, apparently depending on ambient
+shell/Yarn-PnP state. `yarn tsc --noEmit` is the confirmed-reliable replacement (used by
+both verifiers, and by me independently afterward — same 56-error output both times).
+Diffed against a worktree at each fix's parent commit: identical 56-error set before
+either fix — pre-existing, not a regression, confined to exactly 9 test-mock files
+(`sms-gateway.test.ts`, `voice-gateway.test.ts`, `usageTracker.test.ts`,
+`cadenceEngine.test.ts`, `demoAllowlist.test.ts`, `inspectionClock.test.ts`,
+`messaging.gate.test.ts`, `negotiationSession.test.ts`, `ollama-client.test.ts`,
+`valuationEngine.test.ts`), zero production code. This means every prior "typecheck 0"
+claim across the entire Prompt 1 sprint and session (s) used the same unreliable
+command and may have been silently unverified — not evidence those fixes were wrong,
+only that this specific gate was never actually enforced as claimed. Spun off as its
+own follow-up task (fix the 56 errors + correct every `npx tsc` reference to `yarn tsc`).
+
+**Desktop UI visual pass (web-origin proxy, no code change):** real sign-in (not
+signup) via the actual `/account/signin` form → authenticated dashboard confirmed;
+`/campaigns` rendered cleanly with real data through the just-fixed single-entry-point
+flow. Covers checklist items #4–#5 from session (r)'s manual checklist; does not cover
+#1–#3 (installer, native window, configured app-origin loading), which remain a real
+human/owner pass against the actual packaged `.exe`.
+
+**Flagged, not fixed, spun off separately:** `AddLeadsControl` in `campaigns/page.tsx`
+always 400s (UUID vs `Number.isInteger` check, pre-existing, found during the campaigns
+fix); `[LEGAL_ENTITY_NAME]` renders unsubstituted in the live marketing footer; a
+possible root-route dashboard/marketing dual-render flash observed once via Playwright
+right after a real sign-in (needs investigation into whether it's a real UX issue or an
+automated-navigation-only artifact).
+
 ## Session 2026-07-22 (s) — Closing out Prompt 1's explicitly-deferred items
 
 Picked up exactly where the Phase 7 closeout (session r) left off: the items FINAL_STATE.md
