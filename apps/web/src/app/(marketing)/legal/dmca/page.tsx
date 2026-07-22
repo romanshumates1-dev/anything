@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "DMCA Agent",
-  description: "DealFlow AI DMCA agent information for copyright takedown notices.",
-  openGraph: {
-    title: "DMCA Agent",
-    description: "Copyright infringement takedown process.",
-  },
-};
+const SLUG = "dmca";
 
-export default function DmcaPage() {
-  return (
-    <LegalDocRenderer docType="dmca" title="DMCA Agent Information" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

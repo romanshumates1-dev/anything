@@ -1,19 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "Acceptable Use Policy",
-  description:
-    "DealFlow AI Acceptable Use & Messaging Policy. SHAFT content prohibited, TCPA compliance required, STOP/HELP must be honored.",
-  openGraph: {
-    title: "Acceptable Use Policy",
-    description: "Messaging guidelines and prohibited content policies.",
-  },
-};
+const SLUG = "acceptable-use";
 
-export default function AcceptableUsePage() {
-  return (
-    <LegalDocRenderer docType="acceptable_use" title="Acceptable Use & Messaging Policy" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

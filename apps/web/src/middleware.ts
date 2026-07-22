@@ -4,6 +4,7 @@ import {
   hasRequiredRole,
   isEmailDomainAllowed,
 } from '@/app/api/utils/access-control';
+import { REQUIRED_ACCEPTANCE_VERSIONS, ACCEPTANCE_DOC_TYPES } from '@/lib/legal-versions';
 
 /**
  * Two independent server-side gates run here, on the edge, before any route
@@ -181,9 +182,16 @@ const ACCESS_GATE_EXEMPT_PREFIXES = [
   '/api/jobs/process',
   '/api/system',
   '/api/openapi',
+  // Recording legal acceptance is a PRE-access action: a brand-new signup is a
+  // pending-access MEMBER, but must still be able to accept ToS/Privacy (and
+  // the re-accept gate) before an admin grants full access. The route itself
+  // requires a valid session, and out-of-domain users can't create accounts,
+  // so exempting it from the role gate opens no hole. (Phase 3)
+  '/api/legal',
 ];
 
 interface SessionUserRow {
+  id: string;
   email: string;
   role: string | null;
 }
@@ -207,7 +215,7 @@ async function lookupSessionUser(req: NextRequest): Promise<SessionUserRow | nul
   if (!token) return null;
 
   const [row] = await sql`
-    SELECT u.email, u.role
+    SELECT u.id, u.email, u.role
     FROM session s
     JOIN "user" u ON u.id = s."userId"
     WHERE s.token = ${token} AND s."expiresAt" > now()
@@ -260,6 +268,36 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
       );
     }
     return NextResponse.redirect(new URL('/pending-access', req.url));
+  }
+
+  // Re-accept gate: an authenticated, allowed user who has NOT accepted the
+  // current ToS + Privacy versions is held at the /legal/accept interstitial
+  // for page requests. On a version bump, existing acceptance rows carry the
+  // old version, so this fires until they re-accept. API requests are not
+  // redirected here (their own routes enforce what they need); this gate is
+  // about the interactive app surface. The interstitial page itself and the
+  // acceptance endpoint are exempt so the user can actually accept.
+  if (!isApi && pathname !== '/legal/accept') {
+    try {
+      const rows = await sql`
+        SELECT document_type FROM legal_acceptances
+        WHERE user_id = ${user.id}
+          AND (
+            (document_type = ${ACCEPTANCE_DOC_TYPES.tos} AND version = ${REQUIRED_ACCEPTANCE_VERSIONS.tos})
+            OR (document_type = ${ACCEPTANCE_DOC_TYPES.privacy} AND version = ${REQUIRED_ACCEPTANCE_VERSIONS.privacy})
+          )
+      `;
+      const accepted = new Set((rows as { document_type: string }[]).map((r) => r.document_type));
+      const needsReaccept =
+        !accepted.has(ACCEPTANCE_DOC_TYPES.tos) || !accepted.has(ACCEPTANCE_DOC_TYPES.privacy);
+      if (needsReaccept) {
+        return NextResponse.redirect(new URL('/legal/accept', req.url));
+      }
+    } catch (error) {
+      // Fail-open on a DB hiccup: never lock the whole app out of a transient
+      // error. The gate re-fires on the next request.
+      console.error('[middleware] legal re-accept check failed', error);
+    }
   }
 
   return NextResponse.next();

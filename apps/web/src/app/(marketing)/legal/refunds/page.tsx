@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "Refund Policy",
-  description: "DealFlow AI refund and billing policy. 30-day money-back guarantee, prorated refunds, and chargeback procedures.",
-  openGraph: {
-    title: "Refund Policy",
-    description: "Billing and refund terms.",
-  },
-};
+const SLUG = "refunds";
 
-export default function RefundsPage() {
-  return (
-    <LegalDocRenderer docType="refunds" title="Refund & Billing Policy" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

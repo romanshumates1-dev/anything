@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "Disclaimers",
-  description: "DealFlow AI disclaimers including results-not-typical, no-guarantee, and not-a-brokerage statements.",
-  openGraph: {
-    title: "Disclaimers",
-    description: "Important disclaimers for DealFlow AI users.",
-  },
-};
+const SLUG = "disclaimers";
 
-export default function DisclaimersPage() {
-  return (
-    <LegalDocRenderer docType="disclaimers" title="Disclaimers" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

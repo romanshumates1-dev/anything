@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "E-SIGN Consent",
-  description: "DealFlow AI E-SIGN/UETA consent disclosure. Electronic signature agreement terms.",
-  openGraph: {
-    title: "E-SIGN Consent",
-    description: "Electronic signature consent disclosure.",
-  },
-};
+const SLUG = "esign";
 
-export default function EsignPage() {
-  return (
-    <LegalDocRenderer docType="esign" title="E-SIGN/UETA Consent" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

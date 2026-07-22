@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "Cookie Policy",
-  description: "DealFlow AI cookie policy. Information about essential and optional cookies used on our platform.",
-  openGraph: {
-    title: "Cookie Policy",
-    description: "Website cookie usage information.",
-  },
-};
+const SLUG = "cookies";
 
-export default function CookiesPage() {
-  return (
-    <LegalDocRenderer docType="cookies" title="Cookie Policy" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

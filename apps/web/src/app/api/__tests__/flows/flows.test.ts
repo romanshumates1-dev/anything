@@ -35,6 +35,13 @@ vi.mock('@/lib/organization-context', () => ({
   getOrganization: (...args: any[]) => (getOrganization as any)(...args),
 }));
 
+// Phase 3 messaging-compliance gate: this flow tests campaign activation for an
+// already-onboarded user, so the agreement is accepted.
+vi.mock('@/lib/legal-acceptance', () => ({
+  hasAcceptedMessagingAgreement: vi.fn(async () => true),
+  hasAcceptedCurrentLegal: vi.fn(async () => true),
+}));
+
 // ---- Import REAL handlers + utilities the registry binds to
 import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';

@@ -1,18 +1,17 @@
-// TEMPLATE — requires attorney review before launch
 import type { Metadata } from "next";
-import { LegalDocRenderer } from "@/components/LegalDocRenderer";
+import { LegalDocPage } from "@/components/LegalDocPage";
+import { getLegalDoc } from "@/lib/legal";
 
-export const metadata: Metadata = {
-  title: "SMS Terms",
-  description: "DealFlow AI SMS program terms. Message frequency, HELP/STOP instructions, carrier disclaimer.",
-  openGraph: {
-    title: "SMS Terms",
-    description: "SMS program terms and conditions.",
-  },
-};
+const SLUG = "sms-terms";
 
-export default function SMSTermsPage() {
-  return (
-    <LegalDocRenderer docType="sms_terms" title="SMS Program Terms" />
-  );
+export function generateMetadata(): Metadata {
+  const doc = getLegalDoc(SLUG);
+  return {
+    title: doc?.title ?? "Legal",
+    description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
+  };
+}
+
+export default function Page() {
+  return <LegalDocPage slug={SLUG} />;
 }

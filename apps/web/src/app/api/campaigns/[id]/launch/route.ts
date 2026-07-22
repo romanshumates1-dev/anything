@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
+import { hasAcceptedMessagingAgreement } from '@/lib/legal-acceptance';
 
 /**
  * Launch a campaign:
@@ -20,6 +21,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Messaging Compliance Agreement gate (Phase 3): a campaign cannot be
+  // activated — no message may be sent — until the user has accepted the
+  // current Messaging Compliance Agreement. Server-refused; the UI only
+  // reflects this. (BREAKAGE_TABLE #31: this gate did not exist before.)
+  if (!(await hasAcceptedMessagingAgreement(session.user.id))) {
+    return Response.json(
+      {
+        error: 'messaging_agreement_required',
+        message:
+          'You must accept the Messaging Compliance Agreement before activating a campaign.',
+      },
+      { status: 403 }
+    );
   }
 
   try {

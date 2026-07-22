@@ -24,6 +24,7 @@ function SignUpForm() {
 	const callbackUrl = searchParams.get("callbackUrl") || "/";
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const [acceptedLegal, setAcceptedLegal] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
@@ -44,6 +45,20 @@ function SignUpForm() {
 			setError(signUpError.message ?? "Sign up failed");
 			setLoading(false);
 			return;
+		}
+
+		// Record ToS + Privacy acceptance now that the user has a session. The
+		// checkbox is required client-side; the server-side wall is the
+		// middleware re-accept gate, which redirects to /legal/accept if this
+		// row is missing — so a bypass can't actually use the app unaccepted.
+		try {
+			await fetch("/api/legal", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ keys: ["tos", "privacy"] }),
+			});
+		} catch {
+			// Non-fatal: the middleware gate will catch a missing acceptance.
 		}
 
 		if (typeof window !== "undefined") {
@@ -88,6 +103,22 @@ function SignUpForm() {
 					/>
 				</label>
 
+				<label className="flex items-start gap-[8px] text-[13px] text-gray-600">
+					<input
+						type="checkbox"
+						required
+						checked={acceptedLegal}
+						onChange={(e) => setAcceptedLegal(e.target.checked)}
+						className="mt-[3px]"
+					/>
+					<span>
+						I agree to the{" "}
+						<a href="/legal/terms" target="_blank" className="text-blue-600 hover:underline">Terms of Service</a>{" "}
+						and{" "}
+						<a href="/legal/privacy" target="_blank" className="text-blue-600 hover:underline">Privacy Policy</a>.
+					</span>
+				</label>
+
 				{error && (
 					<div className="rounded-[8px] bg-red-50 p-[10px] text-[14px] text-red-600">
 						{error}
@@ -96,7 +127,7 @@ function SignUpForm() {
 
 				<button
 					type="submit"
-					disabled={loading}
+					disabled={loading || !acceptedLegal}
 					className="rounded-[8px] bg-blue-600 p-[12px] text-[16px] font-medium text-white disabled:opacity-50"
 				>
 					{loading ? "Creating account…" : "Sign Up"}

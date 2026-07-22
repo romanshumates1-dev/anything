@@ -7,6 +7,8 @@ import { enqueueJob } from '../../utils/jobs';
 import { recordReplyReceived } from '../../utils/sla';
 import { cancelCadence } from '../../utils/cadenceEngine';
 import { detectHumanRequest, handleHumanRequest } from '../../services/humanRequestDetector';
+import { isOptOutMessage } from '../../services/optOutDetection';
+import { registerOptOut } from '../../utils/compliance';
 
 /**
  * Inbound SMS webhook.
@@ -73,7 +75,7 @@ export async function POST(request: Request) {
       if (messageSid) {
         const [existing] = await sql`
           SELECT id FROM audit_logs
-          WHERE action = 'sms_inbound' AND metadata->>'messageSid' = ${messageSid}
+          WHERE action = 'sms_inbound' AND payload->>'messageSid' = ${messageSid}
           LIMIT 1
         `;
         if (existing) {
@@ -106,6 +108,31 @@ export async function POST(request: Request) {
 
     if (!from || !text) {
       return Response.json({ error: '`from` and `text` are required' }, { status: 400 });
+    }
+
+    // ── OPT-OUT GATE (TCPA): must run first, for EVERY sender, before any
+    // lead lookup — STOP suppresses even a number we don't recognize. This
+    // was previously only wired into processInboundSms, which the real Twilio
+    // webhook never calls (BREAKAGE_TABLE #32) — so a real STOP never
+    // registered suppression. registerOptOut writes compliance_records, which
+    // dispatchGate.isSuppressed reads, so a later send is blocked server-side.
+    if (isOptOutMessage(text)) {
+      await registerOptOut(from, 'sms', { reason: 'stop_keyword', source: 'twilio_inbound' });
+      // Mark any active campaign contact opted-out (best-effort, all orgs).
+      await sql`
+        UPDATE campaign_contacts
+        SET status = 'OPTED_OUT', opted_out_at = now(), updated_at = now()
+        WHERE phone = ${from}
+          AND status NOT IN ('OPTED_OUT', 'COLD', 'DEAL_NO_AGREEMENT', 'CONTRACT_SIGNED')
+      `;
+      await logEvent('sms_inbound_opt_out', 'sms', from, { text, ...(messageSid ? { messageSid } : {}) });
+      if (isTwilioWebhook) {
+        return new Response('<?xml version="1.0" encoding="UTF-8"?><Response/>', {
+          status: 200,
+          headers: { 'Content-Type': 'application/xml' },
+        });
+      }
+      return Response.json({ status: 'opted_out' });
     }
 
     // Normalize owner number to E.164 for comparison (Twilio sends +prefix)
