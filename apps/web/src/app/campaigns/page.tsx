@@ -7,9 +7,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ArrowLeft, Rocket, Plus } from 'lucide-react';
 
@@ -142,10 +139,6 @@ function CampaignCard({ campaign }: { campaign: any }) {
 
 export default function CampaignsPage() {
   const { data: session, isPending: authLoading } = useSession();
-  const queryClient = useQueryClient();
-
-  const [form, setForm] = useState({ name: '', message_template: '' });
-  const [error, setError] = useState<string | null>(null);
 
   const { data: campaigns, isLoading } = useQuery({
     // Distinct key from the Shell's ['campaigns'] (legacy /api/campaigns) so
@@ -157,27 +150,6 @@ export default function CampaignsPage() {
       return res.json();
     },
     enabled: !!session,
-  });
-
-  const create = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/campaigns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to create campaign');
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      setForm({ name: '', message_template: '' });
-      setError(null);
-      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
-    },
-    onError: (err: any) => setError(err.message),
   });
 
   if (authLoading) {
@@ -202,67 +174,23 @@ export default function CampaignsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Campaigns</h1>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle>New Campaign</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form
-                className="space-y-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (!form.name.trim() || !form.message_template.trim()) {
-                    setError('Name and message template are required');
-                    return;
-                  }
-                  create.mutate();
-                }}
-              >
-                <div className="space-y-2">
-                  <Label htmlFor="cname">Campaign Name</Label>
-                  <Input
-                    id="cname"
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="Q1 Outreach"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ctemplate">Message Template</Label>
-                  <Textarea
-                    id="ctemplate"
-                    value={form.message_template}
-                    onChange={(e) => setForm((f) => ({ ...f, message_template: e.target.value }))}
-                    placeholder="Hey, are you interested in selling your property?"
-                  />
-                </div>
-                {error && <p className="text-sm text-red-600">{error}</p>}
-                <Button type="submit" disabled={create.isPending}>
-                  {create.isPending ? 'Creating…' : 'Create Campaign'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle>Advanced Builder</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Use the 4-step wizard for full campaign control:</p>
-              <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-                <li>Sending schedule & volume caps</li>
-                <li>Follow-up sequences & AI toggles</li>
-                <li>Compliance / DNC / Test Mode</li>
-                <li>Budget cap & review</li>
-              </ul>
-              <Link href="/campaigns/wizard">
-                <Button className="w-full">Open Campaign Wizard →</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <CardTitle>Create Campaign</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-500">The 4-step wizard is the one campaign-creation flow:</p>
+            <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
+              <li>Sending schedule & volume caps</li>
+              <li>Follow-up sequences & AI toggles</li>
+              <li>Compliance / DNC / Test Mode</li>
+              <li>Budget cap & review</li>
+            </ul>
+            <Link href="/campaigns/wizard">
+              <Button className="w-full">Open Campaign Wizard →</Button>
+            </Link>
+          </CardContent>
+        </Card>
 
         <div className="space-y-4">
           {isLoading ? (

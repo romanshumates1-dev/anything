@@ -2,11 +2,20 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
+import { getOrganization } from '@/lib/organization-context';
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Tenant-isolation fix (legacy campaigns/campaign_leads had no
+  // organization_id at all — see migration 042): every campaign must be
+  // stamped with its creator's organization from the moment it's created.
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
   }
 
   try {
@@ -19,8 +28,8 @@ export async function POST(request: Request) {
     }
 
     const [campaign] = await sql`
-      INSERT INTO campaigns (name, message_template)
-      VALUES (${name}, ${template})
+      INSERT INTO campaigns (name, message_template, organization_id)
+      VALUES (${name}, ${template}, ${organization.id})
       RETURNING *
     `;
 
@@ -45,6 +54,13 @@ export async function GET() {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Tenant-isolation fix: this route previously returned every org's
+  // campaigns with no filtering at all.
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   try {
     const campaigns = await sql`
       SELECT
@@ -53,6 +69,7 @@ export async function GET() {
         COUNT(cl.id) FILTER (WHERE cl.status = 'sent') AS sent_count
       FROM campaigns c
       LEFT JOIN campaign_leads cl ON cl.campaign_id = c.id
+      WHERE c.organization_id = ${organization.id}
       GROUP BY c.id
       ORDER BY c.created_at DESC
       LIMIT 100

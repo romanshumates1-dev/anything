@@ -5,6 +5,7 @@ import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
 import { hasAcceptedMessagingAgreement } from '@/lib/legal-acceptance';
+import { getOrganization } from '@/lib/organization-context';
 
 /**
  * Launch a campaign:
@@ -21,6 +22,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Tenant-isolation fix (BREAKAGE_TABLE: legacy campaigns/campaign_leads had
+  // no organization_id at all): resolve the caller's org before anything
+  // else touches the campaign, so the lookup below can be scoped to it.
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
   }
 
   // Messaging Compliance Agreement gate (Phase 3): a campaign cannot be
@@ -45,7 +54,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ error: 'Invalid campaign id' }, { status: 400 });
     }
 
-    const [campaign] = await sql`SELECT * FROM campaigns WHERE id = ${campaignId} LIMIT 1`;
+    // IDOR fix: previously this had no organization filter at all, so any
+    // authenticated user could launch (i.e. trigger real sends for) another
+    // org's campaign just by guessing its id. A foreign-org id now 404s
+    // exactly as if the campaign didn't exist.
+    const [campaign] = await sql`
+      SELECT * FROM campaigns
+      WHERE id = ${campaignId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `;
     if (!campaign) {
       return Response.json({ error: 'Campaign not found' }, { status: 404 });
     }
