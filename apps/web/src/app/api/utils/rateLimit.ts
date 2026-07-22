@@ -2,87 +2,58 @@ import sql from './sql';
 
 interface RateLimitResult {
   allowed: boolean;
-  remaining?: number;
-  resetAt?: Date;
+  remaining: number;
+  resetAt: Date;
 }
 
 /**
- * Simple in-memory rate limiter for contact form and auth endpoints.
- * Uses a Map keyed by action+identifier, with automatic cleanup.
- * For production, consider Redis-backed implementation.
- */
-const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
-const CLEANUP_INTERVAL = 60 * 1000; // 1 minute
-
-// Cleanup expired entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of rateLimitStore.entries()) {
-    if (now > value.resetAt) {
-      rateLimitStore.delete(key);
-    }
-  }
-}, CLEANUP_INTERVAL);
-
-/**
- * Rate limit by IP address (key). Simple in-memory implementation.
- * For IP-based rate limiting (contact forms, public endpoints).
+ * Postgres-backed fixed-window rate limiter for public/semi-public endpoints
+ * (contact form, review submission). Durable across restarts and safe across
+ * many serverless instances — an in-memory Map (the prior implementation)
+ * resets on every process restart and gives ~zero protection under Vercel,
+ * where each invocation can land on a fresh isolate with no shared memory.
+ *
+ * Fixed-window buckets: `window_start` is `floor(now / windowSeconds)`, so a
+ * concurrent burst on the same (identifier, action, window) serializes on
+ * the row's primary key via `INSERT ... ON CONFLICT DO UPDATE` — a single
+ * atomic round trip, no read-then-write race. Tradeoff (explicit, accepted):
+ * fixed windows allow up to ~2x the limit across a window boundary (a burst
+ * at the tail of one window plus the head of the next); a sliding window
+ * would close that gap at the cost of a second query per call. Not worth it
+ * for these low-frequency guards (5/hour, 3/day).
  */
 export async function rateLimitByUser(
-  key: string,
+  identifier: string,
   action: string,
   maxRequests: number,
   windowSeconds: number = 3600
 ): Promise<RateLimitResult> {
-  const storeKey = `${action}:${key}`;
-  const now = Date.now();
-  const resetAt = now + windowSeconds * 1000;
+  const windowMs = windowSeconds * 1000;
+  const windowStartMs = Math.floor(Date.now() / windowMs) * windowMs;
+  const windowStart = new Date(windowStartMs);
+  const resetAt = new Date(windowStartMs + windowMs);
 
-  const current = rateLimitStore.get(storeKey);
-  if (!current || now > current.resetAt) {
-    rateLimitStore.set(storeKey, { count: 1, resetAt });
-    return { allowed: true, remaining: maxRequests - 1, resetAt: new Date(resetAt) };
-  }
-
-  if (current.count >= maxRequests) {
-    return { allowed: false, remaining: 0, resetAt: new Date(current.resetAt) };
-  }
-
-  current.count++;
-  rateLimitStore.set(storeKey, current);
-  return { allowed: true, remaining: maxRequests - current.count, resetAt: new Date(current.resetAt) };
-}
-
-/**
- * Database-backed rate limiter for authenticated actions.
- * Uses a dedicated rate_limits table.
- */
-export async function rateLimitDb(
-  userId: string,
-  action: string,
-  maxRequests: number,
-  windowSeconds: number = 60
-): Promise<RateLimitResult> {
-  const windowStart = new Date(Date.now() - windowSeconds * 1000);
-  
-  const [{ count }] = await sql`
-    SELECT COUNT(*)::int as count FROM rate_limits
-    WHERE user_id = ${userId} AND action = ${action} AND created_at > ${windowStart}
+  const [row] = await sql`
+    INSERT INTO rate_limits (identifier, action, window_start, count, updated_at)
+    VALUES (${identifier}, ${action}, ${windowStart}, 1, now())
+    ON CONFLICT (identifier, action, window_start)
+    DO UPDATE SET count = rate_limits.count + 1, updated_at = now()
+    RETURNING count
   `;
-  
-  const canProceed = count < maxRequests;
-  
-  // Record this request if allowed
-  if (canProceed) {
-    await sql`
-      INSERT INTO rate_limits (id, user_id, action, created_at)
-      VALUES ('rl_' || gen_random_uuid()::text, ${userId}, ${action}, now())
-    `;
+  const count = Number(row.count);
+
+  // Opportunistic cleanup of expired windows (~1% of calls) — no cron
+  // dependency; keeps the table from growing unbounded on a long-running
+  // local deployment. Best-effort: failure here must never block the caller.
+  if (Math.random() < 0.01) {
+    sql`DELETE FROM rate_limits WHERE window_start < now() - interval '7 days'`.catch(
+      (err: unknown) => console.error('rateLimit: cleanup failed', err)
+    );
   }
-  
+
   return {
-    allowed: canProceed,
-    remaining: Math.max(0, maxRequests - count - (canProceed ? 1 : 0)),
-    resetAt: new Date(Date.now() + windowSeconds * 1000),
+    allowed: count <= maxRequests,
+    remaining: Math.max(0, maxRequests - count),
+    resetAt,
   };
 }
