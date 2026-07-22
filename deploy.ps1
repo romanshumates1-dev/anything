@@ -67,6 +67,13 @@ if ($Mode -eq 'docker') {
   Pop-Location
   if ($b -ne 0) { Fail "next build failed (exit $b)" }
 
+  Say '  > checking client bundle for leaked secrets...' 'Yellow'
+  Push-Location $webDir
+  & cmd.exe /c 'node --env-file=.env scripts\check-secrets-in-bundle.mjs'
+  $sec = $LASTEXITCODE
+  Pop-Location
+  if ($sec -ne 0) { Fail 'secrets-in-bundle check failed - a secret value or secret-shaped literal was found in the client bundle (see output above). Never opening a broken/leaking build.' }
+
   Say '  > starting next start (:4000) + worker...' 'Yellow'
   Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'yarn start' -WorkingDirectory $webDir -WindowStyle Hidden `
     -RedirectStandardOutput (Join-Path $webDir 'prod-app.log') -RedirectStandardError (Join-Path $webDir 'prod-app.err.log')

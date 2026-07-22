@@ -149,6 +149,7 @@ grants ADMIN on first signup for any `SEED_ADMIN_EMAILS` address.
 - **Root directory:** `apps/web`
 - **Build command:** `yarn build`  (→ `next build`)
 - **Start command:** `yarn start`  (→ `next start`)  — Vercel handles this itself.
+- **Secrets-in-bundle check:** `yarn check:secrets-in-bundle` (run automatically by `deploy.ps1` right after the build, in the node path) greps `.next/static` — the actual client-shipped JS — for the literal value of every configured server-only secret plus known secret-shaped literal prefixes (`sk_live_`, `sk_test_`, `whsec_`, `sk-ant-`, a Postgres URL with embedded credentials). Fails the deploy if anything is found. Vercel doesn't run this by itself — if wiring it into a CI/CD build step later, run it as a post-build check with the same env the build used.
 
 **BLOCKED-ON-OWNER:** in the Vercel project **`anything-web`**, import the GitHub repo,
 set root dir `apps/web`, add the env vars from step 2 (use `apps/web/.env.example`
