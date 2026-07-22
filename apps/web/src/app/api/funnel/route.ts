@@ -10,7 +10,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
-export async function GET(request: Request) {
+export async function GET(_request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,16 +23,18 @@ export async function GET(request: Request) {
   const org = organization.id;
 
   try {
-    // Stage transition counts for the current organization
-    // Join with contracts to get organization scope
+    // Stage transition counts for the current organization.
+    // stage_transitions has no contract_id column (it keys off lead_id +
+    // campaign_id, both nullable/loosely-typed) — org scope comes from the
+    // lead, not a nonexistent contract join (bug #36: this 500'd on every
+    // call before).
     const stageCounts = await sql`
-      SELECT to_stage, COUNT(*) as count
+      SELECT st.to_stage, COUNT(*) as count
       FROM stage_transitions st
-      JOIN contracts c ON c.id = st.contract_id
-      WHERE c.organization_id = ${org}
+      JOIN leads l ON l.id = st.lead_id
+      WHERE l.organization_id = ${org}
         AND st.to_stage IS NOT NULL
-      GROUP BY to_stage
-      ORDER BY st.occurred_at ASC
+      GROUP BY st.to_stage
     `;
 
     // Build a funnel object with counts per stage
@@ -49,19 +51,21 @@ export async function GET(request: Request) {
       funnel[row.to_stage] = Number(row.count);
     }
 
-    // Also compute per-campaign stage counts
+    // Also compute per-campaign stage counts. stage_transitions carries its
+    // own campaign_id already — no join needed for this dimension, only for
+    // the org-scope filter (via the lead).
     const perCampaign = await sql`
       SELECT
-        c.id as contract_id,
-        c.id as campaign_id,
+        st.campaign_id,
         st.to_stage,
         COUNT(*) as count
       FROM stage_transitions st
-      JOIN contracts c ON c.id = st.contract_id
-      WHERE c.organization_id = ${org}
+      JOIN leads l ON l.id = st.lead_id
+      WHERE l.organization_id = ${org}
         AND st.to_stage IS NOT NULL
-      GROUP BY c.id, st.to_stage
-      ORDER BY c.created_at DESC
+        AND st.campaign_id IS NOT NULL
+      GROUP BY st.campaign_id, st.to_stage
+      ORDER BY MAX(st.occurred_at) DESC
       LIMIT 50
     `;
 
@@ -72,8 +76,8 @@ export async function GET(request: Request) {
         COALESCE((
           SELECT COUNT(*)
           FROM stage_transitions st
-          JOIN contracts c ON c.id = st.contract_id
-          WHERE c.organization_id = ${org}
+          JOIN leads l ON l.id = st.lead_id
+          WHERE l.organization_id = ${org}
             AND st.occurred_at::date = d::date
         ), 0) AS transitions
       FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, INTERVAL '1 day') d

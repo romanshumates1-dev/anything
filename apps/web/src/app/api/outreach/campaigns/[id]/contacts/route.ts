@@ -8,7 +8,7 @@ import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport'
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -16,7 +16,7 @@ export async function POST(
   }
 
   try {
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
     const organization = await getOrganization();
     if (!organization) {
       return NextResponse.json({ error: 'No organization found' }, { status: 403 });
@@ -73,8 +73,11 @@ export async function POST(
       const args: any[] = [];
       batch.forEach((c, idx) => {
         const contactId = crypto.randomUUID();
-        const base = idx * 4;
-        args.push(contactId, campaignId, organizationId, c.name, c.phone, 'QUEUED');
+        // 5 args per row (contactId, campaignId, organizationId, name, phone)
+        // — base MUST be idx*5, not idx*4, or every row past the first binds
+        // to placeholder numbers already claimed by the previous row.
+        const base = idx * 5;
+        args.push(contactId, campaignId, organizationId, c.name, c.phone);
         values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, 'QUEUED')`);
       });
 

@@ -7,7 +7,7 @@ import { logEvent } from '@/app/api/utils/logger';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -15,7 +15,7 @@ export async function POST(
   }
 
   try {
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
     const organization = await getOrganization();
     if (!organization) {
       return NextResponse.json({ error: 'No organization found' }, { status: 403 });

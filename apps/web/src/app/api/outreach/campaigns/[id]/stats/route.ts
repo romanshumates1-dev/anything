@@ -6,7 +6,7 @@ import { headers } from 'next/headers';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -14,7 +14,7 @@ export async function GET(
   }
 
   try {
-    const campaignId = params.id;
+    const { id: campaignId } = await params;
     const organization = await getOrganization();
     if (!organization) {
       return NextResponse.json({ error: 'No organization found' }, { status: 403 });
