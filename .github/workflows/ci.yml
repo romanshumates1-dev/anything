@@ -72,6 +72,14 @@ jobs:
       - name: Lint (oxlint)
         run: yarn dlx oxlint@1.58.0 --no-ignore apps/web/src
 
+      # Prompt 1 Phase 2 hard requirement: ALLOW_DEMO_SEED (which unlocks the
+      # ~1000-row fabricated-reviews seed script) must never be defined in a
+      # production-targeted env file, independent of the runtime NODE_ENV
+      # check the seed script itself does.
+      - name: Check ALLOW_DEMO_SEED absent from production env files
+        working-directory: apps/web
+        run: node scripts/check-no-demo-seed-in-prod-env.mjs
+
       # Full mocked unit/integration suite (242 tests): behavioral tests for
       # items 1-8 + approvals / pause-AI / rate-limit. All DB calls are mocked;
       # flows-live.test.ts self-skips without RUN_LIVE_FLOWS.

@@ -62,12 +62,21 @@ export async function POST(request: Request) {
     }
 
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    // Only a PENDING review can be moderated — otherwise an admin could flip
+    // an already-approved/rejected review back and forth outside the normal
+    // submit -> pending -> moderate flow.
     const [updated] = await sql`
-      UPDATE reviews 
+      UPDATE reviews
       SET status = ${newStatus}, admin_note = ${reason || null}, updated_at = now()
-      WHERE id = ${reviewId}
+      WHERE id = ${reviewId} AND status = 'pending'
       RETURNING id, status
     `;
+    if (!updated) {
+      return Response.json(
+        { error: { code: 'CONFLICT', message: 'Review is not pending (already moderated)' } },
+        { status: 409 }
+      );
+    }
 
     // Log to audit
     await sql`
