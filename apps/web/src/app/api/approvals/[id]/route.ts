@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { buildPriceLadder } from '@/app/api/services/priceLadder';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
+import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
 
 /**
  * Resolve an approval (session-authed, org-scoped). Money-moving route:
@@ -102,6 +103,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         leadId = lead?.id ?? null;
       }
       await enqueueJob('ai_reply', { leadId, negotiationId, organizationId: org }, { dedupeKey: `neg_turn_${negotiationId}` });
+
+      // Funnel analytics (P4): unblocking the negotiation is the real
+      // "negotiating" event. Reuses the leadId already resolved above for the
+      // AI-turn enqueue — best-effort, never blocks the approval.
+      if (leadId) {
+        await recordStageTransition({
+          leadId,
+          fromStage: 'ENGAGED',
+          toStage: 'NEGOTIATING',
+          channel: 'system',
+        });
+      }
 
       await logEvent('owner_range_approved', 'negotiation', String(negotiationId), { min, max, direction }, session.user.id);
 

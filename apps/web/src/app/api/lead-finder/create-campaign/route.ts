@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
 import { getOrganization } from '@/lib/organization-context';
+import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
 
 /**
  * Phase 4 handoff — "Create campaign from segment".
@@ -93,6 +94,9 @@ export async function POST(request: Request) {
       await sql`
         UPDATE sourced_leads SET handed_off_lead_id = ${lead.id} WHERE id = ${sl.id}
       `;
+      // Funnel analytics (P4): a handed-off lead-finder segment enters the
+      // funnel at NEW, same as any other lead. Best-effort.
+      await recordStageTransition({ leadId: lead.id, fromStage: null, toStage: 'NEW', channel: 'system' });
       created++;
     }
 

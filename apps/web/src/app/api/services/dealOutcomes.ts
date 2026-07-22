@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { recordStageTransition, resolveLeadIdByPhone } from '@/app/api/services/stageTransitionRecorder';
 
 export async function finalizeDeal(params: {
   organizationId: string;
@@ -32,11 +33,23 @@ export async function markDealNoAgreement(params: {
   contactId: string;
   contactPhone: string;
 }) {
-  const { organizationId, negotiationId, contactId } = params;
+  const { organizationId, negotiationId, contactId, contactPhone } = params;
 
   await sql`
     UPDATE campaign_contacts SET status = 'DEAL_NO_AGREEMENT', updated_at = now() WHERE id = ${contactId}
   `;
+
+  // Funnel analytics (P4): the real closed-lost event for a negotiation that
+  // didn't reach agreement. Best-effort, never blocks the outcome.
+  const leadId = await resolveLeadIdByPhone(contactPhone);
+  if (leadId) {
+    await recordStageTransition({
+      leadId,
+      fromStage: 'NEGOTIATING',
+      toStage: 'CLOSED_LOST',
+      channel: 'system',
+    });
+  }
 
   await logEvent('deal_no_agreement', 'negotiation', negotiationId, {}, organizationId);
 }

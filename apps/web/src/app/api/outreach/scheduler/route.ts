@@ -6,6 +6,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { CONSENT_BASIS_ATTESTED } from '@/app/api/utils/cadenceEngine';
+import { recordStageTransition, resolveLeadIdByPhone } from '@/app/api/services/stageTransitionRecorder';
 
 /**
  * POST /api/outreach/scheduler/run
@@ -110,6 +111,22 @@ export async function POST(_request: NextRequest) {
           await sql`
             UPDATE campaign_contacts SET status = 'SENT', last_message_at = now(), updated_at = now() WHERE id = ${contact.id}
           `;
+
+          // Funnel analytics (P4): QUEUED -> SENT is the real "contacted" event.
+          // campaign_contacts has no reliable lead_id column (seller_lead_id/
+          // buyer_lead_id are never populated by any contact-creation path), so
+          // resolve by phone — best-effort, never blocks the send.
+          const leadId = await resolveLeadIdByPhone(contact.phone);
+          if (leadId) {
+            await recordStageTransition({
+              leadId,
+              fromStage: 'NEW',
+              toStage: 'CONTACTED',
+              campaignId: campaign.id,
+              channel: 'sms',
+            });
+          }
+
           queued++;
         }
 

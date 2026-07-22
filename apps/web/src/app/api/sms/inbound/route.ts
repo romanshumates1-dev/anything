@@ -9,6 +9,7 @@ import { cancelCadence } from '../../utils/cadenceEngine';
 import { detectHumanRequest, handleHumanRequest } from '../../services/humanRequestDetector';
 import { isOptOutMessage } from '../../services/optOutDetection';
 import { registerOptOut } from '../../utils/compliance';
+import { recordStageTransition, resolveLeadIdByPhone } from '../../services/stageTransitionRecorder';
 
 /**
  * Inbound SMS webhook.
@@ -125,6 +126,20 @@ export async function POST(request: Request) {
         WHERE phone = ${from}
           AND status NOT IN ('OPTED_OUT', 'COLD', 'DEAL_NO_AGREEMENT', 'CONTRACT_SIGNED')
       `;
+
+      // Funnel analytics (P4): a real STOP is a closed-lost event. Best-effort
+      // — runs for every sender (even ones with no matching lead), so a miss
+      // here is expected and must never block the compliance response.
+      const optOutLeadId = await resolveLeadIdByPhone(from);
+      if (optOutLeadId) {
+        await recordStageTransition({
+          leadId: optOutLeadId,
+          fromStage: null,
+          toStage: 'CLOSED_LOST',
+          channel: 'inbound',
+        });
+      }
+
       await logEvent('sms_inbound_opt_out', 'sms', from, { text, ...(messageSid ? { messageSid } : {}) });
       if (isTwilioWebhook) {
         return new Response('<?xml version="1.0" encoding="UTF-8"?><Response/>', {

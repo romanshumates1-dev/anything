@@ -42,6 +42,50 @@ export async function recordStageTransition(transition: StageTransition): Promis
 }
 
 /**
+ * Record the SAME stage transition for many leads in one round trip (used by
+ * bulk lead creation, e.g. CSV import — up to MAX_IMPORT_ROWS/INSERT_CHUNK_SIZE
+ * rows per call). Calling recordStageTransition() once per row would be one
+ * network round trip per lead; this is one INSERT for the whole chunk instead.
+ * Best-effort, same as recordStageTransition: never throws, never blocks the
+ * caller's real business operation.
+ */
+export async function recordStageTransitionsBulk(
+  leadIds: number[],
+  toStage: string,
+  opts?: { fromStage?: string | null; campaignId?: string; channel?: string }
+): Promise<void> {
+  if (!leadIds || leadIds.length === 0) return;
+  try {
+    await sql`
+      INSERT INTO stage_transitions (lead_id, from_stage, to_stage, campaign_id, channel)
+      SELECT unnest(${leadIds}::bigint[]), ${opts?.fromStage || null}, ${toStage}, ${opts?.campaignId || null}, ${opts?.channel || null}
+    `;
+  } catch (error) {
+    console.error('[stageTransitionRecorder] Failed to record bulk transitions', error);
+  }
+}
+
+/**
+ * Resolve a lead's numeric id by phone number. Several transition points
+ * (campaign_contacts, inbound SMS) don't carry a real lead_id in scope —
+ * campaign_contacts.seller_lead_id/buyer_lead_id are never populated by any
+ * current write path — so phone is the only reliable join key back to
+ * `leads`, matching the pattern already used in
+ * approvals/[id]/route.ts and sms/inbound/route.ts. Best-effort: returns
+ * null (never throws) so a lookup miss never blocks the caller.
+ */
+export async function resolveLeadIdByPhone(phone: string | null | undefined): Promise<number | null> {
+  if (!phone) return null;
+  try {
+    const [lead] = await sql`SELECT id FROM leads WHERE phone = ${phone} LIMIT 1`;
+    return lead?.id ?? null;
+  } catch (error) {
+    console.error('[stageTransitionRecorder] Failed to resolve lead by phone', error);
+    return null;
+  }
+}
+
+/**
  * Backfill stage transitions from audit_logs for existing leads.
  * This is a best-effort operation; transitions that can't be determined
  * from audit logs are skipped.

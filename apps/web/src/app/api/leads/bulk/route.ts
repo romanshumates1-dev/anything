@@ -4,6 +4,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '../../utils/logger';
 import { recordRun } from '../../utils/execution-ledger';
+import { recordStageTransitionsBulk } from '@/app/api/services/stageTransitionRecorder';
 import {
   parseLeadsCsv,
   dedupeInBatch,
@@ -96,6 +97,10 @@ export async function POST(request: Request) {
       const query = `INSERT INTO leads (name, type, email, phone, source, dedupe_hash, organization_id) VALUES ${placeholders} RETURNING id`;
       const rows = await sql(query, values);
       inserted += rows.length;
+
+      // Funnel analytics (P4): every imported lead enters the funnel at NEW.
+      // One INSERT per chunk (not per row) — best-effort, never blocks import.
+      await recordStageTransitionsBulk(rows.map((r: any) => r.id), 'NEW', { channel: 'system' });
     }
 
     // 5. Persist failures (capped storage; first 1000 to avoid runaway rows).

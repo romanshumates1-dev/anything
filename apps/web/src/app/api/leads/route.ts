@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
 import { getOrganization } from '@/lib/organization-context';
+import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({
@@ -39,6 +40,11 @@ export async function POST(request: Request) {
     `;
 
     await logEvent('lead_created', 'lead', lead.id.toString(), { type, organization_id: organization.id }, session.user.id);
+
+    // Funnel analytics (P4): every new lead enters the funnel at NEW.
+    // Best-effort — recordStageTransition never throws, so this can never
+    // fail the actual lead-creation response.
+    await recordStageTransition({ leadId: lead.id, fromStage: null, toStage: 'NEW', channel: 'system' });
 
     return Response.json(lead);
   } catch (error: any) {

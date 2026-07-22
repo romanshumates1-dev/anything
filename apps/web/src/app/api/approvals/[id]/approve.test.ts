@@ -25,6 +25,9 @@ vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob }));
 const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
 vi.mock('@/lib/organization-context', () => ({ getOrganization: (...a: any[]) => getOrganization(...a) }));
 
+const { recordStageTransition } = vi.hoisted(() => ({ recordStageTransition: vi.fn(async () => {}) }));
+vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition }));
+
 import { POST } from './route';
 
 const req = (body: unknown) =>
@@ -58,6 +61,30 @@ describe('POST /api/approvals/[id] — owner-range accept', () => {
     expect(queryText("SET status = 'NEGOTIATING'")).toBe(true);
     expect(queryText("status = 'AWAITING_OWNER_RANGE'")).toBe(true);
     expect(enqueueJob).toHaveBeenCalledWith('ai_reply', expect.objectContaining({ negotiationId: 'cc-1', leadId: 6 }), expect.objectContaining({ dedupeKey: 'neg_turn_cc-1' }));
+
+    // BREAKAGE_TABLE.md session (s) follow-up: recordStageTransition was never
+    // called anywhere (funnel analytics permanently empty). Unblocking the
+    // negotiation is the real "negotiating" event; reuses the same leadId (6)
+    // already resolved above for the AI-turn enqueue.
+    expect(recordStageTransition).toHaveBeenCalledTimes(1);
+    expect(recordStageTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: 6, fromStage: 'ENGAGED', toStage: 'NEGOTIATING' })
+    );
+  });
+
+  it('does not record a stage transition when no lead matches the contact phone (best-effort)', async () => {
+    mockSql
+      .mockResolvedValueOnce([{ id: 'orr-1', negotiation_id: 'cc-1', direction: 'SELLER', property_context: { ai_min: 100000, ai_max: 120000 }, status: 'PENDING' }])
+      .mockResolvedValueOnce([{ negotiation_id: 'cc-1', direction: 'SELLER' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ phone: '+15025551234' }]) // SELECT contact phone
+      .mockResolvedValueOnce([]); // SELECT lead by phone -> no match
+
+    const res = await POST(req({ action: 'accept', range: 120000 }), P('orr-1'));
+    expect(res.status).toBe(200);
+    expect(enqueueJob).toHaveBeenCalledWith('ai_reply', expect.objectContaining({ leadId: null }), expect.anything());
+    expect(recordStageTransition).not.toHaveBeenCalled();
   });
 
   it('is idempotent: a second accept resolves nothing and does NOT re-write or re-enqueue', async () => {

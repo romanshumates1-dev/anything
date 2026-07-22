@@ -33,6 +33,12 @@ vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob: (...a: any[]) => enqueueJob
 
 vi.mock('@/app/api/utils/cadenceEngine', () => ({ CONSENT_BASIS_ATTESTED: 'manual-list-attested' }));
 
+const { recordStageTransition, resolveLeadIdByPhone } = vi.hoisted(() => ({
+  recordStageTransition: vi.fn(async () => {}),
+  resolveLeadIdByPhone: vi.fn(async () => null as number | null),
+}));
+vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition, resolveLeadIdByPhone }));
+
 import { POST } from './route';
 
 function req() {
@@ -133,5 +139,51 @@ describe('POST /api/outreach/scheduler/run', () => {
     const body = await res.json();
     expect(body.results).toEqual([{ campaignId: 'camp-1', queued: 0 }]);
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  // BREAKAGE_TABLE.md session (s) follow-up: recordStageTransition was never
+  // called anywhere (funnel analytics permanently empty). QUEUED -> SENT is
+  // the real "contacted" event.
+  it('records a CONTACTED stage transition for every contact actually marked SENT', async () => {
+    enqueueJob.mockResolvedValueOnce('job-1').mockResolvedValueOnce('job-2');
+    resolveLeadIdByPhone.mockResolvedValueOnce(501).mockResolvedValueOnce(502);
+    mockSql
+      .mockResolvedValueOnce([CAMPAIGN])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(CONTACTS)
+      .mockResolvedValueOnce([OPENING])
+      .mockResolvedValueOnce([]) // UPDATE campaign_contacts (c1)
+      .mockResolvedValueOnce([]) // UPDATE campaign_contacts (c2)
+      .mockResolvedValueOnce([]); // INSERT campaign_daily_send_logs
+
+    const res = await POST(req());
+    expect(res.status).toBe(200);
+
+    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550001');
+    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550002');
+    expect(recordStageTransition).toHaveBeenCalledTimes(2);
+    expect(recordStageTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: 501, fromStage: 'NEW', toStage: 'CONTACTED', campaignId: 'camp-1', channel: 'sms' })
+    );
+    expect(recordStageTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: 502, toStage: 'CONTACTED' })
+    );
+  });
+
+  it('does not record a transition when no lead matches the contact phone (best-effort)', async () => {
+    enqueueJob.mockResolvedValueOnce('job-1').mockResolvedValueOnce('job-2');
+    resolveLeadIdByPhone.mockResolvedValue(null);
+    mockSql
+      .mockResolvedValueOnce([CAMPAIGN])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(CONTACTS)
+      .mockResolvedValueOnce([OPENING])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const res = await POST(req());
+    expect(res.status).toBe(200);
+    expect(recordStageTransition).not.toHaveBeenCalled();
   });
 });
