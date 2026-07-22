@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -53,12 +54,12 @@ export default function HowItWorksPage() {
                 </li>
               </ul>
             </div>
-            <ImagePlaceholder label="Lead Import Screenshot" />
+            <ScreenshotFrame src="/screenshots/lead-import.png" alt="Lead import screen showing bulk CSV/paste import and single-lead form" />
           </div>
 
           {/* Step 2: AI SMS Outreach */}
           <div className="grid md:grid-cols-2 gap-8 items-center">
-            <ImagePlaceholder label="Campaign Wizard Screenshot" className="md:order-2" />
+            <ScreenshotFrame src="/screenshots/campaign-wizard.png" alt="Campaign wizard's Basics step: name, direction, contact source, and opening message" className="md:order-2" />
             <div>
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-blue-100 mb-4">
                 <span className="text-2xl font-bold text-blue-600">2</span>
@@ -111,12 +112,12 @@ export default function HowItWorksPage() {
                 </li>
               </ul>
             </div>
-            <ImagePlaceholder label="Negotiation Panel Screenshot" />
+            <ScreenshotFrame src="/screenshots/negotiation-panel.png" alt="Live SMS negotiation thread between the AI and a seller" />
           </div>
 
           {/* Step 4: Milestone Notification */}
           <div className="grid md:grid-cols-2 gap-8 items-center">
-            <ImagePlaceholder label="Notification Screenshot" className="md:order-2" />
+            <ScreenshotFrame src="/screenshots/notification.png" alt="Approvals feed showing resolved owner-range and contact-message notifications" className="md:order-2" />
             <div>
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-blue-100 mb-4">
                 <span className="text-2xl font-bold text-blue-600">4</span>
@@ -169,7 +170,7 @@ export default function HowItWorksPage() {
                 </li>
               </ul>
             </div>
-            <ImagePlaceholder label="Contract Preview Screenshot" />
+            <ScreenshotFrame src="/screenshots/contract-preview.png" alt="Signed contracts list with inspection window and assignment terms" />
           </div>
         </div>
 
@@ -193,11 +194,17 @@ export default function HowItWorksPage() {
   );
 }
 
-function ImagePlaceholder({ label, className }: { label: string; className?: string }) {
+function ScreenshotFrame({ src, alt, className }: { src: string; alt: string; className?: string }) {
   return (
     <div className={`bg-gray-50 rounded-2xl p-6 border ${className || ''}`}>
-      <div className="aspect-video bg-gray-200 rounded-lg flex items-center justify-center">
-        <span className="text-gray-500 text-sm">{label}</span>
+      <div className="aspect-video relative overflow-hidden rounded-lg bg-gray-100">
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          sizes="(min-width: 768px) 40vw, 90vw"
+          className="object-cover object-left-top"
+        />
       </div>
     </div>
   );
