@@ -9,6 +9,7 @@
  * Live Stripe keys are OWNER-GATED.
  */
 import { logEvent } from '@/app/api/utils/logger';
+import { validateStripeSignature } from '@/app/api/utils/stripe-webhook';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -155,13 +156,16 @@ export class LiveStripeProvider implements StripeProvider {
   }
 
   verifyWebhook(params: VerifyWebhookParams): boolean {
-    // LIVE: Verify Stripe webhook signature
-    // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    // try {
-    //   stripe.webhooks.constructEvent(params.body, params.signature, process.env.STRIPE_WEBHOOK_SECRET!);
-    //   return true;
-    // } catch { return false; }
-    return params.signature === 'stripe-valid';
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error('[stripeProvider] STRIPE_WEBHOOK_SECRET not configured — rejecting webhook');
+      return false;
+    }
+    return validateStripeSignature({
+      body: params.body,
+      signatureHeader: params.signature,
+      secret,
+    });
   }
 
   parseWebhookEvent(body: string, signature: string): WebhookEvent {

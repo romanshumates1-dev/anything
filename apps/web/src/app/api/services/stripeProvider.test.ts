@@ -1,8 +1,19 @@
 /**
  * Phase P2 — Stripe provider tests.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import crypto from 'node:crypto';
 import { MockStripeProvider, LiveStripeProvider, resetStripeProvider, getStripeProvider } from './stripeProvider';
+
+const WEBHOOK_SECRET = 'whsec_test_secret_123';
+
+function signStripeBody(body: string, timestampSeconds = Math.floor(Date.now() / 1000)): string {
+  const signature = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(`${timestampSeconds}.${body}`)
+    .digest('hex');
+  return `t=${timestampSeconds},v1=${signature}`;
+}
 
 describe('MockStripeProvider', () => {
   let provider: MockStripeProvider;
@@ -54,6 +65,16 @@ describe('MockStripeProvider', () => {
 
 describe('LiveStripeProvider', () => {
   let provider: LiveStripeProvider;
+  let originalSecret: string | undefined;
+
+  beforeAll(() => {
+    originalSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  });
+
+  afterAll(() => {
+    process.env.STRIPE_WEBHOOK_SECRET = originalSecret;
+  });
 
   beforeEach(() => {
     provider = new LiveStripeProvider();
@@ -71,13 +92,38 @@ describe('LiveStripeProvider', () => {
     expect(result.status).toBe('created');
   });
 
-  it('verifyWebhook accepts valid signature', () => {
-    expect(provider.verifyWebhook({ body: '{}', signature: 'stripe-valid' })).toBe(true);
+  it('verifyWebhook accepts a real HMAC-signed payload', () => {
+    const body = '{"type":"payment_intent.succeeded"}';
+    expect(provider.verifyWebhook({ body, signature: signStripeBody(body) })).toBe(true);
   });
 
-  it('verifyWebhook rejects invalid signature', () => {
+  it('verifyWebhook rejects a tampered body (signature no longer matches)', () => {
+    const body = '{"type":"payment_intent.succeeded"}';
+    const sig = signStripeBody(body);
+    const tamperedBody = '{"type":"payment_intent.succeeded","amount":999999999}';
+    expect(provider.verifyWebhook({ body: tamperedBody, signature: sig })).toBe(false);
+  });
+
+  it('verifyWebhook rejects a garbage/malformed signature header', () => {
     expect(provider.verifyWebhook({ body: '{}', signature: 'invalid' })).toBe(false);
     expect(provider.verifyWebhook({ body: '{}', signature: '' })).toBe(false);
+  });
+
+  it('verifyWebhook rejects a stale (replayed) timestamp outside tolerance', () => {
+    const body = '{"type":"payment_intent.succeeded"}';
+    const tenMinutesAgo = Math.floor(Date.now() / 1000) - 600;
+    expect(provider.verifyWebhook({ body, signature: signStripeBody(body, tenMinutesAgo) })).toBe(false);
+  });
+
+  it('verifyWebhook rejects when STRIPE_WEBHOOK_SECRET is not configured', () => {
+    const body = '{"type":"payment_intent.succeeded"}';
+    const sig = signStripeBody(body);
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+    try {
+      expect(provider.verifyWebhook({ body, signature: sig })).toBe(false);
+    } finally {
+      process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    }
   });
 });
 
