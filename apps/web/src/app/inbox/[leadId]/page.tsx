@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, ArrowLeft, Send, Pause, Play, User, Bot, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import NegotiationPanel from '@/components/negotiation/NegotiationPanel';
 
 interface Message {
   id: string;
@@ -85,6 +86,9 @@ export default function InboxThreadPage({ params }: { params: Promise<{ leadId: 
             </Button>
           </div>
         </div>
+
+        {/* Phase A.4: bounded AI negotiation panel (renders only when the flag is on) */}
+        <NegotiationPanel leadId={leadId} />
 
         <Card>
           <CardContent className="p-4 space-y-3">

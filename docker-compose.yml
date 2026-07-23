@@ -21,7 +21,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: dealflow-ai:latest
-    env_file: .env
+    env_file: apps/web/.env
     environment:
       PORT: 4000
       NODE_ENV: production
@@ -42,7 +42,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: ["node", "apps/web/scripts/worker.mjs"]
-    env_file: .env
+    env_file: apps/web/.env
     environment:
       APP_URL: http://app:4000
       JOB_POLL_INTERVAL_MS: "3000"

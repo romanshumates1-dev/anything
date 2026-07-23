@@ -364,24 +364,178 @@ Unparks the DEFERRED valuation item SAFELY: profiles tune OWNER-facing suggestio
 
 ---
 
-## PHASE C — Containers (artifacts authored + verifiable pieces PROVEN; Docker runtime BLOCKED on this host)
+## PHASE Q — Pre-launch atomic debug + SaaS polish (verified slices + honest gaps)
 
-| Feature | File(s) | How verified (exact command) | Actual observed result | Status |
+| Item | How verified (exact command) | Actual observed result | Status |
+|---|---|---|---|
+| **Q.2 route console matrix** | `node --env-file=.env scripts/route-sweep.mjs` (admin, live server) | **14/14 authenticated routes: status 200, 0 console errors, real heading (no blank panes)** — dashboard/readiness/analytics/leads/import/crm/inbox/campaigns/wizard/approvals/contracts/lead-finder/settings/users. Branded 404 renders (status 404, notFound text). **TOTAL app console errors: 0** | **VERIFIED** |
+| Q.1 secret-in-bundle | grep every `'use client'` component for `process.env.<NON-PUBLIC>` | **zero hits** — no client component references a server secret (only NEXT_PUBLIC_/NODE_ENV) | **VERIFIED** |
+| Q.1 typecheck 0 · lint 0 | `tsc -p tsconfig.typecheck.json` (4GB heap); `oxlint --no-ignore` | tsc **exit 0**; oxlint **0 errors** (40 warnings in test files only) | **VERIFIED** |
+| Q.3 branded error boundary + 404 | `src/app/error.tsx`, `not-found.tsx` + route sweep | both present; 404 verified rendering in the sweep | **VERIFIED** |
+| Q.3 leads CSV export | `src/app/api/leads/export/route.ts` | route present (sweep); end-to-end download not yet driven | **PARTIAL — authored, not driven** |
+| Q.4 design tokens | `src/app/api/utils/design-tokens.ts` | tokens file present (sweep); full hardcoded-hex replacement across components NOT audited | **PARTIAL** |
+| **Q.1 error envelope / zod / general rate-limit** | grep repo | **NOT-BUILT**: no shared error-envelope helper; **zero zod usage** anywhere in the API; rate-limiting only ad-hoc (OTP, v1/auth), not on auth+public generally. The sweep commit `aeb875e` did NOT deliver these despite the plan naming them | **NOT-BUILT (honest)** |
+| **Q Lighthouse perf target** | prod-build Lighthouse (FINAL_STATE, sweep) | a11y **91–96 (meets ≥90)**; **perf 66–77 — BELOW the ≥85 target** on /campaigns, /wizard, /inbox. NOT met; logged, not claimed | **BELOW TARGET (honest)** |
+| Q.2 per-surface loading/empty/error states | route sweep confirms render + no errors | routes render populated; exhaustive empty/error-state audit per data surface not performed | **PARTIAL** |
+
+---
+
+## PHASE G — 3D globe blank-blue-mesh FIX (v4)  ✅ VERIFIED (screenshot evidence)
+
+**Root cause (diagnosed by reading, NOT the texture-404 the prompt guessed):** `CampaignGlobe.tsx` is a hand-rolled 2D canvas orthographic projection (no three.js). Its `draw()` rendered only an ocean gradient + graticule + prospect dots — **no land/country geometry existed anywhere in the code** (no TopoJSON, no TextureLoader, no `map:`). The blue-sphere-with-grid was all it was ever coded to draw. Matches the prompt's alternate hypothesis: "a plain color material with no map at all."
+
+| Feature | File(s) | How verified | Actual observed result | Status |
 |---|---|---|---|---|
-| **Production worker drains the queue** | `apps/web/scripts/worker.mjs` | enqueue job → `timeout 6 node scripts/worker.mjs` against the live server | `[worker] drained 1 job(s)` → job status `completed`. Graceful SIGTERM/SIGINT; never-overlapping polls; env-tunable interval. **This is the always-on mechanism that closes INT-1 prod-SLA once hosted** | **VERIFIED (native)** |
-| **Migration runner: 13/13 idempotent** | `apps/web/scripts/migrate.mjs` | `node --env-file=.env scripts/migrate.mjs` | `done — 13/13 applied (idempotent)` incl. 012 profile seeds + 013 versioning. **Two real bugs found by running it**: (#15) naive `;` split corrupted the dollar-quoted `DO $$` block in 005; (#16) after fixing that, a `;` inside a `--` comment in 003 split mid-comment. Splitter now dollar-quote-, string-, and comment-aware; RED→GREEN both times | **VERIFIED** |
-| Multi-stage Dockerfile + compose + .dockerignore | `Dockerfile`, `docker-compose.yml` | authored + committed (17efb68 + aeb875e) | node:20-alpine deps→build→runner, non-root, HEALTHCHECK on `/api/system/health`, standalone output; compose: app + worker (`depends_on: service_healthy`) + optional `ollama` profile | **AUTHORED — runtime smoke BLOCKED** |
-| `docker compose up` smoke + fuzz-in-container + worker-restart test | — | `docker --version` | **`docker: command not found` — Docker Desktop not installed on this host.** Per rule 9: install pointer → https://docs.docker.com/desktop/install/windows-install/ (needs WSL2). Container smoke rows stay BLOCKED, not faked | **OWNER-BLOCKED (install Docker Desktop)** |
-| DB note (premise honesty) | compose header comment | code review | app uses `@neondatabase/serverless` (HTTP/WS) — a vanilla `postgres:16-alpine` service CANNOT serve it without Neon wsproxy; compose deliberately ships app+worker against Neon rather than a ghost DB service | **VERIFIED (documented)** |
+| **Happy path: continents/countries/islands render** | `CampaignGlobe.tsx`, `public/geo/land-50m.json`, `scripts/build-geo.mjs` | `node scripts/globe-geo-verify.mjs` → `e2e/.proof/globe.png` (viewed) | Screenshot shows N/S America, Africa, Europe, **Caribbean islands**, country borders, graticule, dark ocean + muted-green land. Prospect dot overlay still projects correctly | **VERIFIED** |
+| Bundled data, ZERO external CDN | `public/geo/land-50m.json` (committed) | `GET /geo/land-50m.json` | 200, **1617 rings**, 961KB. Natural Earth 50m (world-atlas@2) fetched ONCE at author time via `build-geo.mjs` (manual TopoJSON arc decoder, no runtime dep) and committed. 1352 island rings preserved (50m not 110m) | **VERIFIED** |
+| Console clean on happy path | analytics route | globe-geo-verify | `console clean (0)` | **VERIFIED** |
+| **Hard-failure fallback (impossible-blank guard)** | `CampaignGlobe.tsx` | `page.route('**/geo/land-50m.json').abort()` → `e2e/.proof/globe-fallback.png` (viewed) | Screenshot shows graticule + **"geo data unavailable / (showing grid only)"** label; console logged **`[globe] GEO LOAD FAILED: <reason>`**. Blank blue is now impossible | **VERIFIED** |
+| Loading state | `CampaignGlobe.tsx` | code + render | "loading geography…" shimmer until the asset applies | **VERIFIED** |
+| Rotation/interaction/overlays untouched | `CampaignGlobe.tsx` | screenshot + code | same `project()`, drag/auto-rotate, prospect dots all preserved (dot visible on US coast) | **VERIFIED** |
+| Typecheck | — | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
 
-## PHASE D — CI/CD (pipeline extended; green-run evidence pending on GitHub)
+---
 
-| Feature | Evidence | Status |
+## PHASE B1 (v4) — "can't add/verify test #s" FIXED  ✅ VERIFIED (3 real bugs, diagnosis-first)
+
+**Diagnosis (rule 4, before any fix):** the routes (GET/POST/verify/DELETE) and the settings UI were all already wired — this was NOT a ghost feature. Three concrete DB/route bugs made add/verify/delete fail:
+
+| Bug | Root cause | Fix | Evidence |
+|---|---|---|---|
+| **#14** | `test_phone_otp_log` table never created → OTP rate-limit query 500s on add | migration 011 | live add → 409 not 500 (P3 verify) |
+| **#18** | `test_phone_numbers.attempts` column never created, but POST INSERT + verify route both reference it → add INSERT 500s for any normal number (P3's DNC number short-circuited to 409 before the INSERT, hiding it) | migration 014 (`ADD COLUMN IF NOT EXISTS attempts`) | live add + verify now green |
+| **#19** | DELETE route read `props.params.id` synchronously; Next 16 `params` is a Promise → `undefined` → matched no row → 404 (same class as the API-key revocation fix) | `await props.params` | live DELETE → 200, row removed |
+
+| Feature | How verified | Actual observed result | Status |
+|---|---|---|---|
+| Verify state machine | `vitest run otp-limits.test.ts` | **8/8**: rate-limit (4th/hr→429), cap (6th number→400), wrong code→400+attempts, attempts≥3→429 (code invalidated), expiry→400, valid→verified 200 | **VERIFIED** |
+| Full add→verify→delete cycle (live, no real SMS) | live script: seed known OTP, drive real routes | wrong code→400 · correct→**verified 200** · GET list includes it · **DELETE→200** · row removed | **VERIFIED** |
+| Migration runner idempotent | `node scripts/migrate.mjs` | **14/14 applied** (restored the dollar-quote/comment-aware splitter that the tree churn had dropped) | **VERIFIED** |
+| Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
+
+**Premise correction (rule 1/5 — no duplicate feature):** v4 B1 specs a NEW `verified_numbers` table, but `test_phone_numbers WHERE verified=true` already IS that allowlist. Building a parallel table would be a ghost duplicate. **Phase T will read the existing table as its demo-mode allowlist** — not a new one.
+
+---
+
+## PHASE H (v4) — System Health page (was: does not exist)  ✅ VERIFIED
+
+Admin `/system-health`: single aggregation endpoint `GET /api/system/dashboard` (admin-gated) powers 8 service tiles, 10s auto-refresh, green/amber/red with thresholds documented in the route. Reuses BetaFlagsCard + EventLogPanel. Nothing leaks onto the public liveness probe (split preserved).
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Dashboard aggregates 8 tiles | `api/system/dashboard/route.ts` | live admin GET | **8 tiles** returned: db, jobs, worker, ai, sms, voice, quietHours, numberPool; each with green/amber/red + overall | **VERIFIED** |
+| DB tile (latency) | same | live | `green (67ms)` — thresholds green<300 / amber<1500 / red on error | **VERIFIED** |
+| Admin-gated (public split preserved) | same | `curl /api/system/dashboard` (no session) | **401**; page `/system-health` 200 (client auth) | **VERIFIED** |
+| Page renders tiles, console clean | `system-health/page.tsx` | Playwright admin load | tiles grid + jobs tile render; **0 console errors** | **VERIFIED** |
+| **Kill-worker → jobs tile RED (≤1 refresh)** | dashboard `jobsTile` | killed jobs-dev PID + inserted overdue job | jobs tile computed **red** (due 1, oldest lag **203s** > 120s threshold). Worker restarted → back to **green** (due 0, lag 0s) | **VERIFIED** |
+| Beta flags panel + Event Log tail | reuse existing components | page | both mount on the page | **VERIFIED** |
+| Typecheck | `tsc` (4GB heap) | exit 0 | **VERIFIED** |
+
+**Design:** the jobs tile's oldest-pending-lag IS the worker liveness signal (a dead worker makes lag climb) — no separate heartbeat table needed. SMS tile shows mock/twilio-demo/twilio-live (amber on live = pre-A2P caution); quiet-hours tile is labeled server-clock (the gate enforces per-lead local time per-send).
+
+---
+
+## PHASE V (v4) — profit-floor + two-sided assignability economics  ✅ VERIFIED (core)
+
+Extends the Phase-N valuation engine with the realistic-wholesale fee economics the owner asked for ($3k floor). Pure/deterministic, owner-facing only — the escalation invariant is untouched (AI never emits these numbers).
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Fee bands: $3k floor / $10k target / $30k stretch (defaults + per-profile) | `valuationEngine.ts feeEconomics` | `vitest run dealEconomics.test.ts` (12) | defaults 3000/10000/30000; luxury override 50k/100k/200k; market_multiplier 1.5× → 4500/15000/45000 | **VERIFIED** |
+| Two-sided seller+buyer math | `computeDealEconomics` | same | ARV 200k/repairs 40k → buyer_max 100k, seller_max 97k (clears $3k floor), seller_suggest 90k (hits $10k target), opener 73.8k; buyer ask_min contract+floor, ask_open min(contract+stretch, buyer_max) | **VERIFIED** |
+| **7–14-day assignability guarantee** | `computeDealEconomics` | same | ASSIGNABLE ⇔ contract + floor ≤ buyer_max: at seller_suggest→assignable; at seller_max (fee==floor)→assignable (boundary); override above seller_max→**THIN DEAL + not assignable** with warning in trace | **VERIFIED** |
+| Never NaN / garbage rejected | same | same | ARV 0 / negative repairs → `valid:false`, assignable null | **VERIFIED** |
+| Bands persisted per profile | `migration 015`, store `toProfile` | live DB | standard 3k/10k/30k · premium 5k/25k/40k · luxury 50k/100k/200k; `market_multiplier` on campaigns | **VERIFIED** |
+| Full suite + typecheck | all | run | **495 passed / 45 skipped / 0 failed** (66 files); tsc 0; migrate 15/15 | **VERIFIED** |
+
+**Scope (honest):** delivered the deterministic economics CORE (the "$3k–30k fee, realistic price, assignable in the inspection window" math). **Remaining Phase V:** inspection-period countdown clock on the contract card + day-3/day-N−2 urgency notifications (UI + scheduled hooks), and **Phase A** (bounded autonomous negotiation: `computeNextOffer` ladder + dispatchGate numeric guard + 100/100 ceiling fuzz + 20/20 guard + flag-off 150/150 regression) — logged as the next build, not started.
+
+---
+
+## PHASE V-R (v5) — inspection clock UI + urgency notifications  ✅ VERIFIED
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Clock math: calendar-day, owner-tz, DST-safe | `utils/inspectionClockCore.ts` | `vitest run inspectionClock.test.ts` (16) | signing day = day 1; 11pm-signed → day 2 next morning (calendar, not 24h blocks); Nov fall-back counts 7 days exactly; window clamped 7–14 | **VERIFIED** |
+| Stage ramp green→amber→red→expired | same | fake-clock transitions | day4 green (6 left) → day5 amber (5 ≤ half) → day8 red (2 left) → day11 expired | **VERIFIED** |
+| **Chip renders all stages live** | `InspectionClockChip.tsx`, contracts page + API | `node scripts/vr-verify.mjs` → `e2e/.proof/inspection-clock.png` (viewed) | screenshot shows **"Day 1 of 10 — 9 days to assign" (green), "Day 6 of 10 — 4 days" (amber), "Day 8 of 10 — 2 days" (red)** + Assigned chip; console clean | **VERIFIED** |
+| Day-N−2 floor math | `lowestViableAsk` | unit + live | lowest ask = contract + $3k floor ($85k → **$88,000**); cut never negative at boundary; unknown price → null → "recommend exit/renegotiation", no fake number | **VERIFIED** |
+| Urgency hooks exactly-once | `scheduleInspectionUrgency`, jobs case `inspection_urgency` | live: insert job w/ dedupe key → real drain loop fires handler | **exactly ONE** PENDING `human_approvals` row (INSPECTION_FINAL) carrying $88,000; re-schedule with same key → still one (index collapse); assigned contract → **zero** notifications | **VERIFIED** |
+| Restart-safe | dedupe keys on the durable jobs table | design + live re-schedule test | same-key re-add no-ops; state re-checked at fire time | **VERIFIED** |
+| Migration 016 idempotent (with rollback note) | `016_inspection_clock.sql` | `migrate.mjs` | **16/16 applied**; inspection_days CHECK 7–14 | **VERIFIED** |
+| Suite + typecheck | all | full run | **511 passed / 45 skipped / 0 failed** (67 files); tsc 0 | **VERIFIED** |
+
+---
+
+## PHASE A (v5) — bounded autonomous negotiation, core  ✅ VERIFIED (UI panel = logged remaining surface)
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| **100/100 ceiling fuzz on COMPUTED numbers** | `negotiationEngine.computeNextOffer`, `__tests__/p3/ceiling-fuzz.test.ts` | `vitest run` | 50 seller + 50 buyer randomized adversarial sequences: seller never exceeds max, buyer never dips below floor, concessions strictly decreasing (40→25→15→10% of remaining gap), walk-away at bound; degenerate geometry → immediate walk-away | **VERIFIED** |
+| Fuzz bites (mutation) | same | clamp removed ×3 overshoot | `offer 17656171 EXCEEDS max 17089057` → RED; restored → green. (First probe at ×1.8 was too weak — 0.4×1.8=0.72 of gap never crosses; documented so nobody mistakes probe strength for fuzz weakness) | **VERIFIED** |
+| **20/20 numeric-guard blocks** | `numericGuard` + gate | same | confirm-above-max, wrong-number, multi-number, bare digits, k-suffix, spelled-amount injections, slot-evasion — **all 20 blocked**; the one legitimate shape (prose + injected `{OFFER}` slot = computed figure) passes | **VERIFIED** |
+| Template-slot injection (model never types the number) | `injectOffer`, `OFFER_SLOT` | unit | exactly-one-slot enforced (0 or 2 slots → throw); `$87,500` formatting canonical | **VERIFIED** |
+| Guard wired at the chokepoint | `dispatchGate` NUMERIC_GUARD (3.4), `sms-gateway` | gateway test | denial → **zero provider sends**, `numeric_guard_blocked` event, `NUMERIC_GUARD_BLOCK` human_approvals escalation row; final text + sessionId reach the gate | **VERIFIED** |
+| Preconditions (A.0) server-side | `startSession`, sessions route | session tests 12/12 | flag OFF → refused (store untouched); no owner approval → refused; invalid range → refused; route resolves the range from a real ANSWERED `owner_range_requests` row | **VERIFIED** |
+| Counter flow | `advanceRound`, `parseCounterCents` | same | inside bound → **agreed** + NEGOTIATION_AGREED approval (no counter-offer sent); unparseable ("my cousin says…", word-amounts) → **paused + escalated, nothing sent — never guesses**; past max rounds → walk-away + notification | **VERIFIED** |
+| Restart no-duplicate-offer | dedupe `negoffer:{session}:{round}` | same | 3 repeated attempts at the same round → the SAME key every time (jobs unique index collapses) | **VERIFIED** |
+| Pause / take-over cancels queue | `pauseSession` + route | same | status→paused; pending `negoffer:*` jobs → cancelled (2 cancelled in test); pause route deliberately NOT flag-gated | **VERIFIED** |
+| **Flag-off regression** | escalation fuzzes | full run | 50/50 baseline + **150/150 per-profile UNCHANGED** in the same suite run | **VERIFIED** |
+| Migration 017 idempotent | `negotiation_sessions` + partial unique active index | migrate | **17/17 applied** | **VERIFIED** |
+| Suite + typecheck | all | full run | **530 passed / 45 skipped / 0 failed** (69 files); tsc 0 | **VERIFIED** |
+
+**Remaining surface (honest, not ghost-wired):** A.4 UI — per-lead toggle (visible only under preconditions), live timeline, inline pause button. The API it will call (`GET/POST /api/negotiation/sessions`, `POST …/pause`) is built, precondition-enforcing, and tested; no UI stub was shipped.
+
+---
+
+## PHASE T-safety (v5) — twilio-demo driver, allowlist gate (headline OWNER-GATED)  ✅ VERIFIED
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| SMS mode resolver (mock/twilio-demo/twilio-live) | `utils/smsMode.ts` | `vitest run demoAllowlist.test.ts` (7) | mode from config + `twilioDemo` flag; reused by the System Health SMS tile | **VERIFIED** |
+| **Demo allowlist gate (safety property)** | `dispatchGate` step 2.5, `smsMode.isVerifiedDemoRecipient` | same | demo ON + recipient NOT in `test_phone_numbers(verified=true)` → **DEMO_NOT_VERIFIED**; verified → allowed; demo OFF / mock → allowlist not consulted; **DNC still outranks**; voice/rvm not demo-gated | **VERIFIED** |
+| **Skipped send = ZERO SDK calls** | gateway + real gate | same (spy provider) | real dispatchGate returns DEMO_NOT_VERIFIED → `sdkCalls === 0`, `gateCode DEMO_NOT_VERIFIED`. Cold lists physically cannot receive demo traffic | **VERIFIED** |
+| Reuses B1 allowlist (no duplicate table) | `test_phone_numbers WHERE verified=true` | code | the verified-numbers table IS the allowlist | **VERIFIED** |
+| Inbound webhook signature validation | `sms/inbound/route.ts`, `twilio-inbound.test.ts` | existing suite | valid signature → parsed + enqueued; tampered → **403** | **VERIFIED** |
+| `twilioDemo` flag OFF by default | `betaFlags.ts` | flag defaults | OFF; toggles live via admin route | **VERIFIED** |
+| Demo banner (amber, allowlist-only copy) | `DemoModeBanner.tsx` in Shell | code + typecheck | renders only when flag ON; "DEMO MODE — messages deliver only to your verified numbers. No cheap A2P bypass" | **VERIFIED** |
+| System Health SMS tile shows mode | `system/dashboard smsTile` (Phase H) | H verify | mock / twilio-demo / twilio-live | **VERIFIED** |
+| toll-free driver STUB + `// LIVE:` markers | `providers.ts TollFreeStub` | code | same ISMSProvider interface; verificationStatus gate (unverified→throws); full `calls`/`messages.create` sketch behind `// LIVE:` | **VERIFIED** |
+| **Headline: real send → SID (OWNER-GATED, A2P)** | `demoHeadline.ownergated.test.ts` | `describe.skipIf(!ARMED)` | pre-written, TAGGED not forgotten; one-command path documented (`RUN_DEMO_HEADLINE=1 … yarn workspace web test -- demoHeadline`); arming-contract test always runs | **OWNER-GATED (A2P)** |
+| Suite + typecheck | all | full run | **538 passed / 46 skipped / 0 failed**; tsc 0 | **VERIFIED** |
+
+**Honest engineering note (encoded in `smsMode.ts` + banner copy):** there is NO legitimate cheap high-limit bypass of A2P for cold traffic — unregistered routes get carrier-filtered. Demo = allowlist-only. The legit higher-throughput path is toll-free verification (stub + DEPLOY.md).
+
+## CI/CD (Phase D) — pipeline now RUNS (was invalid YAML → 0s failures)
+
+| Item | Evidence | Status |
 |---|---|---|
-| Branch pushed with full history | `git push -u origin feat/mvp-prelaunch` → `[new branch]` at `aeb875e` (11 verified commits) | **VERIFIED** |
-| CI stages: typecheck → lint(oxlint --no-ignore) → unit → desktop → flows-live | `.github/workflows/ci.yml` (extended in place, no parallel pipeline) | **VERIFIED (authored)** |
-| Docker build + container smoke + GHCR push stage | drafted in ci.yml but **commented out** — requires Docker-capable runner config + GHCR perms decision by owner | **OWNER-BLOCKED** |
-| PR template requiring BREAKAGE rows · CHANGELOG.md · DEPLOY.md runbook · .env.example | committed in `aeb875e` | **VERIFIED (authored)** |
-| One green pipeline run URL | push just triggered CI; `gh` CLI unauthenticated on this host (`gh auth login` needed) — check https://github.com/romanshumates1-dev/anything/actions | **OWNER-BLOCKED (gh auth)** |
+| Workflow valid + triggers | PR #4 → run **29620039261** went `in_progress` (not 0s); **Web ✓ · Desktop ✓** | **VERIFIED** |
+| **Bug #20 (CI infra)** — Layer C failed: `relation "inbound_latency" does not exist` | schema.sql bootstrap was **stale** (missing migrations 009–017); e2e job's hardcoded migration list stopped at 012. **Fixed:** both DB jobs now apply `schema.sql + campaign-pipeline + migrations/*.sql` via a glob loop (psql handles dollar-quotes/comments; migrations idempotent) | **FIXED (re-run pending)** |
 
-**Save-point bugs (found while executing the owner save order):** (#17) the parallel Phase-Q sweep left 2 typecheck breaks (`providers.ts` `_providerId` rename still referenced as `providerId`; campaigns route destructured non-existent `_contactListId`) — fixed before push, tsc 0.
+**GREEN PIPELINE RUN (Phase D DoD):** run **29620039261**→fixed→**[29632475443 completed success](https://github.com/romanshumates1-dev/anything/actions/runs/29632475443)** — Web ✓ · Desktop ✓ · Layer C (live DB) ✓ · E2E (Playwright 10-step) ✓ — on PR #4 (feat/mvp-prelaunch → main). No image tag yet (GHCR/Docker job deferred until Docker on host).
+
+---
+
+## PHASE A.4 (v5) — bounded-negotiation UI panel  ✅ VERIFIED (screenshot)
+
+| Feature | File(s) | How verified | Actual observed result | Status |
+|---|---|---|---|---|
+| Panel gated on flag (no ghost UI) | `NegotiationPanel.tsx`, inbox thread | `node scripts/a4-verify.mjs` (9/9) | flag OFF → panel **not rendered**; flag ON → renders | **VERIFIED** |
+| **Live timeline** | same | screenshot `e2e/.proof/negotiation-panel.png` (viewed) | Seller Side · active · Round 2 · Opened $73,800 · Last offer $81,000 · Prospect counter $120,000 · **Ceiling (max) $97,000** (clamp line) | **VERIFIED** |
+| **Pause / take-over cancels queue** | pause route + `pauseSession` | live | button → route `200 {paused:true, cancelledJobs:1}`; queued `negoffer:*` job → **cancelled**; session → **paused** | **VERIFIED** |
+| Console clean | thread page | a4-verify | 0 console errors | **VERIFIED** |
+| Suite + typecheck | all | full run | **538 passed / 46 skipped / 0 failed**; tsc 0 | **VERIFIED** |
+
+## PHASE Q (v5) — route matrix incl. new surfaces  ✅ VERIFIED
+
+| Feature | How verified | Actual observed result | Status |
+|---|---|---|---|
+| Route console matrix (15 routes) | `node scripts/route-sweep.mjs` | **0 app console errors across 15 routes, 0 blank panes**, branded 404 renders. Includes v5's `/system-health` | **VERIFIED** |
+| Flag-gated component surfaces | own verify scripts | contracts inspection chip (vr-verify), demo banner (Phase T), negotiation panel (a4-verify) — each console-clean in its own live run; `/inbox/[leadId]` clean via a4-verify | **VERIFIED** |
+
+**Bug #21 (CI, in P2.0-W dependency path) — flows-live `campaign_lifecycle` time-dependent:** after P2.0-W wired dispatchGate into the send path, the flow's `process_jobs` step (asserts the send job → `completed`) got a QUIET_HOURS **deferral** (→ `pending`) whenever CI ran after 9pm lead-local — green at 00:22 UTC (8:22pm ET, in-window), red at 01:05 UTC (9:05pm ET). This flow tests the send PIPELINE, not quiet-hours (dispatchGate.test.ts covers that with an injected clock). **Fix:** `DISPATCH_SKIP_QUIET_HOURS=1` (test-only env; skips ONLY the two time gates, keeps DNC/flag/consent/demo/numeric-guard/profile) set on the CI flows-live + e2e jobs. Verified: dispatchGate override 25/25 (override→11pm allowed, DNC/FLAG still block, default→QUIET_HOURS); flows-live campaign_lifecycle ✓ isolated with the env set. Suite 542/46/0.
+
+**Bug #22 (CI test-env leakage):** the bug-#21 fix set `DISPATCH_SKIP_QUIET_HOURS=1` job-wide, but Layer C runs the FULL suite (the `flows-live` yarn arg filter does not apply), so the deterministic quiet-hours deny tests in `dispatchGate.test.ts` saw the skip env → `expected true to be false` ×3 (run 29624900865). **Fixed:** the unit file strips the ambient env per test and RESTORES it after (env-independent without breaking same-worker flows). Proven both ways locally: `DISPATCH_SKIP_QUIET_HOURS=1` → 25/25; unset → 25/25.
+
+**GREEN PIPELINE — UNINTERRUPTED (bugs #20/#21/#22 all fixed):** [run 29632475443 completed success](https://github.com/romanshumates1-dev/anything/actions/runs/29632475443) — Web ✓ · Desktop ✓ · Layer C (live DB) ✓ · E2E ✓ on PR #4. Confirms the schema-migrate-in-CI fix (#20/#21) and the dispatchGate quiet-hours time-independence (#21 fix + #22 env-isolation).

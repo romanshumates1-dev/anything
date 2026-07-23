@@ -1,13 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   devIndicators: false,
-  // Emit a self-contained server bundle for the Docker runner stage (only
-  // affects `next build` output; dev is unchanged). Lets the runner image copy
-  // .next/standalone + .next/static instead of the whole node_modules.
-  output: 'standalone',
-  // The monorepo root is two levels up; standalone tracing needs it to include
-  // hoisted deps in the bundle.
-  outputFileTracingRoot: require('path').join(__dirname, '../../'),
+  // Standalone output is ONLY for the Docker runner image. On Vercel it is not
+  // recommended (Vercel builds its own output) and the monorepo-root
+  // outputFileTracingRoot can break serverless function tracing at deploy time,
+  // so gate both OFF when VERCEL=1 — Vercel then builds exactly as it did before
+  // this was added. Docker builds set DOCKER_BUILD=1 (see Dockerfile) to opt in.
+  ...(process.env.VERCEL
+    ? {}
+    : {
+        output: 'standalone',
+        outputFileTracingRoot: require('path').join(__dirname, '../../'),
+      }),
   // Pin Turbopack's workspace root to THIS app. Without this, Next 16 infers the
   // monorepo root (d:\anything) and resolves `tailwindcss` from d:\anything\apps,
   // hitting the hoisted v3.4.x (pulled in by apps/mobile's NativeWind) instead of

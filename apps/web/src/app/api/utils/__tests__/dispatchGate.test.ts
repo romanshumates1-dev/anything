@@ -8,7 +8,7 @@
  * the gate's branching is exercised without a DB. The timezone helpers are pure
  * and tested directly against real IANA zones via Intl (no mocks, no fakes).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { mockSql } = vi.hoisted(() => ({ mockSql: vi.fn(async () => [] as any) }));
 vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
@@ -40,11 +40,23 @@ function atLocalHour(tz: string, hour: number, isoDay = '2026-07-15'): Date {
   throw new Error(`no instant found for ${tz} hour ${hour}`);
 }
 
+// Bug #22: CI's live jobs export DISPATCH_SKIP_QUIET_HOURS=1 job-wide, and the
+// Layer C job runs THIS file too — the ambient env made the deterministic
+// quiet-hours deny tests fail ('expected true to be false'). Strip it per test
+// and RESTORE after, so this file is env-independent without stripping the env
+// from other files sharing the worker process (flows-live needs it).
+let ambientSkip: string | undefined;
 beforeEach(() => {
+  ambientSkip = process.env.DISPATCH_SKIP_QUIET_HOURS;
+  delete process.env.DISPATCH_SKIP_QUIET_HOURS;
   mockSql.mockReset();
   mockSql.mockResolvedValue([]); // default: not suppressed
   isBetaFlagOn.mockReset();
   isBetaFlagOn.mockResolvedValue(true); // default: flag on
+});
+afterEach(() => {
+  if (ambientSkip !== undefined) process.env.DISPATCH_SKIP_QUIET_HOURS = ambientSkip;
+  else delete process.env.DISPATCH_SKIP_QUIET_HOURS;
 });
 
 describe('timezone helpers — DST-correct via Intl', () => {
@@ -222,5 +234,35 @@ describe('transactional sends (P2.0-W) — time gates skipped, absolute gates ne
     });
     expect(d.allow).toBe(false);
     expect((d as any).code).toBe('FLAG_OFF');
+  });
+});
+
+describe('DISPATCH_SKIP_QUIET_HOURS (test-only determinism) — skips time gates ONLY', () => {
+  const elevenPm = atLocalHour('America/New_York', 23);
+  afterEach(() => { delete process.env.DISPATCH_SKIP_QUIET_HOURS; });
+
+  it('override ON: an 11pm send is allowed (quiet hours skipped)', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect(d.allow).toBe(true);
+  });
+
+  it('override does NOT weaken DNC', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    mockSql.mockResolvedValue([{ 1: 1 }]); // suppressed
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect((d as any).code).toBe('DNC');
+  });
+
+  it('override does NOT weaken FLAG_OFF', async () => {
+    process.env.DISPATCH_SKIP_QUIET_HOURS = '1';
+    isBetaFlagOn.mockResolvedValue(false);
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', betaFlag: 'cadenceEngine', now: elevenPm });
+    expect((d as any).code).toBe('FLAG_OFF');
+  });
+
+  it('override OFF (default): 11pm still QUIET_HOURS', async () => {
+    const d = await dispatchGate({ phone: KY_PHONE, channel: 'sms', now: elevenPm });
+    expect((d as any).code).toBe('QUIET_HOURS');
   });
 });

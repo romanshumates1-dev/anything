@@ -19,7 +19,7 @@ let aiProvider = (process.env.AI_PROVIDER || '').toLowerCase();
 const smsDriver = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN ? 'twilio' : 'mock';
 
 // ── beta flags (app_settings key='beta_flags'); DB toggle also overrides AI provider
-let flags = { speedToLead: false, voiceEscalation: false, localPresence: false, cadenceEngine: false, negotiationProfiles: false };
+let flags = { speedToLead: false, voiceEscalation: false, localPresence: false, cadenceEngine: false, negotiationProfiles: false, boundedNegotiation: false, twilioDemo: false };
 try {
   if (process.env.DATABASE_URL) {
     const sql = neon(process.env.DATABASE_URL);

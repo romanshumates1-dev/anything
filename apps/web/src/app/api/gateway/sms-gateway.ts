@@ -39,6 +39,14 @@ export interface GatewayMessage {
   isCadenceStep?: boolean;
   /** P2.0-W: recipient-requested send (OTP) — skips time gates only, never DNC. */
   transactional?: boolean;
+  /** Phase A: bounded-negotiation numeric-guard context (bounded sends only). */
+  boundedNegotiation?: {
+    computedOfferCents: number;
+    approvedMinCents: number;
+    approvedMaxCents: number;
+    /** For owner escalation on a block. */
+    sessionId?: string;
+  };
 }
 
 export interface GatewayDeliveryRecord {
@@ -149,15 +157,31 @@ export class SMSGateway {
       consentBasis: message.consentBasis,
       isCadenceStep: message.isCadenceStep,
       transactional: message.transactional,
+      boundedNegotiation: message.boundedNegotiation
+        ? { text, ...message.boundedNegotiation }
+        : undefined,
     });
     if (!gate.allow) {
-      await logEvent('message_suppressed_gateway', 'message', String(leadId), {
-        messageUuid,
-        to,
-        reason: gate.code,
-        detail: gate.reason,
-        retryAt: gate.retryAt?.toISOString(),
-      });
+      await logEvent(
+        gate.code === 'NUMERIC_GUARD' ? 'numeric_guard_blocked' : 'message_suppressed_gateway',
+        'message',
+        String(leadId),
+        {
+          messageUuid,
+          to,
+          reason: gate.code,
+          detail: gate.reason,
+          retryAt: gate.retryAt?.toISOString(),
+        }
+      );
+      // Phase A: a guard block is an owner-escalation event, not just a log line.
+      if (gate.code === 'NUMERIC_GUARD' && organizationId) {
+        await sql`
+          INSERT INTO human_approvals (id, organization_id, type, context, status)
+          VALUES (${randomUUID()}, ${organizationId}, 'NUMERIC_GUARD_BLOCK',
+                  ${JSON.stringify({ leadId, detail: gate.reason, sessionId: message.boundedNegotiation?.sessionId })}, 'PENDING')
+        `;
+      }
       return {
         messageUuid,
         status: 'failed',

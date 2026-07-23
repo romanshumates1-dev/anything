@@ -5,10 +5,7 @@ import { headers } from 'next/headers';
 /**
  * Contracts list for the /contracts page (session-authed, org-scoped).
  *
- * The page shipped calling GET /api/contracts, which did not exist → 404 on
- * every visit. The `contracts` table exists (migration/base schema); this
- * returns a bare array in the shape the page maps over: { id, direction,
- * status, created_at, signed_at }.
+ * Phase P1: includes esign_status and esign_events for the signing timeline.
  */
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -19,12 +16,36 @@ export async function GET() {
   try {
     const org = (session.user as any).organizationId || 'default';
     const rows = await sql`
-      SELECT id, direction, status, signed_at, created_at
+      SELECT id, direction, status, signed_at, created_at,
+             inspection_days, assigned_at, esign_status
       FROM contracts
       WHERE organization_id = ${org}
       ORDER BY created_at DESC
       LIMIT 100
     `;
+
+    // Fetch esign events for each contract (batched)
+    if (rows.length > 0) {
+      const contractIds = rows.map((r: any) => r.id);
+      const events = await sql`
+        SELECT id, contract_id, event_type, event_data, created_at
+        FROM esign_events
+        WHERE contract_id = ANY(${contractIds}::text[])
+        ORDER BY created_at ASC
+      `;
+
+      // Attach events to their contracts
+      const eventsByContract: Record<string, any[]> = {};
+      for (const evt of events) {
+        if (!eventsByContract[evt.contract_id]) eventsByContract[evt.contract_id] = [];
+        eventsByContract[evt.contract_id].push(evt);
+      }
+
+      for (const row of rows) {
+        (row as any).esign_events = eventsByContract[row.id] || [];
+      }
+    }
+
     return Response.json(rows);
   } catch (error: any) {
     console.error('GET /api/contracts error', error);

@@ -6,6 +6,7 @@ import { validateTwilioSignature } from '../../utils/twilio-webhook';
 import { enqueueJob } from '../../utils/jobs';
 import { recordReplyReceived } from '../../utils/sla';
 import { cancelCadence } from '../../utils/cadenceEngine';
+import { detectHumanRequest, handleHumanRequest } from '../../services/humanRequestDetector';
 
 /**
  * Inbound SMS webhook.
@@ -178,10 +179,18 @@ export async function POST(request: Request) {
       logAssertion: "audit_logs.action='sms_inbound'",
     });
 
-    // pause-AI: only draft an automatic AI reply when the lead is NOT paused.
-    // A paused lead parks the inbound message for a human with no AI job.
+    // P3: Check for human request in the message text
+    const detection = detectHumanRequest(text);
+    if (detection.isHumanRequest) {
+      const orgId = (lead as any).organization_id || 'default';
+      await handleHumanRequest(lead.id, conv.id, text, orgId, detection);
+    }
+
+    // pause-AI: only draft an automatic AI reply when the lead is NOT paused
+    // and there's no human request detected. A paused lead parks the inbound
+    // message for a human with no AI job.
     let aiQueued = false;
-    if (!lead.ai_paused) {
+    if (!lead.ai_paused && !detection.isHumanRequest) {
       await enqueueJob('ai_reply', { leadId: lead.id, conversationId: conv.id });
       aiQueued = true;
     }

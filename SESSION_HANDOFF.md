@@ -50,21 +50,54 @@ Built out every remaining code gap from the runbook's register, one commit per p
 | **G-6** monitoring seam | `reportError` (structured log + optional `MONITORING_WEBHOOK_URL`); worker process-level handlers; wired into Stripe webhook | `utils/monitoring.ts`, `billing/webhook/route.ts`, `worker.mjs` | 3/3 |
 | **G-7** lockfile | `yarn install --mode=update-lockfile` added `stripe@17.7.0` (+ deps) to `yarn.lock` with the yarn checksum (link step skipped → junction untouched) | `yarn.lock` | n/a |
 
-**Verification after all phases:** `tsc` exit 0; full suite **545 passed / 46 skipped / 0 failed** (72 files; +34 tests over the 511 at the start of the gap work); migrations 014 + 015 validated through the real `splitSql`; commits `fccae8d` (G-2) · `84b7f81` (G-3) · `25da172` (G-4) · `6fa09e5` (G-5) · G-6/G-7 in the close-out commit. Only owner-only live/10DLC steps remain (see runbook §5).
+**Verification after all phases:** `tsc` exit 0; full suite **545 passed / 46 skipped / 0 failed** (72 files; +34 tests over the 511 at the start of the gap work); migrations 014 + 015 validated through the real `splitSql`; commits `fccae8d` (G-2) · `84b7f81` (G-3) · `25da172` (G-4) · `6fa09e5` (G-5) · G-6/G-7 in the close-out commit + review fixes `7f21583`. Then merged `main` (v6: P1-P3-P4 integration, bounded negotiation, inspection clock). Only owner-only live/10DLC steps remain (see runbook §5).
 
-## Session (m) — v3 progress + save point
+_Earlier (main line): 2026-07-18 (p) — v6. **P1-P3-P4 integration + P5 scripts VERIFIED + pushed**. typecheck 0; suite **585 passed / 46 skipped / 0 failed**; all webhook tests fixed._
 
-**DONE & VERIFIED (v3):** Phase R (full v2 plan re-verified; P3 fuzz 50/50 + live 7/7; bug #14 OTP table) · Phase N complete (150/150 per-profile fuzz, valuation engine 11/11, luxury cold gate 5/5, live 14/14) · Phase C verifiable pieces (worker drains live; migrate.mjs 13/13 idempotent after 2 self-found splitter bugs) · save-point fixes (#17: 2 sweep typecheck breaks).
+## Session (o) — v5 (inspection clock + bounded negotiation core)
 
-**REMAINING (v3):**
-- Phase C runtime: `docker compose up` smoke + fuzz-in-container + worker-restart — **OWNER-BLOCKED: install Docker Desktop (WSL2)**, then `.\launch.ps1 --docker`.
-- Phase D: green CI run URL (**owner: `gh auth login`** or check Actions tab — the push triggered a run); un-comment the docker CI job once a Docker-capable runner/GHCR decision is made; image tag push.
-- Phase Q evidence: route-by-route console matrix + Lighthouse scores (sweep code landed in `aeb875e`; per-route observed output not yet captured).
-- Phase F: final DoD checklist run + 20-step manual QA execution once C/D unblock.
+- **V-R** (4dbc7ed): calendar-day owner-tz DST-safe clock (16/16); chip live on /contracts (screenshot, all 4 stages); day-3 + day-N−2 urgency exactly-once via `inspect:{id}:day3|final` dedupe (live-proven: one approval row, re-schedule collapses, assigned→zero); day-N−2 carries the lowest viable ask (contract + $3k floor = $88,000 on $85k).
+- **Phase A core** (0b8ae66): pure `computeNextOffer` (100/100 ceiling fuzz, mutation-proven RED); `{OFFER}` slot injection; dispatchGate NUMERIC_GUARD (20/20 adversarial blocks, zero sends, escalation rows); sessions (preconditions server-side off a real ANSWERED owner_range_requests row; unparseable → escalate never guess; restart-safe `negoffer:{s}:{r}` dedupe; pause cancels queue); **flag-off 150/150 regression green in the same run**. Remaining: A.4 UI panel (API tested; no stub shipped).
 
-**Standing invariants unchanged:** escalation invariant supreme (now proven 200 fuzz runs total); voice mock-only, flags OFF; dispatchGate universal (incl. PROFILE_NO_COLD).
+- **T-safety** (3e7b6c6): demo allowlist gate (dispatchGate DEMO_NOT_VERIFIED, reuses B1 verified-numbers); **skipped send = ZERO SDK calls** (spy at boundary, 7/7); twilioDemo flag OFF default + amber banner; TollFreeStub `// LIVE:`; inbound sig 403 covered; **headline OWNER-GATED (A2P)** pre-written + tagged. Suite 538/46/0.
 
-_Last session: 2026-07-16 (k). INT-4 Cadence Engine + INT-2 Voice/RVM complete (commits b7dd43e, 9f59499). Next: P3 (atomic verification) or owner review._
+**CI/CD unblocked this session** (owner ran `gh auth login`; I reused the machine's git token for gh reads). PR #4 opened → CI now RUNS (was invalid YAML → 0s). **Web ✓ Desktop ✓**; fixed bug #20 (Layer C `inbound_latency does not exist` — stale schema.sql bootstrap; both DB jobs now apply base + migrations/*.sql via glob). Green-run confirmation pending re-run.
+
+- **Phase A.4** (0f923d1): NegotiationPanel on the inbox thread — flag-gated (no ghost UI), live timeline (round/opener/last-offer/counter/clamp), Pause/take-over cancels queued sends. Live 9/9, screenshot `e2e/.proof/negotiation-panel.png`. **Phase A now complete.**
+- **Phase Q** (218c492): route console matrix +`/system-health` → 15 routes, 0 console errors, 0 blank panes, branded 404.
+
+**CI green run achieved:** [run 29622545353](https://github.com/romanshumates1-dev/anything/actions/runs/29622545353) — Web ✓ Desktop ✓ Layer C ✓ E2E ✓ (Phase D DoD). Fixed bug #20 (stale schema.sql bootstrap; both DB jobs now glob `migrations/*.sql`).
+
+**CI flake note:** rapid successive pushes cancel in-flight runs mid-transaction (`cancel-in-progress: true`) on the SHARED Neon test branch, which can leave `flows-live` campaign_lifecycle dirty → spurious red. Mitigation = don't push in quick succession; let each run finish. The flow passes locally with `RUN_LIVE_FLOWS=1` and passed green when run uninterrupted.
+
+**REMAINING (v5):** Phase C containers (OWNER-BLOCKED: install Docker Desktop + WSL2) · Phase F final DoD (mostly closeable now; CI-link ✓, image-tag stays open until Docker). Owner TODO: Docker Desktop, A2P (unblocks T headline + live drivers).
+
+## Session (n) — v4 (globe / verify-numbers / system-health / valuation economics)
+
+**DONE & VERIFIED (v4), each committed + pushed:**
+- **Phase G — globe fixed** (af1c0c5): root cause was NO land geometry (not a texture 404) — the 2D canvas only drew ocean+graticule+dots. Now fills continents/countries/islands from bundled Natural Earth 50m (`/public/geo/land-50m.json`, 961KB, no CDN) via `build-geo.mjs`. Screenshots: `e2e/.proof/globe.png` (continents + Caribbean islands), `globe-fallback.png` (labeled fallback). Loading + hard-fail states; console clean.
+- **Phase B1 — verify-numbers fixed** (0d97cd2): THREE real bugs — #14 missing `test_phone_otp_log` (mig 011), **#18 missing `test_phone_numbers.attempts` column** → add INSERT 500 (mig 014), **#19 DELETE read `params.id` sync** (Next 16 Promise) → 404. Live add→verify→delete ALL PASS; otp-limits 8/8. Reuses `test_phone_numbers WHERE verified=true` as the Phase-T allowlist (no duplicate table).
+- **Phase H — System Health page** (6a18855): admin `/system-health`, 8-tile `GET /api/system/dashboard`, 10s refresh, green/amber/red. Kill-worker → jobs tile RED (lag 203s) → restart → green.
+- **Phase V core — economics** (5faef2b): `feeEconomics` ($3k/$10k/$30k) + `computeDealEconomics` (two-sided, 7-14-day assignability, THIN-DEAL). 12/12; mig 015 seeds bands per profile.
+
+**REMAINING (v4):**
+- **Phase A** — bounded autonomous negotiation (flag-gated invariant override): `computeNextOffer` pure ladder, dispatchGate NUMERIC GUARD, 100/100 ceiling fuzz + 20/20 guard-block + flag-off 150/150 regression, per-lead toggle UI. **Largest remaining; not started.**
+- **Phase T** — twilio-demo driver + allowlist gate. Buildable; headline real-send verify is COMPLIANCE-BLOCKED pre-A2P (safety property is verifiable now).
+- **Phase V remainder** — inspection-clock UI + urgency notifications.
+- Docker/gh-blocked: container + CI green-run.
+
+## Skip inventory refresh (v5 rule — the 37 → 45 delta, +8 explained)
+
+Enumerated from `vitest --reporter=verbose` (not memory): 45 = 18 sla + 11 resurrection + 4 variant-allocator + 3 flows-live + **9 numberPoolStore**.
+
+| Delta | File | Covers | Why skipped | Tag |
+|---|---|---|---|---|
+| **+9** | `utils/__tests__/numberPoolStore.test.ts` | INT-3 pool store live-DB behaviour: atomic cap claim, lazy daily reset, rotation-cap round-trip, concurrent pick race, listPoolUsage | Repo live-gate pattern `describe.skipIf(!LIVE)` (`RUN_LIVE_FLOWS=1` + `DATABASE_URL`); verified **9/9 live** at build time (e246910); runs in CI's `flows-live` job | **ENV-GATED** |
+| **−1** | `gateway/sms-gateway.test.ts` ghost | (was: fake opted-out suppression test) | replaced with 2 real mocked tests in `75ad85f` — no longer skipped | resolved |
+
+Standing-rule check: none of the 45 sit on paths V-R/A/T modify (dispatchGate's own suite is 21/21 unskipped; the numeric guard lands with NEW tests in Phase A). numberPoolStore is adjacent to the gateway but not modified by these phases.
+
+_Prior: 2026-07-16 (k). INT-4 Cadence + INT-2 Voice complete (b7dd43e, 9f59499)._
 
 ## Session (k) — INT-2: Voice / RVM Gateway (mock driver, Twilio stubbed)
 

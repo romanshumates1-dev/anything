@@ -16,6 +16,13 @@ export type SendMessagePayload = {
   betaFlag?: BetaFlagKey;
   isCadenceStep?: boolean;
   transactional?: boolean;
+  /** Phase A: numeric-guard context (bounded-mode sends). */
+  boundedNegotiation?: {
+    computedOfferCents: number;
+    approvedMinCents: number;
+    approvedMaxCents: number;
+    sessionId?: string;
+  };
 };
 
 /**
@@ -57,6 +64,9 @@ export async function sendMessage(payload: SendMessagePayload) {
       betaFlag: payload.betaFlag,
       isCadenceStep: payload.isCadenceStep,
       transactional: payload.transactional,
+      boundedNegotiation: payload.boundedNegotiation
+        ? { text, ...payload.boundedNegotiation }
+        : undefined,
     });
     if (!gate.allow) {
       await setCampaignLeadStatus('failed');
