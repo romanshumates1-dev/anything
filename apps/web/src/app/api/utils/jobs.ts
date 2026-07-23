@@ -157,6 +157,11 @@ export async function processNextJob() {
             campaignId: payload.campaignId,
             organizationId: payload.organizationId,
             contactId: payload.contactId,
+            // Stable per-send idempotency key so a job RETRY (e.g. a throw after
+            // the send) reuses it → the gateway dedupes instead of re-sending
+            // and re-metering. Keyed by the campaign-lead / contact / lead so it
+            // is unique per intended send.
+            messageUuid: `send:${String(payload.campaignLeadId ?? payload.contactId ?? `${payload.leadId}:${payload.to}`)}`,
           });
           // Log gateway result for auditability
           await sql`
@@ -168,7 +173,7 @@ export async function processNextJob() {
           // delivered) at the REAL /api/sms/status route so message_events
           // advances exactly as it would with Twilio. Best-effort and only when
           // a base URL is configured (skipped in unit tests / no-server envs).
-          if (result.status === 'dispatched' && result.providerId && isMockSmsMode() && twilioStatusCallbackUrl()) {
+          if (result.status === 'dispatched' && !result.idempotent && result.providerId && isMockSmsMode() && twilioStatusCallbackUrl()) {
             void simulateDeliveryProgression({ sid: result.providerId, to: payload.to }).catch((e) =>
               console.warn('[jobs] mock delivery simulation failed', e?.message)
             );
@@ -181,8 +186,9 @@ export async function processNextJob() {
             throw new Error(result.errorMessage || 'gateway_dispatch_failed');
           }
           // G-5: meter the ACTUAL segments sent against the billing user's plan.
-          // Best-effort — a metering error must never fail an already-sent SMS.
-          if (payload.billingUserId) {
+          // Only on a FRESH dispatch — an idempotent replay (job retry) must not
+          // double-count. Best-effort: a metering error never fails a sent SMS.
+          if (payload.billingUserId && !result.idempotent) {
             await meterSmsSend(payload.billingUserId, String(payload.text ?? ''), {
               messageSid: result.providerId,
             }).catch((e) => console.warn('[jobs] meterSmsSend failed', e?.message));

@@ -57,7 +57,19 @@ describe('gateway durable idempotency', () => {
     const res = await gw.send({ leadId: 1, to: '+15551230000', text: 'hi', messageUuid: 'uuid-dup' });
     expect(res.status).toBe('delivered');
     expect(res.providerId).toBe('SMold');
+    expect(res.idempotent).toBe(true); // flagged so callers don't re-meter
     expect(provider.calls).toBe(0); // never dispatched
+    gw.destroy();
+  });
+
+  it('flags an in-memory (Map) replay as idempotent and dispatches only once', async () => {
+    const provider = fakeProvider(async () => 'SMonce');
+    const gw = new SMSGateway({ primaryProvider: provider, complianceCheckEnabled: false });
+    const first = await gw.send({ leadId: 9, to: '+15551239999', text: 'hi', messageUuid: 'uuid-map-replay' });
+    const second = await gw.send({ leadId: 9, to: '+15551239999', text: 'hi', messageUuid: 'uuid-map-replay' });
+    expect(first.idempotent).toBeFalsy(); // fresh dispatch
+    expect(second.idempotent).toBe(true); // replay
+    expect(provider.calls).toBe(1); // sent once despite two calls
     gw.destroy();
   });
 

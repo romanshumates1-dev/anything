@@ -56,6 +56,10 @@ export interface GatewayDeliveryRecord {
   gateCode?: DenyCode;
   /** P2.0-W: when the gate says "not now" (quiet hours/window), when to retry. */
   retryAt?: Date;
+  /** G-3: true when this record came from the idempotency cache/store (a replay)
+   *  rather than a fresh dispatch — callers must NOT re-meter or re-fire side
+   *  effects for an idempotent hit. */
+  idempotent?: boolean;
 }
 
 export interface GatewayConfig {
@@ -186,6 +190,7 @@ export class SMSGateway {
           leadId,
           to,
           dispatchTime: new Date(cached.deliveredAt - 1000),
+          idempotent: true,
         };
       }
       const durable = this.config.idempotencyStore
@@ -211,6 +216,7 @@ export class SMSGateway {
           leadId,
           to,
           dispatchTime: new Date(),
+          idempotent: true,
         };
       }
     }

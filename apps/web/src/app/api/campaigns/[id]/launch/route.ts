@@ -5,6 +5,7 @@ import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
 import { checkUsage } from '../../../utils/entitlement';
+import { smsSegmentCount } from '@/config/sms-segments';
 
 /**
  * Launch a campaign:
@@ -48,14 +49,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // is the margin-safe derived allowance, so we can never queue more messaging
     // than the subscription funds (owner rule: cap out before the Twilio cost).
     // A user with no subscription row defaults to the Starter caps.
+    //
+    // Project ACTUAL segments (recipients × the template's segment count), not
+    // just recipient count — a multi-segment template must not slip past the
+    // budget gate and then overspend at metering time.
     const sendable = (members as { phone: string | null }[]).filter((m) => m.phone).length;
-    const usage = await checkUsage(session.user.id, 'sms_segments', sendable);
+    const projectedSegments = sendable * Math.max(1, smsSegmentCount(String(campaign.message_template ?? '')));
+    const usage = await checkUsage(session.user.id, 'sms_segments', projectedSegments);
     if (!usage.allowed) {
       await logEvent('campaign_launch_blocked', 'campaign', campaignId.toString(), {
         reason: usage.reason,
         cap: usage.cap,
         current: usage.current,
-        requested: sendable,
+        requested: projectedSegments,
+        recipients: sendable,
       }, session.user.id);
       return Response.json(
         {
