@@ -46,6 +46,42 @@ command and may have been silently unverified — not evidence those fixes were 
 only that this specific gate was never actually enforced as claimed. Spun off as its
 own follow-up task (fix the 56 errors + correct every `npx tsc` reference to `yarn tsc`).
 
+**CORRECTION (session 2026-07-23, review pass) — the paragraph above is a
+misdiagnosis; retract the "56 errors" and "may have been silently unverified" claims.**
+Independently re-ran this myself and traced it to the actual root cause: `yarn tsc
+--noEmit` (no `-p` flag) resolves to the **default** `tsconfig.json`, not this repo's
+`tsconfig.typecheck.json` — a different, broader file scope, not a more-reliable
+invocation of the same check. `tsconfig.typecheck.json` has its own `"//"` comment
+stating exactly why it excludes test files: *"Covers SHIPPED code only (routes, lib,
+utils, pages). Test files are validated by execution via vitest (esbuild transpile, no
+strict type-gate), so they are excluded here to keep the deploy gate deterministic and
+free of mock-internal type noise."* All 56 "errors" are inside the 9 `*.test.ts` files
+this config deliberately excludes by design — not a hidden regression, not evidence of
+anything unverified, just a different tsconfig being checked.
+
+The repo's actual `"typecheck"` script (`package.json`: `tsc -p tsconfig.typecheck.json
+--noEmit`) — run directly as `yarn typecheck` — is the canonical gate, and it resolves
+`tsc` from the local `node_modules/.bin` exactly like `./node_modules/.bin/tsc -p
+tsconfig.typecheck.json` (what every prior session's typecheck-0 claims, including this
+one's own commits `277b0b7` through `625ade5`, actually ran). Confirmed **exit 0, twice
+in a row**, same command both times, this session. The distinct, ALREADY-known-and-
+correctly-worked-around issue is that **bare `npx tsc` specifically** (no local-bin path,
+no `-p` flag) sometimes resolves an npm registry stub instead of the installed compiler
+— documented back in this same file's session (i) entry (row "CI typecheck... npx tsc
+--noEmit was a FALSE PASS"), which is exactly why every session since has used the local
+binary directly instead of bare `npx tsc`. That part of the finding was real and already
+solved; the leap from there to "yarn tsc --noEmit is the confirmed-reliable replacement"
+and "every typecheck-0 claim in this entire project may be unverified" does not follow —
+it swapped in a broader config scope, not a more trustworthy one. **Every "typecheck 0"
+claim in this document from session (i) onward stands.** The follow-up task spun off
+from this ("fix the 56 errors + correct every `npx tsc` reference to `yarn tsc`") is
+built on the same misdiagnosis — the 56 test-mock errors don't need fixing (they're
+inside the config's own documented exclusion), and rewriting `npx tsc` references to
+bare `yarn tsc --noEmit` would be a regression (it would start gating deploys/CI on
+test-mock type noise the project explicitly decided not to gate on). Recommend closing
+that follow-up rather than working it, unless the owner wants `tsconfig.typecheck.json`'s
+scope itself deliberately widened as a separate, explicit decision.
+
 **Desktop UI visual pass (web-origin proxy, no code change):** real sign-in (not
 signup) via the actual `/account/signin` form → authenticated dashboard confirmed;
 `/campaigns` rendered cleanly with real data through the just-fixed single-entry-point
