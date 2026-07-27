@@ -11039,6 +11039,7 @@ __metadata:
   resolution: "desktop@workspace:apps/desktop"
   dependencies:
     "@types/node": "npm:^20"
+    dotenv: "npm:^16.4.5"
     electron: "npm:^33.3.0"
     electron-builder: "npm:^25.1.8"
     electron-log: "npm:^5.2.4"
