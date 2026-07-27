@@ -24,6 +24,29 @@
  * listing — doing so would break every inbound thread. Internal opt-out (step
  * 1) has no such carve-out: STOP means stop, on every channel, forever.
  *
+ * EMAIL IS A DIFFERENT STATUTE, NOT A FOURTH PHONE CHANNEL.
+ * Email is governed by CAN-SPAM (15 U.S.C. 7701), the TCPA does not reach it,
+ * and applying telephony rules to it would be both wrong and needlessly
+ * restrictive. For channel==='email' this gate applies EXACTLY ONE rule —
+ * opt-out suppression (step 1), because honouring an unsubscribe is CAN-SPAM's
+ * central duty (and its 10-business-day deadline is why we suppress
+ * immediately rather than on a schedule). Everything else is skipped, on
+ * purpose:
+ *   - DNC registry            — a TELEPHONE registry; meaningless for email.
+ *   - sms_consent_policy      — SMS-specific by construction.
+ *   - quiet hours / windows   — TCPA time-of-day limits apply to calls/texts,
+ *                               not email.
+ *   - consentBasis            — CAN-SPAM is opt-OUT, not opt-in: prior consent
+ *                               is NOT required to send. This is precisely why
+ *                               email is testable today while 10DLC is pending.
+ * What CAN-SPAM does require lives at the composition layer, not here: a
+ * functioning unsubscribe, a real physical postal address, non-deceptive
+ * headers and subject lines. The email driver owns those.
+ *
+ * The suppression TARGET differs by channel: `phone` for telephony, `email`
+ * for email. Sending to the wrong key would fail OPEN, so it is resolved once,
+ * explicitly, at the top of the gate.
+ *
  * TIMEZONE: derived from the phone's area code. Unknown/ambiguous → MOST
  * RESTRICTIVE: the send must be legal in EVERY US timezone the number could be
  * in. DST-safe because every comparison goes through Intl with an IANA zone —
@@ -34,7 +57,16 @@ import { timezonesForPhone } from '@/app/api/utils/area-codes';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 
-export type DispatchChannel = 'sms' | 'voice' | 'rvm';
+export type DispatchChannel = 'sms' | 'voice' | 'rvm' | 'email';
+
+/**
+ * Telephony channels. Email is governed by CAN-SPAM (15 U.S.C. 7701), a
+ * fundamentally different statute from the TCPA — so nearly every rule in this
+ * gate is telephony-only and email takes an explicit, narrow path. See the
+ * EMAIL note in the header docblock for exactly which rules apply.
+ */
+export const TELEPHONY_CHANNELS: DispatchChannel[] = ['sms', 'voice', 'rvm'];
+export const isTelephony = (c: DispatchChannel): boolean => TELEPHONY_CHANNELS.includes(c);
 
 /** Consent bases that permit an automated voice/RVM touch. Anything else = skip. */
 export const VALID_CONSENT_BASES = ['manual-list-attested', 'inbound-initiated'] as const;
@@ -64,8 +96,18 @@ export type DispatchDecision =
   | { allow: false; code: DenyCode; reason: string; retryAt?: Date; timezones: string[] };
 
 export interface DispatchRequest {
-  /** Lead phone — drives both DNC lookup and lead-local timezone. */
+  /**
+   * Lead phone — drives DNC lookup and lead-local timezone. Required for the
+   * telephony channels; ignored when channel==='email' (pass '' there).
+   */
   phone: string;
+  /**
+   * Recipient address. REQUIRED when channel==='email' — it is the suppression
+   * key, and looking up the wrong key would fail OPEN (we would send to
+   * someone who unsubscribed), so the gate denies outright when it is missing
+   * rather than falling back to `phone`.
+   */
+  email?: string | null;
   channel: DispatchChannel;
   /** Which beta flag gates this dispatch (omit for always-on paths). */
   betaFlag?: BetaFlagKey;
@@ -162,11 +204,18 @@ function nextAllowed(from: Date, predicate: (d: Date) => boolean): Date | null {
   return null;
 }
 
-/** True if this target has EVER opted out on ANY channel (STOP suppresses everything, permanently). */
-export async function isSuppressed(phone: string): Promise<boolean> {
+/**
+ * True if this target has EVER opted out on ANY channel (STOP suppresses
+ * everything, permanently).
+ *
+ * `target` is a phone for telephony and an email address for email — the
+ * lookup is deliberately channel-agnostic so an unsubscribe recorded against
+ * one identifier keeps suppressing it everywhere it appears.
+ */
+export async function isSuppressed(target: string): Promise<boolean> {
   const rows = await sql`
     SELECT 1 FROM compliance_records
-    WHERE target = ${phone} AND type = 'opt-out'
+    WHERE target = ${target} AND type = 'opt-out'
     LIMIT 1
   `;
   return rows.length > 0;
@@ -181,6 +230,35 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
   const tzs = timezonesForPhone(req.phone);
 
   try {
+    // ── EMAIL: CAN-SPAM path. See the EMAIL note in the header docblock for
+    // why every telephony rule below is skipped rather than merely inapplicable.
+    if (req.channel === 'email') {
+      const address = (req.email ?? '').trim();
+      if (!address) {
+        // Fail CLOSED. Falling back to `phone` here would look up the wrong
+        // suppression key and happily send to someone who unsubscribed.
+        return {
+          allow: false,
+          code: 'NO_CONSENT',
+          reason: 'SKIPPED: email channel requires an email address (suppression key)',
+          timezones: tzs,
+        };
+      }
+      if (await isSuppressed(address)) {
+        return {
+          allow: false,
+          code: 'DNC',
+          reason: 'Recipient unsubscribed (CAN-SPAM opt-out honoured on all channels)',
+          timezones: tzs,
+        };
+      }
+      // An OFF integration must still emit zero events.
+      if (req.betaFlag && !(await isBetaFlagOn(req.betaFlag))) {
+        return { allow: false, code: 'FLAG_OFF', reason: `Beta flag ${req.betaFlag} is off`, timezones: tzs };
+      }
+      return { allow: true, timezones: tzs };
+    }
+
     // 1. DNC / opt-out — absolute, every channel, permanent.
     if (await isSuppressed(req.phone)) {
       return { allow: false, code: 'DNC', reason: 'Recipient opted out (suppressed on all channels)', timezones: tzs };
