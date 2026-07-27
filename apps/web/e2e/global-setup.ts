@@ -48,9 +48,36 @@ export default async function globalSetup(_config: FullConfig) {
   mkdirSync('e2e/.auth', { recursive: true });
   await ctx.storageState({ path: 'e2e/.auth/state.json' });
   await ctx.dispose();
+  // leads.organization_id is NOT NULL (migration 030) and this seed never set
+  // it, so global-setup died on every run with:
+  //   NeonDbError: null value in column "organization_id" of relation "leads"
+  //   violates not-null constraint
+  // Third instance of this exact bug, after /api/leads/bulk and
+  // lead-finder/create-campaign (BREAKAGE_TABLE #35 follow-ons). It stayed
+  // hidden because the e2e job `needs: [web, flows-live]` and flows-live was
+  // red, so this step had never actually executed on this branch.
+  //
+  // The org MUST be the one getOrganization() will resolve for this user at
+  // request time — otherwise the lead is invisible to every org-scoped query
+  // and the journey fails later with an empty inbox instead of a clear error.
+  // Mirror that resolution exactly: membership first, else the org_default
+  // fallback.
+  const orgRows = await sql`
+    SELECT om.organization_id AS id
+    FROM organization_members om
+    JOIN "user" u ON u.id = om.user_id
+    WHERE u.email = ${email}
+    ORDER BY om.created_at ASC
+    LIMIT 1
+  `;
+  const orgId = (orgRows[0] as { id?: string } | undefined)?.id ?? 'org_default';
+
   // idempotent: clear any prior run's lead (cascades its conversation) then seed.
   await sql`DELETE FROM leads WHERE phone = ${TEST_PHONE}`;
-  await sql`INSERT INTO leads (type, name, phone, status) VALUES ('seller', 'Alice Seller', ${TEST_PHONE}, 'new')`;
+  await sql`
+    INSERT INTO leads (type, name, phone, status, organization_id)
+    VALUES ('seller', 'Alice Seller', ${TEST_PHONE}, 'new', ${orgId})
+  `;
 
   writeFileSync('e2e/.auth/config.json', JSON.stringify({ email, testPhone: TEST_PHONE }, null, 2));
 }
