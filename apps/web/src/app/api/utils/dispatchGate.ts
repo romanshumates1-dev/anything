@@ -9,10 +9,20 @@
  *
  * ORDER MATTERS (cheapest/most-absolute first):
  *   1. DNC / opt-out      — absolute, permanent, suppresses EVERY channel
+ *   1.5 DNC registry      — federal/state list + 31-day Safe Harbor freshness,
+ *                           COLD OUTBOUND ONLY (migration 043)
  *   2. beta flag          — an OFF integration must emit zero events
  *   3. consentBasis       — voice/RVM only (TCPA prior-express-consent posture)
+ *   3.2 SMS consent       — cold SMS under sms_consent_policy='required'
  *   4. quiet hours        — 8am-9pm LEAD-LOCAL
  *   5. send-window snap   — cadence steps only (10-11am / 2-4pm lead-local)
+ *
+ * WHY 1.5 AND 3.2 ARE COLD-OUTBOUND-ONLY: the National DNC Registry and TCPA
+ * prior-express-consent both govern SOLICITATIONS. A reply inside a
+ * conversation the consumer started is not a solicitation, and an
+ * established-business-relationship reply must not be suppressed by a registry
+ * listing — doing so would break every inbound thread. Internal opt-out (step
+ * 1) has no such carve-out: STOP means stop, on every channel, forever.
  *
  * TIMEZONE: derived from the phone's area code. Unknown/ambiguous → MOST
  * RESTRICTIVE: the send must be legal in EVERY US timezone the number could be
@@ -36,7 +46,18 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD' | 'DEMO_NOT_VERIFIED' | 'USAGE_LIMIT';
+export type DenyCode =
+  | 'DNC'              // internal opt-out (someone texted STOP to us) — absolute
+  | 'DNC_REGISTRY'     // on the federal/state Do-Not-Call registry
+  | 'DNC_STALE'        // registry coverage for this NPA is missing or >31 days old
+  | 'FLAG_OFF'
+  | 'NO_CONSENT'
+  | 'QUIET_HOURS'
+  | 'OUTSIDE_WINDOW'
+  | 'PROFILE_NO_COLD'
+  | 'NUMERIC_GUARD'
+  | 'DEMO_NOT_VERIFIED'
+  | 'USAGE_LIMIT';
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -70,6 +91,18 @@ export interface DispatchRequest {
   /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
    *  coldOutbound is true. Default (undefined) = allowed. */
   profileAllowsCold?: boolean;
+  /**
+   * Owning org, used ONLY to resolve per-org send policy (sms_consent_policy,
+   * dnc_enforcement — migration 043).
+   *
+   * Deliberately OPTIONAL: making it required would have meant editing every
+   * existing call site in the same change that introduces the DNC checks, which
+   * is exactly how a safety-critical gate acquires a silent regression. When it
+   * is absent the DNC *presence* check still runs (it needs no policy), and
+   * only the two TIGHTENING behaviours are skipped — 'strict' staleness denial
+   * and 'required' per-number SMS consent. See getOrgSendPolicy().
+   */
+  organizationId?: string | null;
   /**
    * Phase A: bounded-negotiation numeric guard. Present ONLY on bounded-mode
    * conversation sends. The final outbound text is parsed; any dollar amount
@@ -153,6 +186,51 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       return { allow: false, code: 'DNC', reason: 'Recipient opted out (suppressed on all channels)', timezones: tzs };
     }
 
+    // 1.5 DNC REGISTRY (federal/state) + Safe Harbor freshness.
+    // Cold outbound only — see the header note on why replies are exempt.
+    // Runs BEFORE the beta-flag check because a registry listing is a fact about
+    // the recipient, not a feature toggle: we want the deny reason to say "on
+    // the DNC list", not "flag off", when both are true.
+    if (req.coldOutbound) {
+      const { checkDncRegistry, isAreaCoverageFresh, getOrgSendPolicy, SAFE_HARBOR_DAYS } =
+        await import('./dncRegistry');
+      const policy = await getOrgSendPolicy(req.organizationId);
+
+      if (policy.dncEnforcement !== 'off') {
+        // Presence check needs no policy and is never wrong to enforce.
+        const hit = await checkDncRegistry(req.phone);
+        if (hit.listed) {
+          const where = hit.jurisdiction ? `${hit.source}/${hit.jurisdiction}` : hit.source;
+          return {
+            allow: false,
+            code: 'DNC_REGISTRY',
+            reason: `Recipient is on the ${where} Do-Not-Call registry`,
+            timezones: tzs,
+          };
+        }
+
+        // Freshness only bites in 'strict'. A snapshot older than 31 days (or
+        // absent) confers NO safe harbour under 16 CFR 310.4(b)(3)(iv), so a
+        // "not listed" answer derived from it is not defensible — strict mode
+        // therefore refuses to rely on it rather than sending on stale data.
+        if (policy.dncEnforcement === 'strict') {
+          const cov = await isAreaCoverageFresh(req.phone, at);
+          if (!cov.fresh) {
+            const detail =
+              cov.lastFetchedAt === null
+                ? 'no registry coverage imported for this area code'
+                : `registry coverage is ${Math.floor(cov.ageDays ?? 0)} days old (limit ${SAFE_HARBOR_DAYS})`;
+            return {
+              allow: false,
+              code: 'DNC_STALE',
+              reason: `SKIPPED: ${detail} — Safe Harbor requires a scrub within ${SAFE_HARBOR_DAYS} days`,
+              timezones: tzs,
+            };
+          }
+        }
+      }
+    }
+
     // 2. Beta flag — an OFF integration emits zero events.
     if (req.betaFlag && !(await isBetaFlagOn(req.betaFlag))) {
       return { allow: false, code: 'FLAG_OFF', reason: `Beta flag ${req.betaFlag} is off`, timezones: tzs };
@@ -182,6 +260,27 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           allow: false,
           code: 'NO_CONSENT',
           reason: `SKIPPED: no consent basis for ${req.channel} (need one of ${VALID_CONSENT_BASES.join(' | ')})`,
+          timezones: tzs,
+        };
+      }
+    }
+
+    // 3.2 SMS OPT-IN. Only for a COLD first-touch, and only when the org has
+    // opted into the consent-first posture (sms_consent_policy='required').
+    // Under 'attested' the operator asserts a lawful basis for the list itself
+    // and this check is skipped — that is the cold-outreach posture and it
+    // carries the TCPA/carrier exposure documented in AWS_CREDITS_PLAN.md.
+    // Accepted proof is a recorded consent (compliance_records type='consent');
+    // an 'unverified' contact list is explicitly NOT proof.
+    if (req.channel === 'sms' && req.coldOutbound) {
+      const { getOrgSendPolicy, hasSmsConsent } = await import('./dncRegistry');
+      const policy = await getOrgSendPolicy(req.organizationId);
+      if (policy.smsConsentPolicy === 'required' && !(await hasSmsConsent(req.phone))) {
+        return {
+          allow: false,
+          code: 'NO_CONSENT',
+          reason:
+            'SKIPPED: no recorded SMS consent for a cold first-touch (org policy sms_consent_policy=required)',
           timezones: tzs,
         };
       }
