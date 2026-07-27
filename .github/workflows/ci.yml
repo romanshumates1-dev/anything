@@ -9,11 +9,25 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue (GitHub Enterprise/Team). Queued PRs are tested against the
+  # PROJECTED merge result one at a time, which structurally removes the
+  # shared-Neon-branch collision between flows-live and e2e — the reason those
+  # two jobs are serialized with `needs:` below. Enable the queue in
+  # Settings > Branches > main > "Require merge queue".
+  merge_group:
 
-# Cancel superseded runs on the same ref to save CI minutes.
+# Runs on the same ref QUEUE rather than cancelling.
+#
+# `cancel-in-progress: true` was the documented suspect for the long-standing CI
+# flake (SESSION_HANDOFF.md "CI flake note"): killing a run mid-transaction was
+# thought to leave the SHARED Neon test branch dirty. The real cause turned out
+# to be a 5s vitest timeout (fixed in src/app/api/vitest.config.ts), but
+# cancelling live-DB runs mid-write is still a genuine hazard and the saving no
+# longer matters — GitHub Enterprise includes 50,000 Actions minutes/month vs
+# 2,000 on the free tier, and a full green run is ~13 minutes.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # ─────────────────────────────────────────────────────────────
 # JOB 1 — Web: typecheck (shipped code only) + full mocked test suite.
@@ -25,7 +39,13 @@ concurrency:
 jobs:
   web:
     name: "Web — typecheck + unit/contract tests"
-    runs-on: ubuntu-latest
+    # Larger runners are a GitHub Enterprise feature and must be provisioned in
+    # org settings BEFORE a label like `ubuntu-latest-4-core` will schedule — an
+    # unprovisioned label queues forever instead of failing. So this reads a repo
+    # variable and falls back to the free label: set `CI_RUNNER` under
+    # Settings > Secrets and variables > Actions > Variables to switch, with no
+    # workflow edit and no risk of a hung queue if it is unset.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -58,8 +78,15 @@ jobs:
       # tsconfig.typecheck.json extends tsconfig.json but excludes all
       # *.test.ts / __tests__/** so mock-internal type noise (vi.fn,
       # .mock.calls[i][n], as any) can never block the deploy gate.
+      # NODE_OPTIONS raises the V8 heap: this typecheck OOMs at the default heap
+      # on developer machines (exit 134 — an OOM abort, which reads like a
+      # tooling crash rather than a type error and has cost real debugging time).
+      # CI has survived on the runner's larger default so far, but the margin
+      # shrinks as the codebase grows; pinning it makes CI and local identical.
       - name: Typecheck shipped code
         run: yarn workspace web typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Static analysis (oxlint config at repo root: .oxlintrc.json).
       # --no-ignore is required: the repo-root .eslintignore is a blanket `*`
@@ -85,6 +112,70 @@ jobs:
       # flows-live.test.ts self-skips without RUN_LIVE_FLOWS.
       - name: Run unit + integration suite
         run: yarn workspace web test
+
+# ─────────────────────────────────────────────────────────────
+# JOB — Compliance gate: the "we cannot send a message we shouldn't" suite.
+#
+# These files are ALSO covered by the web job's full run. They get their own
+# job so there is a single, fast, unambiguously-named required status check for
+# the send-safety invariants — DNC/opt-out suppression, consent basis, quiet
+# hours, send windows, demo allowlist, cold-outbound profile rules, and the
+# bounded-negotiation numeric guard. When this check is red, no send-path change
+# merges, regardless of what else is green.
+#
+# Mark it required: Settings > Branches > main > Require status checks.
+# ─────────────────────────────────────────────────────────────
+  compliance:
+    name: "Compliance — send-safety gate suite"
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Restore Yarn cache
+        uses: actions/cache@v6
+        with:
+          path: .yarn/cache
+          key: yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Trailing args are vitest FILENAME FILTERS (matched against file paths).
+      - name: Run compliance gate suite
+        working-directory: apps/web
+        run: |
+          set -o pipefail
+          yarn vitest run --config src/app/api/vitest.config.ts \
+            dispatchGate optOutRegression cadenceEngine sms-gateway \
+            demoAllowlist luxuryColdGate test-mode-block \
+            2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee /tmp/compliance.log
+
+          # A filter that matches NOTHING makes vitest exit 0 — a silent false
+          # pass on the most safety-critical suite in the repo. This repo has
+          # already been bitten by exactly this class of bug twice: oxlint
+          # matching 0 files via a stale .eslintignore (hence --no-ignore
+          # above), and a vitest run against the wrong config reporting a
+          # bogus "49 passed, 4 failed". So assert real coverage, don't trust
+          # the exit code alone.
+          FILES=$(grep -aoE 'Test Files +[0-9]+ passed' /tmp/compliance.log \
+                  | grep -oE '[0-9]+' | head -1)
+          echo "compliance test files passed: ${FILES:-0}"
+          if [ "${FILES:-0}" -lt 7 ]; then
+            echo "::error title=Compliance gate::Expected >=7 compliance test files, got ${FILES:-0}. A filter matched nothing, or a file was renamed/deleted without updating this job."
+            exit 1
+          fi
 
 # ─────────────────────────────────────────────────────────────
 # JOB — Desktop: bundle (esbuild) + typecheck the Electron shell.
