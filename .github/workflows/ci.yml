@@ -6,9 +6,17 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Work branches get CI too, not just main. Previously this listed `main`
+    # only, so with PR #4 merged there was no open PR and every push to
+    # feat/mvp-prelaunch ran ZERO checks — work sat unverified until it hit
+    # main, which is the worst possible place to first learn a suite is red.
+    # Affordable now: Enterprise includes 50,000 Actions minutes/month.
+    branches: [main, "feat/**", "claude/**", "verification-sprint"]
   pull_request:
     branches: [main]
+  # Manual trigger — re-run CI on any branch without an empty commit. Also the
+  # supported way to confirm a flaky-test fix by running the same ref twice.
+  workflow_dispatch:
   # Merge queue (GitHub Enterprise/Team). Queued PRs are tested against the
   # PROJECTED merge result one at a time, which structurally removes the
   # shared-Neon-branch collision between flows-live and e2e — the reason those
