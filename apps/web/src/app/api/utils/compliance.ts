@@ -13,7 +13,33 @@ export async function checkConsent(target: string, channel: 'sms' | 'email') {
   return rows.length === 0; // Returns true if NOT opted out
 }
 
-export async function registerOptOut(target: string, channel: 'sms' | 'email', metadata: any = {}) {
+/**
+ * Record an opt-out and suppress the PERSON, not just the identifier.
+ *
+ * The origin row is written first, exactly as before, so every existing
+ * consumer of its metadata shape is unaffected. The fan-out is then additive:
+ * every other identifier held for the same lead (phone, email, mailing
+ * address) also gets a suppression row.
+ *
+ * WHY THE FAN-OUT LIVES HERE rather than at the three call sites
+ * (compliance/opt-out route, services/inboundSms, sms/inbound route): a call
+ * site that forgets it is a silent compliance failure — the unsubscribe
+ * appears honoured, and the same person keeps receiving on another channel.
+ * Putting it in the one function they all already call makes forgetting
+ * impossible, and means a fourth channel added later inherits it for free.
+ *
+ * Proven live before wiring (scripts/verify-lead-suppression.mjs): an EMAIL
+ * unsubscribe now suppresses that lead's PHONE and MAILING ADDRESS.
+ *
+ * Fan-out failure never blocks the origin suppression — if lead lookup throws,
+ * the person who asked to stop is still stopped on the channel they used. A
+ * partial suppression beats none.
+ */
+export async function registerOptOut(
+  target: string,
+  channel: 'sms' | 'email' | 'mail',
+  metadata: any = {}
+) {
   await sql`
     INSERT INTO compliance_records (target, type, channel, metadata)
     VALUES (${target}, 'opt-out', ${channel}, ${JSON.stringify(metadata)})
@@ -22,6 +48,18 @@ export async function registerOptOut(target: string, channel: 'sms' | 'email', m
   `;
 
   await logEvent('compliance_opt_out', 'compliance', target, { channel, ...metadata });
+
+  try {
+    const { suppressLeadAllChannels } = await import('@/app/api/services/leadSuppression');
+    await suppressLeadAllChannels({
+      identifier: target,
+      channel,
+      reason: metadata?.reason ?? 'opt-out',
+    });
+  } catch (error) {
+    // Loud, but non-fatal: the origin channel is already suppressed above.
+    console.error('[compliance] cross-channel opt-out fan-out failed', error);
+  }
 }
 
 export async function registerConsent(
