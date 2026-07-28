@@ -48,20 +48,29 @@ export type BuyerFunnel = {
   takeRate: number;
 };
 
-/** Planning defaults. See the module note — assumptions, not measurements. */
+/**
+ * Planning defaults. See the module note — assumptions, not measurements.
+ *
+ * Their product implies ~10,334 seller contacts and exactly 200 buyer contacts
+ * per closed assignment, matching the operator's working figures (10k sellers,
+ * 100-300 buyers per deal). An earlier revision used a more optimistic seller
+ * funnel implying ~5,752; these rates are the more conservative posture, which
+ * is the right default for a first campaign — under-sizing a campaign wastes a
+ * cycle you cannot get back, over-sizing only costs list volume.
+ */
 export const DEFAULT_SELLER_FUNNEL: SellerFunnel = {
-  deliverability: 0.92,
-  replyRate: 0.06,
-  engagedRate: 0.35,
-  offerRate: 0.3,
+  deliverability: 0.9,
+  replyRate: 0.05,
+  engagedRate: 0.32,
+  offerRate: 0.28,
   contractRate: 0.12,
-  closeRate: 0.25,
+  closeRate: 0.2,
 };
 
 export const DEFAULT_BUYER_FUNNEL: BuyerFunnel = {
-  replyRate: 0.2,
-  interestRate: 0.25,
-  takeRate: 0.2,
+  replyRate: 0.25,
+  interestRate: 0.2,
+  takeRate: 0.1,
 };
 
 /**

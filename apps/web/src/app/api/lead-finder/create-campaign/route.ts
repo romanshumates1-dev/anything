@@ -3,6 +3,12 @@ import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import {
+  sizeCampaign,
+  checkInventory,
+  type SellerFunnel,
+  type BuyerFunnel,
+} from '@/app/api/lead-finder/utils/planner';
 
 /**
  * Phase 4 handoff — "Create campaign from segment".
@@ -34,27 +40,96 @@ export async function POST(request: Request) {
     const b = (await request.json().catch(() => ({}))) as {
       leadIds?: unknown;
       filter?: { county?: string; category?: string; recordType?: string; minScore?: number };
+      /** Deal-target mode: state the outcome, the system derives the volume. */
+      targetDeals?: unknown;
+      seller?: Partial<SellerFunnel>;
+      buyer?: Partial<BuyerFunnel>;
     };
 
     const ids = Array.isArray(b.leadIds) ? b.leadIds.map(Number).filter(Number.isFinite) : [];
     const f = b.filter || {};
+    const targetDeals = Number(b.targetDeals);
+    const hasTarget = Number.isFinite(targetDeals) && targetDeals > 0;
 
-    // Resolve the segment: explicit ids win, else the filter. Only 'new' leads
-    // (not already handed off) are eligible.
-    const segment = ids.length
-      ? await sql`SELECT * FROM sourced_leads WHERE id = ANY(${ids}) AND status = 'new'`
-      : await sql`
+    // Sizing is only computed in targetDeals mode, but it is returned to the
+    // caller either way so the UI can show what the segment implies.
+    let sizing: ReturnType<typeof sizeCampaign> | null = null;
+    let shortfall: Record<string, ReturnType<typeof checkInventory>> | null = null;
+
+    // Resolve the segment. Three modes, most explicit first:
+    //   1. leadIds     — the operator picked exact rows
+    //   2. targetDeals — "I want N assignments"; the system sizes and selects
+    //   3. filter      — the original county/category/score sweep
+    let segment: any[];
+
+    if (ids.length) {
+      segment = await sql`SELECT * FROM sourced_leads WHERE id = ANY(${ids}) AND status = 'new'`;
+    } else if (hasTarget) {
+      // ── DEAL-TARGET MODE. This is the path that removes the manual import
+      // step: the operator states an outcome ("2 assignments") and the system
+      // derives the volume and picks the highest-scoring inventory for BOTH
+      // sides of the trade. A deal needs sellers to source it AND buyers to
+      // assign it — selecting only sellers produces contracts nobody takes.
+      sizing = sizeCampaign({ targetDeals, seller: b.seller, buyer: b.buyer });
+
+      const minScore = Number(f.minScore) || 0;
+      const county = f.county ?? null;
+
+      // Two LIMITed selects rather than one, so a seller surplus can never
+      // crowd out buyers (or vice versa) inside a single ORDER BY ... LIMIT.
+      const [sellers, buyers] = await Promise.all([
+        sql`
           SELECT * FROM sourced_leads
-          WHERE status = 'new'
-            AND distress_score >= ${Number(f.minScore) || 0}
-            AND (${f.county ?? null}::text IS NULL OR county ILIKE ${f.county ?? null})
-            AND (${f.category ?? null}::text IS NULL OR category = ${f.category ?? null})
-            AND (${f.recordType ?? null}::text IS NULL OR record_type = ${f.recordType ?? null})
-          ORDER BY distress_score DESC
-        `;
+          WHERE status = 'new' AND category = 'seller'
+            AND distress_score >= ${minScore}
+            AND (${county}::text IS NULL OR county ILIKE ${county})
+          ORDER BY distress_score DESC, id ASC
+          LIMIT ${sizing.sellersNeeded}
+        `,
+        sql`
+          SELECT * FROM sourced_leads
+          WHERE status = 'new' AND category = 'buyer'
+            AND distress_score >= ${minScore}
+            AND (${county}::text IS NULL OR county ILIKE ${county})
+          ORDER BY distress_score DESC, id ASC
+          LIMIT ${sizing.buyersNeeded}
+        `,
+      ]);
+
+      shortfall = {
+        sellers: checkInventory(sizing.sellersNeeded, sellers.length),
+        buyers: checkInventory(sizing.buyersNeeded, buyers.length),
+      };
+
+      // A short segment is handed off anyway — a partial campaign still
+      // produces signal, and refusing would strand usable inventory. But the
+      // response says so explicitly and unmissably: silently returning 1,200
+      // of 10,334 leads while the operator believes the campaign is sized for
+      // their target is the exact failure this mode exists to prevent.
+      segment = [...sellers, ...buyers];
+    } else {
+      segment = await sql`
+        SELECT * FROM sourced_leads
+        WHERE status = 'new'
+          AND distress_score >= ${Number(f.minScore) || 0}
+          AND (${f.county ?? null}::text IS NULL OR county ILIKE ${f.county ?? null})
+          AND (${f.category ?? null}::text IS NULL OR category = ${f.category ?? null})
+          AND (${f.recordType ?? null}::text IS NULL OR record_type = ${f.recordType ?? null})
+        ORDER BY distress_score DESC
+      `;
+    }
 
     if (segment.length === 0) {
-      return Response.json({ error: 'Segment is empty (no un-handed-off leads match)' }, { status: 400 });
+      return Response.json(
+        {
+          error: 'Segment is empty (no un-handed-off leads match)',
+          ...(sizing ? { required: { sellers: sizing.sellersNeeded, buyers: sizing.buyersNeeded } } : {}),
+          hint: hasTarget
+            ? 'Source inventory via /api/lead-finder/upload or a configured lead source before launching.'
+            : undefined,
+        },
+        { status: 400 }
+      );
     }
 
     let created = 0;
@@ -104,11 +179,47 @@ export async function POST(request: Request) {
       'lead_finder_segment_handoff',
       'lead',
       'segment',
-      { created, segmentSize: segment.length, filter: ids.length ? { leadIds: ids.length } : f },
+      {
+        created,
+        segmentSize: segment.length,
+        mode: ids.length ? 'leadIds' : hasTarget ? 'targetDeals' : 'filter',
+        ...(hasTarget ? { targetDeals, shortfall } : {}),
+        filter: ids.length ? { leadIds: ids.length } : f,
+      },
       admin.userId
     );
 
+    // In deal-target mode the shortfall is surfaced as top-level warnings, not
+    // buried in a nested object — an under-sized campaign that LOOKS successful
+    // is the failure mode this whole mode exists to prevent.
+    const warnings: string[] = [];
+    if (sizing && shortfall) {
+      if (!shortfall.sellers.feasible) {
+        warnings.push(
+          `UNDER-SIZED: got ${shortfall.sellers.available} of ${shortfall.sellers.requested} seller leads needed for ${targetDeals} assignment(s) — short ${shortfall.sellers.shortfall}. Expect proportionally fewer deals.`
+        );
+      }
+      if (!shortfall.buyers.feasible) {
+        warnings.push(
+          `UNDER-SIZED: got ${shortfall.buyers.available} of ${shortfall.buyers.requested} buyer leads — short ${shortfall.buyers.shortfall}. A signed contract cannot be assigned without buyers.`
+        );
+      }
+    }
+
     return Response.json({
+      ...(sizing
+        ? {
+            targetDeals,
+            required: { sellers: sizing.sellersNeeded, buyers: sizing.buyersNeeded },
+            shortfall,
+            fullySized: warnings.length === 0,
+            warnings,
+            model: {
+              sellersPerDeal: sizing.sellersPerDeal,
+              buyersPerDeal: sizing.buyersPerDeal,
+            },
+          }
+        : {}),
       created,
       segmentSize: segment.length,
       next: 'Leads created with source=lead-finder (no contact yet). Run skip-trace to resolve phones, DNC scrub, then build a campaign in the wizard.',

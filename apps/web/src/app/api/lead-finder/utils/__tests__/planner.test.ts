@@ -13,29 +13,29 @@ import {
 } from '../planner';
 
 describe('sizeCampaign — seller sizing', () => {
-  it('lands near the ~6,000-per-deal working figure with default rates', () => {
+  it('lands on the ~10k-per-deal working figure with default rates', () => {
     const r = sizeCampaign({ targetDeals: 1 });
-    // 0.92 * 0.06 * 0.35 * 0.30 * 0.12 * 0.25 = 1.7388e-4
-    //   1 / 1.7388e-4 = 5751.09...  ->  ceil = 5752
-    // (5751 contacts yields 0.99998 deals — the ceil is load-bearing, not cosmetic.)
-    expect(r.sellerConversion).toBeCloseTo(0.00017388, 10);
-    expect(r.sellersPerDeal).toBe(5752);
-    expect(r.sellersNeeded).toBe(5752);
+    // 0.90 * 0.05 * 0.32 * 0.28 * 0.12 * 0.20 = 9.6768e-5
+    //   1 / 9.6768e-5 = 10333.9...  ->  ceil = 10334
+    // (10333 contacts yields 0.99991 deals — the ceil is load-bearing.)
+    expect(r.sellerConversion).toBeCloseTo(0.000096768, 12);
+    expect(r.sellersPerDeal).toBe(10334);
+    expect(r.sellersNeeded).toBe(10334);
   });
 
-  it('lands on exactly 100 buyers per deal with default rates', () => {
-    // 0.20 * 0.25 * 0.20 = 0.01  ->  1/0.01 = 100
+  it('lands on exactly 200 buyers per deal — inside the 100-300 working range', () => {
+    // 0.25 * 0.20 * 0.10 = 0.005  ->  1/0.005 = 200
     const r = sizeCampaign({ targetDeals: 1 });
-    expect(r.buyerConversion).toBeCloseTo(0.01, 12);
-    expect(r.buyersPerDeal).toBe(100);
-    expect(r.buyersNeeded).toBe(100);
+    expect(r.buyerConversion).toBeCloseTo(0.005, 12);
+    expect(r.buyersPerDeal).toBe(200);
+    expect(r.buyersNeeded).toBe(200);
   });
 
   it('scales linearly with the deal target', () => {
     const one = sizeCampaign({ targetDeals: 1 });
     const five = sizeCampaign({ targetDeals: 5 });
     expect(five.sellersNeeded).toBe(Math.ceil(one.sellerConversion ** -1 * 5));
-    expect(five.buyersNeeded).toBe(500);
+    expect(five.buyersNeeded).toBe(1000); // 200/deal × 5
   });
 
   it('rounds UP once at the end, not per stage', () => {
@@ -47,9 +47,10 @@ describe('sizeCampaign — seller sizing', () => {
   });
 
   it('honours per-stage overrides', () => {
-    const better = sizeCampaign({ targetDeals: 1, seller: { replyRate: 0.12 } });
+    // Exactly double the default replyRate (0.05 -> 0.10) so the expected
+    // halving is arithmetic, not approximate.
+    const better = sizeCampaign({ targetDeals: 1, seller: { replyRate: 0.1 } });
     const base = sizeCampaign({ targetDeals: 1 });
-    // Doubling reply rate should roughly halve the contacts needed.
     expect(better.sellersNeeded).toBeCloseTo(base.sellersNeeded / 2, -1);
   });
 });
