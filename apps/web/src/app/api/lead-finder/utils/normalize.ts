@@ -234,6 +234,95 @@ export function parseSourcedCsv(text: string, opts: ParseOptions): SourcedParseR
   return { rows, failures, totalRows };
 }
 
+/**
+ * Parse already-structured records (a JSON API response) into normalized
+ * sourced leads.
+ *
+ * Deliberately shares mapHeaders / isContactHeader / deriveSignals /
+ * buildDedupeKey with parseSourcedCsv rather than reimplementing them. The
+ * contact-stripping guarantee in this module's header is the whole reason:
+ * a second, parallel parser would be a second place for a phone number to slip
+ * into raw_fields, and the schema has no contact columns to catch it. One
+ * normalizer, one guarantee.
+ *
+ * Values are stringified before matching so a numeric SODA field (assessed
+ * value, parcel number) is treated exactly like its CSV equivalent.
+ */
+export function parseSourcedRecords(
+  records: Array<Record<string, unknown>>,
+  opts: ParseOptions
+): SourcedParseResult {
+  const failures: SourcedParseFailure[] = [];
+  const rows: NormalizedSourcedLead[] = [];
+
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i] ?? {};
+    const keys = Object.keys(rec);
+    // Reuse the CSV header mapper by treating the record's keys as a header row.
+    const hm = mapHeaders(keys);
+
+    const rawFields: Record<string, string> = {};
+    keys.forEach((k, idx) => {
+      if (hm.contactCols.has(idx)) return; // strip contact fields, same rule as CSV
+      const val = scrubContactValues(normalizeWhitespace(stringifyCell(rec[k])));
+      if (val) rawFields[k] = val;
+    });
+
+    const get = (field: string): string | null => {
+      const idx = hm.byField[field];
+      if (idx === undefined) return null;
+      return normalizeWhitespace(stringifyCell(rec[keys[idx]])) || null;
+    };
+
+    const ownerName = get('ownerName');
+    const propertyAddress = get('propertyAddress');
+    const mailingAddress = get('mailingAddress');
+    const parcelId = get('parcelId');
+    const county = get('county') || (opts.fallbackCounty ? normalizeWhitespace(opts.fallbackCounty) : null);
+    const assessedValueCents = parseMoneyCents(get('assessedValueCents'));
+
+    if (!ownerName && !propertyAddress && !parcelId) {
+      failures.push({ rowNumber: i + 1, raw: rawFields, reason: 'No owner name, property address, or parcel id' });
+      continue;
+    }
+
+    const signals = deriveSignals({
+      recordType: opts.sourceRecordType,
+      category: opts.sourceCategory,
+      mailingAddress,
+      propertyAddress,
+      rawFields,
+    });
+
+    rows.push({
+      ownerName,
+      propertyAddress,
+      mailingAddress,
+      parcelId,
+      county,
+      assessedValueCents,
+      signals,
+      rawFields,
+      dedupeKey: buildDedupeKey(county, parcelId, propertyAddress, ownerName),
+    });
+  }
+
+  return { rows, failures, totalRows: records.length };
+}
+
+/**
+ * SODA returns strings, numbers, booleans, and nested objects (e.g. a
+ * `location` point). Only flat scalars are usable as field values; an object
+ * stringified via String() becomes "[object Object]", which would then be
+ * matched and stored as if it were an address.
+ */
+function stringifyCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return ''; // objects/arrays are not scalar field values
+}
+
 /** Remove rows colliding on dedupeKey within the batch (keep first). */
 export function dedupeInBatch(rows: NormalizedSourcedLead[]): {
   unique: NormalizedSourcedLead[];
