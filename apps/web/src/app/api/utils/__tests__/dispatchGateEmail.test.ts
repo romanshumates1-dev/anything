@@ -75,11 +75,85 @@ const emailReq = (over: Record<string, unknown> = {}) =>
   }) as any;
 
 describe('isTelephony', () => {
-  it('classifies email as NOT telephony', () => {
+  it('classifies email and mail as NOT telephony', () => {
     expect(isTelephony('sms')).toBe(true);
     expect(isTelephony('voice')).toBe(true);
     expect(isTelephony('rvm')).toBe(true);
     expect(isTelephony('email')).toBe(false);
+    expect(isTelephony('mail')).toBe(false);
+  });
+});
+
+// ── MAIL: the registration-free seller channel ──────────────────────────────
+// Physical mail is not a call (TCPA), not electronic mail (CAN-SPAM), and has
+// no carrier layer (no 10DLC/A2P). If any telephony rule reached it, the ONE
+// channel that works at volume without registration would be broken by rules
+// that do not apply to it. The hostile telephony policy set in beforeEach —
+// federally listed number, strict DNC, stale coverage, required consent — must
+// be entirely inert here.
+const MAILING = '123 Main St, Louisville, KY 40202';
+const mailReq = (over: Record<string, unknown> = {}) =>
+  ({
+    phone: '',
+    mailingAddress: MAILING,
+    channel: 'mail',
+    coldOutbound: true,
+    organizationId: 'org_1',
+    ...over,
+  }) as any;
+
+describe('mail is unreachable by telephony rules', () => {
+  it('ALLOWS a cold piece to an unsuppressed address', async () => {
+    const d = await dispatchGate(mailReq());
+    expect(d.allow).toBe(true);
+  });
+
+  it('ignores a federal DNC listing — a phone registry cannot bar a letter', async () => {
+    const d = await dispatchGate(mailReq());
+    expect(d.allow).toBe(true);
+    expect(checkDncRegistry).not.toHaveBeenCalled();
+  });
+
+  it('ignores sms_consent_policy=required — mail needs no prior consent', async () => {
+    const d = await dispatchGate(mailReq());
+    expect(d.allow).toBe(true);
+    expect(hasSmsConsent).not.toHaveBeenCalled();
+  });
+
+  it('is not held by quiet hours — a letter does not arrive at 3am', async () => {
+    const at = new Date('2026-07-15T08:00:00Z'); // 03:00 America/New_York
+    const d = await dispatchGate(mailReq({ now: at }));
+    expect(d.allow).toBe(true);
+  });
+
+  it('is not snapped to cadence send windows', async () => {
+    const at = new Date('2026-07-15T21:00:00Z'); // 5pm ET, outside 10-11 / 2-4
+    const d = await dispatchGate(mailReq({ isCadenceStep: true, now: at }));
+    expect(d.allow).toBe(true);
+  });
+});
+
+describe('mail still honours opt-out and fails closed', () => {
+  it('DENIES a piece to an address that opted out', async () => {
+    mockSql.mockResolvedValue([{ '1': 1 }]);
+    const d = await dispatchGate(mailReq());
+    expect(d.allow).toBe(false);
+    expect((d as any).code).toBe('DNC');
+    expect((d as any).reason).toMatch(/opted out of mail/i);
+  });
+
+  it('keys suppression on the MAILING ADDRESS, not the phone', async () => {
+    await dispatchGate(mailReq({ phone: '+15025550123' }));
+    expect(mockSql.mock.calls[0]).toContain(MAILING);
+    expect(mockSql.mock.calls[0]).not.toContain('+15025550123');
+  });
+
+  it('DENIES when no address is supplied rather than falling back to phone', async () => {
+    for (const missing of [undefined, null, '', '   ']) {
+      const d = await dispatchGate(mailReq({ mailingAddress: missing, phone: '+15025550123' }));
+      expect(d.allow, `mailingAddress=${JSON.stringify(missing)}`).toBe(false);
+      expect((d as any).reason).toMatch(/requires a mailing address/);
+    }
   });
 });
 

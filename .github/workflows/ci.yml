@@ -169,6 +169,7 @@ jobs:
             dispatchGate optOutRegression cadenceEngine sms-gateway \
             demoAllowlist luxuryColdGate test-mode-block \
             dncRegistry dispatchGateDnc dispatchGateEmail emailDriver \
+            mailDriver contactResolution \
             2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tee /tmp/compliance.log
 
           # A filter that matches NOTHING makes vitest exit 0 — a silent false
@@ -181,11 +182,11 @@ jobs:
           FILES=$(grep -aoE 'Test Files +[0-9]+ passed' /tmp/compliance.log \
                   | grep -oE '[0-9]+' | head -1)
           echo "compliance test files passed: ${FILES:-0}"
-          # Bump this whenever a file is added to the filter list above. 11 as
-          # of the emailDriver CAN-SPAM guard. Count verified by running the
-          # filter locally, not assumed.
-          if [ "${FILES:-0}" -lt 11 ]; then
-            echo "::error title=Compliance gate::Expected >=11 compliance test files, got ${FILES:-0}. A filter matched nothing, or a file was renamed/deleted without updating this job."
+          # Bump this whenever a file is added to the filter list above. 13 as
+          # of the direct-mail channel + optional contact resolution. Count
+          # verified by running the filter locally, not assumed.
+          if [ "${FILES:-0}" -lt 13 ]; then
+            echo "::error title=Compliance gate::Expected >=13 compliance test files, got ${FILES:-0}. A filter matched nothing, or a file was renamed/deleted without updating this job."
             exit 1
           fi
 

@@ -43,9 +43,25 @@
  * functioning unsubscribe, a real physical postal address, non-deceptive
  * headers and subject lines. The email driver owns those.
  *
+ * MAIL IS THE LEAST-REGULATED CHANNEL, AND THE ONLY UNIVERSAL SELLER REACH.
+ * Physical mail is not a "call" (TCPA does not reach it), not "electronic mail"
+ * (CAN-SPAM does not reach it), and carries no carrier/registration layer at
+ * all — no 10DLC, no A2P, no campaign approval. So this gate applies exactly
+ * one rule to it, the same one email gets: internal opt-out suppression.
+ *
+ * That is honoured even though no federal statute compels it here, because a
+ * recipient who has told us to stop has told us to stop, and several states run
+ * their own do-not-mail / solicitation rules. Suppression is cheap; a
+ * complaint is not.
+ *
+ * Operationally this is the channel that satisfies "reach sellers at volume
+ * without carrier registration": sourced_leads.mailing_address comes straight
+ * from the public record, so EVERY sourced lead is mail-reachable with no
+ * skip-trace, no enrichment, and no per-record cost before the send itself.
+ *
  * The suppression TARGET differs by channel: `phone` for telephony, `email`
- * for email. Sending to the wrong key would fail OPEN, so it is resolved once,
- * explicitly, at the top of the gate.
+ * for email, `mailingAddress` for mail. Sending to the wrong key would fail
+ * OPEN, so it is resolved once, explicitly, at the top of the gate.
  *
  * TIMEZONE: derived from the phone's area code. Unknown/ambiguous → MOST
  * RESTRICTIVE: the send must be legal in EVERY US timezone the number could be
@@ -57,7 +73,7 @@ import { timezonesForPhone } from '@/app/api/utils/area-codes';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 
-export type DispatchChannel = 'sms' | 'voice' | 'rvm' | 'email';
+export type DispatchChannel = 'sms' | 'voice' | 'rvm' | 'email' | 'mail';
 
 /**
  * Telephony channels. Email is governed by CAN-SPAM (15 U.S.C. 7701), a
@@ -108,6 +124,15 @@ export interface DispatchRequest {
    * rather than falling back to `phone`.
    */
   email?: string | null;
+  /**
+   * Deliverable postal address. REQUIRED when channel==='mail' — it is the
+   * suppression key for that channel, same fail-closed rule as `email`.
+   *
+   * Note this needs NO enrichment: sourced_leads.mailing_address is populated
+   * by both parsers straight from the public record, which is what makes
+   * direct mail reachable without skip trace.
+   */
+  mailingAddress?: string | null;
   channel: DispatchChannel;
   /** Which beta flag gates this dispatch (omit for always-on paths). */
   betaFlag?: BetaFlagKey;
@@ -230,25 +255,33 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
   const tzs = timezonesForPhone(req.phone);
 
   try {
-    // ── EMAIL: CAN-SPAM path. See the EMAIL note in the header docblock for
-    // why every telephony rule below is skipped rather than merely inapplicable.
-    if (req.channel === 'email') {
-      const address = (req.email ?? '').trim();
-      if (!address) {
+    // ── NON-TELEPHONY (email, mail). Neither is reached by the TCPA, so every
+    // telephony rule below is skipped rather than merely inapplicable. See the
+    // EMAIL and MAIL notes in the header docblock.
+    if (!isTelephony(req.channel)) {
+      const target =
+        req.channel === 'email' ? (req.email ?? '').trim() : (req.mailingAddress ?? '').trim();
+      if (!target) {
         // Fail CLOSED. Falling back to `phone` here would look up the wrong
-        // suppression key and happily send to someone who unsubscribed.
+        // suppression key and happily send to someone who opted out.
         return {
           allow: false,
           code: 'NO_CONSENT',
-          reason: 'SKIPPED: email channel requires an email address (suppression key)',
+          reason:
+            req.channel === 'email'
+              ? 'SKIPPED: email channel requires an email address (suppression key)'
+              : 'SKIPPED: mail channel requires a mailing address (suppression key)',
           timezones: tzs,
         };
       }
-      if (await isSuppressed(address)) {
+      if (await isSuppressed(target)) {
         return {
           allow: false,
           code: 'DNC',
-          reason: 'Recipient unsubscribed (CAN-SPAM opt-out honoured on all channels)',
+          reason:
+            req.channel === 'email'
+              ? 'Recipient unsubscribed (CAN-SPAM opt-out honoured on all channels)'
+              : 'Recipient opted out of mail (honoured on all channels)',
           timezones: tzs,
         };
       }
