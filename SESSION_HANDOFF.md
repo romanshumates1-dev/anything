@@ -497,3 +497,66 @@ C: has 58G free, D: has 2.7T free — healthy (the prior "C: 100% full" is solve
 cache, regenerable). NOT DealFlow: `d:\anything\odysseus\**\data\*.db` — a separate
 project's DBs, with an accidental-looking `odysseus/odysseus/` duplicate. Left for the
 owner to review/delete (not created here).
+
+---
+
+## Session (u) — 2026-07-28 — No-A2P channel pipeline, Gate -1 + Gate 1 (partial)
+
+**Branch:** feat/mvp-prelaunch (source of truth; 41 ahead / 2 behind origin/main —
+the 2 behind are merge bubbles c13c5d1/c715487, no unique work on main).
+
+**Corrections to prior state files (code beats docs):**
+- Test count is **961 passed / 22 skipped / 116 files**, not 367/306/296/252.
+- CI has **5** jobs (web, compliance, desktop, flows-live, e2e), not 4.
+- "PR #4 remains a DRAFT — not merged" is FALSE. It is merged (c13c5d1).
+- QUARANTINED files `outreach/resurrection-engine.ts` and
+  `outreach/variant-allocator.ts` **DO NOT EXIST** anywhere in the repo.
+  Nothing to avoid wiring.
+- Lead Finder source count CONFIRMED: 006 seeds 9 (KY) + 008 seeds 28
+  (NC/GA/MO/StL) = 37 total.
+
+**BLOCKED-ON-OWNER — both AI providers down (blocks Gates 2 and 3):**
+- Anthropic: key valid, `credit balance is too low` (HTTP 400). Fix: add credits,
+  or point AI at **Amazon Bedrock**, which is on the AWS credit list and prices
+  Claude identically — see AWS_CREDITS_PLAN.md.
+- Ollama fallback: `llama-server.exe ... requires elevation`. Job id=136
+  dead-lettered 3/3. Fix: run Ollama elevated.
+Preflight: 22 PASS / 2 FAIL / 1 SKIP. First fail = Check 4.
+
+**FIXED THIS SESSION — dev DB was behind the migration chain.**
+`dnc_registry` did not exist in the dev database: migrations 043/044 were green
+in CI (Neon test branch) but never applied locally. `scripts/migrate.mjs` →
+44/44 applied idempotently. Unit tests and CI could not have caught this.
+
+**GATE 1 — cross-channel opt-out + DNC scrub: PROVEN LIVE.**
+- `scripts/verify-cross-channel-optout.mjs` — 5 legs, all pass. Proves
+  suppression is channel-agnostic per identifier, DNC scrub blocks a seeded
+  listed number, and a phone DNC listing does NOT over-block mail/email.
+- Gap found by that probe: suppression was **per-identifier, not per-person**,
+  so an email unsubscribe left the same lead's phone reachable. That is the
+  literal Gate 1 requirement and it did not hold.
+- Closed by `src/app/api/services/leadSuppression.ts` — an opt-out on any
+  channel fans out to every identifier held for the lead (phone, email,
+  mailing address; property_address deliberately excluded — it is the house,
+  not the owner's mailbox). Fan-out at WRITE time so the send path stays one
+  indexed lookup and the record survives later edits.
+- `scripts/verify-lead-suppression.mjs` — seeds a lead with phone+email+mail,
+  unsubscribes by EMAIL only, asserts PHONE and MAIL suppressed. All legs pass,
+  DB rows show fannedOut=true. Non-vacuous: reachability asserted first.
+
+**Gate 1 REMAINING (OPEN):**
+- leadSuppression not yet wired into the inbound handlers (email unsubscribe
+  route, SMS STOP path) — the service exists and is proven, the call sites are
+  not changed yet.
+- Unit tests for leadSuppression (live probe exists; vitest coverage does not).
+- SES bounce/complaint handling — MISSING.
+- Inbound email reply → conversation thread — MISSING.
+- DirectMail batch export (CSV/PDF + per-piece tracking codes) — MISSING.
+- ManualCallQueue — MISSING (not started).
+
+**Phase-1 inventory (search-before-build):** emailDriver.ts EXISTS (CAN-SPAM
+guard + footer + opt-out via dispatchGate); mailDriver.ts + /api/outreach/mail/run
+EXIST (deliverability guard, cost estimate, dry-run default); ManualCallQueue
+does not exist.
+
+Suite at close: 961 passed / 22 skipped / 0 failed. Typecheck exit 0.
