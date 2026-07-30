@@ -1,6 +1,58 @@
 # SESSION_HANDOFF.md — DealFlow AI
 
-_Last session: 2026-07-18 (p) — v6. **P1-P3-P4 integration + P5 scripts VERIFIED + pushed**. typecheck 0; suite **585 passed / 46 skipped / 0 failed**; all webhook tests fixed._
+_Last session: 2026-07-20 (p) — SaaS monetization foundation (billing tiers). Single-source plan config + pure money-math + billing schema + entitlement/usage-metering gate + Stripe adapter/5 routes + server-side usage-cap enforcement. Full-project typecheck **exit 0**; suite **511 passed / 46 skipped / 0 failed** (63 files); migration 014 validated through the real `splitSql`. Live-DB / Docker / desktop paths environment-blocked (detailed below). Branch `claude/superpowers-saas-tiers-eaba76`._
+
+## Session (p) — SaaS Monetization Foundation (billing tiers)
+
+Built the paid-SaaS spine: one source of truth for the 3 tiers, the pure money-math that keeps every plan margin-safe, the DB schema, the entitlement/usage-metering gate, the Stripe adapter + 5 billing routes, and server-side usage enforcement on the campaign send path. Design rule throughout: **going live is a credentials change, not a code change** — the same code path runs with Stripe test keys or live keys; only `STRIPE_SECRET_KEY` + `STRIPE_PRICE_*` differ.
+
+| Piece | File(s) | Verification |
+|---|---|---|
+| Plan config — single source of truth | `apps/web/src/config/plans.ts` (+ `plans.test.ts`) | 14/14 unit: 3 tiers, 2–3× markup band, derived SMS allowance, cap-before-spend per metered tier, public-plan shape |
+| Pure money-math | `apps/web/src/config/billing-math.ts` (+ `billing-math.test.ts`) | 14/14 unit: markup 2–3×, cap-before-spend invariant across a spread of budgets/markups, exact profit split (25/75, 50/50, 90/10) remainder-to-company, boundaries |
+| Billing schema | `apps/web/db/migrations/014_billing.sql` | Through the repo's own `splitSql`: 20 statements, 3 `DO $$` blocks balanced → runner applies cleanly |
+| Entitlement + usage metering + Twilio-budget cap | `apps/web/src/app/api/utils/entitlement.ts` (+ `entitlement.test.ts`) | 5 tests (1 DB-gated skip): `isActiveStatus`, `periodTag`, registration-grace early-return (DB-free) |
+| Stripe adapter — one client | `apps/web/src/app/api/utils/stripe.ts` | Single client, server-only key, loud on missing config; `stripeMode()` derives test/live from key prefix |
+| Billing routes | `apps/web/src/app/api/billing/{plans,subscription,checkout,portal,webhook}/route.ts` | Full-project typecheck exit 0; webhook: signature-verified (403 on tamper), idempotent replay guard, activation + re-purchase path |
+| Pricing UI wired to config | `apps/web/src/app/(marketing)/pricing/page.tsx` | Reads `getPublicPlans()` — no second hardcoded price list; renders concrete per-tier caps |
+| Profit-split legal page | `apps/web/src/app/(marketing)/legal/profit-split/page.tsx` | Renders split tiers from `billing-math` (text can't drift from arithmetic); attorney-review template banner |
+| Server-side usage enforcement | `apps/web/src/app/api/campaigns/[id]/launch/route.ts` | Cap gate before enqueue (402 + logged when over cap) + `consumeUsage` metering after; null-sub defaults to Starter caps |
+| Env contract | `apps/web/.env.example` | Added `STRIPE_*`, `TWILIO_COST_PER_SEGMENT_CENTS`, `LEGAL_ENTITY_*`, `SUPPORT_EMAIL` |
+
+**Verification pasted this session:**
+- `tsc -p tsconfig.typecheck.json --noEmit` → **exit 0** (whole project, incl. all new billing code + Stripe SDK types).
+- `vitest run --config src/app/api/vitest.config.ts` → **511 passed / 46 skipped / 0 failed**, 63 files (~32s). +32 new billing/entitlement tests over the 479 baseline; zero regressions.
+- Migration 014 through a verbatim copy of `migrate.mjs`'s `splitSql` → **PASS** (all `$$` blocks balanced).
+
+**Bug found by running it (not assumed):** adding the entitlement gate to the launch route inserted `getSubscription`'s `sql` call into the sequential-mock chain of `full-wholesale-pipeline.test.ts`, shifting the mock meant for the conversation INSERT → `conv` undefined → 500. Code was correct (gating is intended); the **test's mock sequence was stale**. Fixed the test to mock the 3 new entitlement reads in order. Suite green again. (Logged in `BREAKAGE_TABLE.md`.)
+
+**Environment blockers — NOT silently skipped, genuinely unrunnable here:**
+- **Dependency install** — `yarn install` fails on recurring OpenSSL GCM TLS errors fetching the registry (1881/2094 zips cached, then TLS aborts). **Worked around** by junctioning the worktree `node_modules` → main checkout `D:\anything\node_modules` (identical lockfile); that is how typecheck+tests ran. `stripe@17.7.0` (absent from main too) was fetched via a single `npm pack` (one TLS connection succeeds) and extracted into the junction target; `require('stripe')` verified. **OPEN ITEM:** `package.json` declares `stripe@^17.7.0` but `yarn.lock` was NOT updated — run `yarn install` to reconcile the lockfile when the network allows.
+- **Live DB / migration apply** — no local Neon endpoint; Docker daemon down; no Postgres image local; pull hits the same TLS wall. Migration correctness proven statically; the DB-gated entitlement integration test is written and **skips** (not passes) without `DATABASE_URL`.
+- **Dev server / Playwright / Stripe test-mode live calls / desktop .exe** — not run this session; depend on the above.
+
+**Scope note:** this session covered only the monetization/billing-tiers foundation (worktree `superpowers-saas-tiers`). Untouched from the two-prompt mega-spec: Prompt 1 Phases 1/2/4/6 (marketing pages, reviews, admin panel, desktop rebuild) and Prompt 2 Parts A–F (Playwright/twilio_test E2E).
+
+**Addendum (same session) — production-validation runbook + delivery-callback fix.** Wrote [`docs/GO_LIVE_CHECKLIST.md`](docs/GO_LIVE_CHECKLIST.md): the owner-executed runbook mapping the 12 production-validation steps to exact verifications, the **mode-invariant test↔live proof at file:line** (send transport is chosen only by Twilio env — `jobs.ts:135`; the gateway never branches on mode — `sms-gateway.ts:129`; only `TwilioAdapter.send` differs), and a 7-item gap register. Fixed the top gap **G-1** while auditing: there was **no Twilio delivery-status callback route**, so `message_events` never advanced past `dispatched`. Built [`api/sms/status/route.ts`](apps/web/src/app/api/sms/status/route.ts) (signature-verified, out-of-order guarded, idempotent) + wired `statusCallback` into `TwilioAdapter.send` via env-gated `twilioStatusCallbackUrl()`. Tests **5/5**; full suite **516 passed / 46 skipped / 0 failed**; typecheck 0. Remaining gaps G-2..G-7 (gateway MockSmsProvider, Redis idempotency, boot env-validation, per-delivery metering, monitoring, yarn.lock reconcile) are logged in the runbook.
+
+> **On "true production validation":** none of the above is production-*validated* — that requires live infra, live Stripe/Twilio credentials, an **approved 10DLC campaign** (external, multi-week), and one real delivered SMS observed with its status callback + metered usage. Those steps are owner-only (credentials/financial/regulatory) and cannot be performed by the agent. The runbook is what the owner executes to get there; the twilio_test + Stripe-test proofs (§3–§4) are the maximum provable state beforehand.
+
+### Gap close-out (same session) — all 7 code gaps fixed, in 5 phases
+
+Built out every remaining code gap from the runbook's register, one commit per phase, each typecheck-clean + unit-tested:
+
+| Gap | Fix | Key files | Tests |
+|---|---|---|---|
+| **G-2** mock-provider zero-cost proof | `SMS_MODE=mock` injects `MockSmsProvider` into the REAL gateway; `simulateDeliveryProgression` POSTs signed callbacks to the real `/api/sms/status` (no bypass) | `gateway/mock-provider.ts`, `utils/sms-mode.ts`, `utils/twilio-webhook.ts` (`signTwilioRequest`), `jobs.ts` | 3/3 |
+| **G-3** durable idempotency | Durable L2 store behind the Map (survives restart/multi-instance); optional/injected so gateway's 30 tests unchanged | migration `015_sms_idempotency.sql`, `gateway/sms-idempotency-store.ts` | 3/3 |
+| **G-4** boot env validation | Hand-rolled validator; prod boot aborts with a named list; worker fail-fasts too | `utils/env-validation.ts`, `src/instrumentation.ts`, `scripts/worker.mjs` | 9/9 |
+| **G-5** per-send metering | Metered by real GSM-7/UCS-2 segment count in the worker (launch keeps the gate); Twilio spend recorded | `config/sms-segments.ts`, `entitlement.ts` (`meterSmsSend`), `jobs.ts`, launch route | 11/11 |
+| **G-6** monitoring seam | `reportError` (structured log + optional `MONITORING_WEBHOOK_URL`); worker process-level handlers; wired into Stripe webhook | `utils/monitoring.ts`, `billing/webhook/route.ts`, `worker.mjs` | 3/3 |
+| **G-7** lockfile | `yarn install --mode=update-lockfile` added `stripe@17.7.0` (+ deps) to `yarn.lock` with the yarn checksum (link step skipped → junction untouched) | `yarn.lock` | n/a |
+
+**Verification after all phases:** `tsc` exit 0; full suite **545 passed / 46 skipped / 0 failed** (72 files; +34 tests over the 511 at the start of the gap work); migrations 014 + 015 validated through the real `splitSql`; commits `fccae8d` (G-2) · `84b7f81` (G-3) · `25da172` (G-4) · `6fa09e5` (G-5) · G-6/G-7 in the close-out commit + review fixes `7f21583`. Then merged `main` (v6: P1-P3-P4 integration, bounded negotiation, inspection clock). Only owner-only live/10DLC steps remain (see runbook §5).
+
+_Earlier (main line): 2026-07-18 (p) — v6. **P1-P3-P4 integration + P5 scripts VERIFIED + pushed**. typecheck 0; suite **585 passed / 46 skipped / 0 failed**; all webhook tests fixed._
 
 ## Session (o) — v5 (inspection clock + bounded negotiation core)
 

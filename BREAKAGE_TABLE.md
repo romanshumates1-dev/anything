@@ -1,5 +1,28 @@
 # BREAKAGE_TABLE.md — DealFlow AI
 
+## Session (p) 2026-07-20 — SaaS monetization foundation
+
+### Found & fixed this session
+
+| # | What broke | Root cause | Fix | Status |
+|---|---|---|---|---|
+| B-p1 | `full-wholesale-pipeline.test.ts` → launch POST returned **500 (expected 200)** after adding entitlement gating | The new `checkUsage`→`getSubscription` `sql` call inserted into the test's **sequential `sql` mock chain**, consuming the `[{id:1}]` mock meant for the `INSERT ai_conversations RETURNING` → `const [conv] = []` → `conv.id` TypeError → 500. Code was correct; the **test was stale**. | Added the 3 new entitlement reads (`getSubscription`, `getUsageCount`, `periodTwilioCostCents`) to the mock sequence in order, with inline comments. Re-ran full suite: **511 passed / 0 failed**. | **FIXED** |
+| B-p2 (G-1) | **No Twilio delivery-status callback route** — `message_events` stuck at `dispatched`; delivery receipts (`sent`/`delivered`) had nowhere to land, so "verify delivery callback" could not pass. Found during the production-validation audit. | `normalizeWebhookEvent` existed at `providers.ts:119` but no `…/status` route (glob returned none); `TwilioAdapter.send` set no `statusCallback`. | Built `POST /api/sms/status` (signature-verified via existing `validateTwilioSignature`, out-of-order rank guard, idempotent, updates `message_events`); wired `statusCallback` into `TwilioAdapter.send` via new `twilioStatusCallbackUrl()` (env-gated → mode-invariant). Tests `sms/status/route.test.ts` **5/5**; full suite **516 passed / 0 failed**. | **FIXED (unit-verified; end-to-end pending live/twilio_test creds)** |
+| B-p3 (G-2) | Mock SMS mode never exercised the real gateway/webhook (separate `sendMessage` seam). | `messaging.ts` mock branch; gateway only ever got `TwilioAdapter`. | `MockSmsProvider` injected into the real gateway on `SMS_MODE=mock`; `simulateDeliveryProgression` POSTs signed callbacks to the real `/api/sms/status` (no bypass). Tests 3/3. | **FIXED** |
+| B-p4 (G-3) | In-memory Map idempotency didn't survive restart / multi-instance. | `sms-gateway.ts:79` (comment: "use Redis"). | Durable L2 store (migration 015) behind the Map; injected in prod, optional in tests (gateway 30/30 unchanged). Tests 3/3. | **FIXED (record-after-success; not a distributed lock — documented)** |
+| B-p5 (G-4) | Missing required env surfaced late, not at boot. | no env schema. | Hand-rolled `validateEnv`/`assertEnv`; `instrumentation.ts` aborts prod boot with a named list; worker fail-fasts on `APP_URL`. Tests 9/9. | **FIXED** |
+| B-p6 (G-5) | SMS metered at launch (projected), not by real delivered segments. | `consumeUsage(...queued)` at launch. | Launch keeps the gate; worker meters real GSM-7/UCS-2 segment count via `meterSmsSend` + records Twilio spend. Tests 11/11. | **FIXED** |
+| B-p7 (G-6) | No monitoring seam; errors only in stdout. | grep: no APM. | `reportError` (log + optional `MONITORING_WEBHOOK_URL`) wired into Stripe webhook + worker process handlers. Tests 3/3. | **FIXED (full APM SDK = optional owner decision)** |
+| B-p8 (G-7) | `yarn.lock` lacked `stripe` (install was TLS-blocked). | `package.json` had `stripe@^17.7.0`, lockfile didn't. | `yarn install --mode=update-lockfile` added it with the yarn checksum (link step skipped, junction untouched). | **FIXED (full `--immutable` install = final CI confirmation)** |
+
+### Environment blockers (found this session — cannot be resolved in-agent here)
+
+| # | Blocker | Evidence | Workaround / status |
+|---|---|---|---|
+| E-p1 | `yarn install` fails — OpenSSL GCM **TLS errors** fetching registry | `➤ YN0000: · Failed with errors`; recurring `ossl_gcm_stream_update:cipher operation failed` / TLS `TLSSocket._emitTLSError`; 1881/2094 zips cached then abort | **Worked around:** junctioned worktree `node_modules` → main `D:\anything\node_modules` (same lockfile). typecheck + 511-test suite ran green through it. |
+| E-p2 | `stripe` dep not in any local `node_modules` | `MISSING stripe` in main web nm probe | Fetched `stripe@17.7.0` via single `npm pack` (one TLS conn succeeds), extracted into junction target, `require('stripe')` OK. **OPEN:** `yarn.lock` not updated — `package.json` declares `stripe@^17.7.0`; reconcile with `yarn install` when network allows. |
+| E-p3 | No live DB / migration cannot be applied | Docker daemon `not responding`; no local Postgres image; `neon` driver needs a Neon endpoint | Migration 014 correctness proven **statically** via the real `splitSql` (20 stmts, 3 balanced `DO $$`). DB-gated entitlement integration test written; **skips** (not passes) without `DATABASE_URL`. |
+
 ## MVP v2 verification matrix (Option B — substance lifted onto the real platform)
 
 Rule: a row is VERIFIED only with **observed output** captured this session. Intentions are not verification.

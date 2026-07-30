@@ -4,6 +4,8 @@ import { headers } from 'next/headers';
 import { enqueueJob } from '../../../utils/jobs';
 import { logEvent } from '../../../utils/logger';
 import { recordRun } from '../../../utils/execution-ledger';
+import { checkUsage } from '../../../utils/entitlement';
+import { smsSegmentCount } from '@/config/sms-segments';
 
 /**
  * Launch a campaign:
@@ -41,6 +43,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WHERE cl.campaign_id = ${campaignId}
       AND cl.status = 'pending'
     `;
+
+    // Entitlement gate (server-side, before any send is enqueued): the sends
+    // about to fire must fit under the launching user's SMS allowance. The cap
+    // is the margin-safe derived allowance, so we can never queue more messaging
+    // than the subscription funds (owner rule: cap out before the Twilio cost).
+    // A user with no subscription row defaults to the Starter caps.
+    //
+    // Project ACTUAL segments (recipients × the template's segment count), not
+    // just recipient count — a multi-segment template must not slip past the
+    // budget gate and then overspend at metering time.
+    const sendable = (members as { phone: string | null }[]).filter((m) => m.phone).length;
+    const projectedSegments = sendable * Math.max(1, smsSegmentCount(String(campaign.message_template ?? '')));
+    const usage = await checkUsage(session.user.id, 'sms_segments', projectedSegments);
+    if (!usage.allowed) {
+      await logEvent('campaign_launch_blocked', 'campaign', campaignId.toString(), {
+        reason: usage.reason,
+        cap: usage.cap,
+        current: usage.current,
+        requested: projectedSegments,
+        recipients: sendable,
+      }, session.user.id);
+      return Response.json(
+        {
+          error: {
+            code: 'USAGE_CAP',
+            message: usage.reason ?? 'SMS usage cap reached for this billing period.',
+            cap: usage.cap,
+            current: usage.current,
+            remaining: usage.remaining,
+          },
+        },
+        { status: 402 }
+      );
+    }
 
     const text = campaign.message_template;
     // Scheduler throttling: respect the campaign's daily cap and per-minute rate.
@@ -96,6 +132,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           channel: 'sms',
           to: m.phone,
           text,
+          // G-5: the billing subject, so the worker meters the ACTUAL segments
+          // sent against this user's allowance (launch only gated a projection).
+          billingUserId: session.user.id,
         },
         { runAt, dedupeKey: `send:${campaignId}:${m.lead_id}` }
       );
@@ -108,6 +147,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       SET status = 'launched', updated_at = NOW()
       WHERE id = ${campaignId}
     `;
+
+    // Metering happens per-send in the worker now (G-5) using each message's real
+    // segment count — the launch gate above only reserves against a projection.
 
     await logEvent(
       'campaign_started',

@@ -19,6 +19,7 @@ import { pickNumber, activePoolCount } from '@/app/api/utils/numberPoolStore';
 import { logEvent } from '@/app/api/utils/logger';
 import { CircuitBreaker } from './circuit-breaker';
 import { ISMSProvider, DeliveryStatus } from './providers';
+import type { IdempotencyStore } from './sms-idempotency-store';
 
 export interface GatewayMessage {
   leadId: number | string;
@@ -63,6 +64,10 @@ export interface GatewayDeliveryRecord {
   gateCode?: DenyCode;
   /** P2.0-W: when the gate says "not now" (quiet hours/window), when to retry. */
   retryAt?: Date;
+  /** G-3: true when this record came from the idempotency cache/store (a replay)
+   *  rather than a fresh dispatch — callers must NOT re-meter or re-fire side
+   *  effects for an idempotent hit. */
+  idempotent?: boolean;
 }
 
 export interface GatewayConfig {
@@ -77,6 +82,8 @@ export interface GatewayConfig {
   maxRetries?: number;
   complianceCheckEnabled?: boolean;
   idempotencyEnabled?: boolean;
+  /** Durable L2 idempotency (G-3). Omit → in-memory Map only (legacy/tests). */
+  idempotencyStore?: IdempotencyStore;
   testModeAllowedPhones?: Set<string>; // org-level allowlist for test mode
 }
 
@@ -188,7 +195,8 @@ export class SMSGateway {
       };
     }
 
-    // 1. IDEMPOTENCY CHECK
+    // 1. IDEMPOTENCY CHECK — L1 in-memory Map, then durable L2 store (G-3) so
+    // the dedup survives restarts and is shared across instances/workers.
     if (this.config.idempotencyEnabled !== false) {
       const cached = idempotencyCache.get(messageUuid);
       if (cached && Date.now() - cached.deliveredAt < CACHE_TTL_MS) {
@@ -206,6 +214,33 @@ export class SMSGateway {
           leadId,
           to,
           dispatchTime: new Date(cached.deliveredAt - 1000),
+          idempotent: true,
+        };
+      }
+      const durable = this.config.idempotencyStore
+        ? await this.config.idempotencyStore.lookup(messageUuid)
+        : null;
+      if (durable) {
+        // Warm the L1 cache so subsequent hits skip the DB round-trip.
+        idempotencyCache.set(messageUuid, {
+          status: durable.status,
+          providerId: durable.providerId,
+          deliveredAt: Date.now(),
+        });
+        await logEvent('message_idempotent', 'message', String(leadId), {
+          messageUuid,
+          providerId: durable.providerId,
+          source: 'durable',
+        });
+        return {
+          messageUuid,
+          status: durable.status,
+          provider: durable.provider || 'unknown',
+          providerId: durable.providerId,
+          leadId,
+          to,
+          dispatchTime: new Date(),
+          idempotent: true,
         };
       }
     }
@@ -345,12 +380,19 @@ export class SMSGateway {
 
         circuitBreaker.recordSuccess();
 
-        // Cache for idempotency
+        // Cache for idempotency — L1 Map + durable L2 (G-3).
         idempotencyCache.set(messageUuid, {
           status: 'dispatched',
           providerId,
           deliveredAt: Date.now(),
         });
+        if (this.config.idempotencyStore) {
+          await this.config.idempotencyStore.remember(messageUuid, {
+            status: 'dispatched',
+            providerId,
+            provider: provider.name,
+          });
+        }
 
         await logEvent('message_dispatched_gateway', 'message', String(leadId), {
           messageUuid,

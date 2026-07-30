@@ -1,6 +1,11 @@
 import sql from '@/app/api/utils/sql';
 import { SMSGateway } from '@/app/api/gateway/sms-gateway';
 import { TwilioAdapter } from '@/app/api/gateway/providers';
+import { MockSmsProvider, simulateDeliveryProgression } from '@/app/api/gateway/mock-provider';
+import { DbIdempotencyStore } from '@/app/api/gateway/sms-idempotency-store';
+import { meterSmsSend } from './entitlement';
+import { isMockSmsMode } from './sms-mode';
+import { twilioStatusCallbackUrl } from './twilio-webhook';
 import { sendMessage } from './messaging';
 import { detectHighRisk, orchestrateAIResponse } from './ai-orchestrator';
 import { getTwilioConfig } from './twilio-adapter';
@@ -80,15 +85,24 @@ let smsGateway: SMSGateway | null = null;
 
 export async function getGateway(): Promise<SMSGateway> {
   if (!smsGateway) {
+      // SMS_MODE=mock injects the MockSmsProvider into the SAME gateway, so the
+      // real gateway path (circuit breakers, idempotency, dispatchGate,
+      // message_events) is exercised at zero cost. Otherwise the real Twilio
+      // adapter (twilio_test vs live differ only by credentials).
+      const primaryProvider = isMockSmsMode()
+        ? new MockSmsProvider()
+        : new TwilioAdapter(
+            process.env.TWILIO_ACCOUNT_SID || '',
+            process.env.TWILIO_AUTH_TOKEN || '',
+            process.env.TWILIO_FROM_NUMBER || undefined,
+            process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
+          );
       smsGateway = new SMSGateway({
-        primaryProvider: new TwilioAdapter(
-          process.env.TWILIO_ACCOUNT_SID || '',
-          process.env.TWILIO_AUTH_TOKEN || '',
-          process.env.TWILIO_FROM_NUMBER || undefined,
-          process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
-        ),
+        primaryProvider,
         complianceCheckEnabled: true,
         idempotencyEnabled: true,
+        // G-3: durable idempotency so dedup survives restarts / multiple workers.
+        idempotencyStore: new DbIdempotencyStore(),
         // test-mode enforcement is DB-driven (test_phone_numbers table in sms-gateway.ts)
         // — no hardcoded allowlist here.
       });
@@ -133,7 +147,7 @@ export async function processNextJob() {
         // sendMessage seam (which simulates delivery when SMS_PROVIDER_URL is
         // unset) — otherwise a deploy without Twilio env silently dead-letters
         // every send instead of using the documented mock path.
-        if (payload.channel === 'sms' && getTwilioConfig()) {
+        if (payload.channel === 'sms' && (getTwilioConfig() || process.env.SMS_MODE === 'mock')) {
           const gateway = await getGateway();
           const result = await gateway.send({
             leadId: payload.leadId,
@@ -144,6 +158,11 @@ export async function processNextJob() {
             campaignId: payload.campaignId,
             organizationId: payload.organizationId,
             contactId: payload.contactId,
+            // Stable per-send idempotency key so a job RETRY (e.g. a throw after
+            // the send) reuses it → the gateway dedupes instead of re-sending
+            // and re-metering. Keyed by the campaign-lead / contact / lead so it
+            // is unique per intended send.
+            messageUuid: `send:${String(payload.campaignLeadId ?? payload.contactId ?? `${payload.leadId}:${payload.to}`)}`,
             // Phase A: numeric-guard context rides with bounded-mode sends.
             boundedNegotiation: payload.boundedNegotiation,
           });
@@ -153,6 +172,15 @@ export async function processNextJob() {
             VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${JSON.stringify({ gatewayStatus: result.status, providerMessageId: result.providerId, errorMessage: result.errorMessage }) })
             ON CONFLICT (id) DO NOTHING
           `;
+          // Mock mode: fire the simulated delivery progression (queued→sent→
+          // delivered) at the REAL /api/sms/status route so message_events
+          // advances exactly as it would with Twilio. Best-effort and only when
+          // a base URL is configured (skipped in unit tests / no-server envs).
+          if (result.status === 'dispatched' && !result.idempotent && result.providerId && isMockSmsMode() && twilioStatusCallbackUrl()) {
+            void simulateDeliveryProgression({ sid: result.providerId, to: payload.to }).catch((e) =>
+              console.warn('[jobs] mock delivery simulation failed', e?.message)
+            );
+          }
           if (result.gateCode) {
             // Gate denial is not a provider failure — defer or suppress.
             return await handleGateDenial(job.id, result.gateCode, result.retryAt);
@@ -160,10 +188,23 @@ export async function processNextJob() {
           if (result.status !== 'dispatched') {
             throw new Error(result.errorMessage || 'gateway_dispatch_failed');
           }
+          // G-5: meter the ACTUAL segments sent against the billing user's plan.
+          // Only on a FRESH dispatch — an idempotent replay (job retry) must not
+          // double-count. Best-effort: a metering error never fails a sent SMS.
+          if (payload.billingUserId && !result.idempotent) {
+            await meterSmsSend(payload.billingUserId, String(payload.text ?? ''), {
+              messageSid: result.providerId,
+            }).catch((e) => console.warn('[jobs] meterSmsSend failed', e?.message));
+          }
         } else {
           const fallback = await sendMessage(payload);
           if (fallback.status === 'suppressed' && (fallback as any).gateCode) {
             return await handleGateDenial(job.id, (fallback as any).gateCode, (fallback as any).retryAt);
+          }
+          if (fallback.status === 'sent' && payload.billingUserId) {
+            await meterSmsSend(payload.billingUserId, String(payload.text ?? '')).catch((e) =>
+              console.warn('[jobs] meterSmsSend failed', e?.message)
+            );
           }
         }
         // INT-4: a successful outbound send is what starts (or advances) the

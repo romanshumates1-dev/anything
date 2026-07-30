@@ -10,7 +10,8 @@
 		"test:watch": "vitest --config src/app/api/vitest.config.ts",
 		"test:e2e": "playwright test",
 		"jobs:dev": "node --env-file=.env scripts/jobs-dev.mjs",
-		"preflight": "node --env-file=.env scripts/preflight.mjs"
+		"preflight": "node --env-file=.env scripts/preflight.mjs",
+		"verify:prod": "node --env-file=.env scripts/verify-production.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",
@@ -31,6 +32,7 @@
 		"react-hook-form": "^7.72.0",
 		"recharts": "3.8.0",
 		"sonner": "^2.0.7",
+		"stripe": "^17.7.0",
 		"tailwind-merge": "^3.2.0",
 		"twilio": "^6.0.2",
 		"vanilla-colorful": "^0.7.2",
