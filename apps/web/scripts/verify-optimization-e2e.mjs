@@ -4,9 +4,8 @@
  * Creates sample data to verify complete pipeline
  */
 
-import { neon } from '@neondatabase/serverless';
-
-const sql = neon(process.env.DATABASE_URL);
+import sqlModule from '../src/app/api/utils/sql.ts';
+const sql = sqlModule.default || sqlModule;
 
 async function verifyE2E() {
   console.log('E2E Verification of Optimization MVP...\n');

@@ -1,6 +1,5 @@
-import { neon } from '@neondatabase/serverless';
-
-const sql = neon(process.env.DATABASE_URL);
+import sqlModule from '../src/app/api/utils/sql.ts';
+const sql = sqlModule.default || sqlModule;
 
 async function seedTestLeads() {
   console.log('Seeding 5 test leads for optimization MVP...');
