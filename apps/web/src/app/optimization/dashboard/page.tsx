@@ -2,6 +2,8 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import { KPIBar } from './components/KPIBar';
+import { DealTable } from './components/DealTable';
+import { ActionQueue } from './components/ActionQueue';
 
 async function getDashboardData(organizationId: string) {
   // Total leads
@@ -35,11 +37,72 @@ async function getDashboardData(organizationId: string) {
     WHERE l.organization_id = ${organizationId}
   `;
 
+  // Deals for table (top 20 by EV)
+  const deals = await sql`
+    SELECT
+      l.id,
+      l.name,
+      l.metadata->>'address' as address,
+      l.status,
+      ls.composite_score as score,
+      pv.arv,
+      pv.offer_max,
+      dp.p_close,
+      dp.expected_value
+    FROM leads l
+    JOIN lead_scores ls ON ls.lead_id = l.id
+    JOIN property_valuations pv ON pv.lead_id = l.id
+    JOIN deal_probabilities dp ON dp.lead_id = l.id
+    WHERE l.organization_id = ${organizationId}
+    ORDER BY dp.expected_value DESC
+    LIMIT 20
+  `;
+
+  // Actions for queue (top 10 by priority)
+  const actions = await sql`
+    SELECT
+      la.id,
+      la.lead_id,
+      la.action,
+      la.priority,
+      la.reason,
+      la.created_at,
+      l.name as lead_name,
+      l.metadata->>'address' as address
+    FROM lead_actions la
+    JOIN leads l ON l.id = la.lead_id
+    WHERE l.organization_id = ${organizationId}
+      AND la.status = 'pending'
+    ORDER BY la.priority DESC
+    LIMIT 10
+  `;
+
   return {
     totalLeads: Number(totalLeadsRow.count),
     activeDeals: Number(activeDealsRow.count),
     expectedValue: Number(evRow.total_ev),
-    avgProbability: Number(avgProbRow.avg_prob)
+    avgProbability: Number(avgProbRow.avg_prob),
+    deals: deals.map(d => ({
+      id: d.id,
+      name: d.name,
+      address: d.address || 'No address',
+      score: Number(d.score),
+      arv: d.arv,
+      offerMax: d.offer_max,
+      pClose: Number(d.p_close),
+      expectedValue: d.expected_value,
+      status: d.status
+    })),
+    actions: actions.map(a => ({
+      id: a.id,
+      leadId: a.lead_id,
+      leadName: a.lead_name,
+      address: a.address || 'No address',
+      action: a.action,
+      priority: Number(a.priority),
+      reason: a.reason,
+      createdAt: a.created_at
+    }))
   };
 }
 
@@ -67,10 +130,9 @@ export default async function OptimizationDashboard() {
         avgProbability={data.avgProbability}
       />
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <p className="text-gray-600">
-          Dashboard components (Deal Table, Action Queue, Deal Drawer) will be added in next tasks.
-        </p>
+      <div className="grid grid-cols-2 gap-6 mb-6">
+        <DealTable deals={data.deals} />
+        <ActionQueue actions={data.actions} />
       </div>
     </div>
   );
