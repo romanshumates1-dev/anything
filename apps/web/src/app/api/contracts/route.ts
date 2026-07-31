@@ -49,6 +49,25 @@ export async function GET() {
       for (const row of rows) {
         (row as any).esign_events = eventsByContract[row.id] || [];
       }
+
+      // P2: Fetch payment data for each contract
+      const payments = await sql`
+        SELECT id, contract_id, amount_cents, currency, status, stripe_payment_intent_id, paid_at, refunded_at, reason, created_at
+        FROM payments_ledger
+        WHERE contract_id = ANY(${contractIds}::text[])
+        ORDER BY created_at DESC
+      `;
+      
+      const paymentByContract: Record<string, any> = {};
+      for (const p of payments) {
+        if (!paymentByContract[p.contract_id]) {
+          paymentByContract[p.contract_id] = p;
+        }
+      }
+
+      for (const row of rows) {
+        (row as any).payment = paymentByContract[row.id] || null;
+      }
     }
 
     return Response.json(rows);

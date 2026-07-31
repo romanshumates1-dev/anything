@@ -9,9 +9,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { registerOptOut } = vi.hoisted(() => ({ registerOptOut: vi.fn(async () => {}) }));
+const { registerOptOut, mockSql } = vi.hoisted(() => ({
+  registerOptOut: vi.fn(async () => {}),
+  mockSql: vi.fn(async () => []),
+}));
 vi.mock('@/app/api/utils/compliance', () => ({ registerOptOut }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
+vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
+vi.mock('@/app/api/utils/emailWarmup', () => ({
+  recordEmailBounce: vi.fn(async () => {}),
+  recordEmailComplaint: vi.fn(async () => {}),
+}));
 
 import { POST } from './route';
 

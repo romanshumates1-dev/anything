@@ -12,7 +12,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export type AiProvider = 'anthropic' | 'ollama';
+export type AiProvider = 'anthropic' | 'ollama' | 'bedrock';
 
 export interface AiConfig {
   provider: AiProvider;
@@ -32,7 +32,11 @@ let cache: { at: number; cfg: AiConfig } | null = null;
 function normalizeProvider(v: unknown): AiProvider | null {
   if (typeof v !== 'string') return null;
   const p = v.trim().toLowerCase();
-  return p === 'ollama' || p === 'anthropic' ? p : null;
+  // Unknown values return null (-> caller falls back to the default) rather
+  // than throwing: a typo in AI_PROVIDER must not take the app down at boot,
+  // and the real provider error surfaces on the first call with a precise
+  // message.
+  return p === 'ollama' || p === 'anthropic' || p === 'bedrock' ? p : null;
 }
 
 /** Env/default view (no DB) — used as the fallback and by the resolver. */

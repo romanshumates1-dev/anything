@@ -9,7 +9,7 @@
  * Live Stripe keys are OWNER-GATED.
  */
 import { logEvent } from '@/app/api/utils/logger';
-import { validateStripeSignature } from '@/app/api/utils/stripe-webhook';
+import Stripe from 'stripe';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,27 +47,15 @@ export interface RefundResult {
   status: string; // 'succeeded' | 'pending' | ...
 }
 
-export interface WebhookEvent {
-  type: string;
-  id: string;
-  data: {
-    object: {
-      id: string;
-      amount: number;
-      currency: string;
-      status: string;
-      metadata?: Record<string, string>;
-    };
-  };
-}
+
 
 // ─── Interface ───────────────────────────────────────────────────────────────
 
 export interface StripeProvider {
   readonly type: StripeProviderType;
   createPaymentLink(params: CreatePaymentParams): Promise<PaymentResult>;
+  parseWebhookEvent(body: string, signature: string): Stripe.Event;
   verifyWebhook(params: VerifyWebhookParams): boolean;
-  parseWebhookEvent(body: string, signature: string): WebhookEvent;
   refund(params: RefundParams): Promise<RefundResult>;
 }
 
@@ -98,13 +86,13 @@ export class MockStripeProvider implements StripeProvider {
     };
   }
 
+  parseWebhookEvent(body: string, _signature: string): Stripe.Event {
+    return JSON.parse(body) as Stripe.Event;
+  }
+
   verifyWebhook(_params: VerifyWebhookParams): boolean {
     // Mock provider accepts any signature in dev
     return true;
-  }
-
-  parseWebhookEvent(body: string, _signature: string): WebhookEvent {
-    return JSON.parse(body);
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
@@ -155,24 +143,25 @@ export class LiveStripeProvider implements StripeProvider {
     };
   }
 
-  verifyWebhook(params: VerifyWebhookParams): boolean {
+  parseWebhookEvent(body: string, signature: string): Stripe.Event {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!secret) {
-      console.error('[stripeProvider] STRIPE_WEBHOOK_SECRET not configured — rejecting webhook');
-      return false;
+      throw new Error('[stripeProvider] STRIPE_WEBHOOK_SECRET not configured.');
     }
-    return validateStripeSignature({
-      body: params.body,
-      signatureHeader: params.signature,
-      secret,
-    });
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
+    return stripe.webhooks.constructEvent(body, signature, secret);
   }
 
-  parseWebhookEvent(body: string, signature: string): WebhookEvent {
-    // LIVE: Use Stripe SDK to construct event
-    // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    // return stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!);
-    return JSON.parse(body);
+  verifyWebhook(params: VerifyWebhookParams): boolean {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return false;
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
+      stripe.webhooks.constructEvent(params.body, params.signature, secret);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {

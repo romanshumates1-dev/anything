@@ -20,6 +20,13 @@ vi.mock('@/app/api/utils/betaFlags', () => ({ isBetaFlagOn }));
 // No Twilio configured → the demo-allowlist branch (step 2.5) is inert.
 vi.mock('@/app/api/utils/twilio-adapter', () => ({ getTwilioConfig: () => null }));
 
+// Phase 0A: compliance gate — mock as open so DNC/consent tests are not blocked by it.
+// The compliance gate's own behaviour is tested in phase0/complianceGate.test.ts.
+vi.mock('../complianceGate', () => ({
+  checkComplianceGate: vi.fn(async () => ({ allowed: true, reason: 'mocked open for DNC tests' })),
+  jurisdictionForLead: vi.fn(() => 'KY-Jefferson'),
+}));
+
 const { checkDncRegistry, isAreaCoverageFresh, getOrgSendPolicy, hasSmsConsent } = vi.hoisted(
   () => ({
     checkDncRegistry: vi.fn(async () => ({ listed: false }) as any),

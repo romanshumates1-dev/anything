@@ -128,6 +128,31 @@ export async function processNextJob() {
     switch (job.type) {
       case 'send_message': {
         const payload: any = job.payload;
+        // Phase 12: throughput guard — check MPS cap, daily cap, opt-out/delivery auto-pause
+        if (payload.organizationId && payload.channel === 'sms') {
+          const { checkThroughput } = await import('./smsGuards');
+          const throughput = await checkThroughput(payload.organizationId);
+          if (!throughput.canSend) {
+            // Defer 60s for rate limits, 5min for auto-pause conditions
+            const deferMs = throughput.mps.blocked ? 60_000 : 5 * 60_000;
+            await sql`
+              UPDATE jobs SET status = 'pending', run_at = ${new Date(Date.now() + deferMs)},
+                locked_until = NULL, attempts = GREATEST(attempts - 1, 0),
+                error_message = ${'deferred:throughput:' + (throughput.reason ?? 'cap')},
+                updated_at = ${new Date()}
+              WHERE id = ${job.id}
+            `;
+            return { success: true, jobId: job.id, type: job.type, gate: 'FLAG_OFF' as DenyCode };
+          }
+        }
+        // Phase 12: duplicate-send detector
+        if (payload.to && payload.text) {
+          const { isDuplicateSend } = await import('./smsGuards');
+          if (await isDuplicateSend({ phone: payload.to, text: payload.text, campaignId: payload.campaignId })) {
+            await sql`UPDATE jobs SET status = 'completed', error_message = 'suppressed:duplicate_send', updated_at = ${new Date()} WHERE id = ${job.id}`;
+            return { success: true, jobId: job.id, type: job.type, gate: 'DNC' as DenyCode };
+          }
+        }
         // Route SMS through the Twilio gateway only when Twilio is actually
         // configured. With no provider, fall back to the provider-agnostic
         // sendMessage seam (which simulates delivery when SMS_PROVIDER_URL is
@@ -187,6 +212,48 @@ export async function processNextJob() {
               consentBasis: payload.consentBasis ?? null,
             });
           }
+        }
+        break;
+      }
+      case 'send_email': {
+        const ep: any = job.payload;
+        const { canSendEmail, recordEmailSend } = await import('./emailWarmup');
+        const allowance = await canSendEmail(ep.organizationId);
+        if (!allowance.allowed) {
+          await sql`
+            UPDATE jobs SET status = 'pending', run_at = ${new Date(Date.now() + 12 * 3600_000)}, locked_until = NULL, updated_at = NOW()
+            WHERE id = ${job.id}
+          `;
+          return { deferred: true, reason: allowance.reason };
+        }
+        const { sendEmail, withCanSpamFooter } = await import('./emailDriver');
+        const emailBody = withCanSpamFooter(ep.body || ep.text || '', {
+          unsubscribeUrl: ep.unsubscribeUrl || `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/unsubscribe?t=${encodeURIComponent(ep.to)}`,
+          postalAddress: ep.postalAddress || process.env.POSTAL_ADDRESS || '',
+        });
+        const result = await sendEmail({
+          to: ep.to,
+          subject: ep.subject || 'Regarding your property',
+          body: emailBody,
+          unsubscribeUrl: ep.unsubscribeUrl || `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/unsubscribe?t=${encodeURIComponent(ep.to)}`,
+          postalAddress: ep.postalAddress || process.env.POSTAL_ADDRESS || '',
+          organizationId: ep.organizationId,
+          campaignId: ep.campaignId,
+          contactId: ep.contactId,
+          leadId: ep.leadId,
+          coldOutbound: true,
+        });
+        if (result.status === 'dispatched') {
+          await recordEmailSend(ep.organizationId);
+        }
+        if (result.status === 'suppressed') {
+          return await handleGateDenial(job.id, result.gateCode, undefined, 'send_email');
+        }
+        if (result.status === 'blocked' || result.status === 'failed') {
+          throw new Error(result.status === 'blocked' ? result.reason : result.errorMessage);
+        }
+        if (ep.contactId && ep.campaignId) {
+          await scheduleNextStep(ep.contactId, ep.campaignId, ep.organizationId);
         }
         break;
       }
@@ -253,6 +320,25 @@ export async function processNextJob() {
         // Phase V-R: day-3 / day-N−2 unassigned-contract notifications.
         // Exactly-once via dedupe keys at enqueue; fresh state check at fire time.
         await processInspectionUrgency(job.payload as any);
+        break;
+      }
+      case 'send_owner_notification': {
+        const ownerNumber = process.env.OWNER_NUMBER;
+        if (!ownerNumber) {
+          console.error('[jobs] OWNER_NUMBER not set, cannot send notification.');
+          // Mark as completed to not retry this.
+          await sql`UPDATE jobs SET status = 'completed', error_message = 'OWNER_NUMBER not set' WHERE id = ${job.id}`;
+          return { success: true, jobId: job.id, type: job.type, gate: 'FLAG_OFF' };
+        }
+        const payload: any = job.payload;
+        const gateway = await getGateway();
+        await gateway.send({
+          to: ownerNumber,
+          text: payload.message,
+          leadId: 'owner-notification', // Placeholder for logs
+          transactional: true,
+          organizationId: payload.organizationId,
+        });
         break;
       }
       default:

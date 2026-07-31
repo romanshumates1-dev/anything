@@ -4,7 +4,8 @@
  * Tests the mock provider's full cycle: create signing link, verify webhook,
  * and the stub providers' contract.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import crypto from 'node:crypto';
 import { MockEsignProvider, DocumensoProvider, DocusignStub, resetEsignProvider, getEsignProvider } from './esignProvider';
 
 describe('MockEsignProvider', () => {
@@ -41,9 +42,15 @@ describe('MockEsignProvider', () => {
 
 describe('DocumensoProvider', () => {
   let provider: DocumensoProvider;
+  const SECRET = 'documenso-test-secret';
 
   beforeEach(() => {
     provider = new DocumensoProvider();
+    process.env.DOCUMENSO_WEBHOOK_SECRET = SECRET;
+  });
+
+  afterEach(() => {
+    delete process.env.DOCUMENSO_WEBHOOK_SECRET;
   });
 
   it('creates a signing link with documenso envelope ID', async () => {
@@ -62,7 +69,9 @@ describe('DocumensoProvider', () => {
   });
 
   it('verifyWebhook accepts valid signature', () => {
-    expect(provider.verifyWebhook({ body: '{}', signature: 'documenso-valid', provider: 'documenso' })).toBe(true);
+    const body = '{}';
+    const signature = crypto.createHmac('sha256', SECRET).update(body).digest('hex');
+    expect(provider.verifyWebhook({ body, signature, provider: 'documenso' })).toBe(true);
   });
 
   it('verifyWebhook rejects invalid signature', () => {
@@ -73,9 +82,15 @@ describe('DocumensoProvider', () => {
 
 describe('DocusignStub', () => {
   let provider: DocusignStub;
+  const SECRET = 'docusign-test-secret';
 
   beforeEach(() => {
     provider = new DocusignStub();
+    process.env.DOCUSIGN_WEBHOOK_SECRET = SECRET;
+  });
+
+  afterEach(() => {
+    delete process.env.DOCUSIGN_WEBHOOK_SECRET;
   });
 
   it('creates a signing link with docusign envelope ID', async () => {
@@ -94,7 +109,9 @@ describe('DocusignStub', () => {
   });
 
   it('verifyWebhook accepts valid signature', () => {
-    expect(provider.verifyWebhook({ body: '{}', signature: 'docusign-valid', provider: 'docusign' })).toBe(true);
+    const body = '{}';
+    const signature = crypto.createHmac('sha256', SECRET).update(body).digest('base64');
+    expect(provider.verifyWebhook({ body, signature, provider: 'docusign' })).toBe(true);
   });
 
   it('verifyWebhook rejects invalid signature', () => {

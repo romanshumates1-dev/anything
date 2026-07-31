@@ -1,15 +1,18 @@
 'use client';
 
 import { useSession } from '@/lib/auth-client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, FileText } from 'lucide-react';
 import InspectionClockChip from '@/components/contracts/InspectionClockChip';
 import ContractTimeline from '@/components/contracts/ContractTimeline';
+import PaymentChip from '@/components/contracts/PaymentChip';
 
 export default function ContractsPage() {
   const { data: session, isPending: authLoading } = useSession();
+
+  const queryClient = useQueryClient();
 
   const { data: contracts, isLoading } = useQuery({
     queryKey: ['contracts'],
@@ -20,6 +23,25 @@ export default function ContractsPage() {
     },
     enabled: !!session,
   });
+
+  const handleRefund = async (paymentId: string) => {
+    const reason = prompt('Please enter a reason for this refund:');
+    if (!reason) return;
+
+    const res = await fetch('/api/payments/refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentId, reason }),
+    });
+
+    if (res.ok) {
+      alert('Refund processed successfully.');
+      await queryClient.invalidateQueries({ queryKey: ['contracts'] });
+    } else {
+      const { error } = await res.json();
+      alert(`Error processing refund: ${error}`);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -78,6 +100,13 @@ export default function ContractsPage() {
                   <p className="text-sm text-gray-500">Created: {new Date(contract.created_at).toLocaleDateString()}</p>
                   {contract.signed_at && (
                     <p className="text-sm text-gray-500">Signed: {new Date(contract.signed_at).toLocaleDateString()}</p>
+                  )}
+
+                  {/* P2: Payment Chip */}
+                  {contract.payment && (
+                    <div className="pt-2 border-t border-gray-100">
+                      <PaymentChip payment={contract.payment} onRefund={handleRefund} />
+                    </div>
                   )}
 
                   {/* Phase P1: e-sign timeline */}

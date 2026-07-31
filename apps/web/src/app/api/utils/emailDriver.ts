@@ -23,6 +23,7 @@
  * this file.
  */
 import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
+import { getEmailCircuitBreaker } from '@/app/api/utils/channelCircuitBreaker';
 
 export interface EmailMessage {
   to: string;
@@ -131,29 +132,47 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
 
   const providerUrl = process.env.EMAIL_PROVIDER_URL;
   if (!providerUrl) {
-    // Mock path — explicit, and never reported as a real send.
     return { status: 'dispatched', provider: 'mock' };
   }
+
+  // Phase 0B: circuit breaker — one channel failing must not crash others.
+  const breaker = getEmailCircuitBreaker();
+  if (!breaker.canAttempt()) {
+    return { status: 'failed', errorMessage: 'email circuit breaker OPEN — provider temporarily unavailable' };
+  }
+
+  const apiKey = process.env.EMAIL_PROVIDER_API_KEY;
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
   try {
     const res = await fetch(providerUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
+        from: fromAddress || undefined,
         to: msg.to,
         subject: msg.subject,
-        body: msg.body,
-        unsubscribeUrl: msg.unsubscribeUrl,
-        postalAddress: msg.postalAddress,
+        text: msg.body,
+        reply_to: process.env.EMAIL_REPLY_TO || undefined,
+        headers: {
+          'List-Unsubscribe': `<${msg.unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
       }),
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
+      breaker.recordFailure();
       return { status: 'failed', errorMessage: `email provider responded [${res.status}]` };
     }
-    const body = await res.json().catch(() => ({}) as any);
-    return { status: 'dispatched', provider: 'provider', providerId: body?.messageId };
+    const respBody = await res.json().catch(() => ({}) as any);
+    breaker.recordSuccess();
+    return { status: 'dispatched', provider: 'provider', providerId: respBody?.id || respBody?.messageId };
   } catch (error: any) {
+    breaker.recordFailure();
     return { status: 'failed', errorMessage: error?.message ?? String(error) };
   }
 }

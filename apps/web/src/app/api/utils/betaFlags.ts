@@ -16,7 +16,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo'] as const;
+export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo', 'emailOutbound', 'callQueue', 'resurrection'] as const;
 export type BetaFlagKey = (typeof BETA_FLAG_KEYS)[number];
 export type BetaFlags = Record<BetaFlagKey, boolean>;
 
@@ -37,6 +37,9 @@ export const DEFAULT_BETA_FLAGS: BetaFlags = {
   // verified numbers (allowlist-only). OFF by default. There is no legit cheap
   // high-limit bypass of A2P for cold traffic — demo is allowlist-only, period.
   twilioDemo: false,
+  emailOutbound: false,
+  callQueue: false,
+  resurrection: false,
 };
 
 const SETTINGS_KEY = 'beta_flags';

@@ -1,122 +1,137 @@
+/**
+ * POST /api/email/inbound
+ *
+ * This webhook receives inbound emails (e.g., from Mailgun, SendGrid, or a
+ * custom forwarder). It finds the corresponding lead, handles unsubscribes,
+ * and threads the reply into the same AI conversation pipeline as SMS.
+ */
+import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { enqueueJob } from '@/app/api/utils/jobs';
-import { logEvent } from '@/app/api/utils/logger';
 import { registerOptOut } from '@/app/api/utils/compliance';
-import { isOptOutMessage } from '@/app/api/services/optOutDetection';
-import { stripQuotedReply } from '@/app/api/utils/emailReply';
+import { logEvent } from '@/app/api/utils/logger';
+
+const EMAIL_QUOTE_HEADER_REGEX = /On .*wrote:/;
+const UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'stop', 'remove me', 'opt out'];
 
 /**
- * POST /api/email/inbound — an inbound email reply enters the SAME conversation
- * thread the SMS path uses, so the AI negotiator handles it identically.
- *
- * This is the "one downstream machine" requirement: email is a new INPUT, not a
- * parallel pipeline. It writes to ai_conversations exactly as
- * /api/sms/inbound does (append user turn, requires_human, needs_review,
- * enqueue ai_reply) — the negotiator, ladder, approvals and contracts see no
- * difference between a texted reply and an emailed one.
- *
- * OPT-OUT RUNS FIRST, always. An emailed "unsubscribe" is honoured with the
- * same keyword detector as SMS STOP and routed through registerOptOut, so it
- * fans out across every channel for that lead. A reply saying "stop emailing
- * me" must also stop the postcards.
- *
- * Secret-gated like the other inbound webhooks: an inbound-email provider
- * (SES receipt rule -> SNS/Lambda, Postmark, Cloudflare Email Routing) posts
- * the parsed message here. Without the gate, anyone could inject a reply into
- * a prospect's thread.
- *
- * Body: { from, to?, subject?, text, messageId? }
+ * Strips quoted reply text from an email body.
  */
-export async function POST(request: Request) {
-  const secret = process.env.SMS_INBOUND_SECRET;
-  const url = new URL(request.url);
-  const provided = url.searchParams.get('s') || request.headers.get('x-sms-secret');
-  if (!secret || provided !== secret) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+function stripQuotedText(text: string): string {
+  const match = text.match(EMAIL_QUOTE_HEADER_REGEX);
+  if (match && match.index) {
+    return text.substring(0, match.index).trim();
+  }
+  return text.trim();
+}
+
+/**
+ * Checks if the email body contains an unsubscribe request.
+ * It avoids matching our own quoted footer.
+ */
+function isUnsubscribe(text: string): boolean {
+  const firstLine = text.split('\n')[0].trim().toLowerCase();
+  return UNSUBSCRIBE_KEYWORDS.some((kw) => firstLine === kw);
+}
+
+export async function POST(req: NextRequest) {
+  // Gate 1: Security. The webhook must be called with a shared secret.
+  const secret = req.nextUrl.searchParams.get('s');
+  if (secret !== process.env.SMS_INBOUND_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let body: any;
+  let body;
   try {
-    body = await request.json();
+    body = await req.json();
   } catch {
-    return Response.json({ error: 'invalid JSON' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const from = typeof body?.from === 'string' ? body.from.trim().toLowerCase() : '';
-  const rawText = typeof body?.text === 'string' ? body.text : '';
-  if (!from || !from.includes('@')) {
-    return Response.json({ error: 'from (email address) is required' }, { status: 400 });
+  const { from, text } = body;
+
+  if (!from || typeof from !== 'string' || !from.includes('@')) {
+    return NextResponse.json({ error: 'Missing or invalid "from" address' }, { status: 400 });
   }
 
-  // Strip the quoted original before anything reads the message. A reply that
-  // quotes our own outbound would otherwise carry our words into the thread as
-  // if the prospect had written them — and would make keyword detection fire on
-  // OUR footer ("reply STOP to opt out"), opting people out for replying.
-  const text = stripQuotedReply(rawText).trim();
+  const fromEmail = from.toLowerCase().trim();
+  const originalText = (text || '').trim();
 
-  try {
-    // ── 1. OPT-OUT GATE — must run first, on the STRIPPED text.
-    if (isOptOutMessage(text)) {
-      await registerOptOut(from, 'email', { reason: 'email_unsubscribe_reply', source: 'inbound_email' });
-      await logEvent('email_inbound_optout', 'compliance', from, { reason: 'unsubscribe_reply' });
-      return Response.json({ status: 'opted_out', target: from });
-    }
-
-    // ── 2. Match the sender to a lead. Email is the key here; the SMS path
-    // keys on phone. Same table, same downstream.
-    const [lead] = await sql`
-      SELECT id, ai_paused, organization_id
-      FROM leads
-      WHERE LOWER(email) = ${from}
-      ORDER BY id DESC
-      LIMIT 1
-    `;
-    if (!lead) {
-      // Not an error: a reply from an unknown address is simply not ours to
-      // thread. Acknowledged so the provider does not retry forever.
-      return Response.json({ status: 'ignored', reason: 'no_matching_lead' });
-    }
-
-    if (!text) {
-      // An empty body after stripping (e.g. a pure quote or an auto-reply with
-      // no new content) must not create a blank conversation turn.
-      return Response.json({ status: 'ignored', reason: 'empty_after_quote_strip', leadId: lead.id });
-    }
-
-    // ── 3. Same conversation thread the SMS path writes to.
-    const [conv] = await sql`
-      INSERT INTO ai_conversations (lead_id, channel, history)
-      VALUES (${lead.id}, 'email', '[]'::jsonb)
-      ON CONFLICT (lead_id) DO UPDATE SET last_message_at = NOW()
-      RETURNING *
-    `;
-
-    await sql`
-      UPDATE ai_conversations
-      SET history = history || ${JSON.stringify([{ role: 'user', content: text }])}::jsonb,
-          requires_human = true,
-          status = 'needs_review',
-          last_message_at = NOW()
-      WHERE id = ${conv.id}
-    `;
-
-    // ── 4. Hand to the negotiator exactly as SMS does. A paused lead parks the
-    // message for a human with no AI job — same rule, not a special case.
-    let aiQueued = false;
-    if (!lead.ai_paused) {
-      await enqueueJob('ai_reply', { leadId: lead.id, conversationId: conv.id });
-      aiQueued = true;
-    }
-
-    await logEvent('email_inbound', 'conversation', String(conv.id), {
-      leadId: lead.id,
-      aiQueued,
-      chars: text.length,
+  // Gate 2: Unsubscribe. This runs before any lead lookup.
+  if (isUnsubscribe(originalText)) {
+    await registerOptOut(fromEmail, 'email', {
+      reason: 'email_unsubscribe_reply',
+      rawText: originalText,
     });
-
-    return Response.json({ status: 'recorded', leadId: lead.id, conversationId: conv.id, aiQueued });
-  } catch (error: any) {
-    console.error('POST /api/email/inbound error', error);
-    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ status: 'opted_out' });
   }
+
+  // Find the lead associated with this email address. We only consider active leads.
+  const [lead] = await sql`
+    SELECT id, organization_id, ai_paused
+    FROM leads
+    WHERE lower(email) = ${fromEmail}
+      AND status NOT IN ('CLOSED_WON', 'CLOSED_LOST', 'ARCHIVED')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+
+  if (!lead) {
+    return NextResponse.json({ status: 'ignored', reason: 'no_matching_lead' });
+  }
+
+  const cleanText = stripQuotedText(originalText);
+  if (!cleanText) {
+    return NextResponse.json({ status: 'ignored', reason: 'empty_after_quote_strip' });
+  }
+
+  // This logic mirrors the SMS inbound route to ensure convergence.
+  const [conversation] = await sql`
+    INSERT INTO ai_conversations (lead_id, organization_id)
+    VALUES (${lead.id}, ${lead.organization_id})
+    ON CONFLICT (lead_id) DO UPDATE SET updated_at = NOW()
+    RETURNING id
+  `;
+
+  const historyEntry = {
+    role: 'user',
+    content: cleanText,
+    timestamp: new Date().toISOString(),
+    channel: 'email',
+  };
+
+  await sql`
+    UPDATE ai_conversations
+    SET
+      history = history || ${JSON.stringify(historyEntry)}::jsonb,
+      status = 'needs_review',
+      requires_human = true,
+      last_reply_at = NOW(),
+      updated_at = NOW()
+    WHERE id = ${conversation.id}
+  `;
+
+  await logEvent({
+    type: 'inbound_message_received',
+    targetType: 'lead',
+    targetId: lead.id,
+    payload: { channel: 'email', from: fromEmail, text: cleanText },
+  });
+
+  // If the lead's AI is paused, we park the message but don't queue a reply.
+  if (lead.ai_paused) {
+    return NextResponse.json({ status: 'recorded', aiQueued: false });
+  }
+
+  // Enqueue the SAME job as the SMS path.
+  const jobId = await enqueueJob('ai_reply', {
+    leadId: lead.id,
+    conversationId: conversation.id,
+  });
+
+  return NextResponse.json({
+    status: 'recorded',
+    aiQueued: true,
+    jobId,
+  });
 }

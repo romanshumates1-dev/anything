@@ -37,7 +37,7 @@ describe('Payments Webhook', () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
       const query = strings.join('?').toLowerCase();
       if (query.includes('select 1 from payments_ledger')) return [];
-      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
+      if (query.includes('pl.id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 100000, status: 'sent' }];
       }
       if (query.includes('update payments_ledger')) return [];
@@ -98,7 +98,7 @@ describe('Payments Webhook', () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
       const query = strings.join('?').toLowerCase();
       if (query.includes('select 1 from payments_ledger')) return [];
-      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
+      if (query.includes('pl.id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 50000, status: 'sent' }];
       }
       return [];
@@ -121,7 +121,7 @@ describe('Payments Webhook', () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
       const query = strings.join('?').toLowerCase();
       if (query.includes('select 1 from payments_ledger')) return [];
-      if (query.includes('select id') && query.includes('payments_ledger')) return [];
+      if (query.includes('pl.id') && query.includes('payments_ledger')) return [];
       return [];
     });
 
@@ -138,7 +138,7 @@ describe('Payments Webhook', () => {
     (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
       const query = strings.join('?').toLowerCase();
       if (query.includes('select 1 from payments_ledger')) return [];
-      if (query.includes('select id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
+      if (query.includes('pl.id') && query.includes('payments_ledger') && query.includes('stripe_payment_intent_id')) {
         return [{ id: 'pay-1', contract_id: 'c-1', amount_cents: 100000, status: 'sent' }];
       }
       if (query.includes('update payments_ledger')) return [];

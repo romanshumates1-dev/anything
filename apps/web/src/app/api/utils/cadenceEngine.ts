@@ -173,6 +173,7 @@ export async function scheduleNextStep(
       sequenceOrder: nextOrder,
       templateId: template.id,
       body: template.body,
+      channel: template.channel || 'sms',
     },
     { runAt, dedupeKey }
   );
@@ -228,30 +229,59 @@ export async function processCadenceStep(payload: CadencePayload): Promise<{
     return { sent: false, reason: 'replied' };
   }
 
+  // Resolve channel from the template (defaults to 'sms' for pre-migration rows)
+  const templateChannel: string = (payload as any).channel || 'sms';
+
   // dispatchGate at send time for fresh compliance
   const gate = await dispatchGate({
-    phone: payload.phone,
-    channel: 'sms',
+    phone: templateChannel === 'sms' ? payload.phone : '',
+    email: templateChannel === 'email' ? ((payload as any).email || '') : undefined,
+    channel: templateChannel === 'call' ? 'sms' : templateChannel as any,
     betaFlag: 'cadenceEngine',
     isCadenceStep: true,
   });
   if (!gate.allow) {
-    // Same-row deferral contract: return the gate outcome and let jobs.ts
-    // move THIS job's run_at. (The previous re-enqueue-with-same-dedupe-key
-    // approach silently lost every deferred step — see bug #12.)
     return { sent: false, reason: `gate:${gate.code}`, gateCode: gate.code, deferAt: gate.retryAt };
   }
 
-  // Enqueue the actual send_message job (which goes through the gateway)
-  await enqueueJob('send_message', {
-    leadId: contact.seller_lead_id || contact.buyer_lead_id,
-    to: payload.phone,
-    text: payload.body,
-    campaignId: payload.campaignId,
-    organizationId: payload.organizationId,
-    contactId: payload.contactId,
-    channel: 'sms',
-  });
+  if (templateChannel === 'email') {
+    const leadId = contact.seller_lead_id || contact.buyer_lead_id;
+    const [lead] = await sql`SELECT email FROM leads WHERE id = ${leadId} LIMIT 1`;
+    const email = lead?.email || (payload as any).email;
+    if (!email) {
+      return { sent: false, reason: 'no_email_for_lead' };
+    }
+    await enqueueJob('send_email', {
+      leadId,
+      to: email,
+      subject: (payload as any).subject || 'Regarding your property',
+      body: payload.body,
+      campaignId: payload.campaignId,
+      organizationId: payload.organizationId,
+      contactId: payload.contactId,
+    });
+  } else if (templateChannel === 'call') {
+    await sql`
+      INSERT INTO call_attempts (organization_id, lead_id, outcome, notes, attempt_number)
+      VALUES (
+        ${payload.organizationId},
+        ${contact.seller_lead_id || contact.buyer_lead_id},
+        'scheduled',
+        ${`Cadence step ${payload.sequenceOrder}: ${payload.body.slice(0, 200)}`},
+        0
+      )
+    `;
+  } else {
+    await enqueueJob('send_message', {
+      leadId: contact.seller_lead_id || contact.buyer_lead_id,
+      to: payload.phone,
+      text: payload.body,
+      campaignId: payload.campaignId,
+      organizationId: payload.organizationId,
+      contactId: payload.contactId,
+      channel: 'sms',
+    });
+  }
 
   // Update contact state
   await sql`

@@ -193,6 +193,10 @@ const ACCESS_GATE_EXEMPT_PREFIXES = [
   // requires a valid session, and out-of-domain users can't create accounts,
   // so exempting it from the role gate opens no hole. (Phase 3)
   '/api/legal',
+  // Public, unauthenticated funnel: inbound consent capture from a public
+  // landing page. No session is required (or desirable) because the point is
+  // public reachability.
+  '/api/consent',
 ];
 
 interface SessionUserRow {

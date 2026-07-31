@@ -1,5 +1,46 @@
 # FINAL_STATE.md — DealFlow AI
 
+## New capabilities added (session w — Phases 0B / 3 / 5 / 6 / 12 / 13)
+
+| Capability | Status | Notes |
+|---|---|---|
+| Job supervisor (restart-loop guard, dead-letter alert) | ✅ CODE COMPLETE | `jobSupervisor.ts`; 5 restarts/10min → halt+alert; `alertDeadLetters()` via cron |
+| Per-channel circuit breakers (email + mail) | ✅ CODE COMPLETE | `channelCircuitBreaker.ts`; extends SMS gateway pattern; email breaker wired into `emailDriver.ts` |
+| Stuck campaign contact repair | ✅ CODE COMPLETE | `repairStuckCampaignContacts()` in supervisor; called by dead-letter-alert cron |
+| Phase 3: interested → negotiation chain | ✅ CODE COMPLETE | `call-queue/outcome/route.ts`; upserts conversation + enqueues `ai_reply` job |
+| Phase 5: keyword SMS inbound (OFFER/CASH/SELL/etc.) | ✅ CODE COMPLETE | `outreach/keyword-inbound/route.ts`; consent record + lead upsert + AI enrollment |
+| Phase 5: per-source attribution endpoint | ✅ CODE COMPLETE | `analytics/attribution/route.ts`; bandit_sign/facebook/craigslist/etc. |
+| Phase 6: speed-to-range reminders (15min/1hr/3hr) | ✅ CODE COMPLETE | `conversionLevers.ts`; wired into `ownerRangeRequest.ts` |
+| Phase 6: recency decay scoring | ✅ CODE COMPLETE | `applyRecencyDecay()` with configurable half-lives per signal type |
+| Phase 6: send-time targeting | ✅ CODE COMPLETE | `bestSendHour()` with observed histogram → prior fallback + INSUFFICIENT DATA label |
+| Phase 12: single-segment SMS enforcement | ✅ CODE COMPLETE | `smsGuards.ts`; GSM-7/UCS-2 detection, extended char counting, overLimit flag |
+| Phase 12: GSM-7 sanitizer | ✅ CODE COMPLETE | `sanitizeToGsm7()`; smart quotes, em-dash, ellipsis → ASCII. Idempotent |
+| Phase 12: duplicate-send detector | ✅ CODE COMPLETE | `isDuplicateSend()`; SHA-256 hash + phone + campaign, 24h window; wired into jobs.ts |
+| Phase 12: throughput guards (MPS + daily cap + auto-pause) | ✅ CODE COMPLETE | `checkThroughput()`; wired into send_message job handler |
+| Phase 13: performance indexes (10 hot paths) | ✅ CODE COMPLETE | migration 049; compliance_gate, lead score, buyer match, job poll, DNC, dedup, opt-out |
+| Phase 13: perf probe endpoint | ✅ CODE COMPLETE | `system/perf/route.ts`; wall-clock timing on 5 hot paths + job queue depth |
+
+
+
+| Capability | Status | Notes |
+|---|---|---|
+| Compliance gate registry (fail-closed per jurisdiction×channel) | ✅ CODE COMPLETE | migration 047; `complianceGate.ts`; wired into dispatchGate step 3.3; all new jurisdictions start locked |
+| Kill-switch (org-level halt all outbound) | ✅ CODE COMPLETE | `outbound_kill_switch` table; activate/deactivate API; checked first in complianceGate |
+| Capacity planner (Plan A/B + 10–30/mo gap model) | ✅ CODE COMPLETE | `capacityPlanner.ts`; Poisson math; ranked levers; all BENCHMARK-labeled; `/api/campaigns/planner` |
+| Resurrection engine (30/60/90/180 day re-activation) | ✅ CODE COMPLETE | `resurrectionEngine.ts`; opt-out exclusion at SQL level; idempotent; cron task wired |
+| Wave 2 jurisdictions (TN/OH/IN/AL/SC/VA) | ✅ CODE COMPLETE | migration 048; all MANUAL_ONLY; all gates locked; KY/AL Jefferson disambiguated |
+| JURISDICTION_PLAYBOOK.md | ✅ COMPLETE | Repo root; standalone repeatable steps |
+| JV intake (origination_type=JV_INTAKE, matched-buyer outreach) | ✅ CODE COMPLETE | `/api/jv`; transaction-safe; reuses existing buyer lookup + send pipeline |
+| Referral-out (REFERRAL_OUT origination, partner admin) | ✅ CODE COMPLETE | `/api/referral`; partner CRUD; handoff + close-out |
+| Buyer network (scored, coverage-gap report) | ✅ CODE COMPLETE | `buyers` table; `/api/buyers`; coverage-gap flags thin zips |
+| Unified debrief (Wilson CI, full attribution) | ✅ CODE COMPLETE | `/api/debrief`; per-channel funnel; origination/jurisdiction/wave attribution; CSV export |
+
+**Standing invariants (unchanged):** no live SMS pre-A2P; escalation invariant supreme; beta flags default OFF; no autonomous strategy changes.
+
+**NOT LEGAL ADVICE:** CAN-SPAM, TCPA, DNC, call-recording consent, per-state wholesaling/assignment licensure, JV/double-close/assignment-of-assignment legality — owner confirms each with an attorney before operating. Every new jurisdiction×channel starts locked until owner+attorney review.
+
+---
+
 **Branch:** feat/mvp-prelaunch
 **As of:** 2026-07-23, review pass — reviewed session (t)'s work (all sound) and corrected one documentation error it introduced (the typecheck-tooling row below). See BREAKAGE_TABLE.md's "CORRECTION" note in the session (t) section for the full trace.
 **Prior:** 2026-07-22, session (t) — closed the 2 items session (s) spun off, plus real `/how-it-works` screenshots (see BREAKAGE_TABLE.md and SESSION_HANDOFF.md for the full session log). Rows below updated in place; everything else is unchanged from the Phase 0–7 sprint and was NOT re-verified (credit discipline).

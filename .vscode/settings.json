@@ -28,5 +28,6 @@
   "tailwindCSS.includeLanguages": {
     "typescript": "html",
     "typescriptreact": "html"
-  }
+  },
+  "geminicodeassist.outlines.automaticOutlineGeneration": true
 }

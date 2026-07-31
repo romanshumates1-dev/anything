@@ -9,7 +9,7 @@
 import React, { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, ExternalLink, RotateCcw } from 'lucide-react';
+import { Loader2, ExternalLink, RotateCcw, CheckCircle } from 'lucide-react';
 
 export interface PaymentData {
   id: string;
@@ -26,6 +26,7 @@ export interface PaymentData {
 interface PaymentChipProps {
   payment: PaymentData;
   onRefund?: (paymentId: string) => Promise<void>;
+  onMarkAsPaid?: (paymentId: string) => Promise<void>;
 }
 
 const STATUS_STYLES: Record<string, { label: string; color: string }> = {
@@ -36,8 +37,9 @@ const STATUS_STYLES: Record<string, { label: string; color: string }> = {
   refunded: { label: 'Refunded', color: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-export default function PaymentChip({ payment, onRefund }: PaymentChipProps) {
+export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: PaymentChipProps) {
   const [refunding, setRefunding] = useState(false);
+  const [markingAsPaid, setMarkingAsPaid] = useState(false);
   const amount = (payment.amount_cents / 100).toLocaleString('en-US', {
     style: 'currency',
     currency: payment.currency.toUpperCase(),
@@ -52,6 +54,16 @@ export default function PaymentChip({ payment, onRefund }: PaymentChipProps) {
       await onRefund(payment.id);
     } finally {
       setRefunding(false);
+    }
+  };
+
+  const handleMarkAsPaid = async () => {
+    if (!onMarkAsPaid || !confirm('Manually mark this payment as paid? This action is for payments handled externally (e.g., wire transfer) and is logged.')) return;
+    setMarkingAsPaid(true);
+    try {
+      await onMarkAsPaid(payment.id);
+    } finally {
+      setMarkingAsPaid(false);
     }
   };
 
@@ -88,6 +100,23 @@ export default function PaymentChip({ payment, onRefund }: PaymentChipProps) {
             <RotateCcw className="h-3 w-3" />
           )}
           Refund
+        </Button>
+      )}
+
+      {(payment.status === 'created' || payment.status === 'sent') && onMarkAsPaid && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs text-gray-500 hover:text-green-600"
+          onClick={handleMarkAsPaid}
+          disabled={markingAsPaid}
+        >
+          {markingAsPaid ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <CheckCircle className="h-3 w-3" />
+          )}
+          Mark as Paid
         </Button>
       )}
 

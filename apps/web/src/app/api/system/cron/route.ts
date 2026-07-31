@@ -158,11 +158,59 @@ async function handleLogCleanup() {
   return { processed: deleted, detail: `Cleaned ${deleted} old log entries` };
 }
 
+/**
+ * Task 5: Dead-letter alert (every 15 minutes)
+ *
+ * Scans for jobs that exhausted all retries and notifies the owner.
+ * Nothing silently dropped — Phase 0B requirement.
+ */
+async function handleDeadLetterAlert() {
+  const { alertDeadLetters } = await import('@/app/api/utils/jobSupervisor');
+  const { repairStuckCampaignContacts } = await import('@/app/api/utils/jobSupervisor');
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM jobs
+    WHERE status = 'dead'
+      AND (payload->>'dead_alerted')::boolean IS NOT TRUE
+  `.catch(() => []);
+  let totalAlerted = 0;
+  for (const org of orgs as any[]) {
+    const count = await alertDeadLetters(org.organization_id);
+    totalAlerted += count;
+  }
+  const repaired = await repairStuckCampaignContacts();
+  return { processed: totalAlerted, detail: `Dead-letter alerts: ${totalAlerted} jobs, ${repaired} stuck contacts repaired` };
+}
+
+/**
+ * Task 6: Resurrection (daily)
+ *
+ * Re-touches COLD/DEAL_NO_AGREEMENT leads at 30/60/90/180 days.
+ * Opted-out contacts are excluded at the query level.
+ */
+async function handleResurrection() {
+  const { runResurrection } = await import('@/app/api/utils/resurrectionEngine');
+  // Run for all orgs that have the resurrection flag on
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM app_settings
+    WHERE key = 'beta_flags' AND (value->>'resurrection')::boolean = true
+  `.catch(() => []);
+  let totalQueued = 0;
+  let totalSkipped = 0;
+  for (const org of orgs as any[]) {
+    const result = await runResurrection(org.organization_id);
+    totalQueued += result.queued;
+    totalSkipped += result.skipped;
+  }
+  return { processed: totalQueued, detail: `Resurrection: ${totalQueued} queued, ${totalSkipped} skipped across ${(orgs as any[]).length} orgs` };
+}
+
 const TASKS: Record<string, CronTask> = {
   'stuck-conversations': { name: 'stuck-conversations', handler: handleStuckConversations },
   'retry-sms': { name: 'retry-sms', handler: handleRetrySms },
   'daily-report': { name: 'daily-report', handler: handleDailyReport },
   'log-cleanup': { name: 'log-cleanup', handler: handleLogCleanup },
+  'dead-letter-alert': { name: 'dead-letter-alert', handler: handleDeadLetterAlert },
+  'resurrection': { name: 'resurrection', handler: handleResurrection },
 };
 
 export async function POST(request: Request) {
@@ -226,6 +274,8 @@ export async function GET() {
       'retry-sms': 'hourly',
       'daily-report': 'nightly',
       'log-cleanup': 'weekly',
+      'dead-letter-alert': 'every 15 minutes',
+      'resurrection': 'daily',
     },
     timestamp: new Date().toISOString(),
   });

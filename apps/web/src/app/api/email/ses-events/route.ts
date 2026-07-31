@@ -1,6 +1,8 @@
 import { registerOptOut } from '@/app/api/utils/compliance';
 import { logEvent } from '@/app/api/utils/logger';
 import { classifySesEvent, parseSnsEnvelope } from '@/app/api/utils/sesEvents';
+import sql from '@/app/api/utils/sql';
+import { recordEmailBounce, recordEmailComplaint } from '@/app/api/utils/emailWarmup';
 
 /**
  * POST /api/email/ses-events — Amazon SES bounce/complaint feedback, delivered
@@ -72,6 +74,28 @@ export async function POST(request: Request) {
       reason: decision.eventType === 'Complaint' ? 'ses_complaint' : 'ses_permanent_bounce',
       source: 'ses',
     });
+  }
+
+  // Feed warmup counters so auto-pause fires before provider suspension.
+  // Org context: look up which org sent to these recipients recently.
+  if (decision.suppress.length > 0) {
+    const orgRows = await sql`
+      SELECT DISTINCT payload->>'organizationId' as org_id
+      FROM jobs
+      WHERE type = 'send_email'
+        AND payload->>'to' = ANY(${decision.suppress})
+        AND status = 'completed'
+      ORDER BY org_id
+      LIMIT 5
+    `;
+    for (const { org_id } of orgRows) {
+      if (!org_id) continue;
+      if (decision.eventType === 'Complaint') {
+        await recordEmailComplaint(org_id);
+      } else {
+        await recordEmailBounce(org_id);
+      }
+    }
   }
 
   await logEvent('ses_feedback', 'compliance', decision.eventType, {

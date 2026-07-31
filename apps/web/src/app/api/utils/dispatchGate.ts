@@ -105,7 +105,8 @@ export type DenyCode =
   | 'PROFILE_NO_COLD'
   | 'NUMERIC_GUARD'
   | 'DEMO_NOT_VERIFIED'
-  | 'USAGE_LIMIT';
+  | 'USAGE_LIMIT'
+  | 'COMPLIANCE_GATE'; // Phase 0A: jurisdiction×channel not attorney-reviewed
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
@@ -170,6 +171,14 @@ export interface DispatchRequest {
    * and 'required' per-number SMS consent. See getOrgSendPolicy().
    */
   organizationId?: string | null;
+  /**
+   * Phase 0A: jurisdiction for the compliance gate registry check.
+   * Derived from lead metadata (state+county). When present on a cold send,
+   * the gate registry is checked — fail-closed if unreviewed.
+   */
+  jurisdiction?: string | null;
+  /** Lead metadata — used to derive jurisdiction when jurisdiction is not explicit. */
+  leadMetadata?: any;
   /**
    * Phase A: bounded-negotiation numeric guard. Present ONLY on bounded-mode
    * conversation sends. The final outbound text is parsed; any dollar amount
@@ -407,6 +416,28 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           allow: false,
           code: 'NUMERIC_GUARD',
           reason: `NUMERIC GUARD BLOCKED: ${verdict.reason}`,
+          timezones: tzs,
+        };
+      }
+    }
+
+    // 3.3 Phase 0A: compliance gate registry — fail-closed per jurisdiction×channel.
+    // Cold outbound only. Checked after DNC/flag/consent so those absolute denials
+    // still win, but before time gates so a locked market never silently defers.
+    if (req.coldOutbound && req.organizationId) {
+      const { checkComplianceGate, jurisdictionForLead } = await import('./complianceGate');
+      const jurisdiction = req.jurisdiction ?? jurisdictionForLead(req.leadMetadata);
+      const gateResult = await checkComplianceGate({
+        organizationId: req.organizationId,
+        jurisdiction,
+        channel: req.channel,
+        coldOutbound: true,
+      });
+      if (!gateResult.allowed) {
+        return {
+          allow: false,
+          code: 'COMPLIANCE_GATE',
+          reason: gateResult.reason,
           timezones: tzs,
         };
       }
