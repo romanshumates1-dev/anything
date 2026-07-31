@@ -54,7 +54,13 @@ export class LeadScoringAgent implements Agent<LeadScoreOutput> {
       throw new Error('Unexpected response type from Claude');
     }
 
-    const output: LeadScoreOutput = JSON.parse(contentBlock.text);
+    let output: LeadScoreOutput;
+    try {
+      output = JSON.parse(contentBlock.text);
+    } catch (parseError) {
+      const snippet = contentBlock.text.slice(0, 200);
+      throw new Error(`Failed to parse Claude response as JSON. Response snippet: ${snippet}...`);
+    }
 
     // 5. Persist to database
     await sql`

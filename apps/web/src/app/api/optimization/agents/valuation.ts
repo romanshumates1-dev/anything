@@ -51,7 +51,13 @@ export class ValuationAgent implements Agent<ValuationOutput> {
       throw new Error('Unexpected response type from Claude');
     }
 
-    const output: ValuationOutput = JSON.parse(contentBlock.text);
+    let output: ValuationOutput;
+    try {
+      output = JSON.parse(contentBlock.text);
+    } catch (parseError) {
+      const snippet = contentBlock.text.slice(0, 200);
+      throw new Error(`Failed to parse Claude response as JSON. Response snippet: ${snippet}...`);
+    }
 
     // 6. Persist to database
     await sql`

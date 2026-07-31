@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { SimpleOrchestrator } from '../orchestrator';
+import { getOrganization } from '@/lib/organization-context';
+import sql from '@/app/api/utils/sql';
 
 /**
  * POST /api/optimization/process
@@ -14,10 +16,30 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    const org = await getOrganization();
+
+    if (!org) {
+      return NextResponse.json(
+        { error: 'No organization found' },
+        { status: 404 }
+      );
+    }
+
     const orchestrator = new SimpleOrchestrator();
 
     if (body.leadId) {
-      // Single lead
+      // Single lead - verify ownership
+      const [lead] = await sql`
+        SELECT id FROM leads WHERE id = ${body.leadId} AND organization_id = ${org.id}
+      `;
+
+      if (!lead) {
+        return NextResponse.json(
+          { error: 'Lead not found or access denied' },
+          { status: 404 }
+        );
+      }
+
       await orchestrator.processLead(body.leadId);
       return NextResponse.json({
         success: true,
@@ -25,7 +47,19 @@ export async function POST(request: Request) {
         message: 'Lead processed successfully'
       });
     } else if (Array.isArray(body.leadIds)) {
-      // Batch
+      // Batch - verify all leads belong to organization
+      const leads = await sql`
+        SELECT id FROM leads
+        WHERE id = ANY(${body.leadIds}) AND organization_id = ${org.id}
+      `;
+
+      if (leads.length !== body.leadIds.length) {
+        return NextResponse.json(
+          { error: 'One or more leads not found or access denied' },
+          { status: 404 }
+        );
+      }
+
       await orchestrator.processBatch(body.leadIds);
       return NextResponse.json({
         success: true,
@@ -41,7 +75,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('POST /api/optimization/process error', error);
     return NextResponse.json(
-      { error: 'Internal Server Error', message: error.message },
+      { error: 'Internal Server Error' },
       { status: 500 }
     );
   }

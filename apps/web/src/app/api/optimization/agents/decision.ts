@@ -43,7 +43,13 @@ export class DecisionAgent implements Agent<DecisionOutput> {
       throw new Error('Unexpected response type from Claude');
     }
 
-    const output: DecisionOutput = JSON.parse(contentBlock.text);
+    let output: DecisionOutput;
+    try {
+      output = JSON.parse(contentBlock.text);
+    } catch (parseError) {
+      const snippet = contentBlock.text.slice(0, 200);
+      throw new Error(`Failed to parse Claude response as JSON. Response snippet: ${snippet}...`);
+    }
 
     // 4. Queue action if not reject
     if (output.action !== 'reject') {

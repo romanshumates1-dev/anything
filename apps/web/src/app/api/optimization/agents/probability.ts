@@ -50,7 +50,13 @@ export class ProbabilityAgent implements Agent<ProbabilityOutput> {
       throw new Error('Unexpected response type from Claude');
     }
 
-    const output: ProbabilityOutput = JSON.parse(contentBlock.text);
+    let output: ProbabilityOutput;
+    try {
+      output = JSON.parse(contentBlock.text);
+    } catch (parseError) {
+      const snippet = contentBlock.text.slice(0, 200);
+      throw new Error(`Failed to parse Claude response as JSON. Response snippet: ${snippet}...`);
+    }
 
     // 5. Persist to database
     await sql`
