@@ -10,7 +10,17 @@
  * Usage: node apps/web/scripts/validate-campaign-system.mjs
  */
 
-import sql from '../src/app/api/utils/sql.js';
+// Import sql - need to handle TypeScript in Node
+// Using dynamic import to work around ESM/TS issues
+let sql;
+try {
+  const sqlModule = await import('../src/app/api/utils/sql.ts');
+  sql = sqlModule.default || sqlModule;
+} catch (error) {
+  console.error('❌ Could not import sql utility. Ensure TypeScript is transpiled or use tsx/ts-node.');
+  console.error('   Try: npx tsx scripts/validate-campaign-system.mjs');
+  process.exit(1);
+}
 
 const RESULTS = {
   passed: [],
