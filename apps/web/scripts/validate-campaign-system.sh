@@ -49,11 +49,13 @@ echo ""
 echo "📋 PHASE 1: Prerequisites Check"
 echo ""
 
-# Check required env vars
+# Check AI provider (Claude or Ollama)
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  pass "env: ANTHROPIC_API_KEY is set"
+  pass "env: ANTHROPIC_API_KEY is set (using Claude)"
+elif [ -n "${OLLAMA_BASE_URL:-}" ]; then
+  pass "env: OLLAMA_BASE_URL is set (using Ollama)"
 else
-  fail "env: ANTHROPIC_API_KEY is MISSING (required for reply classification)"
+  warn "env: Neither ANTHROPIC_API_KEY nor OLLAMA_BASE_URL set (will mock classification)"
 fi
 
 if [ -n "${DATABASE_URL:-}" ]; then

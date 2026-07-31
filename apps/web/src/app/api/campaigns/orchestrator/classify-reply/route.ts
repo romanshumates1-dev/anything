@@ -60,10 +60,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Message not found' }, { status: 404 });
     }
 
-    // 2. Call Claude to classify sentiment
+    // 2. Call AI provider (Ollama or Claude) to classify sentiment
+    const ollamaBaseUrl = process.env.OLLAMA_BASE_URL;
     const claudeApiKey = process.env.ANTHROPIC_API_KEY;
-    if (!claudeApiKey) {
-      return NextResponse.json({ error: 'Claude API key not configured' }, { status: 500 });
+
+    if (!ollamaBaseUrl && !claudeApiKey) {
+      return NextResponse.json({ error: 'No AI provider configured (set OLLAMA_BASE_URL or ANTHROPIC_API_KEY)' }, { status: 500 });
     }
 
     const classificationPrompt = `You are analyzing an email reply to a real estate offer. Classify the sentiment and extract key information.
@@ -96,37 +98,70 @@ Respond with ONLY valid JSON (no markdown, no explanation):
   "reasoning": "one sentence explaining the classification"
 }`;
 
-    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': claudeApiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: classificationPrompt
-        }]
-      })
-    });
+    let responseText;
 
-    if (!claudeResponse.ok) {
-      const errorText = await claudeResponse.text();
-      console.error('Claude API error:', errorText);
-      return NextResponse.json({ error: 'Failed to classify reply' }, { status: 500 });
+    // Use Ollama if configured, otherwise fall back to Claude
+    if (ollamaBaseUrl) {
+      const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2';
+
+      try {
+        const ollamaResponse = await fetch(`${ollamaBaseUrl}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: ollamaModel,
+            prompt: classificationPrompt,
+            stream: false,
+            format: 'json'
+          })
+        });
+
+        if (!ollamaResponse.ok) {
+          const errorText = await ollamaResponse.text();
+          console.error('Ollama API error:', errorText);
+          return NextResponse.json({ error: 'Failed to classify reply with Ollama' }, { status: 500 });
+        }
+
+        const ollamaResult = await ollamaResponse.json();
+        responseText = ollamaResult.response;
+      } catch (error: any) {
+        console.error('Ollama connection error:', error.message);
+        return NextResponse.json({ error: 'Could not connect to Ollama' }, { status: 500 });
+      }
+    } else {
+      // Use Claude
+      const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': claudeApiKey!,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 500,
+          messages: [{
+            role: 'user',
+            content: classificationPrompt
+          }]
+        })
+      });
+
+      if (!claudeResponse.ok) {
+        const errorText = await claudeResponse.text();
+        console.error('Claude API error:', errorText);
+        return NextResponse.json({ error: 'Failed to classify reply with Claude' }, { status: 500 });
+      }
+
+      const claudeResult = await claudeResponse.json();
+      responseText = claudeResult.content[0].text;
     }
-
-    const claudeResult = await claudeResponse.json();
-    const responseText = claudeResult.content[0].text;
 
     let classification;
     try {
       classification = JSON.parse(responseText);
     } catch (parseError) {
-      console.error('Failed to parse Claude response:', responseText);
+      console.error('Failed to parse AI response:', responseText);
       return NextResponse.json({ error: 'Invalid classification response' }, { status: 500 });
     }
 
