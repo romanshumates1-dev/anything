@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   // buyers do we have in each price band?
   const gapRows = await sql`
     SELECT
-      l.zip,
+      l.metadata->>'zip' AS zip,
       COUNT(DISTINCT l.id) as lead_count,
       COUNT(DISTINCT b.id) FILTER (WHERE b.verified = true) as verified_buyer_count,
       COUNT(DISTINCT b.id) as total_buyer_count,
@@ -45,10 +45,10 @@ export async function GET(request: Request) {
       MAX(b.price_max_cents) as buyer_price_max
     FROM leads l
     LEFT JOIN buyers b ON b.organization_id = ${organization.id}
-      AND l.zip = ANY(b.zip_codes)
+      AND (l.metadata->>'zip') = ANY(b.zip_codes)
     WHERE l.organization_id = ${organization.id}
-      AND l.zip IS NOT NULL
-    GROUP BY l.zip
+      AND l.metadata->>'zip' IS NOT NULL
+    GROUP BY l.metadata->>'zip'
     ORDER BY lead_count DESC, verified_buyer_count ASC
     LIMIT 50
   `.catch(() => []);

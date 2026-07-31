@@ -53,7 +53,7 @@ const HOT_QUERIES = [
     description: 'Phase 10: buyer match by zip+cash for JV intake',
     probe: (orgId: string) => sql`
       SELECT COUNT(*) FROM buyers
-      WHERE organization_id = ${orgId} AND zip_code = '40202' AND cash_buyer = true AND verified = true
+      WHERE organization_id = ${orgId} AND '40202' = ANY(zip_codes) AND cash_buyer = true AND verified = true
     `,
   },
   {

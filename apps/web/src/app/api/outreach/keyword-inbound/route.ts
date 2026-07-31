@@ -126,23 +126,16 @@ export async function POST(request: Request) {
 
   // Upsert conversation and enqueue AI reply
   const [conv] = await sql`
-    INSERT INTO ai_conversations (lead_id, organization_id)
-    VALUES (${lead.id}, ${lead.organization_id})
-    ON CONFLICT (lead_id) DO UPDATE SET updated_at = NOW()
-    RETURNING id
+    INSERT INTO ai_conversations (lead_id, channel, history)
+    VALUES (${lead.id}, 'sms', '[]'::jsonb)
+    ON CONFLICT (lead_id) DO UPDATE SET last_message_at = NOW()
+    RETURNING *
   `;
   await sql`
     UPDATE ai_conversations
-    SET history = history || ${JSON.stringify([{
-      role: 'user',
-      content: body.trim(),
-      channel: 'sms',
-      timestamp: new Date().toISOString(),
-      source,
-    }])}::jsonb,
+    SET history = history || ${JSON.stringify([{ role: 'user', content: body.trim() }])}::jsonb,
         status = 'active',
-        last_reply_at = NOW(),
-        updated_at = NOW()
+        last_message_at = NOW()
     WHERE id = ${conv.id}
   `;
 

@@ -41,13 +41,13 @@ export async function GET(request: Request) {
     // Buyer coverage: fraction of unique lead zips with ≥1 verified buyer
     const [coverageRow] = await sql`
       SELECT
-        COUNT(DISTINCT l.zip) FILTER (WHERE b.id IS NOT NULL) AS covered,
-        GREATEST(COUNT(DISTINCT l.zip), 1) AS total
+        COUNT(DISTINCT l.metadata->>'zip') FILTER (WHERE b.id IS NOT NULL) AS covered,
+        GREATEST(COUNT(DISTINCT l.metadata->>'zip'), 1) AS total
       FROM leads l
       LEFT JOIN buyers b ON b.organization_id = ${organization.id}
-        AND l.zip = ANY(b.zip_codes) AND b.verified = true
+        AND (l.metadata->>'zip') = ANY(b.zip_codes) AND b.verified = true
       WHERE l.organization_id = ${organization.id}
-        AND l.zip IS NOT NULL
+        AND l.metadata->>'zip' IS NOT NULL
     `.catch(() => [{ covered: 0, total: 1 }]);
     const covered = Number((coverageRow as any)?.covered ?? 0);
     const total = Number((coverageRow as any)?.total ?? 1);

@@ -126,20 +126,19 @@ export async function POST(request: Request) {
     // identically regardless of which channel surfaced the interest.
     let negotiationJobId: string | null = null;
     if (outcome === 'interested') {
-      const [conv] = await sql`
-        INSERT INTO ai_conversations (lead_id, organization_id)
-        VALUES (${lead.id}, ${organization.id})
-        ON CONFLICT (lead_id) DO UPDATE SET updated_at = NOW()
-        RETURNING id
-      `;
       const callNote = notes ? `[Call note: ${notes}]` : '[Marked interested via manual call]';
+      const [conv] = await sql`
+        INSERT INTO ai_conversations (lead_id, channel, history)
+        VALUES (${lead.id}, 'voice', '[]'::jsonb)
+        ON CONFLICT (lead_id) DO UPDATE SET last_message_at = NOW()
+        RETURNING *
+      `;
       await sql`
         UPDATE ai_conversations
-        SET history = history || ${JSON.stringify([{ role: 'user', content: callNote, channel: 'voice', timestamp: new Date().toISOString() }])}::jsonb,
+        SET history = history || ${JSON.stringify([{ role: 'user', content: callNote }])}::jsonb,
             status = 'needs_review',
             requires_human = true,
-            last_reply_at = NOW(),
-            updated_at = NOW()
+            last_message_at = NOW()
         WHERE id = ${conv.id}
       `;
       negotiationJobId = await enqueueJob('ai_reply', {

@@ -87,27 +87,18 @@ export async function POST(req: NextRequest) {
 
   // This logic mirrors the SMS inbound route to ensure convergence.
   const [conversation] = await sql`
-    INSERT INTO ai_conversations (lead_id, organization_id)
-    VALUES (${lead.id}, ${lead.organization_id})
-    ON CONFLICT (lead_id) DO UPDATE SET updated_at = NOW()
-    RETURNING id
+    INSERT INTO ai_conversations (lead_id, channel, history)
+    VALUES (${lead.id}, 'email', '[]'::jsonb)
+    ON CONFLICT (lead_id) DO UPDATE SET last_message_at = NOW()
+    RETURNING *
   `;
-
-  const historyEntry = {
-    role: 'user',
-    content: cleanText,
-    timestamp: new Date().toISOString(),
-    channel: 'email',
-  };
 
   await sql`
     UPDATE ai_conversations
-    SET
-      history = history || ${JSON.stringify(historyEntry)}::jsonb,
-      status = 'needs_review',
-      requires_human = true,
-      last_reply_at = NOW(),
-      updated_at = NOW()
+    SET history = history || ${JSON.stringify([{ role: 'user', content: cleanText }])}::jsonb,
+        status = 'needs_review',
+        requires_human = true,
+        last_message_at = NOW()
     WHERE id = ${conversation.id}
   `;
 
