@@ -96,24 +96,8 @@ export async function POST(request: Request) {
       });
     }
 
-    // 4. Get message template for touch 1 (initial offer)
-    const [template] = await sql`
-      SELECT subject_template, body_template
-      FROM campaign_message_library
-      WHERE (organization_id = ${organization.id} OR organization_id = 'default')
-        AND touch_number = 1
-        AND message_type = 'initial_offer'
-        AND active = true
-      ORDER BY organization_id DESC
-      LIMIT 1
-    `;
-
-    if (!template) {
-      return NextResponse.json({
-        error: 'No message template found',
-        action: 'Check campaign_message_library table has templates seeded'
-      }, { status: 500 });
-    }
+    // 4. Select adaptive templates based on lead psychology
+    // We'll detect profile per-lead and use appropriate messaging
 
     // 5. Send emails
     const results = {
@@ -123,13 +107,63 @@ export async function POST(request: Request) {
 
     for (const lead of queuedLeads) {
       try {
+        // Get adaptive template based on lead psychology
+        const touchNum = lead.touch_number + 1; // Current touch is 0, sending touch 1
+
+        // Detect seller profile
+        let signals: string[] = [];
+        try {
+          const signalsStr = lead.distress_signals;
+          signals = signalsStr ? JSON.parse(signalsStr) : [];
+        } catch {
+          signals = [];
+        }
+
+        // Determine message type based on profile
+        let messageType = 'initial_offer';
+        const highDistress = ['pre_foreclosure', 'tax_delinquent', 'bankruptcy', 'probate'];
+        if (signals.some((s: string) => highDistress.includes(s))) {
+          messageType = touchNum === 1 ? 'initial_offer_distress' : 'follow_up_adjust';
+        }
+
+        // Get template
+        const [template] = await sql`
+          SELECT subject_template, body_template
+          FROM campaign_message_library
+          WHERE (organization_id = ${organization.id} OR organization_id = 'default')
+            AND touch_number = ${touchNum}
+            AND message_type = ${messageType}
+            AND active = true
+          ORDER BY organization_id DESC
+          LIMIT 1
+        `;
+
+        // Fallback to baseline if specific template not found
+        const activeTemplate = template || await sql`
+          SELECT subject_template, body_template
+          FROM campaign_message_library
+          WHERE organization_id = 'default'
+            AND touch_number = ${touchNum}
+            AND active = true
+          ORDER BY id
+          LIMIT 1
+        `.then(r => r[0]);
+
+        if (!activeTemplate) {
+          results.failed.push({
+            leadId: lead.lead_id,
+            reason: 'No template found for touch ' + touchNum
+          });
+          continue;
+        }
+
         // Personalize template
         const offerRange = `$${Math.round(lead.offer_min / 100).toLocaleString()} - $${Math.round(lead.offer_max / 100).toLocaleString()}`;
-        const subject = template.subject_template
+        const subject = activeTemplate.subject_template
           .replace('{name}', lead.name || 'there')
           .replace('{address}', lead.address || 'your property');
 
-        const body = template.body_template
+        const body = activeTemplate.body_template
           .replace(/{name}/g, lead.name || 'there')
           .replace(/{address}/g, lead.address || 'your property')
           .replace(/{offer}/g, offerRange)

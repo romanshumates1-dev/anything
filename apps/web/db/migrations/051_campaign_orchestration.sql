@@ -93,40 +93,71 @@ CREATE INDEX IF NOT EXISTS idx_campaign_outcomes_recorded ON public.campaign_out
 
 COMMENT ON TABLE public.campaign_outcomes IS 'Outcome tracking for probability model calibration';
 
--- Seed default message templates (organization_id 'default' = fallback for all orgs)
+-- Seed adaptive message templates with psychological targeting
+-- organization_id 'default' = fallback for all orgs
+-- Each touch has multiple variants for different seller profiles
+
 INSERT INTO public.campaign_message_library (
   organization_id, touch_number, message_type, subject_template, body_template, variables
 ) VALUES
 
--- Touch 1: Initial offer
+-- Touch 1: Initial offer (baseline)
 ('default', 1, 'initial_offer',
  'Quick question about {address}',
  '<p>Hi {name},</p>
-<p>I came across {address} and wanted to reach out with a straightforward offer.</p>
-<p>Based on current market comps and the work the property needs, I can offer <strong>{offer}</strong> and close in 7-14 days.</p>
-<p>We buy as-is - no repairs, no showings, no contingencies. Just a clean, fast close.</p>
-<p>Would that work for you?</p>
-<p>Best,<br>Your Name</p>',
+<p>I buy properties as-is in your area. Can offer <strong>{offer}</strong> for {address} and close in 7-14 days.</p>
+<p>No repairs, no showings, no hassle. Cash offer, your timeline.</p>
+<p>Interested?</p>',
  ARRAY['name', 'address', 'offer']),
 
--- Touch 2: Follow-up (2 days later)
-('default', 2, 'follow_up',
- 'Following up on {address}',
+-- Touch 1: High distress variant (empathy + speed)
+('default', 1, 'initial_offer_distress',
+ '{address} — can help quickly',
  '<p>Hi {name},</p>
-<p>Just wanted to follow up on my offer for {address}.</p>
-<p>I know these decisions take time. If you have any questions about the offer or process, I''m happy to hop on a quick call.</p>
-<p>The offer of <strong>{offer}</strong> stands and we can close whenever works for you.</p>
-<p>Best,<br>Your Name</p>',
+<p>I understand selling quickly matters. I can close on {address} in as little as 7 days with <strong>{offer}</strong> cash.</p>
+<p>No repairs needed, no waiting on financing. I handle everything.</p>
+<p>Can we talk today?</p>',
  ARRAY['name', 'address', 'offer']),
 
--- Touch 3: Final check (5 days later)
-('default', 3, 'final_check',
- 'Last check-in on {address}',
+-- Touch 1: Investor variant (numbers + certainty)
+('default', 1, 'initial_offer_investor',
+ 'Cash offer for {address}',
  '<p>Hi {name},</p>
-<p>I wanted to reach out one last time about {address} before I move on to other opportunities.</p>
-<p>My offer of <strong>{offer}</strong> is still available if you decide selling makes sense.</p>
-<p>If now isn''t the right time, no problem at all. Just wanted to make sure you had a chance to consider it.</p>
-<p>Best of luck either way,<br>Your Name</p>',
+<p>Direct offer: <strong>{offer}</strong> for {address}. ARV {arv}, close in 10 days.</p>
+<p>All cash, proof of funds attached. No inspection contingency.</p>
+<p>Can we finalize this week?</p>',
+ ARRAY['name', 'address', 'offer', 'arv']),
+
+-- Touch 2: Day 3 re-engagement (identify motivation)
+('default', 2, 'follow_up_adjust',
+ 'Can adjust terms — {address}',
+ '<p>Hi {name},</p>
+<p>Still considering offers for {address}?</p>
+<p>If {offer} doesn''t work, I can adjust terms. What matters most — price, timeline, or flexibility?</p>',
+ ARRAY['name', 'address', 'offer']),
+
+-- Touch 2: Day 3 competitive edge
+('default', 2, 'follow_up_execution',
+ 'Still interested in {address}',
+ '<p>{name},</p>
+<p>If you''re comparing offers, here''s why sellers choose us: guaranteed close date, no lender delays, we handle all paperwork.</p>
+<p>{offer} still stands. Ready when you are.</p>',
+ ARRAY['name', 'offer']),
+
+-- Touch 3: Day 5 closing urgency
+('default', 3, 'final_close_out',
+ 'Should I close your file?',
+ '<p>Hi {name},</p>
+<p>Still interested in {offer} for {address}, or should I close this out?</p>
+<p>No pressure — just want to know if you''re still considering.</p>',
+ ARRAY['name', 'address', 'offer']),
+
+-- Touch 3: Day 7 timing flexibility
+('default', 3, 'final_timing',
+ 'Timing flexible on {address}',
+ '<p>{name},</p>
+<p>If timing was the issue, I can be flexible. Close next week or 60 days from now — your call.</p>
+<p>{offer} still available. Let me know.</p>',
  ARRAY['name', 'address', 'offer'])
 
 ON CONFLICT DO NOTHING;
