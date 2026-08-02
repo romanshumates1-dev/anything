@@ -1,0 +1,276 @@
+/**
+ * Prospect Scoring Engine
+ * Scores sellers and buyers for wholesaling pipeline.
+ * All scores are 0-100. Higher = more qualified.
+ */
+
+// ── types ────────────────────────────────────────────────────────────────────
+
+export interface SellerSignals {
+  preForeclosure?: boolean;
+  taxDelinquentYears?: number;
+  probateOrInherited?: boolean;
+  codeViolations?: boolean;
+  absenteeOwner?: boolean;
+  equityPercent?: number;
+  vacantProperty?: boolean;
+  ownershipYears?: number;
+  tiredLandlord?: boolean;
+  recentDivorce?: boolean;
+}
+
+export interface BuyerSignals {
+  cashPurchases?: boolean;
+  purchasesLast12Months?: number;
+  llcOrEntity?: boolean;
+  verifiedProofOfFunds?: boolean;
+  previousClosedDeal?: boolean;
+  zipCodeMatch?: boolean;
+  priceRangeMatch?: boolean;
+  propertyTypeMatch?: boolean;
+  avgResponseTimeHours?: number;
+}
+
+export type SellerTier = 'HOT' | 'WARM' | 'COOL' | 'COLD';
+export type BuyerTier = 'VIP' | 'VERIFIED' | 'PROSPECT' | 'UNVERIFIED';
+
+export interface SellerScore {
+  score: number;
+  tier: SellerTier;
+  signals: string[];
+  recommendedAction: string;
+}
+
+export interface BuyerScore {
+  score: number;
+  tier: BuyerTier;
+  earnestMoney: { min: number; max: number };
+  signals: string[];
+  priority: string;
+}
+
+// ── scoring weights ──────────────────────────────────────────────────────────
+
+const SELLER_WEIGHTS = {
+  preForeclosure: 30,
+  taxDelinquent: 25,
+  probateOrInherited: 20,
+  codeViolations: 15,
+  absenteeOwner: 15,
+  highEquity: 10,
+  vacantProperty: 10,
+  longOwnership: 5,
+  tiredLandlord: 10,
+  recentDivorce: 10,
+} as const;
+
+const BUYER_WEIGHTS = {
+  cashPurchases: 30,
+  multiplePurchases: 25,
+  previousClosedDeal: 20,
+  verifiedPOF: 20,
+  llcOrEntity: 15,
+  zipCodeMatch: 10,
+  priceRangeMatch: 10,
+  propertyTypeMatch: 5,
+  fastResponse: 5,
+} as const;
+
+// ── tier thresholds ──────────────────────────────────────────────────────────
+
+const SELLER_TIERS: { tier: SellerTier; min: number; action: string }[] = [
+  { tier: 'HOT', min: 70, action: 'Immediate outreach, priority follow-up' },
+  { tier: 'WARM', min: 50, action: 'Standard campaign cadence' },
+  { tier: 'COOL', min: 30, action: 'Low-priority drip only' },
+  { tier: 'COLD', min: 0, action: 'Do not contact' },
+];
+
+const BUYER_TIERS: { tier: BuyerTier; min: number; earnest: { min: number; max: number }; priority: string }[] = [
+  { tier: 'VIP', min: 80, earnest: { min: 100, max: 500 }, priority: 'First look, 2hr exclusive' },
+  { tier: 'VERIFIED', min: 60, earnest: { min: 500, max: 1500 }, priority: 'Standard deal blasts' },
+  { tier: 'PROSPECT', min: 40, earnest: { min: 1500, max: 3000 }, priority: 'Deals after 24hr if unsold' },
+  { tier: 'UNVERIFIED', min: 0, earnest: { min: 3000, max: 5000 }, priority: 'Require POF first' },
+];
+
+// ── seller scoring ───────────────────────────────────────────────────────────
+
+export function scoreSeller(signals: SellerSignals): SellerScore {
+  let score = 0;
+  const matched: string[] = [];
+
+  if (signals.preForeclosure) {
+    score += SELLER_WEIGHTS.preForeclosure;
+    matched.push('Pre-foreclosure/NOD (+30)');
+  }
+
+  if (signals.taxDelinquentYears && signals.taxDelinquentYears >= 2) {
+    score += SELLER_WEIGHTS.taxDelinquent;
+    matched.push(`Tax delinquent ${signals.taxDelinquentYears}+ years (+25)`);
+  }
+
+  if (signals.probateOrInherited) {
+    score += SELLER_WEIGHTS.probateOrInherited;
+    matched.push('Probate/Inherited property (+20)');
+  }
+
+  if (signals.codeViolations) {
+    score += SELLER_WEIGHTS.codeViolations;
+    matched.push('Code violations (+15)');
+  }
+
+  if (signals.absenteeOwner) {
+    score += SELLER_WEIGHTS.absenteeOwner;
+    matched.push('Absentee owner (+15)');
+  }
+
+  if (signals.equityPercent !== undefined && signals.equityPercent > 50) {
+    score += SELLER_WEIGHTS.highEquity;
+    matched.push(`High equity ${signals.equityPercent}% (+10)`);
+  }
+
+  if (signals.vacantProperty) {
+    score += SELLER_WEIGHTS.vacantProperty;
+    matched.push('Vacant property (+10)');
+  }
+
+  if (signals.ownershipYears !== undefined && signals.ownershipYears >= 10) {
+    score += SELLER_WEIGHTS.longOwnership;
+    matched.push(`Long ownership ${signals.ownershipYears} years (+5)`);
+  }
+
+  if (signals.tiredLandlord) {
+    score += SELLER_WEIGHTS.tiredLandlord;
+    matched.push('Tired landlord signals (+10)');
+  }
+
+  if (signals.recentDivorce) {
+    score += SELLER_WEIGHTS.recentDivorce;
+    matched.push('Recent divorce filing (+10)');
+  }
+
+  // Cap at 100
+  score = Math.min(100, score);
+
+  // Determine tier
+  const tierInfo = SELLER_TIERS.find(t => score >= t.min) || SELLER_TIERS[SELLER_TIERS.length - 1];
+
+  return {
+    score,
+    tier: tierInfo.tier,
+    signals: matched,
+    recommendedAction: tierInfo.action,
+  };
+}
+
+// ── buyer scoring ────────────────────────────────────────────────────────────
+
+export function scoreBuyer(signals: BuyerSignals): BuyerScore {
+  let score = 0;
+  const matched: string[] = [];
+
+  if (signals.cashPurchases) {
+    score += BUYER_WEIGHTS.cashPurchases;
+    matched.push('Cash purchases (+30)');
+  }
+
+  if (signals.purchasesLast12Months !== undefined && signals.purchasesLast12Months >= 2) {
+    score += BUYER_WEIGHTS.multiplePurchases;
+    matched.push(`${signals.purchasesLast12Months} purchases in 12mo (+25)`);
+  }
+
+  if (signals.previousClosedDeal) {
+    score += BUYER_WEIGHTS.previousClosedDeal;
+    matched.push('Previous closed deal with us (+20)');
+  }
+
+  if (signals.verifiedProofOfFunds) {
+    score += BUYER_WEIGHTS.verifiedPOF;
+    matched.push('Verified proof of funds (+20)');
+  }
+
+  if (signals.llcOrEntity) {
+    score += BUYER_WEIGHTS.llcOrEntity;
+    matched.push('LLC/Entity buyer (+15)');
+  }
+
+  if (signals.zipCodeMatch) {
+    score += BUYER_WEIGHTS.zipCodeMatch;
+    matched.push('Zip code match (+10)');
+  }
+
+  if (signals.priceRangeMatch) {
+    score += BUYER_WEIGHTS.priceRangeMatch;
+    matched.push('Price range match (+10)');
+  }
+
+  if (signals.propertyTypeMatch) {
+    score += BUYER_WEIGHTS.propertyTypeMatch;
+    matched.push('Property type match (+5)');
+  }
+
+  if (signals.avgResponseTimeHours !== undefined && signals.avgResponseTimeHours < 1) {
+    score += BUYER_WEIGHTS.fastResponse;
+    matched.push('Fast response time <1hr (+5)');
+  }
+
+  // Cap at 100
+  score = Math.min(100, score);
+
+  // Determine tier
+  const tierInfo = BUYER_TIERS.find(t => score >= t.min) || BUYER_TIERS[BUYER_TIERS.length - 1];
+
+  return {
+    score,
+    tier: tierInfo.tier,
+    earnestMoney: tierInfo.earnest,
+    signals: matched,
+    priority: tierInfo.priority,
+  };
+}
+
+// ── earnest money calculator ─────────────────────────────────────────────────
+
+export function calculateEarnestMoney(tier: BuyerTier): { min: number; max: number } {
+  const tierInfo = BUYER_TIERS.find(t => t.tier === tier);
+  if (!tierInfo) {
+    return { min: 3000, max: 5000 }; // Default to UNVERIFIED
+  }
+  return tierInfo.earnest;
+}
+
+/**
+ * Calculate specific earnest money amount within tier range based on deal size.
+ * Higher deal value = higher earnest within tier range.
+ */
+export function calculateEarnestAmount(tier: BuyerTier, dealValue: number): number {
+  const range = calculateEarnestMoney(tier);
+
+  // Scale within range based on deal value brackets
+  if (dealValue < 50000) {
+    return range.min;
+  } else if (dealValue < 100000) {
+    return Math.round(range.min + (range.max - range.min) * 0.33);
+  } else if (dealValue < 200000) {
+    return Math.round(range.min + (range.max - range.min) * 0.66);
+  } else {
+    return range.max;
+  }
+}
+
+// ── tier utilities ───────────────────────────────────────────────────────────
+
+export function getSellerTierInfo(tier: SellerTier) {
+  return SELLER_TIERS.find(t => t.tier === tier);
+}
+
+export function getBuyerTierInfo(tier: BuyerTier) {
+  return BUYER_TIERS.find(t => t.tier === tier);
+}
+
+export function isContactable(sellerTier: SellerTier): boolean {
+  return sellerTier !== 'COLD';
+}
+
+export function requiresPOF(buyerTier: BuyerTier): boolean {
+  return buyerTier === 'UNVERIFIED';
+}
