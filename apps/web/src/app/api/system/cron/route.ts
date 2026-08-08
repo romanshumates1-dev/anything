@@ -17,6 +17,7 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
+import { checkInspectionPeriods } from '@/app/api/services/contractNotifications';
 
 type CronTask = {
   name: string;
@@ -182,7 +183,39 @@ async function handleDeadLetterAlert() {
 }
 
 /**
- * Task 6: Resurrection (daily)
+ * Task 6: Pipeline Health Check (exponential: 1-2-4-8 hours)
+ *
+ * Self-healing AI provider monitoring. If primary AI is down, automatically
+ * falls back to Ollama. Also checks for stuck contracts, contacts, dead jobs.
+ */
+async function handlePipelineHealth() {
+  const {
+    runPipelineHealthCheck,
+    updateHealthState,
+  } = await import('@/app/api/utils/pipeline-health-engine');
+
+  const report = await runPipelineHealthCheck({ autoHeal: true });
+  const criticalIssues = report.issues.filter((i) => i.severity === 'critical');
+  const healthy = criticalIssues.length === 0;
+
+  // Update state for exponential backoff
+  const { consecutiveFailures, nextCheckMs } = await updateHealthState(healthy);
+
+  const summary = [
+    `AI: ${report.activeProvider} (fallback=${report.fallbackActivated})`,
+    `Issues: ${report.issues.length} (${criticalIssues.length} critical)`,
+    `Healed: ${report.healed.filter((h) => h.success).length}`,
+    `Next check: ${Math.round(nextCheckMs / 3600000)}h`,
+  ].join(', ');
+
+  return {
+    processed: report.issues.length + report.healed.length,
+    detail: summary,
+  };
+}
+
+/**
+ * Task 7: Resurrection (daily)
  *
  * Re-touches COLD/DEAL_NO_AGREEMENT leads at 30/60/90/180 days.
  * Opted-out contacts are excluded at the query level.
@@ -204,13 +237,64 @@ async function handleResurrection() {
   return { processed: totalQueued, detail: `Resurrection: ${totalQueued} queued, ${totalSkipped} skipped across ${(orgs as any[]).length} orgs` };
 }
 
+/**
+ * Task 8: Contract Inspection Monitor (every 6 hours)
+ *
+ * Monitors contracts approaching inspection period expiry.
+ * Sends alerts at N-7, N-4, N-2, and N-0 (critical) days.
+ * Prevents silent expiry of contracts without buyer assignment.
+ */
+async function handleContractInspection() {
+  try {
+    await checkInspectionPeriods();
+
+    // Also check for closing deadlines
+    const closingContracts = await sql`
+      SELECT
+        c.id,
+        c.property_address,
+        ba.buyer_id,
+        ba.assignment_fee_cents,
+        b.name as buyer_name,
+        c.metadata->>'closingDate' as closing_date,
+        EXTRACT(DAY FROM ((c.metadata->>'closingDate')::date - CURRENT_DATE))::int as days_to_close
+      FROM contracts c
+      JOIN buyer_assignments ba ON ba.contract_id = c.id
+      JOIN buyers b ON b.id = ba.buyer_id
+      WHERE c.status = 'ASSIGNED'
+        AND ba.status = 'SIGNED'
+        AND c.metadata->>'closingDate' IS NOT NULL
+        AND ((c.metadata->>'closingDate')::date - CURRENT_DATE) <= 3
+        AND ((c.metadata->>'closingDate')::date - CURRENT_DATE) >= 0
+    `.catch(() => []);
+
+    const { scheduleClosingReminder } = await import('@/app/api/services/contractNotifications');
+    for (const contract of closingContracts as any[]) {
+      await scheduleClosingReminder({
+        contractId: contract.id,
+        closingDate: new Date(contract.closing_date),
+        propertyAddress: contract.property_address || 'Unknown',
+        buyerName: contract.buyer_name,
+        assignmentFee: contract.assignment_fee_cents,
+      });
+    }
+
+    return { processed: closingContracts.length, detail: `Checked inspection periods and ${closingContracts.length} closing contracts` };
+  } catch (error: any) {
+    console.error('Contract inspection error:', error);
+    return { processed: 0, detail: `Error: ${error.message}` };
+  }
+}
+
 const TASKS: Record<string, CronTask> = {
   'stuck-conversations': { name: 'stuck-conversations', handler: handleStuckConversations },
   'retry-sms': { name: 'retry-sms', handler: handleRetrySms },
   'daily-report': { name: 'daily-report', handler: handleDailyReport },
   'log-cleanup': { name: 'log-cleanup', handler: handleLogCleanup },
   'dead-letter-alert': { name: 'dead-letter-alert', handler: handleDeadLetterAlert },
+  'pipeline-health': { name: 'pipeline-health', handler: handlePipelineHealth },
   'resurrection': { name: 'resurrection', handler: handleResurrection },
+  'contract-inspection': { name: 'contract-inspection', handler: handleContractInspection },
 };
 
 export async function POST(request: Request) {
@@ -275,7 +359,9 @@ export async function GET() {
       'daily-report': 'nightly',
       'log-cleanup': 'weekly',
       'dead-letter-alert': 'every 15 minutes',
+      'pipeline-health': 'exponential 1-2-4-8 hours (self-healing)',
       'resurrection': 'daily',
+      'contract-inspection': 'every 6 hours (inspection period + closing alerts)',
     },
     timestamp: new Date().toISOString(),
   });

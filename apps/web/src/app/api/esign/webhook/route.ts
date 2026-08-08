@@ -12,6 +12,7 @@ import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { getEsignProvider, type EsignProviderType } from '@/app/api/services/esignProvider';
 import { getStripeProvider } from '@/app/api/services/stripeProvider';
+import { onBuyerAssignmentSigned, sendContractAlert } from '@/app/api/services/contractNotifications';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -149,9 +150,57 @@ export async function POST(request: Request) {
       eventData: payload.event_data,
     });
 
-    // If signed, create payment if fee_collection = collect_now
+    // If signed, create payment if fee_collection = collect_now and send notifications
     if (payload.event_type === 'signed') {
       const contract = contractRows[0];
+
+      // Get full contract details for notifications
+      const [contractDetails] = await sql`
+        SELECT
+          c.*,
+          ba.buyer_id,
+          ba.assignment_fee_cents,
+          b.name as buyer_name,
+          b.email as buyer_email,
+          l.id as lead_id
+        FROM contracts c
+        LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id
+        LEFT JOIN buyers b ON b.id = ba.buyer_id
+        LEFT JOIN leads l ON l.id = c.lead_id
+        WHERE c.id = ${payload.contract_id}
+      `.catch(() => [null]);
+
+      // Send contract signed notification
+      if (contractDetails) {
+        const isAssignmentContract = contractDetails.contract_type === 'assignment_contract' ||
+          contractDetails.metadata?.contractType === 'ASSIGNMENT';
+
+        if (isAssignmentContract && contractDetails.buyer_id) {
+          // Assignment contract signed by buyer - send full notification flow
+          await onBuyerAssignmentSigned({
+            contractId: payload.contract_id,
+            buyerId: contractDetails.buyer_id,
+            buyerName: contractDetails.buyer_name || 'Unknown Buyer',
+            buyerEmail: contractDetails.buyer_email || '',
+            propertyAddress: contractDetails.property_address || 'Property',
+            assignmentFee: contractDetails.assignment_fee_cents || 0,
+            leadId: contractDetails.lead_id,
+          });
+        } else {
+          // Purchase agreement or other contract signed - send general notification
+          await sendContractAlert({
+            type: 'ASSIGNMENT_SIGNED',
+            contractId: payload.contract_id,
+            propertyAddress: contractDetails.property_address || 'Property',
+            buyerName: contractDetails.buyer_name,
+            buyerEmail: contractDetails.buyer_email,
+            assignmentFee: contractDetails.assignment_fee_cents,
+            urgency: 'HIGH',
+            metadata: { leadId: contractDetails.lead_id },
+          });
+        }
+      }
+
       if (contract.fee_collection === 'collect_now') {
         // Determine amount from fee_config or use a default
         const feeConfig = contract.fee_config || {};
