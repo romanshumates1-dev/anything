@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { isOptOutMessage } from './optOutDetection';
 import { registerOptOut } from '@/app/api/utils/compliance';
+import { sendMessage } from '@/app/api/utils/messaging';
 
 export async function processInboundSms(params: {
   from: string;
@@ -34,8 +35,20 @@ export async function processInboundSms(params: {
     // Register compliance opt-out
     await registerOptOut(from, 'sms', { organizationId, reason: 'stop_keyword' });
 
-    // TODO: Send legally-required confirmation SMS via Twilio
-    // await sendSms({ to: from, body: "You've been unsubscribed..." });
+    // [TCPA COMPLIANCE] Send legally-required opt-out confirmation SMS
+    // TCPA requires confirmation within reasonable time
+    try {
+      await sendMessage({
+        leadId: contactRows[0]?.id || 'opt-out',
+        channel: 'sms',
+        to: from,
+        text: "You've been unsubscribed and will not receive further messages from us. Reply START to re-subscribe.",
+        transactional: true, // Bypass dispatch gate for compliance message
+      });
+    } catch (e) {
+      // Log but don't fail - opt-out was still registered
+      console.error('[INBOUND-SMS] Failed to send opt-out confirmation:', e);
+    }
 
     return { action: 'opted_out', contactId: contactRows[0]?.id ?? null };
   }

@@ -52,12 +52,13 @@ function calculateMatchScore(buyer: any, deal: any): {
   const dealType = metadata.property_type || 'single_family';
 
   // Build buyer signals for scoring engine
+  // Note: Using actual column names from buyers table schema
   const signals: BuyerSignals = {
     cashPurchases: buyer.cash_buyer || buyer.payment_method === 'cash',
-    purchasesLast12Months: buyer.purchases_12mo || 0,
-    llcOrEntity: buyer.is_llc || buyer.company_name != null,
-    verifiedProofOfFunds: buyer.pof_verified || buyer.verified,
-    previousClosedDeal: buyer.closed_deals > 0,
+    purchasesLast12Months: buyer.actual_close_count || 0, // actual_close_count tracks closed deals
+    llcOrEntity: buyer.name?.includes('LLC') || buyer.name?.includes('Inc') || buyer.name?.includes('Corp'),
+    verifiedProofOfFunds: buyer.pof_submitted || buyer.verified,
+    previousClosedDeal: (buyer.actual_close_count || 0) > 0,
     zipCodeMatch: dealZip && buyer.zip_codes?.includes(dealZip),
     priceRangeMatch: (() => {
       const buyerMin = buyer.price_min_cents ? buyer.price_min_cents / 100 : 0;
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
       SELECT * FROM buyers
       WHERE organization_id = ${organization.id}
         AND (verified = true OR pof_submitted = true)
-      ORDER BY verified DESC, closed_deals DESC
+      ORDER BY verified DESC, actual_close_count DESC
     `;
 
     if (buyers.length === 0) {
@@ -161,7 +162,7 @@ export async function POST(req: NextRequest) {
           matchScore: score,
           matchReasons: reasons,
           verified: buyer.verified,
-          closedDeals: buyer.closed_deals || 0,
+          closedDeals: buyer.actual_close_count || 0,
           tier,
           earnestMoney,
           priority,

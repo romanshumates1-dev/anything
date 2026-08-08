@@ -4,6 +4,7 @@
  */
 
 import { sendEmailAuto } from '@/app/api/utils/emailProviders';
+import { sendMessage } from '@/app/api/utils/messaging';
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -152,12 +153,22 @@ function buildAlertEmail(event: AlertEvent): { subject: string; html: string } {
   };
 }
 
-// ── SMS stub ─────────────────────────────────────────────────────────────────
+// ── SMS sender ───────────────────────────────────────────────────────────────
 
 async function sendSMS(phone: string, message: string): Promise<boolean> {
-  // TODO: Integrate with Twilio/AWS SNS
-  console.log(`[SMS] To: ${phone} | Message: ${message}`);
-  return true;
+  try {
+    const result = await sendMessage({
+      leadId: 'alert',
+      channel: 'sms',
+      to: phone,
+      text: message,
+      transactional: true, // Critical alerts bypass dispatch gate
+    });
+    return result.status === 'sent';
+  } catch (e) {
+    console.error(`[ALERT-SMS] Failed to send to ${phone}:`, e);
+    return false;
+  }
 }
 
 // ── main send function ───────────────────────────────────────────────────────

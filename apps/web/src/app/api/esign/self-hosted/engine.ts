@@ -448,9 +448,9 @@ export async function sendCompletionNotification(
           titleCompanyContact: meta.titleCompanyContact,
           titleCompanyPhone: meta.titleCompanyPhone,
           titleCompanyEmail: meta.titleCompanyEmail,
-          dealSwiftContact: 'DealSwift Support',
-          dealSwiftPhone: '(555) 123-4567',
-          dealSwiftEmail: 'deals@dealswiftautomation.com',
+          dealSwiftContact: process.env.COMPANY_CONTACT_NAME || 'DealSwift Support',
+          dealSwiftPhone: process.env.COMPANY_PHONE || process.env.SUPPORT_PHONE || '',
+          dealSwiftEmail: process.env.COMPANY_EMAIL || 'deals@dealswiftautomation.com',
           dealId: document.id,
         };
 

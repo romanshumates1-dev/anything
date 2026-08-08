@@ -74,7 +74,7 @@ export async function notifyNonVipBuyers(
         SELECT 1 FROM buyer_assignments ba
         WHERE ba.buyer_id = b.id AND ba.lead_id = ${dealId}
       )
-    ORDER BY b.closed_deals DESC
+    ORDER BY b.actual_close_count DESC
     LIMIT 10
   `;
 
@@ -108,10 +108,10 @@ export async function notifyNonVipBuyers(
   const scoredBuyers = buyers.map((buyer: any) => {
     const signals: BuyerSignals = {
       cashPurchases: buyer.cash_buyer || buyer.payment_method === 'cash',
-      purchasesLast12Months: buyer.purchases_12mo || 0,
-      llcOrEntity: buyer.is_llc || buyer.company_name != null,
-      verifiedProofOfFunds: buyer.pof_verified || buyer.verified,
-      previousClosedDeal: buyer.closed_deals > 0,
+      purchasesLast12Months: buyer.actual_close_count || 0,
+      llcOrEntity: buyer.name?.includes('LLC') || buyer.name?.includes('Inc') || buyer.name?.includes('Corp'),
+      verifiedProofOfFunds: buyer.pof_submitted || buyer.verified,
+      previousClosedDeal: (buyer.actual_close_count || 0) > 0,
     };
     const score = scoreBuyer(signals);
     return { ...buyer, score: score.score, tier: score.tier };
