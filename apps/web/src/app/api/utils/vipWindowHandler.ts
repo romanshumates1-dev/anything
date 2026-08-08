@@ -47,12 +47,20 @@ export async function notifyNonVipBuyers(
   dealId: string,
   organizationId: string
 ): Promise<{ notified: number; skipped: string }> {
+  // [FIX] Convert string dealId to integer for database queries
+  // leads.id and buyer_assignments.lead_id are INTEGER columns
+  const dealIdInt = parseInt(dealId, 10);
+  if (isNaN(dealIdInt)) {
+    console.error(`[VIP-WINDOW] Invalid dealId: ${dealId}`);
+    return { notified: 0, skipped: 'invalid_deal_id' };
+  }
+
   // Check if deal was already assigned during VIP window
   const [deal] = await sql`
     SELECT l.*, ba.status as assignment_status
     FROM leads l
     LEFT JOIN buyer_assignments ba ON ba.lead_id = l.id AND ba.status IN ('signed', 'confirmed')
-    WHERE l.id = ${dealId} AND l.organization_id = ${organizationId}
+    WHERE l.id = ${dealIdInt} AND l.organization_id = ${organizationId}
   `;
 
   if (!deal) {
@@ -72,7 +80,7 @@ export async function notifyNonVipBuyers(
       AND (b.verified = true OR b.pof_submitted = true)
       AND NOT EXISTS (
         SELECT 1 FROM buyer_assignments ba
-        WHERE ba.buyer_id = b.id AND ba.lead_id = ${dealId}
+        WHERE ba.buyer_id = b.id AND ba.lead_id = ${dealIdInt}
       )
     ORDER BY b.actual_close_count DESC
     LIMIT 10
@@ -117,8 +125,17 @@ export async function notifyNonVipBuyers(
     return { ...buyer, score: score.score, tier: score.tier };
   }).filter((b: any) => b.tier !== 'VIP'); // VIP already notified
 
+  // Filter buyers with valid email addresses and limit to 5
+  const buyersToNotify = scoredBuyers
+    .filter((b: any) => b.email && typeof b.email === 'string')
+    .slice(0, 5);
+
+  if (buyersToNotify.length === 0) {
+    return { notified: 0, skipped: 'no_buyers_with_email' };
+  }
+
   // Send emails in parallel
-  const emailPromises = scoredBuyers.slice(0, 5).map((buyer: any) =>
+  const emailPromises = buyersToNotify.map((buyer: any) =>
     sendEmail(organizationId, {
       to: buyer.email,
       subject: `Deal Now Available: ${address}`,
@@ -150,7 +167,7 @@ export async function notifyNonVipBuyers(
 
   await Promise.allSettled(emailPromises);
 
-  console.log(`[VIP-WINDOW] Deal ${dealId}: Notified ${scoredBuyers.length} non-VIP buyers after VIP window expired`);
+  console.log(`[VIP-WINDOW] Deal ${dealId}: Notified ${buyersToNotify.length} non-VIP buyers after VIP window expired`);
 
-  return { notified: scoredBuyers.length, skipped: '' };
+  return { notified: buyersToNotify.length, skipped: '' };
 }

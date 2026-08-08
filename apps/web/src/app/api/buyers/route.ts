@@ -80,7 +80,8 @@ export async function POST(request: Request) {
     name, phone, email,
     zipCodes, priceMinCents, priceMaxCents,
     cashBuyer, propertyTypes,
-    verified, source, notes,
+    verified, pofSubmitted, allMarkets, // [FIX] Added missing columns for matching
+    source, notes,
   } = body;
 
   if (!name) return Response.json({ error: 'name is required' }, { status: 400 });
@@ -93,6 +94,7 @@ export async function POST(request: Request) {
         zip_codes = ${zipCodes ?? []}, price_min_cents = ${priceMinCents ?? null},
         price_max_cents = ${priceMaxCents ?? null}, cash_buyer = ${cashBuyer ?? true},
         property_types = ${propertyTypes ?? []}, verified = ${verified ?? false},
+        pof_submitted = ${pofSubmitted ?? false}, all_markets = ${allMarkets ?? false},
         source = ${source ?? 'manual'}, notes = ${notes ?? null},
         updated_at = now()
       WHERE id = ${Number(id)} AND organization_id = ${organization.id}
@@ -103,11 +105,12 @@ export async function POST(request: Request) {
   const [buyer] = await sql`
     INSERT INTO buyers
       (organization_id, name, phone, email, zip_codes, price_min_cents, price_max_cents,
-       cash_buyer, property_types, verified, source, notes)
+       cash_buyer, property_types, verified, pof_submitted, all_markets, source, notes)
     VALUES
       (${organization.id}, ${name}, ${phone ?? null}, ${email ?? null},
        ${zipCodes ?? []}, ${priceMinCents ?? null}, ${priceMaxCents ?? null},
        ${cashBuyer ?? true}, ${propertyTypes ?? []}, ${verified ?? false},
+       ${pofSubmitted ?? false}, ${allMarkets ?? false},
        ${source ?? 'manual'}, ${notes ?? null})
     RETURNING id
   `;

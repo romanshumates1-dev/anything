@@ -70,11 +70,21 @@ const SEVERITY_CHANNELS: Record<AlertSeverity, AlertChannel[]> = {
 
 // ── default admin recipient ──────────────────────────────────────────────────
 
-const DEFAULT_ADMIN: AlertRecipient = {
-  email: 'roman.shumate@dealswiftautomation.com',
-  phone: '+1XXXXXXXXXX', // Replace with actual
-  name: 'Admin',
-};
+/**
+ * Get the default admin recipient from environment variables.
+ * Falls back to a dev-only placeholder if not configured.
+ */
+function getDefaultAdmin(): AlertRecipient {
+  const email = process.env.ADMIN_ALERT_EMAIL || 'admin@example.com';
+  const phone = process.env.ADMIN_ALERT_PHONE; // Optional - only set in production
+  const name = process.env.ADMIN_ALERT_NAME || 'Admin';
+
+  if (process.env.NODE_ENV === 'production' && email === 'admin@example.com') {
+    console.warn('[NotificationEngine] ADMIN_ALERT_EMAIL not configured - alerts will not be delivered');
+  }
+
+  return { email, phone, name };
+}
 
 // ── rate limiting ────────────────────────────────────────────────────────────
 
@@ -175,9 +185,11 @@ async function sendSMS(phone: string, message: string): Promise<boolean> {
 
 export async function sendAlert(
   event: AlertEvent,
-  recipient: AlertRecipient = DEFAULT_ADMIN
+  recipient?: AlertRecipient
 ): Promise<AlertResult> {
-  const alertKey = `${event.type}:${recipient.email}`;
+  // Resolve recipient - use provided or fall back to configured admin
+  const effectiveRecipient = recipient ?? getDefaultAdmin();
+  const alertKey = `${event.type}:${effectiveRecipient.email}`;
 
   // Rate limit check (skip for CRITICAL)
   if (event.severity !== 'CRITICAL' && isRateLimited(alertKey)) {
@@ -194,7 +206,7 @@ export async function sendAlert(
       const { subject, html } = buildAlertEmail(event);
       const orgId = event.context?.organizationId || 'system';
       await sendEmailAuto(orgId, {
-        to: recipient.email,
+        to: effectiveRecipient.email,
         subject,
         text: `${event.title}\n\n${event.message}`,
         html,
@@ -206,10 +218,10 @@ export async function sendAlert(
   }
 
   // SMS (CRITICAL only)
-  if (channels.includes('sms') && recipient.phone) {
+  if (channels.includes('sms') && effectiveRecipient.phone) {
     try {
       const smsMessage = `${event.title}: ${event.message.slice(0, 140)}`;
-      await sendSMS(recipient.phone, smsMessage);
+      await sendSMS(effectiveRecipient.phone, smsMessage);
       sentChannels.push('sms');
     } catch (err: any) {
       errors.push(`SMS failed: ${err.message}`);
