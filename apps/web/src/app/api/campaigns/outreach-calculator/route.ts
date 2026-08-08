@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
           (SELECT COUNT(*)::int FROM contracts WHERE esign_status = 'signed') as contracts_signed,
           (SELECT COUNT(*)::int FROM buyer_assignments WHERE status = 'SIGNED') as assignments_closed,
           (SELECT COALESCE(AVG(assignment_fee_cents), 1250000)::int FROM buyer_assignments WHERE status = 'SIGNED') as avg_assignment_fee
-      `.catch(() => [{}]);
+      `.catch(() => [{}]) as any[];
 
       if (metrics && metrics.total_contacted > 100) {
         systemMetrics = {
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
           (SELECT COUNT(*)::int FROM campaign_lead_queue WHERE status = 'interested') as total_interested,
           (SELECT COUNT(*)::int FROM contracts WHERE esign_status = 'signed') as contracts_signed,
           (SELECT COUNT(*)::int FROM buyer_assignments WHERE status = 'SIGNED') as assignments_closed
-      `.catch(() => [{}]);
+      `.catch(() => [{}]) as any[];
 
       if (metrics && metrics.total_contacted > 50) {
         systemPrior = {

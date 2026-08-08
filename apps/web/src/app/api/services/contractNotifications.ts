@@ -93,8 +93,7 @@ Urgency: ${alert.urgency}
 ACTION REQUIRED:
 ${alert.daysRemaining && alert.daysRemaining <= 2
   ? '- URGENT: Assign to buyer or terminate contract before deadline'
-  : '- Continue marketing to buyer list'
-  : '- Lower asking price if no buyer interest'}
+  : '- Continue marketing to buyer list\n- Lower asking price if no buyer interest'}
 
 If no assignment occurs before inspection period ends, the contract becomes unexecutable and you may lose earnest money.
 

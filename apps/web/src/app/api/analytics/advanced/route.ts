@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
       FROM campaign_lead_queue clq
       WHERE clq.created_at > now() - (${days} || ' days')::interval
         ${campaignId ? sql`AND clq.campaign_id = ${campaignId}` : sql``}
-    `.catch(() => [{}]);
+    `.catch(() => [{}]) as any[];
 
     // 2. Regional Performance Breakdown
     const regionalData = await sql`
@@ -176,7 +176,7 @@ export async function GET(req: NextRequest) {
         AVG(clq.touch_number) FILTER (WHERE clq.status = 'replied')::numeric(4,2) as avg_touches_to_reply
       FROM campaign_lead_queue clq
       WHERE clq.created_at > now() - (${days} || ' days')::interval
-    `.catch(() => [{}]);
+    `.catch(() => [{}]) as any[];
 
     // 7. Calculate AI-Powered Insights
     const insights = generateCampaignInsights({
@@ -496,6 +496,78 @@ function generateCampaignInsights(data: {
         });
       }
     }
+  }
+
+  // 9. Day-of-Week Performance
+  if (daily.length >= 14) {
+    const dayStats: Record<string, { contacted: number; replied: number }> = {};
+    daily.forEach((d: any) => {
+      const dow = new Date(d.date).toLocaleDateString('en-US', { weekday: 'long' });
+      if (!dayStats[dow]) dayStats[dow] = { contacted: 0, replied: 0 };
+      dayStats[dow].contacted += d.contacted || 0;
+      dayStats[dow].replied += d.replied || 0;
+    });
+
+    const dayRates = Object.entries(dayStats)
+      .map(([day, stats]) => ({
+        day,
+        rate: stats.contacted > 0 ? (stats.replied / stats.contacted) * 100 : 0,
+        volume: stats.contacted,
+      }))
+      .sort((a, b) => b.rate - a.rate);
+
+    const bestDay = dayRates[0];
+    const worstDay = dayRates[dayRates.length - 1];
+
+    if (bestDay && worstDay && bestDay.rate > worstDay.rate * 1.5 && worstDay.volume > 20) {
+      insights.push({
+        category: 'opportunity',
+        priority: 'medium',
+        title: 'Day-of-Week Optimization',
+        description: `${bestDay.day} outperforms ${worstDay.day} by ${((bestDay.rate / Math.max(worstDay.rate, 0.1)) * 100 - 100).toFixed(0)}%.`,
+        metric: 'Best Day Response',
+        currentValue: `${bestDay.day}: ${bestDay.rate.toFixed(1)}%`,
+        benchmark: `${worstDay.day}: ${worstDay.rate.toFixed(1)}%`,
+        recommendation: `Shift send volume from ${worstDay.day} to ${bestDay.day}. Consider pausing ${worstDay.day} campaigns entirely and concentrating budget on proven days.`,
+        potentialImpact: `Could improve overall response by ${((bestDay.rate - responseRate) / Math.max(responseRate, 0.1) * 100).toFixed(0)}%`,
+      });
+    }
+  }
+
+  // 10. Channel Mix Optimization (if we have email data)
+  const emailContacted = totalContacted * 0.8; // Estimate based on typical mix
+  const smsContacted = totalContacted * 0.2;
+  if (smsContacted > 0 && responseRate < 2) {
+    insights.push({
+      category: 'improvement',
+      priority: 'high',
+      title: 'Add SMS to Channel Mix',
+      description: 'SMS has 98% open rates vs 20% for email.',
+      metric: 'SMS Response Rate',
+      currentValue: 'Not tracked separately',
+      benchmark: '3-5% typical for SMS',
+      recommendation: 'Add SMS as Day 2-3 follow-up for non-responders. Use compliant 10DLC numbers. SMS costs ~$0.0075/msg but converts 2-3x better than email alone.',
+      potentialImpact: 'Multi-channel typically sees 40% higher overall response',
+    });
+  }
+
+  // 11. Cost Efficiency Alert
+  const costPerInterest = (overall.total_interested || 0) > 0
+    ? (totalContacted * 0.007) / overall.total_interested
+    : 0;
+
+  if (costPerInterest > 50) {
+    insights.push({
+      category: 'warning',
+      priority: 'high',
+      title: 'High Cost Per Interested Lead',
+      description: 'Acquisition cost exceeds $50 per interested lead.',
+      metric: 'Cost Per Interest',
+      currentValue: `$${costPerInterest.toFixed(2)}`,
+      benchmark: '<$25 for healthy ROI',
+      recommendation: 'Focus on: (1) Better lead sourcing - motivated seller lists only, (2) Message A/B testing, (3) Timing optimization (Tue-Thu 10am-2pm), (4) Remove cold lists dragging down performance.',
+      potentialImpact: 'Cutting cost in half doubles effective marketing budget',
+    });
   }
 
   // Sort by priority
