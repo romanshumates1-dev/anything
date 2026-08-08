@@ -86,6 +86,36 @@ describe('getBedrockConfig', () => {
   });
 });
 
+describe('model alias resolution', () => {
+  beforeEach(() => {
+    mockSend.mockReset();
+    mockSend.mockResolvedValue({
+      output: { message: { content: [{ text: 'OK' }] } },
+      stopReason: 'end_turn',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+  });
+
+  it('resolves fable-5 to sonnet (Fable not available on Bedrock)', async () => {
+    const cfg = { ...TEST_CFG, modelId: 'fable-5' };
+    const result = await callBedrock({ messages: [{ role: 'user', content: 'hi' }] }, cfg);
+    // Should resolve to sonnet since Fable isn't on Bedrock (us. prefix for cross-region)
+    expect(result.model).toBe('us.anthropic.claude-3-5-sonnet-20241022-v2:0');
+  });
+
+  it('resolves claude-sonnet-4 to correct Bedrock ID', async () => {
+    const cfg = { ...TEST_CFG, modelId: 'claude-sonnet-4' };
+    const result = await callBedrock({ messages: [{ role: 'user', content: 'hi' }] }, cfg);
+    expect(result.model).toBe('us.anthropic.claude-sonnet-4-20250514-v1:0');
+  });
+
+  it('passes through full Bedrock IDs unchanged', async () => {
+    const cfg = { ...TEST_CFG, modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0' };
+    const result = await callBedrock({ messages: [{ role: 'user', content: 'hi' }] }, cfg);
+    expect(result.model).toBe('anthropic.claude-haiku-4-5-20251001-v1:0');
+  });
+});
+
 describe('callBedrock (mocked SDK)', () => {
   beforeEach(() => {
     mockSend.mockReset();

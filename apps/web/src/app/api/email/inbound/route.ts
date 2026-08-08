@@ -102,12 +102,12 @@ export async function POST(req: NextRequest) {
     WHERE id = ${conversation.id}
   `;
 
-  await logEvent({
-    type: 'inbound_message_received',
-    targetType: 'lead',
-    targetId: lead.id,
-    payload: { channel: 'email', from: fromEmail, text: cleanText },
-  });
+  await logEvent(
+    'inbound_message_received',
+    'lead',
+    String(lead.id),
+    { channel: 'email', from: fromEmail, text: cleanText }
+  );
 
   // If the lead's AI is paused, we park the message but don't queue a reply.
   if (lead.ai_paused) {

@@ -8,7 +8,140 @@
  * - Payment/closing portal
  *
  * Designed for wholesale real estate automation at scale.
+ *
+ * Subject Line Best Practices for RE Wholesaling:
+ * - Personalization with property address improves open rates 15-30%
+ * - Local area references build trust
+ * - Avoid spam triggers: ALL CAPS, multiple exclamation points, "CASH OFFER"
+ * - Keep under 50 characters for mobile preview
  */
+
+// ════════════════════════════════════════════════════════════════════
+// SUBJECT LINE VALIDATION - Prevent spam triggers
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Spam trigger words that significantly reduce deliverability in RE outreach.
+ * These trigger spam filters or cause recipients to mark as spam.
+ */
+const SPAM_TRIGGERS = [
+  'CASH OFFER',       // Common spam phrase - use "cash offer" lowercase
+  'ACT NOW',
+  'LIMITED TIME',
+  'URGENT',
+  'FREE MONEY',
+  'GUARANTEED',
+  'NO OBLIGATION',
+  'RISK FREE',
+  'WINNER',
+  'CONGRATULATIONS',
+  '100% FREE',
+  'CLICK HERE',
+  'BUY NOW',
+  'ORDER NOW',
+  'SPECIAL PROMOTION',
+  'INCREDIBLE DEAL',
+  'ONCE IN A LIFETIME',
+];
+
+/**
+ * Validates a subject line for best practices and spam triggers.
+ * Returns validation result with suggestions for improvement.
+ */
+export interface SubjectValidation {
+  valid: boolean;
+  score: number;        // 0-100, higher is better
+  issues: string[];
+  suggestions: string[];
+}
+
+export function validateSubjectLine(subject: string): SubjectValidation {
+  const issues: string[] = [];
+  const suggestions: string[] = [];
+  let score = 100;
+
+  // Check for ALL CAPS (more than 3 consecutive caps)
+  if (/[A-Z]{4,}/.test(subject)) {
+    issues.push('Contains ALL CAPS words which trigger spam filters');
+    suggestions.push('Use sentence case instead of all caps');
+    score -= 25;
+  }
+
+  // Check for multiple exclamation points
+  if ((subject.match(/!/g) || []).length > 1) {
+    issues.push('Multiple exclamation points reduce credibility');
+    suggestions.push('Use at most one exclamation point');
+    score -= 15;
+  }
+
+  // Check for spam trigger words
+  for (const trigger of SPAM_TRIGGERS) {
+    if (subject.toUpperCase().includes(trigger)) {
+      issues.push(`Contains spam trigger: "${trigger}"`);
+      score -= 20;
+    }
+  }
+
+  // Check length (optimal: 30-50 chars for mobile)
+  if (subject.length > 60) {
+    issues.push('Subject too long - may be truncated on mobile');
+    suggestions.push('Keep subject under 50 characters for best mobile preview');
+    score -= 10;
+  }
+
+  // Bonus: personalization tokens detected
+  const hasPersonalization = /\{[^}]+\}/.test(subject) ||
+    subject.includes('{{') ||
+    /\d{3,}/.test(subject); // Property addresses often have numbers
+  if (hasPersonalization) {
+    suggestions.push('Good: includes personalization which improves open rates 15-30%');
+    score = Math.min(100, score + 10);
+  }
+
+  return {
+    valid: score >= 60,
+    score: Math.max(0, score),
+    issues,
+    suggestions,
+  };
+}
+
+/**
+ * RE wholesaling subject line templates that work.
+ * These templates use proven patterns:
+ * - Question format (highest open rates)
+ * - Property address personalization
+ * - Local area references
+ * - Curiosity without spam triggers
+ */
+export const PROVEN_SUBJECT_TEMPLATES = {
+  // Question format - highest open rates
+  question: [
+    'Question about {property_address}',
+    '{owner_first_name}, quick question about your {city} property',
+    'Is {property_address} still available?',
+    'Checking in about your property on {street_name}',
+  ],
+  // Offer format - direct but professional
+  offer: [
+    'Cash offer for {property_address}',
+    'Offer ready for {street_name}',
+    '{owner_first_name} - offer for your {city} property',
+  ],
+  // Follow-up format - soft touch
+  followUp: [
+    'Following up - {property_address}',
+    'Still interested in {street_name}',
+    'Checking in about our offer',
+    'Any updates on {property_address}?',
+  ],
+  // Urgency format - without spam triggers
+  urgency: [
+    'Time-sensitive: {property_address}',
+    'Offer expiring soon - {street_name}',
+    '{owner_first_name}, our offer is still available',
+  ],
+};
 
 export interface TemplateContext {
   ownerName: string;

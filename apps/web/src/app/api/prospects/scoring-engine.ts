@@ -17,6 +17,19 @@ export interface SellerSignals {
   ownershipYears?: number;
   tiredLandlord?: boolean;
   recentDivorce?: boolean;
+  // Motivated seller indicators (new)
+  urgentSale?: boolean;
+  behindOnMortgage?: boolean;
+  propertyDeteriorating?: boolean;
+  multipleListings?: boolean;
+  priceDrops?: number;
+  // Lead source quality tracking (new)
+  leadSource?: string;
+  leadSourceQuality?: 'high' | 'medium' | 'low';
+  // Enhanced equity calculation inputs (new)
+  estimatedArv?: number;
+  estimatedDebt?: number;
+  estimatedRepairs?: number;
 }
 
 export interface BuyerSignals {
@@ -57,12 +70,45 @@ const SELLER_WEIGHTS = {
   probateOrInherited: 20,
   codeViolations: 15,
   absenteeOwner: 15,
+  absenteeOwnerOutOfState: 5, // Additional boost for out-of-state absentee
   highEquity: 10,
+  veryHighEquity: 5, // Additional boost for >70% equity
   vacantProperty: 10,
   longOwnership: 5,
   tiredLandlord: 10,
   recentDivorce: 10,
+  // Motivated seller indicators
+  urgentSale: 20,
+  behindOnMortgage: 15,
+  propertyDeteriorating: 10,
+  multipleListings: 5,
+  priceDrops: 10, // Per significant price drop
+  // Lead source quality bonuses
+  highQualitySource: 10,
+  mediumQualitySource: 5,
 } as const;
+
+// Lead source quality mappings
+const LEAD_SOURCE_QUALITY: Record<string, 'high' | 'medium' | 'low'> = {
+  // High quality sources (direct distress indicators)
+  'pre_foreclosure_list': 'high',
+  'tax_delinquent_list': 'high',
+  'probate_filing': 'high',
+  'code_violation': 'high',
+  'eviction_filing': 'high',
+  'divorce_filing': 'high',
+  // Medium quality sources
+  'absentee_owner_list': 'medium',
+  'vacant_property_list': 'medium',
+  'pva_records': 'medium',
+  'driving_for_dollars': 'medium',
+  'direct_mail_response': 'medium',
+  // Low quality sources
+  'cold_list': 'low',
+  'purchased_list': 'low',
+  'website_form': 'low',
+  'unknown': 'low',
+};
 
 const BUYER_WEIGHTS = {
   cashPurchases: 30,
@@ -123,9 +169,19 @@ export function scoreSeller(signals: SellerSignals): SellerScore {
     matched.push('Absentee owner (+15)');
   }
 
-  if (signals.equityPercent !== undefined && signals.equityPercent > 50) {
+  // Calculate equity from ARV and debt if available (more accurate than equityPercent alone)
+  const calculatedEquityPercent = calculateEquityPercent(signals);
+  const effectiveEquityPercent = calculatedEquityPercent ?? signals.equityPercent;
+
+  if (effectiveEquityPercent !== undefined && effectiveEquityPercent > 50) {
     score += SELLER_WEIGHTS.highEquity;
-    matched.push(`High equity ${signals.equityPercent}% (+10)`);
+    matched.push(`High equity ${Math.round(effectiveEquityPercent)}% (+10)`);
+
+    // Additional boost for very high equity (>70%)
+    if (effectiveEquityPercent > 70) {
+      score += SELLER_WEIGHTS.veryHighEquity;
+      matched.push(`Very high equity ${Math.round(effectiveEquityPercent)}% (+5)`);
+    }
   }
 
   if (signals.vacantProperty) {
@@ -148,6 +204,47 @@ export function scoreSeller(signals: SellerSignals): SellerScore {
     matched.push('Recent divorce filing (+10)');
   }
 
+  // === Motivated seller indicators ===
+  if (signals.urgentSale) {
+    score += SELLER_WEIGHTS.urgentSale;
+    matched.push('Urgent sale indicated (+20)');
+  }
+
+  if (signals.behindOnMortgage) {
+    score += SELLER_WEIGHTS.behindOnMortgage;
+    matched.push('Behind on mortgage (+15)');
+  }
+
+  if (signals.propertyDeteriorating) {
+    score += SELLER_WEIGHTS.propertyDeteriorating;
+    matched.push('Property deteriorating (+10)');
+  }
+
+  if (signals.multipleListings) {
+    score += SELLER_WEIGHTS.multipleListings;
+    matched.push('Multiple listings (+5)');
+  }
+
+  if (signals.priceDrops !== undefined && signals.priceDrops > 0) {
+    // Cap at 3 price drops for scoring purposes
+    const drops = Math.min(signals.priceDrops, 3);
+    const dropBonus = drops * SELLER_WEIGHTS.priceDrops;
+    score += dropBonus;
+    matched.push(`${signals.priceDrops} price drop(s) (+${dropBonus})`);
+  }
+
+  // === Lead source quality scoring ===
+  const sourceQuality = signals.leadSourceQuality ??
+    (signals.leadSource ? getLeadSourceQuality(signals.leadSource) : undefined);
+
+  if (sourceQuality === 'high') {
+    score += SELLER_WEIGHTS.highQualitySource;
+    matched.push(`High-quality source${signals.leadSource ? ` (${signals.leadSource})` : ''} (+10)`);
+  } else if (sourceQuality === 'medium') {
+    score += SELLER_WEIGHTS.mediumQualitySource;
+    matched.push(`Medium-quality source${signals.leadSource ? ` (${signals.leadSource})` : ''} (+5)`);
+  }
+
   // Cap at 100
   score = Math.min(100, score);
 
@@ -160,6 +257,43 @@ export function scoreSeller(signals: SellerSignals): SellerScore {
     signals: matched,
     recommendedAction: tierInfo.action,
   };
+}
+
+// ── equity calculation helper ────────────────────────────────────────────────
+
+/**
+ * Calculate equity percent from ARV, debt, and repairs if available.
+ * Uses formula: equity = (ARV - debt - repairs) / ARV * 100
+ * This is more accurate than a simple equityPercent when full data is available.
+ */
+export function calculateEquityPercent(signals: SellerSignals): number | undefined {
+  const { estimatedArv, estimatedDebt, estimatedRepairs } = signals;
+
+  if (estimatedArv === undefined || estimatedArv <= 0) {
+    return undefined;
+  }
+
+  const debt = estimatedDebt ?? 0;
+  const repairs = estimatedRepairs ?? 0;
+
+  const netEquity = estimatedArv - debt - repairs;
+  const equityPercent = (netEquity / estimatedArv) * 100;
+
+  // Return bounded between 0 and 100
+  return Math.max(0, Math.min(100, equityPercent));
+}
+
+// ── lead source quality helper ───────────────────────────────────────────────
+
+/**
+ * Get the quality rating for a lead source.
+ * High-quality sources have direct distress indicators.
+ * Medium-quality sources have indirect motivation signals.
+ * Low-quality sources are general lists without distress context.
+ */
+export function getLeadSourceQuality(source: string): 'high' | 'medium' | 'low' {
+  const normalizedSource = source.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  return LEAD_SOURCE_QUALITY[normalizedSource] ?? 'low';
 }
 
 // ── buyer scoring ────────────────────────────────────────────────────────────

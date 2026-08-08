@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-01",
+  "warmupDay": 1,
+  "dailyLimit": 50,
+  "metrics": {
+    "totalLeads": 6196,
+    "todaySends": 50,
+    "queueStatus": {
+      "replied": 2889,
+      "queued": 1893,
+      "conversation_active": 1
+    },
+    "replies": {
+      "objection": 2,
+      "negative": 997,
+      "question": 1,
+      "positive": 1146,
+      "neutral": 744
+    },
+    "todayReplies": 2890,
+    "activeConversations": 2890,
+    "positiveSignals": 1146,
+    "replyRate": "60.4",
+    "positiveRate": "39.7"
+  },
+  "sends": null,
+  "healthy": true
+}

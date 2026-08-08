@@ -43,7 +43,8 @@ export async function register() {
       `\n[boot] FATAL: missing required environment variable(s): ${missing.join(', ')}\n` +
         `[boot] The app cannot start without these. Set them in apps/web/.env (see .env.example) and retry.\n`
     );
-    process.exit(1);
+    // Cannot use process.exit() in Edge Runtime - throw instead
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 
   const unset = SOFT_RECOMMENDED.filter((name) => !process.env[name]);

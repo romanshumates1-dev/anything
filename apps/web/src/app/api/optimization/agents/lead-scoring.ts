@@ -26,14 +26,31 @@ export class LeadScoringAgent implements Agent<LeadScoreOutput> {
     );
     const estimatedArv = lead.metadata?.estimated_arv || null;
     const estimatedDebt = lead.metadata?.estimated_debt || null;
+    const estimatedRepairs = lead.metadata?.estimated_repairs || null;
     const zip = lead.metadata?.zip || null;
+    const leadSource = lead.metadata?.lead_source || lead.metadata?.source || null;
+
+    // Extract motivated seller indicators from metadata
+    const motivatedSellerIndicators: string[] = [];
+    if (lead.metadata?.urgent_sale) motivatedSellerIndicators.push('urgent_sale');
+    if (lead.metadata?.behind_on_mortgage) motivatedSellerIndicators.push('behind_on_mortgage');
+    if (lead.metadata?.property_deteriorating) motivatedSellerIndicators.push('property_deteriorating');
+    if (lead.metadata?.multiple_listings) motivatedSellerIndicators.push('multiple_listings');
+    if (lead.metadata?.price_drops && lead.metadata.price_drops > 0) {
+      for (let i = 0; i < Math.min(lead.metadata.price_drops, 3); i++) {
+        motivatedSellerIndicators.push('price_drop');
+      }
+    }
 
     const promptInput = {
       signals,
       daysAcquired,
       estimatedArv,
       estimatedDebt,
-      zip
+      estimatedRepairs,
+      zip,
+      leadSource,
+      motivatedSellerIndicators
     };
 
     // 3. Call Claude
@@ -68,22 +85,28 @@ export class LeadScoringAgent implements Agent<LeadScoreOutput> {
         lead_id,
         composite_score,
         distress_score,
+        motivation_score,
         recency_score,
         equity_score,
+        source_quality_score,
         geo_score
       ) VALUES (
         ${input.leadId},
         ${output.compositeScore},
         ${output.components.distress},
+        ${output.components.motivation ?? 0.5},
         ${output.components.recency},
         ${output.components.equity},
+        ${output.components.sourceQuality ?? 0.5},
         ${output.components.geo}
       )
       ON CONFLICT (lead_id) DO UPDATE SET
         composite_score = EXCLUDED.composite_score,
         distress_score = EXCLUDED.distress_score,
+        motivation_score = EXCLUDED.motivation_score,
         recency_score = EXCLUDED.recency_score,
         equity_score = EXCLUDED.equity_score,
+        source_quality_score = EXCLUDED.source_quality_score,
         geo_score = EXCLUDED.geo_score,
         created_at = now()
     `;
@@ -101,14 +124,17 @@ export class LeadScoringAgent implements Agent<LeadScoreOutput> {
     // Confidence based on how many components have non-default values
     const components = [
       output.components.distress,
+      output.components.motivation ?? 0.5,
       output.components.recency,
       output.components.equity,
+      output.components.sourceQuality ?? 0.5,
       output.components.geo
     ];
 
     // Count non-neutral scores (not 0.5)
     const nonNeutral = components.filter(c => Math.abs(c - 0.5) > 0.1).length;
 
-    return Math.min(0.5 + (nonNeutral * 0.125), 1.0);
+    // More components = higher confidence cap
+    return Math.min(0.5 + (nonNeutral * 0.1), 1.0);
   }
 }

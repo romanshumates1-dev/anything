@@ -78,3 +78,4 @@ dev-clean.log
 # geo build input (only the derived land-50m.json ships)
 apps/web/public/geo/countries-50m.topo.json
 apps/web/jobs-restart.log
+DealFlow-AI-Setup.exe

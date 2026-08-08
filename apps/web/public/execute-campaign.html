@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Campaign Execution - Hard Deadline Mode</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+    .output { border: 1px solid #0f0; padding: 10px; margin: 10px 0; max-height: 500px; overflow-y: auto; }
+    button { background: #0f0; color: #000; padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; }
+    button:hover { background: #0f0; }
+    .error { color: #f00; }
+    .success { color: #0f0; }
+    .info { color: #ff0; }
+  </style>
+</head>
+<body>
+  <h1>🔥 HARD DEADLINE EXECUTION</h1>
+  <button onclick="executeCampaign()">EXECUTE CYCLE NOW</button>
+  <div class="output" id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+
+    function log(msg, type = 'info') {
+      const line = document.createElement('div');
+      line.className = type;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      output.appendChild(line);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    async function call(endpoint, body = {}) {
+      const start = Date.now();
+      try {
+        log(`Calling ${endpoint}...`, 'info');
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-local-dev': 'true'
+          },
+          body: JSON.stringify(body)
+        });
+
+        const duration = Date.now() - start;
+        const text = await res.text();
+
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { raw: text.substring(0, 200) };
+        }
+
+        if (!res.ok) {
+          log(`❌ ${endpoint}: ${res.status} (${duration}ms)`, 'error');
+          log(`   ${text.substring(0, 300)}`, 'error');
+          return { success: false, status: res.status, data };
+        } else {
+          log(`✅ ${endpoint}: ${res.status} (${duration}ms)`, 'success');
+          return { success: true, status: res.status, data };
+        }
+      } catch (error) {
+        log(`❌ ${endpoint}: ${error.message}`, 'error');
+        return { success: false, error: error.message };
+      }
+    }
+
+    async function executeCampaign() {
+      output.innerHTML = '';
+      log('🔥 EXECUTING CAMPAIGN CYCLE', 'success');
+      log('', 'info');
+
+      const state = {
+        startTime: Date.now(),
+        leadsProcessed: 0,
+        emailsSent: 0,
+        errors: []
+      };
+
+      // PHASE 1: Optimization
+      log('📋 PHASE 1: Optimization Pipeline', 'success');
+      const opt = await call('/api/optimization/process', { batchSize: 10 });
+      if (opt.success) {
+        state.leadsProcessed = opt.data?.processed || 0;
+        log(`   Processed: ${state.leadsProcessed} leads`, 'info');
+      } else {
+        state.errors.push('Optimization failed');
+      }
+      log('', 'info');
+
+      // PHASE 2: Campaign Plan
+      log('📋 PHASE 2: Campaign Planning', 'success');
+      const plan = await call('/api/campaigns/orchestrator/daily-plan', { dryRun: false });
+      if (plan.success) {
+        log(`   Queued: ${plan.data?.queued || 0} leads`, 'info');
+      } else {
+        state.errors.push('Planning failed');
+      }
+      log('', 'info');
+
+      // PHASE 3: Send
+      log('📋 PHASE 3: Campaign Send', 'success');
+      const send = await call('/api/campaigns/orchestrator/execute-sends');
+      if (send.success) {
+        state.emailsSent = send.data?.sent || 0;
+        log(`   Sent: ${state.emailsSent} emails`, 'info');
+      } else {
+        state.errors.push('Send failed');
+      }
+      log('', 'info');
+
+      // REPORT
+      const duration = (Date.now() - state.startTime) / 1000;
+      log('═'.repeat(70), 'info');
+      log('CYCLE COMPLETE', 'success');
+      log('═'.repeat(70), 'info');
+      log(`Duration: ${duration.toFixed(1)}s`, 'info');
+      log(`Leads Processed: ${state.leadsProcessed}`, 'info');
+      log(`Emails Sent: ${state.emailsSent}`, 'info');
+      log(`Errors: ${state.errors.length}`, state.errors.length > 0 ? 'error' : 'success');
+
+      if (state.errors.length > 0) {
+        log('', 'info');
+        log('ERRORS:', 'error');
+        state.errors.forEach(e => log(`  - ${e}`, 'error'));
+      }
+
+      if (state.errors.length === 0) {
+        log('', 'info');
+        log('STATUS: ✅ SUCCESS', 'success');
+      } else {
+        log('', 'info');
+        log('STATUS: ⚠️  PARTIAL SUCCESS', 'info');
+      }
+    }
+  </script>
+</body>
+</html>

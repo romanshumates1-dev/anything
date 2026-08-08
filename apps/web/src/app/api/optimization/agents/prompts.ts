@@ -13,7 +13,10 @@ Input:
   "daysAcquired": number,
   "estimatedArv": number | null,
   "estimatedDebt": number | null,
-  "zip": string | null
+  "estimatedRepairs": number | null,
+  "zip": string | null,
+  "leadSource": string | null,
+  "motivatedSellerIndicators": string[]  // urgent_sale, behind_on_mortgage, price_drops, etc.
 }
 
 Scoring logic (heuristic):
@@ -24,34 +27,56 @@ Scoring logic (heuristic):
    - probate: 0.25
    - vacant: 0.2
    - absentee_owner: 0.15
+   - absentee_owner_out_of_state: 0.2 (higher than in-state)
    Sum and cap at 1.0
 
-2. Recency score (0-1):
+2. Motivation score (0-1) - NEW:
+   - urgent_sale: 0.4
+   - behind_on_mortgage: 0.3
+   - property_deteriorating: 0.2
+   - multiple_listings: 0.1
+   - price_drops: 0.15 per drop (max 0.45)
+   Sum and cap at 1.0
+
+3. Recency score (0-1):
    - Exponential decay: 0.5^(daysAcquired / 14)
    - 14-day half-life
 
-3. Equity score (0-1):
-   - If estimatedArv and estimatedDebt available:
+4. Equity score (0-1):
+   - If estimatedArv, estimatedDebt, and estimatedRepairs available:
+     netEquity = (arv - debt - repairs) / arv
+   - Else if estimatedArv and estimatedDebt available:
      equityPercent = (arv - debt) / arv
    - Otherwise: 0.5 (neutral)
+   - Boost if netEquity > 0.4: multiply by 1.2 (capped at 1.0)
 
-4. Geo score (0-1):
+5. Source quality score (0-1) - NEW:
+   - High-quality sources (pre_foreclosure_list, tax_delinquent_list, probate_filing): 0.9
+   - Medium-quality sources (absentee_owner_list, driving_for_dollars): 0.6
+   - Low-quality sources (cold_list, purchased_list): 0.3
+   - Unknown: 0.5
+
+6. Geo score (0-1):
    - Use 0.5 as default (buyer coverage lookup happens separately)
 
 Composite score:
 weighted_sum =
-  0.4 × distress +
-  0.3 × recency +
-  0.2 × equity +
-  0.1 × geo
+  0.30 × distress +
+  0.20 × motivation +
+  0.20 × recency +
+  0.15 × equity +
+  0.10 × sourceQuality +
+  0.05 × geo
 
 Output JSON (strict format):
 {
   "compositeScore": 0.82,
   "components": {
     "distress": 0.9,
+    "motivation": 0.7,
     "recency": 0.85,
     "equity": 0.7,
+    "sourceQuality": 0.8,
     "geo": 0.5
   }
 }

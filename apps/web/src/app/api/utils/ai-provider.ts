@@ -10,7 +10,7 @@
  */
 import { callAnthropic, type AnthropicCallOptions, type AnthropicResponse } from './anthropic-client';
 import { callOllama } from './ollama-client';
-import { callBedrock } from './bedrock-client';
+import { callBedrock, getBedrockConfig } from './bedrock-client';
 import { getAiConfig, type AiConfig } from './ai-settings';
 
 export type { AnthropicCallOptions, AnthropicResponse, AnthropicMessage } from './anthropic-client';
@@ -30,11 +30,13 @@ export async function callAI(options: AnthropicCallOptions): Promise<AnthropicRe
     });
   }
   if (cfg.provider === 'bedrock') {
-    // Credentials + model id are read from env inside callBedrock, never from
-    // the DB toggle — same rule OLLAMA_API_KEY follows. Switching the model
-    // (e.g. to Fable 5 once its Bedrock entitlement propagates) is one .env
-    // change with no code edit.
-    return callBedrock(options);
+    const bedrockCfg = getBedrockConfig();
+    if (!bedrockCfg) {
+      throw new Error(
+        'Bedrock provider selected but not configured — set BEDROCK_MODEL_NEGOTIATE (or BEDROCK_MODEL_ID), AWS_ACCESS_KEY_ID, and AWS_SECRET_ACCESS_KEY'
+      );
+    }
+    return callBedrock(options, bedrockCfg);
   }
   return callAnthropic(options);
 }

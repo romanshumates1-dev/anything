@@ -119,10 +119,9 @@ async function sendWithSES(params: EmailParams): Promise<SendResult> {
     },
   });
 
-  const fromEmail = params.from.includes('<') ? params.from.match(/<(.+)>/)?.[1] : params.from;
-
+  // Preserve display name in From field (SES accepts "Name <email>" format)
   const command = new SendEmailCommand({
-    Source: fromEmail,
+    Source: params.from,
     Destination: { ToAddresses: [params.to] },
     Message: {
       Subject: { Data: params.subject },
@@ -193,24 +192,42 @@ export async function send(params: EmailParams): Promise<SendResult> {
     else provider = 'mock';
   }
 
-  try {
-    switch (provider) {
-      case 'sendgrid':
-        return await sendWithSendGrid(emailToSend);
-      case 'resend':
-        return await sendWithResend(emailToSend);
-      case 'ses':
-        return await sendWithSES(emailToSend);
-      case 'smtp':
-        return await sendWithSMTP(emailToSend);
-      case 'mock':
-      default:
-        return await sendWithMockProvider(emailToSend);
-    }
-  } catch (error: any) {
-    console.error(`[EmailDriver] ${provider} error:`, error.message);
-    return { status: 'failed', errorMessage: error.message, provider };
+  // Build fallback chain based on available providers
+  const fallbackChain: Array<{ name: string; fn: (p: EmailParams) => Promise<SendResult> }> = [];
+
+  // Primary provider first
+  const addProvider = (name: string, fn: (p: EmailParams) => Promise<SendResult>, condition: boolean) => {
+    if (condition) fallbackChain.push({ name, fn });
+  };
+
+  // Add providers in priority order (primary first, then fallbacks)
+  if (provider === 'ses' || process.env.AWS_ACCESS_KEY_ID) addProvider('ses', sendWithSES, true);
+  if (provider === 'sendgrid' || process.env.SENDGRID_API_KEY) addProvider('sendgrid', sendWithSendGrid, provider !== 'sendgrid');
+  if (provider === 'resend' || process.env.RESEND_API_KEY) addProvider('resend', sendWithResend, provider !== 'resend');
+  if (provider === 'smtp' || (process.env.SMTP_HOST && process.env.SMTP_PASS)) addProvider('smtp', sendWithSMTP, provider !== 'smtp');
+
+  // Always have mock as final fallback in dev
+  if (fallbackChain.length === 0 || process.env.NODE_ENV !== 'production') {
+    fallbackChain.push({ name: 'mock', fn: sendWithMockProvider });
   }
+
+  // Try each provider in order until one succeeds
+  let lastError: string | undefined;
+  for (const { name, fn } of fallbackChain) {
+    try {
+      const result = await fn(emailToSend);
+      if (result.status === 'sent') {
+        return result;
+      }
+      lastError = result.errorMessage;
+    } catch (error: any) {
+      console.error(`[EmailDriver] ${name} error:`, error.message);
+      lastError = error.message;
+      // Continue to next provider in fallback chain
+    }
+  }
+
+  return { status: 'failed', errorMessage: lastError || 'All providers failed', provider };
 }
 
 export function getConfiguredProvider(): string {

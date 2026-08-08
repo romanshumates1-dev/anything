@@ -353,9 +353,11 @@ export async function sendSigningRequest(
   const signingUrl = `${baseUrl}/sign/${document.id}?token=${session.token}&signer=${signer.id}`;
 
   try {
-    await sendEmailAuto({
+    // Use 'system' as orgId for signing requests (no org context available)
+    await sendEmailAuto('system', {
       to: signer.email,
       subject: `[Action Required] Please sign: ${document.title}`,
+      text: `Please sign: ${document.title}. Visit: ${signingUrl}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <div style="background: linear-gradient(135deg, #1a365d 0%, #2563eb 100%); padding: 30px; border-radius: 8px 8px 0 0;">

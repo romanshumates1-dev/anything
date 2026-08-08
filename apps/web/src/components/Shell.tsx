@@ -12,7 +12,7 @@ import DemoModeBanner from "@/components/DemoModeBanner";
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
 
-  // Health
+  // Health - only fetch when authenticated
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ["system-health"],
     queryFn: async () => {
@@ -20,11 +20,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error("Failed to fetch health");
       return res.json();
     },
-    // render client-only
     staleTime: 30_000,
+    enabled: !!session,
   });
 
   // Campaigns to detect any Test Mode (optional endpoint, fallback safe)
+  // Only fetch when authenticated
   const { data: campaigns } = useQuery({
     queryKey: ["campaigns"],
     queryFn: async () => {
@@ -34,11 +35,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     },
     staleTime: 30_000,
     retry: 0,
+    enabled: !!session,
   });
 
   const anyTest = Array.isArray(campaigns) && campaigns.some((c: any) => c.test_mode === true || c.testMode === true);
 
   // Pending approvals count (best-effort)
+  // Only fetch when authenticated
   const { data: approvals } = useQuery({
     queryKey: ["approvals-count"],
     queryFn: async () => {
@@ -47,6 +50,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     retry: 0,
+    enabled: !!session,
   });
 
   if (isPending) {

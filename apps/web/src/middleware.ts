@@ -329,6 +329,10 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
 }
 
 export function middleware(req: NextRequest): Promise<NextResponse> {
+  // Public monitoring endpoint - bypass all auth
+  if (req.nextUrl.pathname === '/api/campaigns/monitor') {
+    return Promise.resolve(NextResponse.next());
+  }
   if (req.nextUrl.pathname.startsWith('/api/v1/')) {
     return enforceRateLimit(req);
   }

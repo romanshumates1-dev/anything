@@ -160,11 +160,12 @@ export async function sendMessage(payload: SendMessagePayload) {
 
     return { status: 'sent' as const, delivery };
   } catch (error: any) {
+    const errorMsg = error?.message || 'unknown';
     await setCampaignLeadStatus('failed');
     await logEvent('message_failed', 'message', String(leadId), {
       to,
       channel,
-      error: 'unknown',
+      error: errorMsg,
     });
     await recordRun({
       task: 'process_jobs',
@@ -172,7 +173,7 @@ export async function sendMessage(payload: SendMessagePayload) {
       step: 'send_message',
       status: 'fail',
       passed: false,
-      detail: 'unknown',
+      detail: errorMsg,
       dbAssertion: campaignLeadId != null ? "campaign_leads.status='failed'" : 'no campaign_lead',
       logAssertion: "audit_logs.action='message_failed'",
     });

@@ -15,8 +15,10 @@ export interface LeadScoreOutput {
   compositeScore: number;
   components: {
     distress: number;
+    motivation?: number;  // New: motivated seller indicators
     recency: number;
     equity: number;
+    sourceQuality?: number;  // New: lead source quality
     geo: number;
   };
 }

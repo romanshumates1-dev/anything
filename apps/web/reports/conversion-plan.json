@@ -1,0 +1,515 @@
+{
+  "timestamp": "2026-08-01T01:20:03.696Z",
+  "summary": {
+    "total": 100,
+    "high": 100,
+    "medium": 0,
+    "low": 0
+  },
+  "actions": {
+    "high": [
+      {
+        "name": "Test Lead 1",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Test Property Owner 5",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Davis",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Jane Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Jane Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Davis",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Davis",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Jane Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Miller",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Emily Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Rodriguez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Sarah Davis",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Jane Williams",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Michael Garcia",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Mary Johnson",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Lisa Jones",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "Robert Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "David Brown",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "John Martinez",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      },
+      {
+        "name": "James Smith",
+        "action": "scheduleAppointment",
+        "reason": "Hot lead - strike while iron is hot"
+      }
+    ],
+    "medium": 0,
+    "low": 0
+  }
+}

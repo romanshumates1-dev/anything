@@ -163,7 +163,10 @@ export function getFederalDisclosures(
   }
 ): string[] {
   const disclosures: string[] = [];
-  const channelDisclosures = FEDERAL_RULES.disclosures[channel];
+
+  // RVM uses voice disclosures
+  const effectiveChannel = channel === 'rvm' ? 'voice' : channel;
+  const channelDisclosures = FEDERAL_RULES.disclosures[effectiveChannel as keyof typeof FEDERAL_RULES.disclosures];
 
   if (!channelDisclosures) return disclosures;
 

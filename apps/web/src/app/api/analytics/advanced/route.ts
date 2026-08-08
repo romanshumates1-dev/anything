@@ -30,6 +30,54 @@ interface RegionalMetrics {
   roi: number;
 }
 
+interface HourlyMetrics {
+  hour: number;
+  hourLabel: string;
+  sent: number;
+  delivered: number;
+  replied: number;
+  interested: number;
+  responseRate: number;
+  deliveryRate: number;
+  qualityScore: number;
+}
+
+interface SourceROI {
+  source: string;
+  totalLeads: number;
+  contacted: number;
+  replied: number;
+  interested: number;
+  contracts: number;
+  acquisitionCost: number;
+  messagingCost: number;
+  totalCost: number;
+  revenue: number;
+  profit: number;
+  roi: number;
+  costPerLead: number;
+  costPerReply: number;
+  costPerInterest: number;
+  costPerContract: number;
+  ltv: number;
+  paybackRatio: number;
+}
+
+interface ABTestResult {
+  testId: string;
+  testName: string;
+  variant: string;
+  sent: number;
+  delivered: number;
+  replied: number;
+  interested: number;
+  responseRate: number;
+  interestRate: number;
+  confidence: number;
+  isWinner: boolean;
+  improvement: number | null;
+}
+
 interface CampaignInsight {
   category: 'improvement' | 'warning' | 'success' | 'opportunity';
   priority: 'critical' | 'high' | 'medium' | 'low';
@@ -178,16 +226,153 @@ export async function GET(req: NextRequest) {
       WHERE clq.created_at > now() - (${days} || ' days')::interval
     `.catch(() => [{}]) as any[];
 
-    // 7. Calculate AI-Powered Insights
+    // 7. Hourly Performance Breakdown
+    const hourlyData = await sql`
+      SELECT
+        EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')::int as hour,
+        COUNT(*)::int as sent,
+        COUNT(*) FILTER (WHERE me.status IN ('delivered', 'dispatched', 'sent'))::int as delivered,
+        COUNT(*) FILTER (WHERE me.status IN ('replied', 'responded'))::int as replied,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM campaign_lead_queue clq
+          WHERE clq.lead_id = cc.seller_lead_id::bigint
+            AND clq.status = 'interested'
+        ))::int as interested
+      FROM message_events me
+      LEFT JOIN campaign_contacts cc ON cc.id = me.contact_id
+      WHERE me.created_at > now() - (${days} || ' days')::interval
+        AND me.direction = 'outbound'
+      GROUP BY EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')
+      ORDER BY hour
+    `.catch(() => []);
+
+    // Process hourly data with metrics
+    const hourlyMetrics: HourlyMetrics[] = hourlyData.map((h: any) => {
+      const sent = h.sent || 1;
+      const delivered = h.delivered || 0;
+      const replied = h.replied || 0;
+      const interested = h.interested || 0;
+      const responseRate = (replied / sent) * 100;
+      const deliveryRate = (delivered / sent) * 100;
+      // Quality score: weighted combination of delivery, response, and interest
+      const qualityScore = Math.round(
+        (deliveryRate * 0.2) + (responseRate * 0.5) + ((interested / Math.max(replied, 1)) * 100 * 0.3)
+      );
+
+      return {
+        hour: h.hour,
+        hourLabel: formatHourLabel(h.hour),
+        sent,
+        delivered,
+        replied,
+        interested,
+        responseRate: Math.round(responseRate * 100) / 100,
+        deliveryRate: Math.round(deliveryRate * 100) / 100,
+        qualityScore: Math.min(qualityScore, 100),
+      };
+    });
+
+    // 8. Lead Source ROI Calculation
+    const sourceROIData = await sql`
+      SELECT
+        COALESCE(l.source, 'Unknown') as source,
+        COUNT(DISTINCT l.id)::int as total_leads,
+        COUNT(DISTINCT clq.lead_id)::int as contacted,
+        COUNT(*) FILTER (WHERE clq.status = 'replied')::int as replied,
+        COUNT(*) FILTER (WHERE clq.status = 'interested')::int as interested,
+        COUNT(*) FILTER (WHERE c.esign_status = 'signed')::int as contracts,
+        COALESCE(AVG(clq.expected_value) FILTER (WHERE clq.status = 'interested'), 0)::int as avg_value,
+        COALESCE(SUM(ba.assignment_fee_cents) FILTER (WHERE ba.status = 'SIGNED'), 0)::bigint as revenue_cents,
+        COALESCE(l.metadata->>'acquisition_cost_cents', '0')::int as acquisition_cost_cents
+      FROM leads l
+      LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
+      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
+      WHERE l.created_at > now() - (${days} || ' days')::interval
+      GROUP BY COALESCE(l.source, 'Unknown'), l.metadata->>'acquisition_cost_cents'
+      ORDER BY COUNT(DISTINCT l.id) DESC
+    `.catch(() => []);
+
+    // Process source ROI with full calculations
+    const sourceROI: SourceROI[] = sourceROIData.map((s: any) => {
+      const totalLeads = s.total_leads || 1;
+      const contacted = s.contacted || 0;
+      const replied = s.replied || 0;
+      const interested = s.interested || 0;
+      const contracts = s.contracts || 0;
+      const acquisitionCostPerLead = (s.acquisition_cost_cents || 0) / 100;
+      const acquisitionCost = acquisitionCostPerLead * totalLeads;
+      const messagingCost = contacted * 0.007; // SMS + email estimate
+      const totalCost = acquisitionCost + messagingCost;
+      const revenue = (s.revenue_cents || 0) / 100;
+      const profit = revenue - totalCost;
+      const ltv = contracts > 0 ? revenue / contracts : 0;
+
+      return {
+        source: s.source,
+        totalLeads,
+        contacted,
+        replied,
+        interested,
+        contracts,
+        acquisitionCost: Math.round(acquisitionCost * 100) / 100,
+        messagingCost: Math.round(messagingCost * 100) / 100,
+        totalCost: Math.round(totalCost * 100) / 100,
+        revenue: Math.round(revenue * 100) / 100,
+        profit: Math.round(profit * 100) / 100,
+        roi: totalCost > 0 ? Math.round(((revenue - totalCost) / totalCost) * 10000) / 100 : 0,
+        costPerLead: totalLeads > 0 ? Math.round((totalCost / totalLeads) * 100) / 100 : 0,
+        costPerReply: replied > 0 ? Math.round((totalCost / replied) * 100) / 100 : 0,
+        costPerInterest: interested > 0 ? Math.round((totalCost / interested) * 100) / 100 : 0,
+        costPerContract: contracts > 0 ? Math.round((totalCost / contracts) * 100) / 100 : 0,
+        ltv: Math.round(ltv * 100) / 100,
+        paybackRatio: totalCost > 0 ? Math.round((revenue / totalCost) * 100) / 100 : 0,
+      };
+    });
+
+    // 9. A/B Test Tracking
+    const abTestData = await sql`
+      SELECT
+        COALESCE(me.metadata->>'ab_test_id', 'none') as test_id,
+        COALESCE(me.metadata->>'ab_test_name', 'No Test') as test_name,
+        COALESCE(me.metadata->>'ab_variant', 'control') as variant,
+        COUNT(*)::int as sent,
+        COUNT(*) FILTER (WHERE me.status IN ('delivered', 'dispatched', 'sent'))::int as delivered,
+        COUNT(*) FILTER (WHERE me.status IN ('replied', 'responded'))::int as replied,
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM campaign_lead_queue clq
+          WHERE clq.lead_id = cc.seller_lead_id::bigint
+            AND clq.status = 'interested'
+        ))::int as interested
+      FROM message_events me
+      LEFT JOIN campaign_contacts cc ON cc.id = me.contact_id
+      WHERE me.created_at > now() - (${days} || ' days')::interval
+        AND me.direction = 'outbound'
+        AND me.metadata->>'ab_test_id' IS NOT NULL
+      GROUP BY
+        COALESCE(me.metadata->>'ab_test_id', 'none'),
+        COALESCE(me.metadata->>'ab_test_name', 'No Test'),
+        COALESCE(me.metadata->>'ab_variant', 'control')
+      HAVING COUNT(*) >= 50
+      ORDER BY test_id, variant
+    `.catch(() => []);
+
+    // Process A/B test results with statistical significance
+    const abTestResults = processABTestResults(abTestData);
+
+    // 10. Calculate AI-Powered Insights (enhanced with new data)
     const insights = generateCampaignInsights({
       overall: overallMetrics,
       regional: regionalMetrics,
       daily: dailyTrend,
       sources: sourcePerformance,
       timing: funnelTiming[0],
+      hourly: hourlyMetrics,
+      sourceROI,
+      abTests: abTestResults,
     });
 
-    // 8. Cost Analysis
+    // 11. Cost Analysis
     const totalContacted = overallMetrics.total_contacted || 0;
     const emailCost = totalContacted * 0.0001;
     const smsCost = totalContacted * 0.00645;
@@ -276,6 +461,25 @@ export async function GET(req: NextRequest) {
         avgTouchesToInterest: parseFloat(funnelTiming[0]?.avg_touches_to_interest) || null,
       },
 
+      // New: Hourly performance breakdown
+      hourlyPerformance: hourlyMetrics,
+      hourlyInsights: generateHourlyInsights(hourlyMetrics),
+
+      // New: Lead source ROI analysis
+      sourceROI,
+      topSourcesByROI: [...sourceROI]
+        .filter(s => s.contacted >= 10)
+        .sort((a, b) => b.roi - a.roi)
+        .slice(0, 5),
+      underperformingSources: sourceROI
+        .filter(s => s.contacted >= 20 && s.roi < 0),
+
+      // New: A/B test results
+      abTestResults,
+      activeTests: abTestResults.filter((t, i, arr) =>
+        arr.findIndex(x => x.testId === t.testId) === i
+      ).length,
+
       aiInsights: insights,
 
       updatedAt: new Date().toISOString(),
@@ -285,6 +489,138 @@ export async function GET(req: NextRequest) {
     console.error('Advanced analytics error:', error);
     return Response.json({ error: error.message }, { status: 500 });
   }
+}
+
+function formatHourLabel(hour: number): string {
+  if (hour === 0) return '12 AM';
+  if (hour === 12) return '12 PM';
+  if (hour < 12) return `${hour} AM`;
+  return `${hour - 12} PM`;
+}
+
+function generateHourlyInsights(hourlyMetrics: HourlyMetrics[]): {
+  bestHours: { hour: number; label: string; responseRate: number }[];
+  worstHours: { hour: number; label: string; responseRate: number }[];
+  recommendation: string;
+  peakWindow: string;
+  avoidWindow: string;
+} {
+  const sorted = [...hourlyMetrics]
+    .filter(h => h.sent >= 10) // Need minimum sample size
+    .sort((a, b) => b.responseRate - a.responseRate);
+
+  const bestHours = sorted.slice(0, 3).map(h => ({
+    hour: h.hour,
+    label: h.hourLabel,
+    responseRate: h.responseRate,
+  }));
+
+  const worstHours = sorted.slice(-3).reverse().map(h => ({
+    hour: h.hour,
+    label: h.hourLabel,
+    responseRate: h.responseRate,
+  }));
+
+  // Find peak window (consecutive hours with best performance)
+  const businessHours = hourlyMetrics.filter(h => h.hour >= 9 && h.hour <= 17);
+  const peakStart = businessHours.length > 0
+    ? businessHours.reduce((best, h) => h.responseRate > best.responseRate ? h : best, businessHours[0])
+    : { hour: 10, hourLabel: '10 AM' };
+
+  const peakWindow = `${peakStart.hourLabel} - ${formatHourLabel(Math.min(peakStart.hour + 3, 17))}`;
+  const avoidWindow = worstHours.length > 0 ? `${worstHours[0].label} - ${worstHours[worstHours.length - 1]?.label || worstHours[0].label}` : 'N/A';
+
+  const avgBest = bestHours.reduce((sum, h) => sum + h.responseRate, 0) / Math.max(bestHours.length, 1);
+  const avgWorst = worstHours.reduce((sum, h) => sum + h.responseRate, 0) / Math.max(worstHours.length, 1);
+  const improvement = avgWorst > 0 ? Math.round((avgBest / avgWorst - 1) * 100) : 0;
+
+  const recommendation = bestHours.length > 0
+    ? `Shift outreach volume to ${bestHours.map(h => h.label).join(', ')} for up to ${improvement}% better response rates. Avoid sending during ${avoidWindow}.`
+    : 'Insufficient data for hourly optimization. Continue sending to build statistical significance.';
+
+  return { bestHours, worstHours, recommendation, peakWindow, avoidWindow };
+}
+
+function processABTestResults(testData: any[]): ABTestResult[] {
+  if (testData.length === 0) return [];
+
+  const results: ABTestResult[] = [];
+  const testGroups: Record<string, any[]> = {};
+
+  // Group by test ID
+  testData.forEach((row: any) => {
+    const testId = row.test_id;
+    if (!testGroups[testId]) testGroups[testId] = [];
+    testGroups[testId].push(row);
+  });
+
+  // Process each test
+  Object.entries(testGroups).forEach(([testId, variants]) => {
+    // Find control (baseline)
+    const control = variants.find(v => v.variant === 'control') || variants[0];
+    const controlResponseRate = control.sent > 0 ? (control.replied / control.sent) * 100 : 0;
+
+    variants.forEach((v: any) => {
+      const sent = v.sent || 0;
+      const replied = v.replied || 0;
+      const interested = v.interested || 0;
+      const responseRate = sent > 0 ? (replied / sent) * 100 : 0;
+      const interestRate = replied > 0 ? (interested / replied) * 100 : 0;
+
+      // Calculate statistical confidence using Z-test approximation
+      const confidence = calculateConfidence(
+        control.sent, control.replied,
+        sent, replied
+      );
+
+      const improvement = v.variant !== 'control' && controlResponseRate > 0
+        ? Math.round((responseRate / controlResponseRate - 1) * 10000) / 100
+        : null;
+
+      results.push({
+        testId,
+        testName: v.test_name,
+        variant: v.variant,
+        sent,
+        delivered: v.delivered || 0,
+        replied,
+        interested,
+        responseRate: Math.round(responseRate * 100) / 100,
+        interestRate: Math.round(interestRate * 100) / 100,
+        confidence: Math.round(confidence * 100) / 100,
+        isWinner: confidence >= 95 && improvement !== null && improvement > 0,
+        improvement,
+      });
+    });
+  });
+
+  return results;
+}
+
+function calculateConfidence(
+  controlN: number, controlSuccess: number,
+  variantN: number, variantSuccess: number
+): number {
+  // Two-proportion Z-test
+  if (controlN === 0 || variantN === 0) return 0;
+
+  const p1 = controlSuccess / controlN;
+  const p2 = variantSuccess / variantN;
+  const pPooled = (controlSuccess + variantSuccess) / (controlN + variantN);
+
+  const se = Math.sqrt(pPooled * (1 - pPooled) * (1/controlN + 1/variantN));
+  if (se === 0) return 0;
+
+  const z = Math.abs(p2 - p1) / se;
+
+  // Convert Z-score to confidence level (approximation)
+  // Z = 1.96 -> 95%, Z = 2.58 -> 99%
+  if (z >= 2.58) return 99;
+  if (z >= 1.96) return 95;
+  if (z >= 1.64) return 90;
+  if (z >= 1.28) return 80;
+  if (z >= 0.84) return 60;
+  return Math.round(z * 30);
 }
 
 function calculateSourceQuality(source: any): number {
@@ -313,9 +649,12 @@ function generateCampaignInsights(data: {
   daily: any[];
   sources: any[];
   timing: any;
+  hourly?: HourlyMetrics[];
+  sourceROI?: SourceROI[];
+  abTests?: ABTestResult[];
 }): CampaignInsight[] {
   const insights: CampaignInsight[] = [];
-  const { overall, regional, daily, sources, timing } = data;
+  const { overall, regional, daily, sources, timing, hourly, sourceROI, abTests } = data;
 
   const totalContacted = overall.total_contacted || 1;
   const totalReplied = overall.total_replied || 0;
@@ -567,6 +906,140 @@ function generateCampaignInsights(data: {
       benchmark: '<$25 for healthy ROI',
       recommendation: 'Focus on: (1) Better lead sourcing - motivated seller lists only, (2) Message A/B testing, (3) Timing optimization (Tue-Thu 10am-2pm), (4) Remove cold lists dragging down performance.',
       potentialImpact: 'Cutting cost in half doubles effective marketing budget',
+    });
+  }
+
+  // 12. Hourly Optimization Insights (NEW)
+  if (hourly && hourly.length >= 6) {
+    const businessHours = hourly.filter(h => h.hour >= 9 && h.hour <= 17 && h.sent >= 10);
+    if (businessHours.length >= 4) {
+      const avgRate = businessHours.reduce((sum, h) => sum + h.responseRate, 0) / businessHours.length;
+      const best = businessHours.reduce((a, b) => a.responseRate > b.responseRate ? a : b);
+      const worst = businessHours.reduce((a, b) => a.responseRate < b.responseRate ? a : b);
+
+      if (best.responseRate > worst.responseRate * 1.5 && worst.sent >= 20) {
+        insights.push({
+          category: 'opportunity',
+          priority: 'high',
+          title: 'Hourly Send Time Optimization',
+          description: `${best.hourLabel} outperforms ${worst.hourLabel} by ${Math.round((best.responseRate / Math.max(worst.responseRate, 0.1) - 1) * 100)}%.`,
+          metric: 'Hourly Response Rate',
+          currentValue: `Best: ${best.hourLabel} (${best.responseRate.toFixed(2)}%)`,
+          benchmark: `Worst: ${worst.hourLabel} (${worst.responseRate.toFixed(2)}%)`,
+          recommendation: `ACTION: In Campaign Settings > Scheduling, set Send Window to ${best.hourLabel} - ${formatHourLabel(Math.min(best.hour + 3, 17))} (ET). Disable sends during ${worst.hourLabel}. This is a quick win requiring no message changes.`,
+          potentialImpact: `Concentrating sends in peak hours could add ${Math.round(totalContacted * 0.3 * (best.responseRate - avgRate) / 100)} more replies with same volume.`,
+        });
+      }
+    }
+  }
+
+  // 13. Source ROI Insights (NEW)
+  if (sourceROI && sourceROI.length >= 2) {
+    const profitable = sourceROI.filter(s => s.roi > 100 && s.contacted >= 20);
+    const unprofitable = sourceROI.filter(s => s.roi < 0 && s.contacted >= 30);
+
+    if (profitable.length > 0 && unprofitable.length > 0) {
+      const topSource = profitable[0];
+      const worstSource = unprofitable[unprofitable.length - 1];
+
+      insights.push({
+        category: 'improvement',
+        priority: 'critical',
+        title: 'Reallocate Budget by Source ROI',
+        description: `"${topSource.source}" has ${topSource.roi.toFixed(0)}% ROI while "${worstSource.source}" is losing money (${worstSource.roi.toFixed(0)}% ROI).`,
+        metric: 'Source ROI Gap',
+        currentValue: `${topSource.source}: ${topSource.roi.toFixed(0)}% ROI`,
+        benchmark: `${worstSource.source}: ${worstSource.roi.toFixed(0)}% ROI`,
+        recommendation: `ACTION: (1) Pause lead imports from "${worstSource.source}" immediately - you've lost $${Math.abs(worstSource.profit).toFixed(2)} on ${worstSource.contacted} contacts. (2) Double down on "${topSource.source}" - increase daily cap by 50%. (3) Request more "${topSource.source}" leads from your data provider.`,
+        potentialImpact: `Reallocating ${worstSource.contacted} wasted contacts to ${topSource.source} could generate $${Math.round(worstSource.contacted * (topSource.revenue / topSource.contacted || 0))} additional revenue.`,
+      });
+    }
+
+    // High-LTV source discovery
+    const highLTV = sourceROI.filter(s => s.ltv > 10000 && s.contracts >= 1);
+    if (highLTV.length > 0) {
+      const bestLTV = highLTV[0];
+      insights.push({
+        category: 'success',
+        priority: 'medium',
+        title: 'High-Value Lead Source Identified',
+        description: `"${bestLTV.source}" generates $${bestLTV.ltv.toLocaleString()} average deal value.`,
+        metric: 'Lifetime Value',
+        currentValue: `$${bestLTV.ltv.toLocaleString()} LTV`,
+        benchmark: 'Industry avg: $8,000-12,000',
+        recommendation: `ACTION: (1) Prioritize "${bestLTV.source}" leads in your queue - they close bigger deals. (2) Request segmentation data from this source to understand what makes these leads high-value. (3) Consider premium pricing tiers from this data provider for better quality.`,
+        potentialImpact: 'Focusing on high-LTV sources compounds returns over time.',
+      });
+    }
+  }
+
+  // 14. A/B Test Action Items (NEW)
+  if (abTests && abTests.length > 0) {
+    const winners = abTests.filter(t => t.isWinner);
+    const runningTests = [...new Set(abTests.map(t => t.testId))].length;
+
+    if (winners.length > 0) {
+      const topWinner = winners.reduce((a, b) => (b.improvement || 0) > (a.improvement || 0) ? b : a);
+      insights.push({
+        category: 'opportunity',
+        priority: 'critical',
+        title: 'A/B Test Winner Ready to Scale',
+        description: `"${topWinner.testName}" variant "${topWinner.variant}" outperforms control by ${topWinner.improvement?.toFixed(1)}% with ${topWinner.confidence}% confidence.`,
+        metric: 'Statistical Significance',
+        currentValue: `+${topWinner.improvement?.toFixed(1)}% (${topWinner.confidence}% confidence)`,
+        benchmark: '95% confidence threshold met',
+        recommendation: `ACTION: (1) Go to Campaigns > Message Templates and set "${topWinner.variant}" as your default template immediately. (2) Archive the control variant. (3) Start a new test with the winner as your new baseline. Expected lift: ${topWinner.improvement?.toFixed(1)}% more replies from same volume.`,
+        potentialImpact: `Scaling this winner to all sends could add ${Math.round(totalContacted * (topWinner.improvement || 0) / 100 * 0.5)} additional replies.`,
+      });
+    } else if (runningTests > 0) {
+      const largestTest = abTests.reduce((a, b) => b.sent > a.sent ? b : a);
+      const neededForSignificance = Math.max(0, 500 - largestTest.sent);
+
+      if (neededForSignificance > 0) {
+        insights.push({
+          category: 'improvement',
+          priority: 'low',
+          title: 'A/B Test Needs More Data',
+          description: `${runningTests} active test(s) running. Largest test has ${largestTest.sent} sends.`,
+          metric: 'Sample Size',
+          currentValue: `${largestTest.sent} sends`,
+          benchmark: '~500 per variant for 95% confidence',
+          recommendation: `ACTION: Continue running current tests. "${largestTest.testName}" needs approximately ${neededForSignificance} more sends per variant to reach statistical significance. Do not make changes to test parameters mid-flight.`,
+          potentialImpact: 'Premature test conclusions lead to wrong decisions.',
+        });
+      }
+    }
+  }
+
+  // 15. Composite Score Insight (NEW)
+  const responseScore = Math.min((responseRate / 3) * 100, 100); // 3% = 100
+  const interestScore = Math.min((interestRate / 20) * 100, 100); // 20% = 100
+  const costScore = costPerInterest > 0 ? Math.max(0, 100 - (costPerInterest - 25) * 2) : 50;
+  const compositeScore = Math.round(responseScore * 0.4 + interestScore * 0.4 + costScore * 0.2);
+
+  if (compositeScore < 40) {
+    insights.push({
+      category: 'warning',
+      priority: 'critical',
+      title: 'Campaign Health Score Critical',
+      description: `Overall campaign score is ${compositeScore}/100. Multiple metrics need attention.`,
+      metric: 'Health Score',
+      currentValue: `${compositeScore}/100`,
+      benchmark: '>60 for healthy campaigns',
+      recommendation: 'URGENT: Your campaign is underperforming across multiple dimensions. Recommended actions in priority order: (1) Stop spending on negative-ROI sources, (2) Implement winning A/B test variants, (3) Shift sends to peak hours, (4) Review and update message copy with personalization.',
+      potentialImpact: 'Comprehensive optimization could double campaign effectiveness.',
+    });
+  } else if (compositeScore >= 75) {
+    insights.push({
+      category: 'success',
+      priority: 'low',
+      title: 'Strong Campaign Performance',
+      description: `Campaign health score is ${compositeScore}/100. Performance is above average.`,
+      metric: 'Health Score',
+      currentValue: `${compositeScore}/100`,
+      benchmark: 'Top quartile: >75',
+      recommendation: 'MAINTAIN: Your campaign is performing well. Focus on incremental improvements: (1) Continue A/B testing to push even higher, (2) Document your winning strategies, (3) Consider scaling volume while maintaining quality.',
+      potentialImpact: 'Scaling successful campaigns compounds returns.',
     });
   }
 

@@ -37,7 +37,7 @@ export const FLORIDA_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.sms.subsequent,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.sms.realEstate,
+        ...(FEDERAL_RULES.disclosures.sms.realEstate || []),
         'FL: We are real estate investors and may assign contracts.',
       ],
       floridaSpecific: [
@@ -49,7 +49,7 @@ export const FLORIDA_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.email.required,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.email.realEstate,
+        ...(FEDERAL_RULES.disclosures.email.realEstate || []),
         'Florida Notice: We are real estate investors operating in compliance with Florida law. We may assign any purchase contract to another investor.',
       ],
       canSpam: [
@@ -64,7 +64,7 @@ export const FLORIDA_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.voice.opener,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.voice.realEstate,
+        ...(FEDERAL_RULES.disclosures.voice.realEstate || []),
         'Under Florida law, I must inform you that we are investors who may assign our contract.',
       ],
     },

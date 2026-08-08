@@ -98,12 +98,20 @@ function SignInForm() {
 
 				<SocialSignInButtons callbackUrl={callbackUrl} />
 
-				<a
-					href={`/account/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-					className="text-center text-[14px] text-blue-600 hover:underline"
-				>
-					No account? Sign up
-				</a>
+				<div className="flex flex-col gap-[8px]">
+					<a
+						href={`/account/forgot-password?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+						className="text-center text-[14px] text-gray-500 hover:underline"
+					>
+						Forgot password?
+					</a>
+					<a
+						href={`/account/signup?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+						className="text-center text-[14px] text-blue-600 hover:underline"
+					>
+						No account? Sign up
+					</a>
+				</div>
 			</form>
 		</main>
 	);

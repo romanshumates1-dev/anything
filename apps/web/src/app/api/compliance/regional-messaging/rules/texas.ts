@@ -40,7 +40,7 @@ export const TEXAS_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.sms.subsequent,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.sms.realEstate,
+        ...(FEDERAL_RULES.disclosures.sms.realEstate || []),
         'TX: We are investors, not licensed agents, and may assign contracts.',
       ],
       texasSpecific: [
@@ -52,7 +52,7 @@ export const TEXAS_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.email.required,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.email.realEstate,
+        ...(FEDERAL_RULES.disclosures.email.realEstate || []),
         'Texas Notice: We are real estate investors operating under Texas Property Code. We are not licensed real estate agents unless specifically disclosed.',
       ],
       canSpam: [
@@ -68,7 +68,7 @@ export const TEXAS_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.voice.opener,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.voice.realEstate,
+        ...(FEDERAL_RULES.disclosures.voice.realEstate || []),
         'Under Texas law, I must disclose that we are investors and may assign our purchase contract.',
       ],
     },

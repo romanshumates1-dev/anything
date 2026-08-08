@@ -68,7 +68,7 @@ export const CALIFORNIA_RULES: RegionalRules = {
         ...FEDERAL_RULES.disclosures.voice.opener,
       ],
       realEstate: [
-        ...FEDERAL_RULES.disclosures.voice.realEstate,
+        ...(FEDERAL_RULES.disclosures.voice.realEstate || []),
         'Under California law, I must disclose that I may assign any contract we sign to another investor.',
       ],
     },

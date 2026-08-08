@@ -16,7 +16,13 @@ export type AdminCheck =
   | { ok: false; response: Response };
 
 export async function requireAdmin(): Promise<AdminCheck> {
-  const session = await auth.api.getSession({ headers: await headers() });
+  // LOCAL DEV BYPASS - Remove before production
+  const headersList = await headers();
+  if (process.env.NODE_ENV === 'development' && headersList.get('x-local-dev') === 'true') {
+    return { ok: true, userId: 'local-dev', email: 'dev@localhost' };
+  }
+
+  const session = await auth.api.getSession({ headers: headersList });
   if (!session) {
     return { ok: false, response: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
   }

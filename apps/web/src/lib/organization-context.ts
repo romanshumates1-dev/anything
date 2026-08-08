@@ -39,7 +39,61 @@ type UserRoleRow = {
  */
 export async function getOrganization(): Promise<Organization | null> {
   try {
-    const session = await auth.api.getSession({ headers: await headers() });
+    // LOCAL DEV BYPASS
+    const headersList = await headers();
+    if (process.env.NODE_ENV === 'development' && headersList.get('x-local-dev') === 'true') {
+      console.log('[ORG-CONTEXT] Local dev bypass active');
+
+      try {
+        // Return first available org or create org_default
+        let [org] = await sql`SELECT id, name, slug FROM organizations LIMIT 1`;
+        console.log('[ORG-CONTEXT] Query result:', org);
+
+        if (!org) {
+          console.log('[ORG-CONTEXT] No org found, creating default...');
+
+          // Auto-create default org if none exists
+          await sql`
+            INSERT INTO organizations (id, name, slug, created_at)
+            VALUES ('org_default', 'Default Organization', 'default', now())
+            ON CONFLICT (id) DO NOTHING
+          `;
+
+          // Create test leads
+          await sql`
+            INSERT INTO leads (organization_id, name, email, phone, metadata, created_at)
+            VALUES
+              ('org_default', 'Test Lead 1', 'lead1@test.com', '+15551001', '{"address": "123 Main St"}', now()),
+              ('org_default', 'Test Lead 2', 'lead2@test.com', '+15551002', '{"address": "456 Oak Ave"}', now()),
+              ('org_default', 'Test Lead 3', 'lead3@test.com', '+15551003', '{"address": "789 Elm St"}', now())
+            ON CONFLICT (organization_id, email) DO NOTHING
+          `;
+
+          // Create warmup config
+          await sql`
+            INSERT INTO email_warmup_config (organization_id, daily_limit, paused, created_at)
+            VALUES ('org_default', 20, false, now())
+            ON CONFLICT (organization_id) DO NOTHING
+          `;
+
+          [org] = await sql`SELECT id, name, slug FROM organizations WHERE id = 'org_default'`;
+          console.log('[ORG-CONTEXT] Created org:', org);
+        }
+
+        if (org) {
+          console.log('[ORG-CONTEXT] Returning org:', org.id);
+          return { id: org.id, name: org.name, slug: org.slug };
+        }
+
+        console.log('[ORG-CONTEXT] WARNING: No org available, returning default');
+        return { id: 'org_default', name: 'Default Org', slug: 'default' };
+      } catch (error) {
+        console.error('[ORG-CONTEXT] ERROR:', error);
+        throw error;
+      }
+    }
+
+    const session = await auth.api.getSession({ headers: headersList });
     if (!session?.user?.id) return null;
 
     // Try to get the user's organization via membership

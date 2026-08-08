@@ -24,6 +24,51 @@ import { AnthropicClientError, type AnthropicCallOptions, type AnthropicResponse
 const DEFAULT_REGION = 'us-east-1';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/**
+ * Maps friendly model names to Bedrock model IDs.
+ * 403 errors usually mean the model isn't enabled or the ID is wrong.
+ *
+ * Bedrock model ID format: anthropic.claude-{variant}-{version}-v{api}:{rev}
+ * Example: anthropic.claude-3-5-sonnet-20241022-v2:0
+ *
+ * IMPORTANT: "Fable 5" is NOT a Bedrock model. It's only available via the
+ * Anthropic API directly. Use Sonnet 4 or Haiku 4.5 on Bedrock.
+ */
+const MODEL_ALIASES: Record<string, string> = {
+  // Friendly names -> actual Bedrock IDs
+  // Note: "us." prefix = cross-region inference profile (recommended for availability)
+  'claude-fable-5': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0', // Fable isn't on Bedrock; fallback to Sonnet
+  'fable-5': 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+  'claude-sonnet-5': 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  'claude-sonnet-4': 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  'claude-haiku-4-5': 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  'claude-opus-4': 'us.anthropic.claude-opus-4-20250514-v1:0',
+  // Non-prefixed versions (region-specific)
+  'anthropic.claude-haiku-4-5-20251001-v1:0': 'anthropic.claude-haiku-4-5-20251001-v1:0',
+  'anthropic.claude-sonnet-4-20250514-v1:0': 'anthropic.claude-sonnet-4-20250514-v1:0',
+  // Already-correct Bedrock IDs (with us. prefix) pass through
+};
+
+/** Resolve a model name/alias to the correct Bedrock model ID */
+function resolveModelId(input: string): string {
+  // If it's already a full Bedrock ID (starts with anthropic. or us.anthropic.), use as-is
+  if (input.startsWith('anthropic.') || input.startsWith('us.anthropic.')) return input;
+
+  // Check aliases
+  const alias = MODEL_ALIASES[input.toLowerCase()];
+  if (alias) return alias;
+
+  // If it looks like a bare model name, try to construct Bedrock ID
+  if (input.includes('claude')) {
+    // Default to haiku for cost efficiency (use us. prefix for cross-region)
+    console.warn(`[Bedrock] Unknown model "${input}", defaulting to claude-haiku-4-5`);
+    return 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+  }
+
+  // Pass through as-is (let Bedrock reject it with a clear error)
+  return input;
+}
+
 export interface BedrockConfig {
   region: string;
   modelId: string;
@@ -91,8 +136,14 @@ export async function callBedrock(
     content: [{ text: m.content }],
   }));
 
+  // Resolve model aliases (e.g., "fable-5" -> actual Bedrock ID)
+  const resolvedModelId = resolveModelId(cfg.modelId);
+  if (resolvedModelId !== cfg.modelId) {
+    console.log(`[Bedrock] Resolved model "${cfg.modelId}" -> "${resolvedModelId}"`);
+  }
+
   const command = new ConverseCommand({
-    modelId: cfg.modelId,
+    modelId: resolvedModelId,
     messages,
     system: options.system ? [{ text: options.system }] : undefined,
     inferenceConfig: {
@@ -106,8 +157,13 @@ export async function callBedrock(
   } catch (error: any) {
     const status = error?.$metadata?.httpStatusCode;
     const retryable = status === 429 || (status != null && status >= 500);
+    // 403 = model not enabled, wrong region, or invalid model ID
+    const hint =
+      status === 403
+        ? ' — check: 1) model is enabled in Bedrock console, 2) region matches, 3) IAM has bedrock:InvokeModel permission'
+        : '';
     throw new AnthropicClientError(
-      `Bedrock error${status ? ` [${status}]` : ''} for model ${cfg.modelId}: ${error?.message ?? String(error)}`,
+      `Bedrock error${status ? ` [${status}]` : ''} for model ${resolvedModelId}${hint}: ${error?.message ?? String(error)}`,
       status,
       retryable,
       error,
@@ -132,7 +188,7 @@ export async function callBedrock(
     text,
     contentBlocks: raw ? blocks.filter((b: any) => typeof b?.text === 'string').map((b: any) => ({ type: 'text' as const, text: b.text! })) : [],
     stopReason: response.stopReason ?? 'end_turn',
-    model: cfg.modelId,
+    model: resolvedModelId,
     usage: {
       input_tokens: response.usage?.inputTokens ?? 0,
       output_tokens: response.usage?.outputTokens ?? 0,

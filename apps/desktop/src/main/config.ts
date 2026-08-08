@@ -31,12 +31,11 @@ export const PROTOCOL = "dealflow";
 /**
  * Default URL of the DealFlow AI web app.
  *
- * - In dev we point at the local Next.js dev server (`yarn dev` → port 4000).
- * - In production we default to the hosted SaaS, overridable via env at launch.
+ * - Both dev and production default to localhost:4000 for local operation.
+ * - Override via DEALFLOW_APP_URL environment variable for hosted deployment.
  */
 export const DEFAULT_APP_URL = (
-  process.env.DEALFLOW_APP_URL ??
-  (IS_DEV ? "http://localhost:4000" : "https://dealswiftautomation.com")
+  process.env.DEALFLOW_APP_URL ?? "http://localhost:4000"
 ).replace(/\/+$/, "");
 
 /**
@@ -57,11 +56,9 @@ export function buildAllowedOrigins(appUrl: string): Set<string> {
   push(appUrl);
   push(DEFAULT_APP_URL);
 
-  // Local dev conveniences.
-  if (IS_DEV) {
-    push("http://localhost:4000");
-    push("http://127.0.0.1:4000");
-  }
+  // Always allow localhost for local operation
+  push("http://localhost:4000");
+  push("http://127.0.0.1:4000");
 
   // Comma-separated extra origins, e.g. auth providers or a CDN.
   const extra = process.env.DEALFLOW_ALLOWED_ORIGINS;
