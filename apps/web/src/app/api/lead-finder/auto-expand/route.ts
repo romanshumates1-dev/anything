@@ -110,11 +110,14 @@ export async function POST(req: NextRequest) {
     errors: [] as string[],
   };
 
+  // Map config source IDs to actual DB source IDs (to fix foreign key issues)
+  const sourceIdMap = new Map<string, number>();
+
   // Process each market
   for (const market of selectedMarkets) {
     results.marketsProcessed++;
 
-    // Register sources for this market
+    // Register sources for this market and capture actual DB IDs
     for (const source of allSources) {
       for (const county of market.primaryCounties) {
         const sourceName = `${county}, ${market.stateCode} - ${source.name}`;
@@ -125,8 +128,12 @@ export async function POST(req: NextRequest) {
             SELECT id FROM lead_sources WHERE name = ${sourceName} LIMIT 1
           `;
 
-          if (!existing) {
-            await sql`
+          let dbSourceId: number;
+          if (existing) {
+            dbSourceId = existing.id;
+          } else {
+            // Insert and capture the returned ID
+            const [inserted] = await sql`
               INSERT INTO lead_sources (
                 name, jurisdiction, record_type, category, access_method,
                 terms_status, distress_weight, notes
@@ -140,9 +147,13 @@ export async function POST(req: NextRequest) {
                 ${source.distressWeight},
                 ${`Auto-expanded for ${market.metro} market (rank #${market.rank})`}
               )
+              RETURNING id
             `;
+            dbSourceId = inserted.id;
             results.sourcesRegistered++;
           }
+          // Store the mapping: config_source_id|county -> actual_db_id
+          sourceIdMap.set(`${source.id}|${county}`, dbSourceId);
         } catch (err: any) {
           if (!err.message?.includes('duplicate')) {
             results.errors.push(`Source ${sourceName}: ${err.message}`);
@@ -156,6 +167,15 @@ export async function POST(req: NextRequest) {
       const leads = generateMarketLeads(market, source, limit);
 
       for (const lead of leads) {
+        // Look up the actual DB source ID for this source+county combination
+        const countyName = lead.county.split(',')[0].trim();
+        const dbSourceId = sourceIdMap.get(`${source.id}|${countyName}`);
+
+        if (!dbSourceId) {
+          results.errors.push(`No DB source ID found for ${source.id}|${countyName}`);
+          continue;
+        }
+
         try {
           await sql`
             INSERT INTO sourced_leads (
@@ -163,7 +183,7 @@ export async function POST(req: NextRequest) {
               parcel_id, record_type, county, assessed_value_cents, signals,
               provenance, status, distress_score
             ) VALUES (
-              ${source.id},
+              ${dbSourceId},
               ${source.category},
               ${lead.ownerName},
               ${lead.propertyAddress},
@@ -173,7 +193,7 @@ export async function POST(req: NextRequest) {
               ${lead.county},
               ${lead.assessedValueCents},
               ${JSON.stringify(source.signals)},
-              ${JSON.stringify({ market: market.metro, source: source.id, expandedAt: new Date().toISOString() })},
+              ${JSON.stringify({ market: market.metro, source: source.id, dbSourceId, expandedAt: new Date().toISOString() })},
               'new',
               ${source.distressWeight}
             )

@@ -129,6 +129,8 @@ export const CALIFORNIA_RULES: RegionalRules = {
       equityPurchaseDisclosure: true,
       hudCounselingNotice: true,
     },
+    // CalDRE may require earlier cutoff for distressed property communications
+    distressedPropertyQuietHours: { endHour: 20 }, // 8PM for distressed properties
   },
 };
 

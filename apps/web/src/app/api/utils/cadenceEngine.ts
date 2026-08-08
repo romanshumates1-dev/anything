@@ -233,12 +233,16 @@ export async function processCadenceStep(payload: CadencePayload): Promise<{
   const templateChannel: string = (payload as any).channel || 'sms';
 
   // dispatchGate at send time for fresh compliance
+  // FIX: Map 'call' to 'voice' instead of 'sms' to enforce voice consent requirements.
+  // Voice calls require prior express consent under TCPA, different from SMS.
   const gate = await dispatchGate({
-    phone: templateChannel === 'sms' ? payload.phone : '',
+    phone: templateChannel === 'sms' || templateChannel === 'call' ? payload.phone : '',
     email: templateChannel === 'email' ? ((payload as any).email || '') : undefined,
-    channel: templateChannel === 'call' ? 'sms' : templateChannel as any,
+    channel: templateChannel === 'call' ? 'voice' : templateChannel as any,
     betaFlag: 'cadenceEngine',
     isCadenceStep: true,
+    // Pass consent basis for voice channel
+    consentBasis: templateChannel === 'call' ? CONSENT_BASIS_ATTESTED : undefined,
   });
   if (!gate.allow) {
     return { sent: false, reason: `gate:${gate.code}`, gateCode: gate.code, deferAt: gate.retryAt };

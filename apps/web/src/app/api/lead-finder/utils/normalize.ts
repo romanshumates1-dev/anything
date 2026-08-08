@@ -410,12 +410,30 @@ export interface ScoreInput {
   signals: string[];
   assessedValueCents: number | null;
   sourceWeight: number; // 0–100 registry distress_weight
+  // Enhanced equity calculation for deal viability (revenue optimization)
+  estimatedArv?: number | null; // After-repair value
+  estimatedDebt?: number | null; // Existing debt/mortgage
+  estimatedRepairs?: number | null; // Estimated repair costs
 }
 
 export interface ScoreResult {
   score: number; // 0–100 SIGNAL-BASED ESTIMATE
   reasons: string[];
+  // Deal viability metrics (revenue optimization)
+  estimatedProfitMargin?: number | null; // Calculated: (ARV * 0.70 - repairs - debt)
+  dealViable?: boolean; // True if positive margin
 }
+
+/**
+ * Signal synergy pairs: combinations that multiply motivation rather than just adding.
+ * Research shows probate+foreclosure together indicates extreme urgency.
+ */
+const SIGNAL_SYNERGIES: Array<{ pair: [string, string]; bonus: number; reason: string }> = [
+  { pair: ['probate', 'pre_foreclosure'], bonus: 15, reason: 'Probate + pre-foreclosure synergy (extreme urgency)' },
+  { pair: ['probate', 'tax_delinquent'], bonus: 12, reason: 'Probate + tax delinquent synergy (inherited debt)' },
+  { pair: ['pre_foreclosure', 'vacant_or_code'], bonus: 10, reason: 'Pre-foreclosure + vacant/code synergy (abandoned distress)' },
+  { pair: ['tax_delinquent', 'vacant_or_code'], bonus: 10, reason: 'Tax delinquent + vacant synergy (severe neglect)' },
+];
 
 /**
  * 0–100 signal-based score. Distinct distress signals COMPOUND (stacking gives
@@ -439,9 +457,21 @@ export function scoreSourcedLead(input: ScoreInput): ScoreResult {
     if (SIGNAL_LABEL[s]) reasons.push(SIGNAL_LABEL[s]);
   });
 
+  // Apply synergy bonuses BEFORE diminishing returns: certain signal combinations
+  // should multiply motivation, not just add. This captures that probate+foreclosure
+  // together indicates a much more urgent seller than either alone.
+  const signalSet = new Set(distinct);
+  for (const synergy of SIGNAL_SYNERGIES) {
+    if (signalSet.has(synergy.pair[0]) && signalSet.has(synergy.pair[1])) {
+      base += synergy.bonus;
+      reasons.push(synergy.reason + ` (+${synergy.bonus})`);
+    }
+  }
+
   // Scale by source distress weight (registry): a probate source (w90) lifts,
-  // a low-signal source (w60) tempers. Weight 80 ≈ neutral.
-  const weightFactor = 0.6 + (input.sourceWeight / 100) * 0.5; // 0.6–1.1
+  // a low-signal source (w60) tempers. Weight 50 ≈ neutral.
+  // Range 0.5-1.5 for better differentiation between low and high-weight sources
+  const weightFactor = 0.5 + (input.sourceWeight / 100) * 1.0; // 0.5–1.5
   let score = Math.round(base * weightFactor);
 
   // Equity/margin proxy: having an assessed value = quantifiable deal room.
@@ -457,5 +487,38 @@ export function scoreSourcedLead(input: ScoreInput): ScoreResult {
   }
 
   score = Math.max(0, Math.min(100, score));
-  return { score, reasons };
+
+  // Calculate deal viability if ARV data is available (revenue optimization)
+  // Wholesaling formula: MAO = ARV * 0.70 - repairs - wholesale_fee
+  // A negative margin means the deal cannot close profitably
+  let estimatedProfitMargin: number | null = null;
+  let dealViable: boolean | undefined = undefined;
+
+  if (input.estimatedArv && input.estimatedArv > 0) {
+    const arv = input.estimatedArv;
+    const debt = input.estimatedDebt ?? 0;
+    const repairs = input.estimatedRepairs ?? 0;
+    const wholesaleFee = 12500; // Industry median: $5K-$35K, using $12.5K median
+
+    // MAO (Maximum Allowable Offer) = ARV * 0.70 - repairs - wholesale_fee
+    const mao = arv * 0.70 - repairs - wholesaleFee;
+    estimatedProfitMargin = mao - debt;
+    dealViable = estimatedProfitMargin > 0;
+
+    if (dealViable) {
+      reasons.push(`Deal viable: est. profit margin $${Math.round(estimatedProfitMargin).toLocaleString()} (ARV: $${arv.toLocaleString()})`);
+      // Boost score for viable deals with good margins
+      if (estimatedProfitMargin >= 25000) {
+        score = Math.min(100, score + 10);
+        reasons.push('High profit margin (>$25K) (+10)');
+      }
+    } else {
+      reasons.push(`Low viability: negative margin $${Math.round(estimatedProfitMargin).toLocaleString()} (ARV: $${arv.toLocaleString()})`);
+      // Penalize non-viable deals to deprioritize them
+      score = Math.max(0, score - 15);
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  return { score, reasons, estimatedProfitMargin, dealViable };
 }

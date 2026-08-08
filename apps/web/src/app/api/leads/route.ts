@@ -73,22 +73,22 @@ export async function GET(request: Request) {
     const type = searchParams.get('type');
     const status = searchParams.get('status');
 
-    // Build query with organization filter
-    let query = `SELECT * FROM leads WHERE organization_id = $1`;
-    const params: any[] = [organization.id];
+    // Validate type/status params to prevent SQL injection
+    const validTypes = ['seller', 'buyer'];
+    const validStatuses = ['new', 'contacted', 'qualified', 'negotiating', 'closed', 'lost'];
 
-    if (type) {
-      params.push(type);
-      query += ` AND type = $${params.length}`;
-    }
-    if (status) {
-      params.push(status);
-      query += ` AND status = $${params.length}`;
-    }
+    const safeType = type && validTypes.includes(type) ? type : null;
+    const safeStatus = status && validStatuses.includes(status) ? status : null;
 
-    query += ` ORDER BY created_at DESC LIMIT 100`;
-
-    const leads = await sql(query, params);
+    // Use parameterized queries with tagged template literals for SQL injection safety
+    const leads = await sql`
+      SELECT * FROM leads
+      WHERE organization_id = ${organization.id}
+        AND (${safeType}::text IS NULL OR type = ${safeType})
+        AND (${safeStatus}::text IS NULL OR status = ${safeStatus})
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
     return Response.json(leads);
   } catch (error: any) {
     console.error('GET /api/leads error', error);

@@ -87,14 +87,22 @@ Classify this reply into ONE of these categories:
 - **negative**: Not interested, already sold, angry/hostile, or explicit rejection
 
 Also determine:
-- **requires_manual_review**: true if this is positive/question and the expected value is >$5000, OR if sentiment is ambiguous
-- **counter_offer_amount**: if they counter with a specific dollar amount, extract it (integer cents)
+- **confidence**: A score from 0.0 to 1.0 indicating how certain you are of the classification
+- **requires_manual_review**: true if this is positive/question and the expected value is >$12,500 (industry median assignment fee), OR if confidence < 0.8 (ambiguous)
+- **counter_offer_amount**: if they counter with a specific dollar amount, extract it (integer cents) - validate this is a reasonable property price
+- **price_mentioned**: true if any dollar amount was mentioned in the reply
+- **urgency_signals**: list of urgency indicators (e.g., "foreclosure", "deadline", "moving soon", "need cash")
+
+Research context: Motivated seller response rate is 2.5% vs warm 1.5%. Misclassifying motivated as neutral loses high-intent leads. Assignment fee median $12.5k means each misclassified lead = potential $12.5k loss.
 
 Respond with ONLY valid JSON (no markdown, no explanation):
 {
   "sentiment": "positive" | "question" | "objection" | "neutral" | "negative",
+  "confidence": 0.0-1.0,
   "requires_manual_review": true | false,
   "counter_offer_amount": null | integer (cents),
+  "price_mentioned": true | false,
+  "urgency_signals": [],
   "reasoning": "one sentence explaining the classification"
 }`;
 
@@ -166,8 +174,15 @@ Respond with ONLY valid JSON (no markdown, no explanation):
     }
 
     // 3. Update campaign_lead_queue with sentiment
+    // FIX: Add confidence threshold check for manual review fallback
     const sentiment = classification.sentiment;
-    const requiresReview = classification.requires_manual_review || false;
+    const confidence = classification.confidence ?? 0.5;
+
+    // Force manual review if confidence < 0.8 (ambiguous classification)
+    // Research: Misclassifying motivated sellers costs potential $12.5k per lead
+    const requiresReview = classification.requires_manual_review ||
+      confidence < 0.8 ||
+      (classification.price_mentioned && !classification.counter_offer_amount);
 
     await sql`
       UPDATE campaign_lead_queue
@@ -185,7 +200,10 @@ Respond with ONLY valid JSON (no markdown, no explanation):
     `;
 
     // 4. If positive + high EV, create speed_alert
-    if ((sentiment === 'positive' || sentiment === 'question') && reply.expected_value > 500000) {
+    // FIX: Changed threshold from $5,000 (500000 cents) to $12,500 (1250000 cents)
+    // to match industry median assignment fee and reduce alert fatigue.
+    // Research: Median wholesaling assignment fee is $12,500.
+    if ((sentiment === 'positive' || sentiment === 'question') && reply.expected_value > 1250000) {
       await sql`
         INSERT INTO speed_alerts (
           organization_id,

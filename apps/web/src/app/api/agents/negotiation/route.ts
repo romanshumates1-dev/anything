@@ -71,6 +71,52 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 
+/**
+ * Optimal send times for negotiation responses.
+ * Research: Tue-Thu 10am-2pm local time has 23% higher open rates.
+ * Multi-touch at optimal times shows 85% lift over single-touch.
+ */
+const OPTIMAL_SEND_DAYS = [2, 3, 4] as const; // Tue, Wed, Thu (0=Sun)
+const OPTIMAL_SEND_START_HOUR = 10;
+const OPTIMAL_SEND_END_HOUR = 14;
+
+/**
+ * Check if current time is within optimal send window.
+ * Used to adjust urgency language and follow-up timing.
+ */
+function isOptimalSendTime(date: Date = new Date()): boolean {
+  const day = date.getDay();
+  const hour = date.getHours();
+  const isOptimalDay = day === 2 || day === 3 || day === 4; // Tue, Wed, Thu
+  return isOptimalDay &&
+    hour >= OPTIMAL_SEND_START_HOUR &&
+    hour < OPTIMAL_SEND_END_HOUR;
+}
+
+/**
+ * Get timing context for response customization.
+ * Adjusts messaging based on whether it's optimal send time.
+ */
+function getTimingContext(date: Date = new Date()): {
+  isOptimal: boolean;
+  urgencyLevel: 'high' | 'medium' | 'low';
+  followUpDelay: string;
+} {
+  const isOptimal = isOptimalSendTime(date);
+  const hour = date.getHours();
+  const day = date.getDay();
+
+  // Higher urgency during business hours on weekdays
+  const isBusinessHours = hour >= 9 && hour < 17;
+  const isWeekday = day >= 1 && day <= 5;
+
+  return {
+    isOptimal,
+    urgencyLevel: isOptimal ? 'high' : isBusinessHours && isWeekday ? 'medium' : 'low',
+    followUpDelay: isOptimal ? '24h' : '48h', // Follow up faster during optimal windows
+  };
+}
+
 // Negotiation Phases
 type NegotiationPhase =
   | 'INITIAL_CONTACT'
@@ -171,23 +217,42 @@ function checkOptOut(reply: string): boolean {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // COMP-BASED PRICING
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/**
+ * ARV multipliers for offer calculation.
+ * - With validated comps: 70% is acceptable (market-backed)
+ * - Without comps: 60% accounts for increased uncertainty and risk
+ * - Ceiling without comps: 70% (was 75%) to prevent overpaying on unvalidated deals
+ */
+const OFFER_MULTIPLIERS = {
+  withComps: 0.70, // Standard 70% rule when comps are validated
+  withoutComps: 0.60, // More conservative when no market validation
+  ceilingWithComps: 0.85, // 85% of lowest comp
+  ceilingWithoutComps: 0.70, // Conservative ceiling without comps (was 0.75)
+} as const;
+
 function calculateCompBasedOffer(
   comps: PropertyComps | undefined,
   arv: number,
   repairs: number = 0
 ): { maxOffer: number; ceiling: number; confidence: number } {
   if (!comps || comps.compCount < 3) {
-    // Fallback to 70% rule if no comps
-    const maxOffer = arv * 0.70 - repairs;
-    return { maxOffer, ceiling: arv * 0.75, confidence: 0.5 };
+    // Fallback to 60% rule if no comps (was 70%) - more conservative for unvalidated deals
+    // Without market validation, the risk is higher and requires more margin
+    const maxOffer = arv * OFFER_MULTIPLIERS.withoutComps - repairs;
+    // Ceiling at 70% (was 75%) to reflect increased uncertainty
+    return {
+      maxOffer,
+      ceiling: arv * OFFER_MULTIPLIERS.ceilingWithoutComps,
+      confidence: 0.4 // Reduced from 0.5 to reflect uncertainty
+    };
   }
 
   // Use comp data for accurate pricing
   const marketValue = comps.medianPrice;
   const ceiling = comps.lowestPrice; // Never exceed lowest comp
   const maxOffer = Math.min(
-    marketValue * 0.70 - repairs,  // 70% rule
-    ceiling * 0.85                  // 85% of lowest comp
+    marketValue * OFFER_MULTIPLIERS.withComps - repairs,  // 70% rule
+    ceiling * OFFER_MULTIPLIERS.ceilingWithComps          // 85% of lowest comp
   );
 
   return {

@@ -204,7 +204,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const baseOffset = index * spacingMs; // Base throttle offset
         const baseTime = new Date(now + baseOffset);
         runAt = computeOptimalSendTime(m.phone, baseTime);
-      } catch {
+      } catch (e: any) {
+        // FIX: Log the failure to help diagnose configuration issues
+        console.error('[launch] optimal time calculation failed:', e.message);
         // Fallback: original throttled send time calculation
         const day = Math.floor(index / dailyCap);
         const within = index % dailyCap;

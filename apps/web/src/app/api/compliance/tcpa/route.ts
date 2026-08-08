@@ -39,30 +39,29 @@ interface TCPACheckResult {
 const STATE_QUIET_HOURS: Record<string, { start: number; end: number }> = {
   DEFAULT: { start: 8, end: 21 },  // 8am - 9pm
   CA: { start: 8, end: 21 },
-  FL: { start: 8, end: 21 },
+  FL: { start: 8, end: 20 },  // 8am-8PM STRICTER than federal (Florida Telemarketing Act)
   TX: { start: 8, end: 21 },
   NY: { start: 8, end: 21 },
   // Some states have stricter rules
   CT: { start: 9, end: 21 },  // 9am start
-  MA: { start: 8, end: 20 },  // 8pm end
+  MA: { start: 8, end: 20 },  // 8pm end (Massachusetts General Laws Chapter 159C)
 };
 
 // States with additional restrictions
 const RESTRICTED_STATES = ['WY', 'SD', 'ND']; // Example: extra consent required
 
 function getStateFromPhone(phone: string): string {
-  // Area code to state mapping (simplified - would need full database)
-  const areaCodeToState: Record<string, string> = {
-    '502': 'KY', '859': 'KY', '270': 'KY', '606': 'KY',
-    '212': 'NY', '718': 'NY', '347': 'NY', '917': 'NY',
-    '213': 'CA', '310': 'CA', '323': 'CA', '415': 'CA',
-    '305': 'FL', '786': 'FL', '954': 'FL', '407': 'FL',
-    '214': 'TX', '713': 'TX', '512': 'TX', '972': 'TX',
-  };
+  // Use the comprehensive area-codes utility for accurate state detection
+  const { regionForPhone } = require('@/app/api/utils/area-codes');
+  const geoPoint = regionForPhone(phone, true);
 
-  const cleaned = phone.replace(/\D/g, '');
-  const areaCode = cleaned.length >= 10 ? cleaned.substring(cleaned.length - 10, cleaned.length - 7) : '';
-  return areaCodeToState[areaCode] || 'DEFAULT';
+  if (geoPoint && geoPoint.region) {
+    // Extract state from region string (e.g., "Louisville, KY" -> "KY")
+    const match = geoPoint.region.match(/,\s*([A-Z]{2})$/);
+    if (match) return match[1];
+  }
+
+  return 'DEFAULT';
 }
 
 function isQuietHours(timezone: string = 'America/New_York', state: string = 'DEFAULT'): { isQuiet: boolean; nextAllowed: Date } {
@@ -93,21 +92,13 @@ function isQuietHours(timezone: string = 'America/New_York', state: string = 'DE
   return { isQuiet, nextAllowed };
 }
 
-// Check DNC list (would integrate with real DNC API in production)
+// Check DNC list using authoritative dnc_registry table
 async function checkDNCList(phone: string): Promise<boolean> {
-  const cleaned = phone.replace(/\D/g, '');
-
-  // Check internal DNC list
-  const [dnc] = await sql`
-    SELECT 1 FROM dnc_list WHERE phone = ${cleaned}
-  `.catch(() => [null]);
-
-  if (dnc) return true;
-
-  // In production: integrate with national DNC registry API
-  // Example: https://www.donotcall.gov/
-  // For now, return false (not on DNC)
-  return false;
+  // Use the authoritative dnc_registry via the unified dncRegistry module
+  // This ensures single source of truth for DNC data across the application
+  const { checkDncRegistry } = await import('@/app/api/utils/dncRegistry');
+  const result = await checkDncRegistry(phone);
+  return result.listed;
 }
 
 // Check suppression list (opt-outs)

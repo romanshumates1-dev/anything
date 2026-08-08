@@ -10,6 +10,7 @@ import {
   CampaignMetrics,
   QualityGateResult,
   HIGH_VOLUME_CONFIG,
+  ENGAGEMENT_THRESHOLDS,
 } from '../config/high-volume';
 
 export interface MonitorResult {
@@ -69,6 +70,7 @@ async function pauseCampaign(
 
 /**
  * Monitor a campaign's quality gates.
+ * FIX: Now includes warning logging for engagement issues.
  */
 export async function monitorCampaign(
   campaignId: string,
@@ -91,8 +93,9 @@ export async function monitorCampaign(
     );
 
     action = 'paused';
-  } else if (gateResult.violations.length > 0) {
-    // Near threshold - warning only
+  } else if (gateResult.warnings && gateResult.warnings.length > 0) {
+    // Log warnings for monitoring but don't pause
+    console.warn(`[QUALITY-GATE] Campaign ${campaignId} warnings:`, gateResult.warnings.join('; '));
     action = 'warning';
   }
 
@@ -127,6 +130,7 @@ export async function shouldContinueSending(
 
 /**
  * Get quality report for a campaign.
+ * FIX: Added engagement metrics (open rate, click rate) to report.
  */
 export async function getQualityReport(
   campaignId: string,
@@ -138,12 +142,17 @@ export async function getQualityReport(
     complaintRate: string;
     unsubscribeRate: string;
     deliverabilityRate: string;
+    openRate: string;
+    clickRate: string;
   };
   thresholds: {
     maxBounceRate: string;
     maxComplaintRate: string;
     maxUnsubscribeRate: string;
+    minOpenRate: string;
+    minClickRate: string;
   };
+  warnings: string[];
   status: 'healthy' | 'warning' | 'critical';
 }> {
   const metrics = await getCampaignMetrics(campaignId, organizationId);
@@ -158,7 +167,8 @@ export async function getQualityReport(
   } else if (
     gateResult.bounceRate > gates.maxBounceRate * 0.8 ||
     gateResult.complaintRate > gates.maxComplaintRate * 0.8 ||
-    gateResult.unsubscribeRate > gates.maxUnsubscribeRate * 0.8
+    gateResult.unsubscribeRate > gates.maxUnsubscribeRate * 0.8 ||
+    (gateResult.warnings && gateResult.warnings.length > 0)
   ) {
     status = 'warning';
   }
@@ -170,12 +180,17 @@ export async function getQualityReport(
       complaintRate: (gateResult.complaintRate * 100).toFixed(3) + '%',
       unsubscribeRate: (gateResult.unsubscribeRate * 100).toFixed(2) + '%',
       deliverabilityRate: (deliverabilityRate * 100).toFixed(2) + '%',
+      openRate: (gateResult.openRate * 100).toFixed(1) + '%',
+      clickRate: (gateResult.clickRate * 100).toFixed(2) + '%',
     },
     thresholds: {
       maxBounceRate: (gates.maxBounceRate * 100).toFixed(1) + '%',
       maxComplaintRate: (gates.maxComplaintRate * 100).toFixed(2) + '%',
       maxUnsubscribeRate: (gates.maxUnsubscribeRate * 100).toFixed(1) + '%',
+      minOpenRate: (ENGAGEMENT_THRESHOLDS.minOpenRate * 100).toFixed(0) + '%',
+      minClickRate: (ENGAGEMENT_THRESHOLDS.minClickRate * 100).toFixed(0) + '%',
     },
+    warnings: gateResult.warnings || [],
     status,
   };
 }

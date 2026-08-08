@@ -20,6 +20,8 @@ import {
   type AssignmentContractVariables,
   type BuyerTier,
   MINIMUM_ASSIGNMENT_FEE,
+  getTieredMinimumFee,
+  getRecommendedAssignmentFee,
   getEarnestMoneyForTier,
   calculateTotalDueAtClosing,
   ASSIGNOR_ENTITY,
@@ -480,14 +482,17 @@ export function generateContract(
     if (!deal.assignee_name || !deal.assignee_address || !deal.assignee_tier) {
       throw new Error('Assignment contract requires assignee_name, assignee_address, and assignee_tier');
     }
-    if (!deal.assignment_fee || deal.assignment_fee < MINIMUM_ASSIGNMENT_FEE) {
-      throw new Error(`Assignment fee must be at least $${MINIMUM_ASSIGNMENT_FEE.toLocaleString()} (NON-NEGOTIABLE)`);
+    // Use tiered minimum fee based on deal size
+    const tieredMinFee = getTieredMinimumFee(deal.purchase_price);
+    if (!deal.assignment_fee || deal.assignment_fee < tieredMinFee) {
+      throw new Error(`Assignment fee must be at least $${tieredMinFee.toLocaleString()} for deals at $${deal.purchase_price.toLocaleString()} (tiered pricing)`);
     }
     if (!deal.original_contract_id || !deal.original_contract_date) {
       throw new Error('Assignment contract requires original_contract_id and original_contract_date');
     }
 
-    const tierReqs = getEarnestMoneyForTier(deal.assignee_tier);
+    // Get earnest money requirements adjusted for deal size
+    const tierReqs = getEarnestMoneyForTier(deal.assignee_tier, deal.purchase_price);
     const earnestMoney = deal.earnest_money || tierReqs.default;
 
     const assignmentVars: AssignmentContractVariables = {
@@ -633,6 +638,8 @@ export {
   MIN_INSPECTION_DAYS,
   PURCHASE_AGREEMENT_DEFAULTS,
   getEarnestMoneyForTier,
+  getTieredMinimumFee,
+  getRecommendedAssignmentFee,
   calculateTotalDueAtClosing,
   hasSpecificTemplate,
 };

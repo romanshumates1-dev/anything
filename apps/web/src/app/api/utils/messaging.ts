@@ -55,8 +55,9 @@ export async function sendMessage(payload: SendMessagePayload) {
 
   // 0. UNIVERSAL DISPATCH GATE (P2.0-W). This is the non-gateway transmit path
   // (no Twilio configured / non-sms channel) — it must be gated identically to
-  // the gateway or a config difference silently removes compliance. SMS only:
-  // the gate's spec covers sms/voice/rvm; email keeps the consent check below.
+  // the gateway or a config difference silently removes compliance.
+  // FIX: Now applies dispatchGate to BOTH SMS and email channels for unified
+  // compliance. Email sends now go through the same opt-out/suppression check.
   if (channel === 'sms') {
     const gate = await dispatchGate({
       phone: to,
@@ -67,6 +68,25 @@ export async function sendMessage(payload: SendMessagePayload) {
       boundedNegotiation: payload.boundedNegotiation
         ? { text, ...payload.boundedNegotiation }
         : undefined,
+    });
+    if (!gate.allow) {
+      await setCampaignLeadStatus('failed');
+      await logEvent('message_suppressed', 'message', String(leadId), {
+        to,
+        channel,
+        reason: gate.code,
+        detail: gate.reason,
+      });
+      return { status: 'suppressed' as const, gateCode: gate.code, retryAt: gate.retryAt };
+    }
+  } else if (channel === 'email') {
+    // Email channel: dispatchGate checks opt-out suppression (CAN-SPAM compliance)
+    const gate = await dispatchGate({
+      phone: '', // Not used for email
+      email: to,
+      channel: 'email',
+      betaFlag: payload.betaFlag,
+      transactional: payload.transactional,
     });
     if (!gate.allow) {
       await setCampaignLeadStatus('failed');

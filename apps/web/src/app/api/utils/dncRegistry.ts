@@ -232,11 +232,26 @@ export async function hasSmsConsent(phone: string | null | undefined): Promise<b
   const key = normalizeDncPhone(phone);
   if (!key) return false;
 
-  const rows = await sql`
+  // Check compliance_records for explicit consent
+  const complianceRows = await sql`
     SELECT 1
     FROM compliance_records
     WHERE target = ${key} AND channel = 'sms' AND type = 'consent'
     LIMIT 1
   `;
-  return rows.length > 0;
+  if (complianceRows.length > 0) return true;
+
+  // Also check contact_lists with consent_mode as documented
+  // 'inbound' = lead initiated contact, 'consented' = explicit opt-in
+  // 'unverified' does NOT count
+  const listRows = await sql`
+    SELECT 1
+    FROM contact_list_members clm
+    JOIN contact_lists cl ON clm.list_id = cl.id
+    WHERE clm.phone = ${key}
+    AND cl.consent_mode IN ('inbound', 'consented')
+    LIMIT 1
+  `.catch(() => []);
+
+  return listRows.length > 0;
 }

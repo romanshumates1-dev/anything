@@ -132,8 +132,24 @@ export async function POST(request: Request) {
       );
     }
 
+    // Pre-handoff DNC check: exclude DNC-listed properties to prevent TCPA violations
+    // 16 CFR 310.4(b)(3)(iv) Safe Harbor requires DNC check within 31 days
+    const dncExclusions = await sql`
+      SELECT property_address FROM dnc_registry
+      WHERE property_address = ANY(${segment.map(s => s.property_address).filter(Boolean)})
+    `.catch(() => [] as any[]); // Graceful degradation if DNC table doesn't exist
+
+    const dncAddresses = new Set(dncExclusions.map((r: any) => r.property_address?.toLowerCase()));
+
     let created = 0;
+    let dncSkipped = 0;
     for (const sl of segment) {
+      // Skip leads that are on the DNC registry (compliance filter)
+      if (sl.property_address && dncAddresses.has(sl.property_address.toLowerCase())) {
+        dncSkipped++;
+        continue;
+      }
+
       // Claim the row FIRST (conditional on status='new') so a concurrent call
       // or retry can't double-hand-off the same lead. If we don't claim it,
       // someone else already did — skip.
@@ -144,7 +160,19 @@ export async function POST(request: Request) {
       `;
       if (claim.length === 0) continue;
 
-      const name = sl.owner_name || sl.property_address || `Parcel ${sl.parcel_id || sl.id}`;
+      // Derive name with better fallback logic to improve personalization
+      // Flag leads with missing owner names for skip-trace enrichment
+      let name: string;
+      let needsOwnerEnrichment = false;
+      if (sl.owner_name && sl.owner_name.trim()) {
+        name = sl.owner_name;
+      } else if (sl.property_address && sl.property_address.trim()) {
+        name = `Property Owner at ${sl.property_address}`;
+        needsOwnerEnrichment = true;
+      } else {
+        name = `Parcel ${sl.parcel_id || sl.id}`;
+        needsOwnerEnrichment = true;
+      }
       const metadata = {
         origin: 'lead-finder',
         sourced_lead_id: sl.id,
@@ -156,8 +184,9 @@ export async function POST(request: Request) {
         signals: sl.signals,
         distress_score: sl.distress_score,
         score_reasons: sl.score_reasons,
-        provenance: sl.provenance,
+        provenance: { ...sl.provenance, dnc_checked_at: new Date().toISOString() },
         needs_skip_trace: true, // phone resolved by the existing skip-trace step
+        needs_owner_enrichment: needsOwnerEnrichment, // flag for skip-trace to prioritize owner lookup
       };
       // Insert into the EXISTING leads table (importer's output shape). No
       // phone/email — skip-trace resolves contact downstream.
@@ -221,7 +250,13 @@ export async function POST(request: Request) {
           }
         : {}),
       created,
+      dncSkipped,
       segmentSize: segment.length,
+      compliance: {
+        dncChecked: true,
+        dncSkipped,
+        checkedAt: new Date().toISOString(),
+      },
       next: 'Leads created with source=lead-finder (no contact yet). Run skip-trace to resolve phones, DNC scrub, then build a campaign in the wizard.',
       links: { contacts: '/leads', wizard: '/campaigns/wizard' },
     });

@@ -148,9 +148,10 @@ By signing below, the parties agree to the payment of the assignment fee as stat
   }),
 };
 
-// In-memory storage (in production, use database)
-const documents: Map<string, ESignDocument> = new Map();
-const sessions: Map<string, SigningSession> = new Map();
+// Database-backed storage for documents and sessions
+// In-memory cache for performance (ephemeral - rehydrates from DB on access)
+const documentCache: Map<string, ESignDocument> = new Map();
+const sessionCache: Map<string, SigningSession> = new Map();
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -191,10 +192,10 @@ export async function POST(req: NextRequest) {
       { dealId, contractType, organizationId: organization.id }
     );
 
-    // Store document
-    documents.set(document.id, document);
+    // Store document in cache for fast access
+    documentCache.set(document.id, document);
 
-    // Save to database
+    // Save to database (primary storage)
     await sql`
       INSERT INTO esign_envelopes (
         id, organization_id, deal_id, contract_type, provider,
@@ -219,7 +220,13 @@ export async function POST(req: NextRequest) {
 
     for (const signer of document.signers) {
       const session = createSigningSession(document, signer.id);
-      sessions.set(session.token, session);
+      sessionCache.set(session.token, session);
+
+      // Persist session to database
+      await sql`
+        INSERT INTO esign_sessions (token, document_id, signer_id, created_at, expires_at, used)
+        VALUES (${session.token}, ${session.documentId}, ${session.signerId}, ${session.createdAt}, ${session.expiresAt}, ${session.used})
+      `.catch(console.error);
 
       signingUrls[signer.email] = `${baseUrl}/sign/${document.id}?token=${session.token}&signer=${signer.id}`;
 
@@ -255,12 +262,31 @@ export async function GET(req: NextRequest) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
+  const organization = await getOrganization();
   const url = new URL(req.url);
   const documentId = url.searchParams.get('id');
 
   if (!documentId) {
-    // Return overview
-    const allDocs = Array.from(documents.values());
+    // Return overview from database
+    const dbStats = await sql`
+      SELECT status, COUNT(*)::int as count FROM esign_envelopes
+      WHERE organization_id = ${organization?.id || 'system'}
+      GROUP BY status
+    `.catch(() => []);
+
+    const stats = {
+      totalDocuments: 0,
+      pending: 0,
+      partiallySigned: 0,
+      completed: 0,
+    };
+    for (const row of dbStats) {
+      stats.totalDocuments += row.count;
+      if (row.status === 'pending') stats.pending = row.count;
+      if (row.status === 'partially_signed') stats.partiallySigned = row.count;
+      if (row.status === 'completed') stats.completed = row.count;
+    }
+    const allDocs = Array.from(documentCache.values());
     return Response.json({
       provider: 'self_hosted',
       description: 'Self-Hosted E-Sign - No third-party dependencies',
@@ -272,17 +298,12 @@ export async function GET(req: NextRequest) {
         'Email notifications',
         'Signature verification',
       ],
-      stats: {
-        totalDocuments: allDocs.length,
-        pending: allDocs.filter(d => d.status === 'pending').length,
-        partiallySigned: allDocs.filter(d => d.status === 'partially_signed').length,
-        completed: allDocs.filter(d => d.status === 'completed').length,
-      },
+      stats,
     });
   }
 
-  // Get specific document
-  let document = documents.get(documentId);
+  // Get specific document - check cache first, then database
+  let document = documentCache.get(documentId);
 
   if (!document) {
     // Try to load from database
@@ -292,7 +313,7 @@ export async function GET(req: NextRequest) {
 
     if (dbDoc?.envelope_data) {
       document = dbDoc.envelope_data as ESignDocument;
-      documents.set(documentId, document);
+      documentCache.set(documentId, document); // Populate cache
     }
   }
 
@@ -333,8 +354,19 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
-  // Verify session
-  const session = sessions.get(token);
+  // Verify session - check cache first, then database
+  let session = sessionCache.get(token);
+  if (!session) {
+    const [dbSession] = await sql`
+      SELECT token, document_id as "documentId", signer_id as "signerId",
+             created_at as "createdAt", expires_at as "expiresAt", used
+      FROM esign_sessions WHERE token = ${token}
+    `.catch(() => [null]);
+    if (dbSession) {
+      session = dbSession as SigningSession;
+      sessionCache.set(token, session);
+    }
+  }
   if (!session) {
     return Response.json({ error: 'Invalid or expired signing session' }, { status: 401 });
   }
@@ -347,8 +379,8 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: 'Signing session expired' }, { status: 401 });
   }
 
-  // Get document
-  let document = documents.get(documentId);
+  // Get document - check cache first, then database
+  let document = documentCache.get(documentId);
   if (!document) {
     const [dbDoc] = await sql`
       SELECT envelope_data FROM esign_envelopes WHERE id = ${documentId}
@@ -356,6 +388,7 @@ export async function PUT(req: NextRequest) {
 
     if (dbDoc?.envelope_data) {
       document = dbDoc.envelope_data as ESignDocument;
+      documentCache.set(documentId, document);
     }
   }
 
@@ -374,8 +407,8 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: result.error }, { status: 400 });
   }
 
-  // Update stored document
-  documents.set(documentId, result.document);
+  // Update stored document in cache
+  documentCache.set(documentId, result.document);
 
   // Update database
   await sql`

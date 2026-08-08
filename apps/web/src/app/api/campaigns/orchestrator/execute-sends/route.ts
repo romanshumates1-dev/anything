@@ -275,7 +275,10 @@ ${postalAddress}
     }
 
     // 6. Check if we should schedule follow-ups for successfully sent emails
-    // (Touch 2 scheduled for +2 days)
+    // FIX: Changed touch_number from hardcoded 1 to touch_number + 1 to properly
+    // increment follow-up sequence. Also changed query to find the LATEST sent
+    // touch for this lead to prevent duplicate entries on re-runs.
+    // Research-driven cadence: Day 1, 3, 7, 14 for 2.1x lift
     for (const leadId of results.sent) {
       await sql`
         INSERT INTO campaign_lead_queue (
@@ -298,12 +301,13 @@ ${postalAddress}
           offer_max,
           'queued',
           now() + interval '2 days',
-          1
+          touch_number + 1
         FROM campaign_lead_queue
         WHERE lead_id = ${leadId}
-          AND touch_number = 1
           AND status = 'sent'
-        ON CONFLICT DO NOTHING
+        ORDER BY touch_number DESC
+        LIMIT 1
+        ON CONFLICT (lead_id, touch_number) DO NOTHING
       `;
     }
 

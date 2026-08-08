@@ -1,16 +1,41 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from './logger';
 
+/**
+ * Check consent for a target across ALL channels (aligned with dispatchGate.isSuppressed).
+ *
+ * FIX: Removed channel-specific check. An opt-out on ANY channel now suppresses
+ * the target everywhere, matching dispatchGate.isSuppressed semantics. This is
+ * the correct behavior because STOP means stop on every channel, permanently.
+ *
+ * If you need channel-specific opt-out (rare), use checkChannelSpecificConsent.
+ */
 export async function checkConsent(target: string, channel: 'sms' | 'email') {
+  // Check for opt-out on ANY channel (STOP suppresses everything)
   const rows = await sql`
-    SELECT * FROM compliance_records 
-    WHERE target = ${target} 
+    SELECT * FROM compliance_records
+    WHERE target = ${target}
+    AND type = 'opt-out'
+    LIMIT 1
+  `;
+
+  return rows.length === 0; // Returns true if NOT opted out on any channel
+}
+
+/**
+ * Check consent for a specific channel only (use sparingly - most cases should
+ * use checkConsent which honors cross-channel opt-outs).
+ */
+export async function checkChannelSpecificConsent(target: string, channel: 'sms' | 'email') {
+  const rows = await sql`
+    SELECT * FROM compliance_records
+    WHERE target = ${target}
     AND channel = ${channel}
     AND type = 'opt-out'
     LIMIT 1
   `;
 
-  return rows.length === 0; // Returns true if NOT opted out
+  return rows.length === 0;
 }
 
 /**
@@ -68,18 +93,18 @@ export async function registerConsent(
   metadata: any = {}
 ) {
   // Re-consent must clear any prior opt-out so the lead is reachable again.
-  await sql.transaction([
-    sql`
-      DELETE FROM compliance_records
-      WHERE target = ${target} AND channel = ${channel} AND type = 'opt-out'
-    `,
-    sql`
-      INSERT INTO compliance_records (target, type, channel, metadata)
-      VALUES (${target}, 'consent', ${channel}, ${JSON.stringify(metadata)})
-      ON CONFLICT (target, channel, type) DO UPDATE
-        SET metadata = EXCLUDED.metadata, created_at = CURRENT_TIMESTAMP
-    `,
-  ]);
+  // Execute as sequential queries - Neon's transaction() with array may not be reliable
+  // The DELETE must complete before INSERT to avoid constraint issues
+  await sql`
+    DELETE FROM compliance_records
+    WHERE target = ${target} AND channel = ${channel} AND type = 'opt-out'
+  `;
+  await sql`
+    INSERT INTO compliance_records (target, type, channel, metadata)
+    VALUES (${target}, 'consent', ${channel}, ${JSON.stringify(metadata)})
+    ON CONFLICT (target, channel, type) DO UPDATE
+      SET metadata = EXCLUDED.metadata, created_at = CURRENT_TIMESTAMP
+  `;
 
   await logEvent('compliance_consent', 'compliance', target, { channel, ...metadata });
 }

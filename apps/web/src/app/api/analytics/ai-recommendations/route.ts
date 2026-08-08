@@ -25,6 +25,17 @@ interface AIRecommendation {
   expectedImpact: string;
   implementationSteps: string[];
   estimatedEffort: 'quick-win' | 'moderate' | 'significant';
+  // NEW: ROI projections and confidence
+  roiProjection?: {
+    projectedAdditionalReplies: number;
+    projectedAdditionalDeals: number;
+    projectedRevenueImpact: string;
+    confidenceRange: { low: string; high: string };
+  };
+  confidence: 'high' | 'medium' | 'low' | 'insufficient';
+  sampleSize: number;
+  minSampleSizeNeeded: number;
+  dataCitations: string[];
 }
 
 export async function GET(req: NextRequest) {
@@ -166,7 +177,15 @@ ${sourceData.map((s: any) => {
 - Optimal send times: Tue-Thu 10am-2pm local time
 - Multi-touch optimal: 3-5 touches over 14 days
 
-Based on this data, provide exactly 4 specific recommendations in the following JSON format:
+## Data Quality Assessment
+- Total sample size: ${totalContacted} contacts
+- Minimum for reliable insights: 100 contacts
+- Minimum for A/B test conclusions: 500 contacts per variant
+- Confidence level: ${totalContacted >= 1000 ? 'HIGH' : totalContacted >= 500 ? 'MEDIUM' : totalContacted >= 100 ? 'LOW' : 'INSUFFICIENT'}
+
+Based on this data, provide ${totalContacted >= 500 ? '4-6' : totalContacted >= 100 ? '2-4' : '1-2'} recommendations. ONLY provide recommendations where the data supports the conclusion. If sample size is insufficient, say so.
+
+Return recommendations in this JSON format:
 {
   "recommendations": [
     {
@@ -177,16 +196,28 @@ Based on this data, provide exactly 4 specific recommendations in the following 
       "specificAction": "Exactly what to change (be specific - which campaign, region, time, etc.)",
       "expectedImpact": "Quantified expected improvement (e.g., 'increase response rate by 0.5%')",
       "implementationSteps": ["Step 1", "Step 2", "Step 3"],
-      "estimatedEffort": "quick-win|moderate|significant"
+      "estimatedEffort": "quick-win|moderate|significant",
+      "roiProjection": {
+        "projectedAdditionalReplies": 50,
+        "projectedAdditionalDeals": 2,
+        "projectedRevenueImpact": "$20,000",
+        "confidenceRange": {"low": "$14,000", "high": "$26,000"}
+      },
+      "confidence": "high|medium|low|insufficient",
+      "sampleSize": 1000,
+      "minSampleSizeNeeded": 100,
+      "dataCitations": ["Specific data point 1", "Specific data point 2"]
     }
   ]
 }
 
-Focus on:
-1. The BIGGEST opportunity for improvement based on the actual data
-2. Quick wins that can be implemented today
-3. Specific numbers and comparisons from the data
-4. Actionable next steps, not generic advice`;
+IMPORTANT RULES:
+1. ALWAYS include roiProjection with dollar amounts based on avg deal value
+2. ALWAYS include confidence based on sample size vs minSampleSizeNeeded
+3. ALWAYS include dataCitations - specific numbers from the data above
+4. If sample size < 100, set confidence to "insufficient" and note it
+5. Focus on recommendations that can be acted on TODAY
+6. Order by projected revenue impact (highest first), not just priority`;
 
     // 7. Call AI for analysis
     let aiRecommendations: AIRecommendation[] = [];
@@ -215,6 +246,26 @@ Focus on:
       });
     }
 
+    // Calculate data quality indicators
+    const dataQuality = {
+      totalSampleSize: totalContacted,
+      sufficientForAnalysis: totalContacted >= 100,
+      sufficientForABTests: totalContacted >= 500,
+      recommendedMinimum: 500,
+      confidenceLevel: totalContacted >= 1000 ? 'high' : totalContacted >= 500 ? 'medium' : totalContacted >= 100 ? 'low' : 'insufficient',
+    };
+
+    // Sort recommendations by projected revenue impact if available
+    const sortedRecommendations = [...aiRecommendations].sort((a, b) => {
+      // Parse revenue impact strings like "$20,000" to numbers
+      const parseRevenue = (r: AIRecommendation) => {
+        const impact = r.roiProjection?.projectedRevenueImpact || '0';
+        const num = parseInt(impact.replace(/[^0-9]/g, ''), 10);
+        return isNaN(num) ? 0 : num;
+      };
+      return parseRevenue(b) - parseRevenue(a);
+    });
+
     return Response.json({
       period: { days, campaignId },
 
@@ -227,7 +278,11 @@ Focus on:
         avgDealValue: (overallMetrics.avg_deal_value || 0) / 100,
       },
 
-      aiRecommendations,
+      // Recommendations sorted by ROI impact
+      aiRecommendations: sortedRecommendations,
+
+      // Data quality indicators
+      dataQuality,
 
       dataAnalyzed: {
         campaigns: templatePerformance.length,
@@ -235,6 +290,13 @@ Focus on:
         hourlyDataPoints: hourlyData.length,
         sources: sourceData.length,
       },
+
+      // Warning if insufficient data
+      warnings: dataQuality.confidenceLevel === 'insufficient'
+        ? ['Insufficient data for reliable insights. Need at least 100 contacts for basic analysis, 500 for A/B test conclusions.']
+        : dataQuality.confidenceLevel === 'low'
+          ? ['Low confidence - recommendations based on limited data. Results may vary.']
+          : [],
 
       generatedAt: new Date().toISOString(),
     });
@@ -253,16 +315,33 @@ function generateFallbackRecommendations(data: {
   regionalData: any[];
 }): AIRecommendation[] {
   const recommendations: AIRecommendation[] = [];
+  const avgDealValue = 10000; // Default assumption
+  const replyToContractRate = 0.05; // 5% of replies become contracts
+
+  // Helper to determine confidence
+  const getConfidence = (sampleSize: number, minNeeded: number = 100): 'high' | 'medium' | 'low' | 'insufficient' => {
+    if (sampleSize < minNeeded * 0.5) return 'insufficient';
+    if (sampleSize < minNeeded) return 'low';
+    if (sampleSize < minNeeded * 3) return 'medium';
+    return 'high';
+  };
 
   // Low response rate recommendation
   if (data.responseRate < 2) {
+    const currentReplies = Math.round(data.responseRate * data.totalContacted / 100);
+    const targetRate = 2.5;
+    const projectedReplies = Math.round(targetRate * data.totalContacted / 100);
+    const additionalReplies = projectedReplies - currentReplies;
+    const additionalDeals = Math.round(additionalReplies * replyToContractRate);
+    const revenueImpact = additionalDeals * avgDealValue;
+
     recommendations.push({
       category: 'messaging',
       priority: 'critical',
       title: 'Improve Message Response Rate',
       analysis: `Current ${data.responseRate.toFixed(2)}% response rate is below the 2% industry benchmark.`,
       specificAction: 'A/B test subject lines with urgency ("Regarding Your Property at [Address]") and personalization.',
-      expectedImpact: 'Improve response rate to 2.5% (+25% more replies)',
+      expectedImpact: `Improve response rate to ${targetRate}% (+${additionalReplies} replies, +${additionalDeals} deals)`,
       implementationSteps: [
         'Create 3 subject line variants',
         'Split next campaign 33/33/33',
@@ -270,18 +349,42 @@ function generateFallbackRecommendations(data: {
         'Scale winner to 100%',
       ],
       estimatedEffort: 'quick-win',
+      roiProjection: {
+        projectedAdditionalReplies: additionalReplies,
+        projectedAdditionalDeals: additionalDeals,
+        projectedRevenueImpact: `$${revenueImpact.toLocaleString()}`,
+        confidenceRange: {
+          low: `$${Math.round(revenueImpact * 0.7).toLocaleString()}`,
+          high: `$${Math.round(revenueImpact * 1.3).toLocaleString()}`,
+        },
+      },
+      confidence: getConfidence(data.totalContacted, 100),
+      sampleSize: data.totalContacted,
+      minSampleSizeNeeded: 100,
+      dataCitations: [
+        `Current: ${currentReplies} replies from ${data.totalContacted} contacts (${data.responseRate.toFixed(2)}%)`,
+        `Industry benchmark: 2.5% for motivated seller campaigns`,
+        `Avg deal value assumption: $${avgDealValue.toLocaleString()}`,
+      ],
     });
   }
 
   // Low interest conversion
   if (data.interestRate < 15 && data.responseRate >= 1) {
+    const currentReplies = Math.round(data.responseRate * data.totalContacted / 100);
+    const currentInterested = Math.round(data.interestRate * currentReplies / 100);
+    const targetInterestRate = 20;
+    const additionalInterested = Math.round(currentReplies * (targetInterestRate - data.interestRate) / 100);
+    const additionalDeals = Math.round(additionalInterested * 0.2); // 20% of interested become deals
+    const revenueImpact = additionalDeals * avgDealValue;
+
     recommendations.push({
       category: 'followup',
       priority: 'high',
       title: 'Speed Up Reply Response Time',
       analysis: `${data.interestRate.toFixed(2)}% of replies convert to interest. Faster response increases conversion.`,
       specificAction: 'Set up mobile alerts for inbound replies. Respond within 5 minutes during business hours.',
-      expectedImpact: 'Improve interest conversion to 20% (+33% more deals)',
+      expectedImpact: `Improve interest conversion to ${targetInterestRate}% (+${additionalInterested} interested leads)`,
       implementationSteps: [
         'Enable push notifications for reply alerts',
         'Create response templates for common scenarios',
@@ -289,6 +392,23 @@ function generateFallbackRecommendations(data: {
         'Queue auto-response for after-hours',
       ],
       estimatedEffort: 'moderate',
+      roiProjection: {
+        projectedAdditionalReplies: 0,
+        projectedAdditionalDeals: additionalDeals,
+        projectedRevenueImpact: `$${revenueImpact.toLocaleString()}`,
+        confidenceRange: {
+          low: `$${Math.round(revenueImpact * 0.6).toLocaleString()}`,
+          high: `$${Math.round(revenueImpact * 1.4).toLocaleString()}`,
+        },
+      },
+      confidence: getConfidence(currentReplies, 50),
+      sampleSize: currentReplies,
+      minSampleSizeNeeded: 50,
+      dataCitations: [
+        `Current: ${currentInterested} interested from ${currentReplies} replies (${data.interestRate.toFixed(2)}%)`,
+        `Target: ${targetInterestRate}% interest conversion`,
+        `Industry data: 5-minute response increases conversion 9x`,
+      ],
     });
   }
 
@@ -302,17 +422,20 @@ function generateFallbackRecommendations(data: {
     const best = sorted[0];
     const worst = sorted[sorted.length - 1];
 
-    if (best && worst) {
-      const bestRate = best.contacted > 0 ? (best.replied / best.contacted * 100).toFixed(1) : '0';
-      const worstRate = worst.contacted > 0 ? (worst.replied / worst.contacted * 100).toFixed(1) : '0';
+    if (best && worst && worst.contacted >= 20) {
+      const bestRate = best.contacted > 0 ? (best.replied / best.contacted * 100) : 0;
+      const worstRate = worst.contacted > 0 ? (worst.replied / worst.contacted * 100) : 0;
+      const additionalReplies = Math.round(worst.contacted * 0.3 * (bestRate - worstRate) / 100);
+      const additionalDeals = Math.round(additionalReplies * replyToContractRate);
+      const revenueImpact = additionalDeals * avgDealValue;
 
       recommendations.push({
         category: 'targeting',
         priority: 'medium',
         title: 'Optimize Regional Targeting',
-        analysis: `${best.state} (${bestRate}%) outperforms ${worst.state} (${worstRate}%).`,
+        analysis: `${best.state} (${bestRate.toFixed(1)}%) outperforms ${worst.state} (${worstRate.toFixed(1)}%).`,
         specificAction: `Shift 30% of ${worst.state} budget to ${best.state}. Test localized messaging for ${worst.state}.`,
-        expectedImpact: 'Improve overall response by 15-20%',
+        expectedImpact: `+${additionalReplies} replies by reallocating ${Math.round(worst.contacted * 0.3)} contacts`,
         implementationSteps: [
           `Reduce ${worst.state} daily cap by 30%`,
           `Increase ${best.state} daily cap by 30%`,
@@ -320,6 +443,23 @@ function generateFallbackRecommendations(data: {
           'Review after 2 weeks',
         ],
         estimatedEffort: 'quick-win',
+        roiProjection: {
+          projectedAdditionalReplies: additionalReplies,
+          projectedAdditionalDeals: additionalDeals,
+          projectedRevenueImpact: `$${revenueImpact.toLocaleString()}`,
+          confidenceRange: {
+            low: `$${Math.round(revenueImpact * 0.5).toLocaleString()}`,
+            high: `$${Math.round(revenueImpact * 1.5).toLocaleString()}`,
+          },
+        },
+        confidence: getConfidence(worst.contacted, 50),
+        sampleSize: worst.contacted,
+        minSampleSizeNeeded: 50,
+        dataCitations: [
+          `${best.state}: ${best.contacted} contacts, ${best.replied} replies (${bestRate.toFixed(1)}%)`,
+          `${worst.state}: ${worst.contacted} contacts, ${worst.replied} replies (${worstRate.toFixed(1)}%)`,
+          `Gap: ${(bestRate - worstRate).toFixed(1)} percentage points`,
+        ],
       });
     }
   }
@@ -340,8 +480,32 @@ function generateFallbackRecommendations(data: {
         'Target 200+ contacts/day',
       ],
       estimatedEffort: 'moderate',
+      roiProjection: {
+        projectedAdditionalReplies: Math.round((500 - data.totalContacted) * 0.025),
+        projectedAdditionalDeals: Math.round((500 - data.totalContacted) * 0.025 * replyToContractRate),
+        projectedRevenueImpact: `$${Math.round((500 - data.totalContacted) * 0.025 * replyToContractRate * avgDealValue).toLocaleString()}`,
+        confidenceRange: {
+          low: 'N/A - need more data',
+          high: 'N/A - need more data',
+        },
+      },
+      confidence: 'insufficient',
+      sampleSize: data.totalContacted,
+      minSampleSizeNeeded: 500,
+      dataCitations: [
+        `Current volume: ${data.totalContacted} contacts`,
+        `Minimum needed for reliable A/B tests: 500 per variant`,
+        `Cannot make data-driven decisions with current sample size`,
+      ],
     });
   }
 
-  return recommendations.slice(0, 4);
+  // Sort by projected revenue impact
+  return recommendations
+    .sort((a, b) => {
+      const aRev = parseInt((a.roiProjection?.projectedRevenueImpact || '0').replace(/[^0-9]/g, ''), 10) || 0;
+      const bRev = parseInt((b.roiProjection?.projectedRevenueImpact || '0').replace(/[^0-9]/g, ''), 10) || 0;
+      return bRev - aRev;
+    })
+    .slice(0, data.totalContacted >= 500 ? 6 : data.totalContacted >= 100 ? 4 : 2);
 }

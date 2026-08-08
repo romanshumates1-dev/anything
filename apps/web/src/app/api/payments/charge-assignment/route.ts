@@ -13,6 +13,8 @@ import {
   alertAssignmentFeePaid,
   alertPaymentFailed,
 } from '@/app/api/alerts/notification-engine';
+// [MEDIUM FIX] Import FEE_FLOOR_CENTS from single source of truth
+import { FEE_FLOOR_CENTS } from '@/app/api/utils/negotiationEngine';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
 
@@ -37,8 +39,7 @@ interface ChargeResult {
   receiptUrl?: string;
 }
 
-// Fee floor validation
-const FEE_FLOOR_CENTS = 500_000; // $5,000
+// [MEDIUM FIX] FEE_FLOOR_CENTS now imported from negotiationEngine.ts - no local redefinition
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();

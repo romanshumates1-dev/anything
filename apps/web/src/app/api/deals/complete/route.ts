@@ -168,12 +168,14 @@ export async function POST(req: NextRequest) {
         WHERE id = ${dealId}
       `;
 
-      // Record assignment
+      // [MEDIUM FIX] Schema correction: use lead_id not deal_id (matches buyer_assignments schema)
       if (buyerId) {
         await sql`
-          INSERT INTO buyer_assignments (id, deal_id, buyer_id, status, created_at)
+          INSERT INTO buyer_assignments (id, lead_id, buyer_id, status, created_at)
           VALUES (${crypto.randomUUID()}, ${dealId}, ${buyerId}, 'signed', NOW())
-          ON CONFLICT DO NOTHING
+          ON CONFLICT (lead_id, buyer_id) DO UPDATE SET
+            status = 'signed',
+            updated_at = NOW()
         `.catch(console.error);
       }
 
@@ -192,10 +194,10 @@ export async function POST(req: NextRequest) {
         WHERE id = ${dealId}
       `;
 
-      // Update assignment
+      // [MEDIUM FIX] Schema correction: use lead_id not deal_id
       await sql`
         UPDATE buyer_assignments SET status = 'confirmed', updated_at = NOW()
-        WHERE deal_id = ${dealId}
+        WHERE lead_id = ${dealId}
       `.catch(console.error);
 
       const summary = generateSimpleSummary(deal);

@@ -186,11 +186,14 @@ async function fetchWithRetry(
   throw new Error('Max retries exceeded');
 }
 
-export async function checkRobotsTxt(baseUrl: string): Promise<{ allowed: boolean; crawlDelay?: number }> {
+export async function checkRobotsTxt(baseUrl: string): Promise<{ allowed: boolean; crawlDelay?: number; reason?: string }> {
   try {
     const robotsUrl = new URL('/robots.txt', baseUrl).toString();
     const response = await fetch(robotsUrl);
-    if (!response.ok) return { allowed: true };
+    // Fail-closed for compliance: if robots.txt is unavailable, deny access
+    if (!response.ok) {
+      return { allowed: false, reason: 'robots.txt unavailable or returned error status' };
+    }
 
     const text = await response.text();
     const lines = text.split('\n');
@@ -208,7 +211,7 @@ export async function checkRobotsTxt(baseUrl: string): Promise<{ allowed: boolea
 
       if (inUserAgentBlock) {
         if (trimmed.startsWith('disallow: /')) {
-          return { allowed: false };
+          return { allowed: false, reason: 'Disallowed by robots.txt' };
         }
         if (trimmed.startsWith('crawl-delay:')) {
           crawlDelay = parseInt(trimmed.replace('crawl-delay:', '').trim(), 10);
@@ -217,8 +220,9 @@ export async function checkRobotsTxt(baseUrl: string): Promise<{ allowed: boolea
     }
 
     return { allowed: true, crawlDelay };
-  } catch {
-    return { allowed: true };
+  } catch (err: any) {
+    // Fail-closed: network errors or parsing issues should deny access for compliance
+    return { allowed: false, reason: `robots.txt check failed: ${err?.message || 'unknown error'}` };
   }
 }
 

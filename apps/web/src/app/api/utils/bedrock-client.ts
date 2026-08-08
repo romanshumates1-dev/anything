@@ -49,24 +49,41 @@ const MODEL_ALIASES: Record<string, string> = {
   // Already-correct Bedrock IDs (with us. prefix) pass through
 };
 
-/** Resolve a model name/alias to the correct Bedrock model ID */
-function resolveModelId(input: string): string {
-  // If it's already a full Bedrock ID (starts with anthropic. or us.anthropic.), use as-is
-  if (input.startsWith('anthropic.') || input.startsWith('us.anthropic.')) return input;
+/** Models that trigger a fallback warning because they're not available on Bedrock */
+const FALLBACK_MODELS = new Set(['claude-fable-5', 'fable-5']);
 
-  // Check aliases
-  const alias = MODEL_ALIASES[input.toLowerCase()];
-  if (alias) return alias;
+/** Resolve a model name/alias to the correct Bedrock model ID */
+function resolveModelId(input: string): { modelId: string; wasFallback: boolean; originalModel?: string } {
+  // If it's already a full Bedrock ID (starts with anthropic. or us.anthropic.), use as-is
+  if (input.startsWith('anthropic.') || input.startsWith('us.anthropic.')) {
+    return { modelId: input, wasFallback: false };
+  }
+
+  const lowerInput = input.toLowerCase();
+
+  // Check if this is a model that requires fallback (e.g., Fable not on Bedrock)
+  if (FALLBACK_MODELS.has(lowerInput)) {
+    const alias = MODEL_ALIASES[lowerInput];
+    console.warn(
+      `[Bedrock] Model "${input}" is not available on Bedrock, using claude-3-5-sonnet as fallback. ` +
+      `This may result in different behavior or costs than expected.`
+    );
+    return { modelId: alias, wasFallback: true, originalModel: input };
+  }
+
+  // Check other aliases
+  const alias = MODEL_ALIASES[lowerInput];
+  if (alias) return { modelId: alias, wasFallback: false };
 
   // If it looks like a bare model name, try to construct Bedrock ID
   if (input.includes('claude')) {
     // Default to haiku for cost efficiency (use us. prefix for cross-region)
     console.warn(`[Bedrock] Unknown model "${input}", defaulting to claude-haiku-4-5`);
-    return 'us.anthropic.claude-haiku-4-5-20251001-v1:0';
+    return { modelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', wasFallback: true, originalModel: input };
   }
 
   // Pass through as-is (let Bedrock reject it with a clear error)
-  return input;
+  return { modelId: input, wasFallback: false };
 }
 
 export interface BedrockConfig {
@@ -137,13 +154,13 @@ export async function callBedrock(
   }));
 
   // Resolve model aliases (e.g., "fable-5" -> actual Bedrock ID)
-  const resolvedModelId = resolveModelId(cfg.modelId);
-  if (resolvedModelId !== cfg.modelId) {
-    console.log(`[Bedrock] Resolved model "${cfg.modelId}" -> "${resolvedModelId}"`);
+  const resolved = resolveModelId(cfg.modelId);
+  if (resolved.modelId !== cfg.modelId) {
+    console.log(`[Bedrock] Resolved model "${cfg.modelId}" -> "${resolved.modelId}"`);
   }
 
   const command = new ConverseCommand({
-    modelId: resolvedModelId,
+    modelId: resolved.modelId,
     messages,
     system: options.system ? [{ text: options.system }] : undefined,
     inferenceConfig: {
@@ -163,7 +180,7 @@ export async function callBedrock(
         ? ' — check: 1) model is enabled in Bedrock console, 2) region matches, 3) IAM has bedrock:InvokeModel permission'
         : '';
     throw new AnthropicClientError(
-      `Bedrock error${status ? ` [${status}]` : ''} for model ${resolvedModelId}${hint}: ${error?.message ?? String(error)}`,
+      `Bedrock error${status ? ` [${status}]` : ''} for model ${resolved.modelId}${hint}: ${error?.message ?? String(error)}`,
       status,
       retryable,
       error,
@@ -188,7 +205,7 @@ export async function callBedrock(
     text,
     contentBlocks: raw ? blocks.filter((b: any) => typeof b?.text === 'string').map((b: any) => ({ type: 'text' as const, text: b.text! })) : [],
     stopReason: response.stopReason ?? 'end_turn',
-    model: resolvedModelId,
+    model: resolved.modelId,
     usage: {
       input_tokens: response.usage?.inputTokens ?? 0,
       output_tokens: response.usage?.outputTokens ?? 0,

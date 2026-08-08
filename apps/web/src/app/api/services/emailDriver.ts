@@ -201,10 +201,19 @@ export async function send(params: EmailParams): Promise<SendResult> {
   };
 
   // Add providers in priority order (primary first, then fallbacks)
-  if (provider === 'ses' || process.env.AWS_ACCESS_KEY_ID) addProvider('ses', sendWithSES, true);
-  if (provider === 'sendgrid' || process.env.SENDGRID_API_KEY) addProvider('sendgrid', sendWithSendGrid, provider !== 'sendgrid');
-  if (provider === 'resend' || process.env.RESEND_API_KEY) addProvider('resend', sendWithResend, provider !== 'resend');
-  if (provider === 'smtp' || (process.env.SMTP_HOST && process.env.SMTP_PASS)) addProvider('smtp', sendWithSMTP, provider !== 'smtp');
+  // FIX: Removed inverted logic that skipped primary providers. Each provider is added
+  // if it's explicitly selected OR if credentials exist (for fallback chain).
+  if (provider === 'ses') addProvider('ses', sendWithSES, true);
+  else if (process.env.AWS_ACCESS_KEY_ID) addProvider('ses', sendWithSES, true);
+
+  if (provider === 'sendgrid') addProvider('sendgrid', sendWithSendGrid, true);
+  else if (process.env.SENDGRID_API_KEY) addProvider('sendgrid', sendWithSendGrid, true);
+
+  if (provider === 'resend') addProvider('resend', sendWithResend, true);
+  else if (process.env.RESEND_API_KEY) addProvider('resend', sendWithResend, true);
+
+  if (provider === 'smtp') addProvider('smtp', sendWithSMTP, true);
+  else if (process.env.SMTP_HOST && process.env.SMTP_PASS) addProvider('smtp', sendWithSMTP, true);
 
   // Always have mock as final fallback in dev
   if (fallbackChain.length === 0 || process.env.NODE_ENV !== 'production') {

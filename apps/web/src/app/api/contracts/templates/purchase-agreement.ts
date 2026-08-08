@@ -391,6 +391,7 @@ Title: ____________________________________
 
 /**
  * Convert number to words for contract display
+ * Fixed: use separate 'remaining' variable to avoid shadowing parameter
  */
 function numberToWords(num: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
@@ -400,34 +401,34 @@ function numberToWords(num: number): string {
   if (num === 0) return 'Zero';
   if (num < 0) return 'Negative ' + numberToWords(Math.abs(num));
 
-  const intPart = Math.floor(num);
+  let remaining = Math.floor(num);
   let words = '';
 
-  if (intPart >= 1000000) {
-    words += numberToWords(Math.floor(intPart / 1000000)) + ' Million ';
-    num = intPart % 1000000;
+  if (remaining >= 1000000) {
+    words += numberToWords(Math.floor(remaining / 1000000)) + ' Million ';
+    remaining = remaining % 1000000;
   }
 
-  if (num >= 1000) {
-    words += numberToWords(Math.floor(num / 1000)) + ' Thousand ';
-    num = num % 1000;
+  if (remaining >= 1000) {
+    words += numberToWords(Math.floor(remaining / 1000)) + ' Thousand ';
+    remaining = remaining % 1000;
   }
 
-  if (num >= 100) {
-    words += ones[Math.floor(num / 100)] + ' Hundred ';
-    num = num % 100;
+  if (remaining >= 100) {
+    words += ones[Math.floor(remaining / 100)] + ' Hundred ';
+    remaining = remaining % 100;
   }
 
-  if (num >= 20) {
-    words += tens[Math.floor(num / 10)] + ' ';
-    num = num % 10;
-  } else if (num >= 10) {
-    words += teens[num - 10] + ' ';
-    num = 0;
+  if (remaining >= 20) {
+    words += tens[Math.floor(remaining / 10)] + ' ';
+    remaining = remaining % 10;
+  } else if (remaining >= 10) {
+    words += teens[remaining - 10] + ' ';
+    remaining = 0;
   }
 
-  if (num > 0) {
-    words += ones[num] + ' ';
+  if (remaining > 0) {
+    words += ones[remaining] + ' ';
   }
 
   return words.trim();

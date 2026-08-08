@@ -249,31 +249,38 @@ export async function POST(req: NextRequest) {
     // Generate the contract
     const contract = generateContract(dealData, type);
 
-    // Store the contract in database
-    const contractRecord = await sql`
-      INSERT INTO contracts (
-        id, organization_id, lead_id, type, status, content,
-        regional_addendum, state, disclosures, variables, generated_at
-      )
-      VALUES (
-        ${contract.contractId},
-        ${organization.id},
-        ${dealId},
-        ${type},
-        ${contract.status},
-        ${contract.content},
-        ${contract.regionalAddendum || null},
-        ${contract.state},
-        ${JSON.stringify(contract.disclosures)},
-        ${JSON.stringify(contract.variables)},
-        ${contract.generatedAt}
-      )
-      RETURNING id, status, generated_at
-    `.catch(async (err) => {
-      // If table doesn't exist, just log and continue
-      console.warn('[CONTRACTS] Could not store contract in database:', err.message);
-      return [{ id: contract.contractId, status: contract.status, generated_at: contract.generatedAt }];
-    });
+    // Store the contract in database - failure is an error, not silently ignored
+    let contractRecord;
+    try {
+      contractRecord = await sql`
+        INSERT INTO contracts (
+          id, organization_id, lead_id, type, status, content,
+          regional_addendum, state, disclosures, variables, generated_at
+        )
+        VALUES (
+          ${contract.contractId},
+          ${organization.id},
+          ${dealId},
+          ${type},
+          ${contract.status},
+          ${contract.content},
+          ${contract.regionalAddendum || null},
+          ${contract.state},
+          ${JSON.stringify(contract.disclosures)},
+          ${JSON.stringify(contract.variables)},
+          ${contract.generatedAt}
+        )
+        RETURNING id, status, generated_at
+      `;
+
+      if (!contractRecord || contractRecord.length === 0) {
+        console.error('[CONTRACTS] Contract INSERT returned no rows');
+        return Response.json({ error: 'Failed to save contract to database' }, { status: 500 });
+      }
+    } catch (err: any) {
+      console.error('[CONTRACTS] Failed to store contract in database:', err.message);
+      return Response.json({ error: 'Failed to save contract to database' }, { status: 500 });
+    }
 
     // Log the event
     await logEvent('contract_generated', 'contract', contract.contractId, {

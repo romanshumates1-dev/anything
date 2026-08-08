@@ -341,6 +341,14 @@ export async function processNextJob() {
         });
         break;
       }
+      case 'vip_window_expired': {
+        // [REVENUE OPTIMIZATION] Notify non-VIP buyers after VIP exclusivity window expires
+        // This job is scheduled when VIP buyers are notified and fires after 2 hours
+        const payload: any = job.payload;
+        const { notifyNonVipBuyers } = await import('./vipWindowHandler');
+        await notifyNonVipBuyers(payload.dealId, payload.organizationId);
+        break;
+      }
       default:
         throw new Error(`Unknown job type: ${job.type}`);
     }

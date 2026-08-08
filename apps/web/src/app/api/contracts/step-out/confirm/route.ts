@@ -83,15 +83,20 @@ export async function GET(req: NextRequest) {
       WHERE id = ${request.id}
     `;
 
-    // Update contract status
-    await sql`
-      UPDATE contracts
-      SET status = 'CANCELLED',
-          cancelled_at = now(),
-          cancelled_by = ${party},
-          cancelled_reason = ${request.reason || 'Step-out during inspection period'}
-      WHERE id = ${contract.id}
-    `;
+    // Update contract status based on who stepped out
+    // Seller step-out = CANCELLED (deal is dead)
+    // Buyer step-out = PENDING_BUYER (can find replacement buyer)
+    if (party === 'seller') {
+      await sql`
+        UPDATE contracts
+        SET status = 'CANCELLED',
+            cancelled_at = now(),
+            cancelled_by = ${party},
+            cancelled_reason = ${request.reason || 'Step-out during inspection period'}
+        WHERE id = ${contract.id}
+      `;
+    }
+    // Note: buyer step-out updates status to PENDING_BUYER below after finding replacement job is queued
 
     // Send appropriate emails based on who stepped out
     if (party === 'seller') {

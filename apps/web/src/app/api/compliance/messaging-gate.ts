@@ -20,6 +20,8 @@ import {
   validateQuietHoursWithTimezone,
   injectDisclosures,
   checkDNC,
+  calculateBestSendTime,
+  getMultiTouchStatus,
 } from './regional-messaging/engine';
 import type {
   Channel,
@@ -57,6 +59,20 @@ export interface MessagingGateResponse extends MessageGateResult {
   disclosuresAdded?: string[];
   /** Warnings that don't block but should be noted */
   warnings?: string[];
+  /** Compliance score (0-100) indicating how close to frequency limits */
+  complianceScore?: number;
+  /** Best send time recommendation for optimal engagement */
+  bestSendTime?: {
+    time: Date;
+    reason: string;
+    isOptimalWindow: boolean;
+  };
+  /** Multi-touch status for sequence tracking */
+  multiTouch?: {
+    touchesRemaining: number;
+    optimalNextTouch: Date | null;
+    recommendations: string[];
+  };
 }
 
 /**
@@ -94,12 +110,42 @@ export async function check(
 
   // 2. Check quiet hours (unless skipped for transactional messages)
   if (!skipQuietHours) {
+    // Check for California distressed property stricter quiet hours (8pm vs 9pm)
+    let effectiveEndHour: number | null = null;
+    if (region.state === 'CA' && context.isDistressedProperty && rules.stateSpecific?.distressedPropertyQuietHours) {
+      effectiveEndHour = rules.stateSpecific.distressedPropertyQuietHours.endHour;
+    }
+
     const quietHoursResult = validateQuietHoursWithTimezone(
       region.state,
       channel,
       region.timezone,
       timestamp
     );
+
+    // Additional check for distressed property stricter hours
+    if (effectiveEndHour !== null && channel !== 'email') {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: region.timezone,
+        hour: 'numeric',
+        hour12: false,
+      });
+      const hourStr = formatter.format(timestamp);
+      const hour = parseInt(hourStr, 10) === 24 ? 0 : parseInt(hourStr, 10);
+
+      if (hour >= effectiveEndHour) {
+        return {
+          allowed: false,
+          blocked: true,
+          reason: `California distressed property communications: not allowed at or after ${effectiveEndHour > 12 ? effectiveEndHour - 12 : effectiveEndHour}:00 PM (CalDRE requirement)`,
+          retryAt: quietHoursResult.nextAllowedTime,
+          region: {
+            state: region.state,
+            timezone: region.timezone,
+          },
+        };
+      }
+    }
 
     if (!quietHoursResult.allowed) {
       return {
@@ -123,6 +169,30 @@ export async function check(
         allowed: false,
         blocked: true,
         reason: dncResult.reason || 'Phone is on Do-Not-Call registry',
+        region: {
+          state: region.state,
+          timezone: region.timezone,
+        },
+      };
+    }
+  }
+
+  // 3b. Check email suppression (internal opt-outs) for email channel
+  // While email uses CAN-SPAM opt-out model, internal opt-out suppression must still be honored
+  if (!skipDncCheck && channel === 'email' && recipient.email) {
+    const sql = (await import('@/app/api/utils/sql')).default;
+    const [emailOptOut] = await sql`
+      SELECT 1 FROM compliance_records
+      WHERE target = ${recipient.email}
+      AND type = 'opt-out'
+      LIMIT 1
+    `.catch(() => [null]);
+
+    if (emailOptOut) {
+      return {
+        allowed: false,
+        blocked: true,
+        reason: 'Recipient has opted out of email communications',
         region: {
           state: region.state,
           timezone: region.timezone,
@@ -188,6 +258,18 @@ export async function check(
     warnings.push(`${region.state || 'Federal'}: Prior express written consent required for cold ${channel}`);
   }
 
+  // 7. Calculate optimal send time and multi-touch status for revenue optimization
+  const bestSendTimeResult = calculateBestSendTime(region.state, channel, timestamp);
+  let multiTouchStatus = null;
+  if (channel !== 'email' && recipient.phone) {
+    try {
+      multiTouchStatus = await getMultiTouchStatus(recipient.phone, channel, region.state);
+    } catch (e) {
+      // Non-fatal: multi-touch tracking is advisory
+      console.warn('[MessagingGate] Multi-touch status unavailable:', e);
+    }
+  }
+
   return {
     allowed: true,
     message: finalMessage,
@@ -198,6 +280,17 @@ export async function check(
     },
     disclosuresAdded: disclosuresAdded.length > 0 ? disclosuresAdded : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
+    complianceScore: multiTouchStatus?.complianceScore,
+    bestSendTime: {
+      time: bestSendTimeResult.bestTime,
+      reason: bestSendTimeResult.reason,
+      isOptimalWindow: bestSendTimeResult.isOptimalWindow,
+    },
+    multiTouch: multiTouchStatus ? {
+      touchesRemaining: multiTouchStatus.touchesRemaining,
+      optimalNextTouch: multiTouchStatus.optimalNextTouch,
+      recommendations: multiTouchStatus.recommendations,
+    } : undefined,
   };
 }
 

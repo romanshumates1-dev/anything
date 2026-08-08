@@ -145,32 +145,75 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       endpoint,
     };
 
-    let inserted = 0;
-    let dbDupes = 0;
-    for (const r of unique) {
+    // Batch INSERT optimization: use unnest() instead of single-row loops
+    // This reduces round-trip overhead from O(n) to O(1), critical for 10K+ lead campaigns
+    // PostgreSQL unnest batch inserts: 1000 leads = 1 round trip vs 1000 round trips
+
+    // Pre-compute scores and prepare batch data
+    const batchData = unique.map(r => {
       const { score, reasons } = scoreSourcedLead({
         signals: r.signals,
         assessedValueCents: r.assessedValueCents,
         sourceWeight: Number(source.distress_weight) || 50,
       });
-      // Same source-scoped dedupe key as /upload, so a record ingested by hand
-      // and then re-fetched automatically collapses to one row instead of
-      // duplicating the operator's inventory.
       const scopedKey = `${sourceId}|${r.dedupeKey}`;
-      const rows = await sql`
+      return {
+        sourceId,
+        category,
+        ownerName: r.ownerName,
+        propertyAddress: r.propertyAddress,
+        mailingAddress: r.mailingAddress,
+        parcelId: r.parcelId,
+        recordType: source.record_type,
+        county: r.county,
+        assessedValueCents: r.assessedValueCents,
+        signals: JSON.stringify(r.signals),
+        rawFields: JSON.stringify(r.rawFields),
+        provenance: JSON.stringify(provenanceBase),
+        score,
+        reasons: JSON.stringify(reasons),
+        scopedKey,
+        createdBy: admin.userId,
+      };
+    });
+
+    let inserted = 0;
+    let dbDupes = 0;
+
+    // Process in chunks of 500 for memory efficiency while still batching
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < batchData.length; i += BATCH_SIZE) {
+      const chunk = batchData.slice(i, i + BATCH_SIZE);
+
+      // Use unnest for batch insert - much faster than individual INSERTs
+      const result = await sql`
         INSERT INTO sourced_leads
           (source_id, category, owner_name, property_address, mailing_address, parcel_id, record_type, county,
            assessed_value_cents, signals, raw_fields, provenance, distress_score, score_reasons, dedupe_key, created_by)
-        VALUES
-          (${sourceId}, ${category}, ${r.ownerName}, ${r.propertyAddress}, ${r.mailingAddress}, ${r.parcelId},
-           ${source.record_type}, ${r.county}, ${r.assessedValueCents},
-           ${JSON.stringify(r.signals)}, ${JSON.stringify(r.rawFields)}, ${JSON.stringify(provenanceBase)},
-           ${score}, ${JSON.stringify(reasons)}, ${scopedKey}, ${admin.userId})
+        SELECT * FROM unnest(
+          ${chunk.map(r => r.sourceId)}::int[],
+          ${chunk.map(r => r.category)}::text[],
+          ${chunk.map(r => r.ownerName)}::text[],
+          ${chunk.map(r => r.propertyAddress)}::text[],
+          ${chunk.map(r => r.mailingAddress)}::text[],
+          ${chunk.map(r => r.parcelId)}::text[],
+          ${chunk.map(r => r.recordType)}::text[],
+          ${chunk.map(r => r.county)}::text[],
+          ${chunk.map(r => r.assessedValueCents)}::int[],
+          ${chunk.map(r => r.signals)}::jsonb[],
+          ${chunk.map(r => r.rawFields)}::jsonb[],
+          ${chunk.map(r => r.provenance)}::jsonb[],
+          ${chunk.map(r => r.score)}::int[],
+          ${chunk.map(r => r.reasons)}::jsonb[],
+          ${chunk.map(r => r.scopedKey)}::text[],
+          ${chunk.map(r => r.createdBy)}::text[]
+        )
         ON CONFLICT (dedupe_key) DO NOTHING
         RETURNING id
       `;
-      if (rows.length > 0) inserted++;
-      else dbDupes++;
+
+      inserted += result.length;
+      dbDupes += chunk.length - result.length;
     }
 
     await sql`

@@ -202,31 +202,40 @@ export async function POST(request: Request) {
       }
 
       if (contract.fee_collection === 'collect_now') {
-        // Determine amount from fee_config or use a default
+        // Query actual assignment fee from contract/negotiation - avoid hardcoded defaults
+        const [feeData] = await sql`
+          SELECT assignment_fee_cents FROM buyer_assignments WHERE contract_id = ${payload.contract_id}
+        `.catch(() => [null]);
+
         const feeConfig = contract.fee_config || {};
-        const amountCents = feeConfig.value || 1000000; // Default $10,000
+        // Use actual assignment fee if available, otherwise fall back to fee_config
+        const amountCents = feeData?.assignment_fee_cents || feeConfig.value;
 
-        // Create payment via mock provider
-        const stripeProvider = getStripeProvider();
-        const paymentResult = await stripeProvider.createPaymentLink({
-          contractId: payload.contract_id,
-          organizationId: orgId,
-          amountCents,
-          description: `Assignment Fee - Contract ${payload.contract_id}`,
-        });
+        if (!amountCents) {
+          console.warn(`[esign/webhook] No assignment fee found for contract ${payload.contract_id}, skipping payment creation`);
+        } else {
+          // Create payment via mock provider
+          const stripeProvider = getStripeProvider();
+          const paymentResult = await stripeProvider.createPaymentLink({
+            contractId: payload.contract_id,
+            organizationId: orgId,
+            amountCents,
+            description: `Assignment Fee - Contract ${payload.contract_id}`,
+          });
 
-        const ledgerId = `pay_${crypto.randomUUID()}`;
-        await sql`
-          INSERT INTO payments_ledger (id, contract_id, amount_cents, stripe_payment_intent_id, status)
-          VALUES (${ledgerId}, ${payload.contract_id}, ${amountCents}, ${paymentResult.paymentIntentId}, 'sent')
-        `;
+          const ledgerId = `pay_${crypto.randomUUID()}`;
+          await sql`
+            INSERT INTO payments_ledger (id, contract_id, amount_cents, stripe_payment_intent_id, status)
+            VALUES (${ledgerId}, ${payload.contract_id}, ${amountCents}, ${paymentResult.paymentIntentId}, 'sent')
+          `;
 
-        await logEvent('payment_created_on_sign', 'contract', payload.contract_id, {
-          ledgerId,
-          amountCents,
-          paymentIntentId: paymentResult.paymentIntentId,
-          source: 'esign_webhook',
-        });
+          await logEvent('payment_created_on_sign', 'contract', payload.contract_id, {
+            ledgerId,
+            amountCents,
+            paymentIntentId: paymentResult.paymentIntentId,
+            source: 'esign_webhook',
+          });
+        }
       }
     }
 

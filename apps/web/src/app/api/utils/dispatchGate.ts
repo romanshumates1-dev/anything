@@ -94,6 +94,37 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
+/**
+ * PREFERRED_HOURS for optimal response rates (not just compliance).
+ * Research: Tue-Thu 10am-2pm local time has 23% higher open rates.
+ * Use for non-cadence sends to optimize for engagement, not just compliance.
+ */
+export const PREFERRED_HOURS = { startHour: 10, endHour: 14 } as const;
+export const PREFERRED_DAYS = [2, 3, 4] as const; // Tue, Wed, Thu (0=Sun)
+
+/**
+ * State-specific quiet hours that are STRICTER than federal.
+ * These override the federal 9pm cutoff when lead state is known.
+ * Violations can result in significant penalties per violation.
+ *
+ * TCPA compliance: Federal floor is 8am-9pm, but state laws can be stricter.
+ * Impact: Avoid potential state-level TCPA violations ($500-$1500 per violation).
+ */
+export const STATE_QUIET_HOURS: Record<string, { startHour: number; endHour: number }> = {
+  FL: { startHour: 8, endHour: 20 }, // Florida Telemarketing Act: 8am-8pm ($10k/violation)
+  OR: { startHour: 9, endHour: 20 }, // Oregon: 9am-8pm (stricter than federal)
+  WA: { startHour: 9, endHour: 20 }, // Washington: 9am-8pm
+  CT: { startHour: 9, endHour: 21 }, // Connecticut: 9am-9pm (stricter start)
+  IN: { startHour: 9, endHour: 20 }, // Indiana: 9am-8pm
+  KY: { startHour: 10, endHour: 21 }, // Kentucky: 10am-9pm (late start)
+  LA: { startHour: 8, endHour: 20 }, // Louisiana: 8am-8pm
+  ME: { startHour: 9, endHour: 20 }, // Maine: 9am-8pm
+  NY: { startHour: 9, endHour: 21 }, // New York: 9am-9pm (stricter start)
+  PA: { startHour: 9, endHour: 21 }, // Pennsylvania: 9am-9pm (stricter start)
+  TX: { startHour: 9, endHour: 21 }, // Texas: 9am-9pm (stricter start)
+  WY: { startHour: 9, endHour: 20 }, // Wyoming: 9am-8pm
+};
+
 export type DenyCode =
   | 'DNC'              // internal opt-out (someone texted STOP to us) — absolute
   | 'DNC_REGISTRY'     // on the federal/state Do-Not-Call registry
@@ -207,9 +238,27 @@ function inRange(h: number, startHour: number, endHour: number): boolean {
   return h >= startHour && h < endHour;
 }
 
-/** Quiet hours pass ONLY if legal in every candidate zone (most restrictive). */
-export function isWithinQuietHours(tzs: string[], at: Date): boolean {
-  return tzs.every((tz) => inRange(localHourIn(tz, at), QUIET_HOURS.startHour, QUIET_HOURS.endHour));
+/**
+ * Quiet hours pass ONLY if legal in every candidate zone (most restrictive).
+ * Optionally applies state-specific hours when lead state is known.
+ */
+export function isWithinQuietHours(tzs: string[], at: Date, leadState?: string): boolean {
+  // Use state-specific quiet hours if stricter than federal
+  const quietHours = leadState && STATE_QUIET_HOURS[leadState]
+    ? STATE_QUIET_HOURS[leadState]
+    : QUIET_HOURS;
+
+  return tzs.every((tz) => inRange(localHourIn(tz, at), quietHours.startHour, quietHours.endHour));
+}
+
+/**
+ * Get the effective quiet hours for a lead, considering state-specific rules.
+ */
+export function getEffectiveQuietHours(leadState?: string): { startHour: number; endHour: number } {
+  if (leadState && STATE_QUIET_HOURS[leadState]) {
+    return STATE_QUIET_HOURS[leadState];
+  }
+  return QUIET_HOURS;
 }
 
 /** Send window pass ONLY if inside a window in every candidate zone. */
@@ -463,13 +512,20 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
     const skipTimeGates = process.env.DISPATCH_SKIP_QUIET_HOURS === '1';
 
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
+    // FIX: Now uses state-specific quiet hours when lead state is known.
+    // Florida Telemarketing Act: 8am-8pm = $10k/violation if breached.
     // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
     if (req.transactional || skipTimeGates) {
       return { allow: true, timezones: tzs };
     }
-    if (!isWithinQuietHours(tzs, at)) {
-      const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d)) ?? undefined;
-      return { allow: false, code: 'QUIET_HOURS', reason: 'Outside 8am-9pm lead-local', retryAt, timezones: tzs };
+    const leadState = req.leadMetadata?.state as string | undefined;
+    const effectiveHours = getEffectiveQuietHours(leadState);
+    if (!isWithinQuietHours(tzs, at, leadState)) {
+      const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d, leadState)) ?? undefined;
+      const stateNote = leadState && STATE_QUIET_HOURS[leadState]
+        ? ` (${leadState} stricter: ${effectiveHours.startHour}am-${effectiveHours.endHour > 12 ? effectiveHours.endHour - 12 : effectiveHours.endHour}pm)`
+        : '';
+      return { allow: false, code: 'QUIET_HOURS', reason: `Outside ${effectiveHours.startHour}am-${effectiveHours.endHour > 12 ? effectiveHours.endHour - 12 : effectiveHours.endHour}pm lead-local${stateNote}`, retryAt, timezones: tzs };
     }
 
     // 5. Send-window snapping — cadence steps only.

@@ -153,7 +153,7 @@ export function validateFloridaQuietHours(
   if (hour < hours.startHour || hour >= hours.endHour) {
     return {
       allowed: false,
-      reason: `Florida Telemarketing Act: sending not allowed before ${hours.startHour}:00 AM or after ${hours.endHour - 12}:00 PM Eastern Time (stricter than federal 9pm cutoff)`,
+      reason: `Florida Telemarketing Act: sending not allowed before ${hours.startHour}:00 AM or at/after ${hours.endHour > 12 ? hours.endHour - 12 : hours.endHour}:00 PM Eastern Time (stricter than federal 9pm cutoff)`,
       nextAllowedTime: calculateNextAllowedFlorida(hours.startHour, timestamp),
     };
   }

@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
 
     // Store pending step-out request
+    // Note: step_out_requests table created via migration 056_step_out_requests.sql
     await sql`
       INSERT INTO step_out_requests (
         id, organization_id, contract_id, party, reason,
@@ -100,32 +101,7 @@ export async function POST(req: NextRequest) {
         ${crypto.randomUUID()}, ${organization.id}, ${contractId}, ${party},
         ${reason || null}, ${confirmationToken}, ${expiresAt}, 'pending', now()
       )
-    `.catch(async () => {
-      // Table might not exist, create it
-      await sql`
-        CREATE TABLE IF NOT EXISTS step_out_requests (
-          id TEXT PRIMARY KEY,
-          organization_id TEXT NOT NULL,
-          contract_id TEXT NOT NULL,
-          party TEXT NOT NULL,
-          reason TEXT,
-          confirmation_token TEXT NOT NULL,
-          expires_at TIMESTAMPTZ NOT NULL,
-          status TEXT DEFAULT 'pending',
-          confirmed_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ DEFAULT now()
-        )
-      `;
-      await sql`
-        INSERT INTO step_out_requests (
-          id, organization_id, contract_id, party, reason,
-          confirmation_token, expires_at, status, created_at
-        ) VALUES (
-          ${crypto.randomUUID()}, ${organization.id}, ${contractId}, ${party},
-          ${reason || null}, ${confirmationToken}, ${expiresAt}, 'pending', now()
-        )
-      `;
-    });
+    `;
 
     // Send confirmation email
     const email = generateStepOutConfirmationEmail({

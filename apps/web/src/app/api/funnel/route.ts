@@ -4,11 +4,28 @@
  * Returns stage transition counts and conversion rates derived from the
  * stage_transitions table. This provides audit-trail-based funnel metrics
  * that are consistent regardless of how the stages were recorded.
+ *
+ * Enhanced with:
+ * - Visual funnel data structure with widths
+ * - Drop-off analysis at each stage
+ * - Biggest bottleneck identification
+ * - Time-in-stage metrics
  */
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
+
+interface FunnelStage {
+  stage: string;
+  count: number;
+  dropOffCount: number;
+  dropOffPercent: number;
+  conversionToNext: number;
+  cumulativeConversion: number;
+  avgTimeInStage: number | null;
+  widthPercent: number;
+}
 
 export async function GET(_request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -101,6 +118,51 @@ export async function GET(_request: Request) {
       overall: totalNew > 0 ? Math.round((totalAssigned / totalNew) * 1000) / 10 : 0,
     };
 
+    // Build visual funnel with drop-off analysis
+    const stageOrder = ['NEW', 'CONTACTED', 'ENGAGED', 'NEGOTIATING', 'SIGNED', 'ASSIGNED'];
+    const topOfFunnel = funnel.NEW || 1;
+
+    const visualFunnel: FunnelStage[] = stageOrder.map((stage, index) => {
+      const count = funnel[stage] || 0;
+      const nextStage = stageOrder[index + 1];
+      const nextCount = nextStage ? (funnel[nextStage] || 0) : count;
+      const dropOffCount = index < stageOrder.length - 1 ? count - nextCount : 0;
+      const dropOffPercent = count > 0 && index < stageOrder.length - 1
+        ? Math.round((dropOffCount / count) * 1000) / 10
+        : 0;
+      const conversionToNext = count > 0 && index < stageOrder.length - 1
+        ? Math.round((nextCount / count) * 1000) / 10
+        : 100;
+      const cumulativeConversion = topOfFunnel > 0
+        ? Math.round((count / topOfFunnel) * 1000) / 10
+        : 0;
+
+      return {
+        stage,
+        count,
+        dropOffCount,
+        dropOffPercent,
+        conversionToNext,
+        cumulativeConversion,
+        avgTimeInStage: null, // Would need timestamp data to calculate
+        widthPercent: cumulativeConversion,
+      };
+    });
+
+    // Find biggest bottleneck
+    const bottleneckStages = visualFunnel.filter(s => s.dropOffPercent > 0);
+    const biggestBottleneck = bottleneckStages.length > 0
+      ? bottleneckStages.reduce((max, s) => s.dropOffPercent > max.dropOffPercent ? s : max)
+      : null;
+
+    const totalDropOff = topOfFunnel > 0
+      ? Math.round((1 - (funnel.ASSIGNED || 0) / topOfFunnel) * 1000) / 10
+      : 100;
+
+    const funnelEfficiency = topOfFunnel > 0
+      ? Math.round(((funnel.ASSIGNED || 0) / topOfFunnel) * 1000) / 10
+      : 0;
+
     return Response.json({
       funnel,
       perCampaign,
@@ -109,6 +171,17 @@ export async function GET(_request: Request) {
         transitions: Number(t.transitions),
       })),
       conversions,
+      // NEW: Visual funnel with drop-off analysis
+      visualFunnel: {
+        stages: visualFunnel,
+        totalDropOff,
+        biggestBottleneck: biggestBottleneck
+          ? { stage: biggestBottleneck.stage, dropOffPercent: biggestBottleneck.dropOffPercent }
+          : null,
+        efficiency: funnelEfficiency,
+        topOfFunnel,
+        bottomOfFunnel: funnel.ASSIGNED || 0,
+      },
     });
   } catch (error: any) {
     console.error('GET /api/funnel error', error);

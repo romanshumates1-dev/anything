@@ -1,6 +1,12 @@
 /**
  * Buyer Matching API
  * Automatically finds interested buyers after seller signs
+ *
+ * Features:
+ * - Regional fee calculation with state-specific adjustments
+ * - VIP exclusivity window (2hr first look)
+ * - State-specific disclosure footers for compliance
+ * - Parallel email notifications for performance
  */
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
@@ -14,6 +20,9 @@ import {
   calculateEarnestAmount,
 } from '@/app/api/prospects/scoring-engine';
 import { alertBuyersMatched } from '@/app/api/alerts/notification-engine';
+import { calculateRegionalFee, USState } from '@/app/api/utils/regional-fee-engine';
+import { generateComplianceFooter } from '@/app/api/compliance/regional-rules';
+import { scheduleVipWindowExpiration } from '@/app/api/utils/vipWindowHandler';
 
 interface BuyerMatch {
   buyerId: string;
@@ -124,11 +133,13 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Get all verified buyers
+    // [MEDIUM FIX] Include semi-verified buyers (POF submitted but not fully verified)
+    // This expands the buyer pool to catch serious prospects who may have POF but not fully verified
     const buyers = await sql`
       SELECT * FROM buyers
-      WHERE organization_id = ${organization.id} AND verified = true
-      ORDER BY closed_deals DESC
+      WHERE organization_id = ${organization.id}
+        AND (verified = true OR pof_submitted = true)
+      ORDER BY verified DESC, closed_deals DESC
     `;
 
     if (buyers.length === 0) {
@@ -171,17 +182,71 @@ export async function POST(req: NextRequest) {
       const metadata = deal.metadata || {};
       const address = metadata.address || metadata.property_address || 'Property';
       const price = metadata.purchase_price || metadata.offer_price || 100000;
-      const assignmentFee = metadata.assignment_fee || Math.min(20000, price * 0.1);
+
+      // [HIGH FIX] Use regional fee engine instead of simplistic formula
+      // Industry benchmark: 5-10% with $5K-$35K range
+      const state = (metadata.property_state || 'TX') as USState;
+      const regionalFee = calculateRegionalFee({
+        state,
+        propertyValueDollars: price,
+        isDistressed: metadata.is_distressed || false,
+      });
+      const assignmentFee = metadata.assignment_fee || Math.round(regionalFee.targetFeeCents / 100);
       const totalPrice = price + assignmentFee;
 
-      for (const match of matches.slice(0, 5)) {
-        await sendEmail(organization.id, {
+      // [COMPLIANCE] Generate state-specific disclosure footer
+      const complianceFooter = generateComplianceFooter(
+        state,
+        process.env.COMPANY_ADDRESS || '123 Main St, Dallas, TX 75201',
+        `${process.env.NEXTAUTH_URL || 'https://app.dealflow.ai'}/unsubscribe?dealId=${dealId}`,
+        metadata.is_distressed || false
+      );
+
+      // [REVENUE OPTIMIZATION] VIP exclusivity window implementation
+      // Only notify VIP buyers first, store window end timestamp
+      const vipBuyers = matches.filter(m => m.tier === 'VIP');
+      const otherBuyers = matches.filter(m => m.tier !== 'VIP');
+      const vipWindowEndTime = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
+
+      // Store VIP window end time and schedule job to notify non-VIP buyers after window expires
+      if (vipBuyers.length > 0 && otherBuyers.length > 0) {
+        await sql`
+          UPDATE leads SET
+            metadata = jsonb_set(
+              COALESCE(metadata, '{}'::jsonb),
+              '{vip_window_end}',
+              ${JSON.stringify(vipWindowEndTime.toISOString())}::jsonb
+            ),
+            updated_at = NOW()
+          WHERE id = ${dealId}
+        `.catch(console.error);
+
+        // [REVENUE OPTIMIZATION] Schedule job to notify non-VIP buyers after 2hr VIP window
+        await scheduleVipWindowExpiration(dealId, organization.id, 2 * 60 * 60 * 1000).catch(console.error);
+      }
+
+      // Determine which buyers to notify now (VIP only if we have VIPs, otherwise top 5)
+      const buyersToNotify = vipBuyers.length > 0
+        ? vipBuyers.slice(0, 5)
+        : matches.slice(0, 5);
+
+      // [LOW FIX] Use Promise.allSettled for parallel email sending (reduces latency)
+      const emailPromises = buyersToNotify.map(match => {
+        const isVip = match.tier === 'VIP';
+        const exclusivityNote = isVip
+          ? `<div style="background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">
+              <strong>VIP Exclusive:</strong> You have first access for 2 hours.
+            </div>`
+          : '';
+
+        return sendEmail(organization.id, {
           to: match.email,
-          subject: `New Deal Available: ${address}`,
-          text: `New Investment Opportunity\n\n${address}\n$${totalPrice.toLocaleString()}\n\nPurchase: $${price.toLocaleString()} + Assignment: $${assignmentFee.toLocaleString()}\n\nDeal ID: ${dealId}`,
+          subject: `${isVip ? '[VIP] ' : ''}New Deal Available: ${address}`,
+          text: `New Investment Opportunity\n\n${address}\n$${totalPrice.toLocaleString()}\n\nPurchase: $${price.toLocaleString()} + Assignment: $${assignmentFee.toLocaleString()}\n\nDeal ID: ${dealId}\n\nThis is a contract assignment opportunity.`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px;">
               <h2>New Investment Opportunity</h2>
+              ${exclusivityNote}
 
               <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <h3 style="margin-top: 0;">${address}</h3>
@@ -199,12 +264,19 @@ export async function POST(req: NextRequest) {
               </div>
 
               <p style="color: #666; font-size: 12px;">Deal ID: ${dealId}</p>
+
+              ${complianceFooter}
             </div>
           `,
-        }).catch(e => console.error(`Failed to notify buyer ${match.email}:`, e));
-      }
+        }).catch(e => {
+          console.error(`Failed to notify buyer ${match.email}:`, e);
+          return { status: 'rejected', reason: e };
+        });
+      });
 
-      console.log(`[BUYER-MATCH] Deal ${dealId}: Notified ${Math.min(5, matches.length)} buyers`);
+      await Promise.allSettled(emailPromises);
+
+      console.log(`[BUYER-MATCH] Deal ${dealId}: Notified ${buyersToNotify.length} buyers (${vipBuyers.length} VIP with 2hr exclusive window)`);
     }
 
     // Notify admin of matches via alert system
@@ -216,18 +288,19 @@ export async function POST(req: NextRequest) {
       matches.slice(0, 5).map(m => `${m.name} (${m.tier})`)
     ).catch(console.error);
 
-    // Separate VIP buyers for exclusive first-look (2hr window)
-    const vipBuyers = matches.filter(m => m.tier === 'VIP');
-    const otherBuyers = matches.filter(m => m.tier !== 'VIP');
+    // VIP buyers already separated above for notification logic
+    const vipBuyersResult = matches.filter(m => m.tier === 'VIP');
+    const otherBuyersResult = matches.filter(m => m.tier !== 'VIP');
 
     return Response.json({
       dealId,
       matches,
-      vipBuyers: vipBuyers.length,
+      vipBuyers: vipBuyersResult.length,
       notified: notifyBuyers ? Math.min(5, matches.length) : 0,
-      message: `Found ${matches.length} matching buyers (${vipBuyers.length} VIP with first-look)`,
+      vipWindowEnd: vipBuyersResult.length > 0 ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() : null,
+      message: `Found ${matches.length} matching buyers (${vipBuyersResult.length} VIP with first-look)`,
       tierBreakdown: {
-        VIP: vipBuyers.length,
+        VIP: vipBuyersResult.length,
         VERIFIED: matches.filter(m => m.tier === 'VERIFIED').length,
         PROSPECT: matches.filter(m => m.tier === 'PROSPECT').length,
         UNVERIFIED: matches.filter(m => m.tier === 'UNVERIFIED').length,
