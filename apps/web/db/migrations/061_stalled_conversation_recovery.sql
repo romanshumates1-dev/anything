@@ -40,7 +40,5 @@ BEGIN
   END IF;
 END $$;
 
--- Add the stalledConversation beta flag
-INSERT INTO beta_flags (key, enabled, description, created_at)
-VALUES ('stalledConversation', false, 'Stalled Conversation Recovery: Re-engage leads that replied but went silent', now())
-ON CONFLICT (key) DO NOTHING;
+-- Note: Beta flags are stored in app_settings table as JSONB under key 'beta_flags'
+-- The stalledConversation flag is added via the betaFlags.ts utility when first accessed

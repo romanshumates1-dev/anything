@@ -71,7 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_audit_payment_id ON payment_audit_log(pay
 -- Seed default wire instructions
 INSERT INTO wire_instructions (id, organization_id, bank_name, account_name, account_number, routing_number, swift_code, bank_address)
 VALUES (
-  'default-wire-001',
+  '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000000',
   'Chase Bank',
   'DealSwift Automation LLC',

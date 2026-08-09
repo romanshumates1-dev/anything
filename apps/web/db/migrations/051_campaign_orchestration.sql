@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.campaign_message_library (
   id bigserial PRIMARY KEY,
   organization_id text NOT NULL,
   touch_number integer NOT NULL CHECK (touch_number BETWEEN 1 AND 3),
-  message_type text NOT NULL CHECK (message_type IN ('initial_offer', 'follow_up', 'final_check')),
+  message_type text NOT NULL CHECK (message_type IN ('initial_offer', 'initial_offer_distress', 'initial_offer_investor', 'follow_up', 'follow_up_adjust', 'follow_up_execution', 'final_check', 'final_close_out', 'final_timing')),
 
   subject_template text NOT NULL,
   body_template text NOT NULL,

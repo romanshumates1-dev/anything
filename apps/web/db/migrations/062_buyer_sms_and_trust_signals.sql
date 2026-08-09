@@ -2,10 +2,8 @@
 -- Adds beta flag for buyer SMS notifications
 -- Adds trust signal configuration table for contract flow
 
--- Beta flag for buyer SMS notifications
-INSERT INTO beta_flags (key, enabled, description, created_at)
-VALUES ('buyerSmsNotify', false, 'Send SMS notifications to buyers when deals are matched (in addition to email)', now())
-ON CONFLICT (key) DO NOTHING;
+-- Note: Beta flags are stored in app_settings table as JSONB under key 'beta_flags'
+-- The buyerSmsNotify flag is added via the betaFlags.ts utility when first accessed
 
 -- Trust signals configuration for contract flow
 -- These are displayed to sellers during the offer-to-signature process

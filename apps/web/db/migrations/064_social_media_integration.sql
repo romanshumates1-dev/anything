@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS social_contacts (
   platform_username VARCHAR(255),
   display_name VARCHAR(255),
   profile_url TEXT,
-  lead_id UUID REFERENCES leads(id),
+  lead_id INTEGER REFERENCES leads(id),
   pipeline_status VARCHAR(20) NOT NULL DEFAULT 'new'
     CHECK (pipeline_status IN ('new', 'contacted', 'engaged', 'qualified', 'converted', 'lost')),
   last_message_at TIMESTAMPTZ,

@@ -125,6 +125,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_template_performance ON message_send_log;
 CREATE TRIGGER trigger_update_template_performance
 AFTER UPDATE ON message_send_log
 FOR EACH ROW
