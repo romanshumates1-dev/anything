@@ -349,6 +349,88 @@ export async function processNextJob() {
         await notifyNonVipBuyers(payload.dealId, payload.organizationId);
         break;
       }
+      case 'stalled_conversation_recovery': {
+        // [REVENUE OPTIMIZATION] Re-engage conversations that went cold mid-negotiation
+        // Targets leads that replied but then stopped responding (48-168h threshold)
+        const payload: any = job.payload;
+        const { queueStalledReengagement } = await import('./stalledConversationEngine');
+        await queueStalledReengagement(payload.organizationId);
+        break;
+      }
+      case 'stalled_recovery_all': {
+        // System-wide stalled conversation recovery (called by cron)
+        const { runStalledRecoveryAll } = await import('./stalledConversationEngine');
+        await runStalledRecoveryAll();
+        break;
+      }
+      case 'send_pipeline_sms': {
+        // [Item 0] AWS SNS SMS for pipeline outreach
+        const payload: any = job.payload;
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+        const result = await sendPipelineSMS(payload);
+        if (!result.success) {
+          if (result.status === 'opted_out' || result.status === 'invalid_number') {
+            // Don't retry these - mark as complete with suppression note
+            await sql`UPDATE jobs SET status = 'completed', error_message = ${'suppressed:' + result.status}, updated_at = ${new Date()} WHERE id = ${job.id}`;
+            return { success: true, jobId: job.id, type: job.type, gate: 'DNC' as DenyCode };
+          }
+          throw new Error(result.errorMessage || 'SMS send failed');
+        }
+        break;
+      }
+      case 'notify_call_request': {
+        // [Item 2] Notify owner of scheduled call request
+        const payload: any = job.payload;
+        const { notifyOwnerOfCallRequest } = await import('./callSchedulingEngine');
+        // Get the call record
+        const [call] = await sql`SELECT * FROM scheduled_calls WHERE id = ${payload.callId}`;
+        if (call) {
+          await notifyOwnerOfCallRequest({
+            id: call.id,
+            leadId: call.lead_id,
+            organizationId: call.organization_id,
+            context: call.context,
+            reason: call.reason,
+            status: call.status,
+            ownerNotified: call.owner_notified,
+            leadPhone: call.lead_phone,
+            leadEmail: call.lead_email,
+            leadName: call.lead_name,
+            propertyAddress: call.property_address,
+            createdAt: call.created_at,
+          });
+        }
+        break;
+      }
+      case 'send_social_response': {
+        // [Item 3] Send response via social media platform
+        const payload: any = job.payload;
+        const { sendSocialMessage } = await import('./socialMediaEngine');
+        const result = await sendSocialMessage(
+          payload.organizationId,
+          payload.platform,
+          payload.platformUserId,
+          payload.message
+        );
+        if (!result.success) {
+          throw new Error(result.error || 'Social media send failed');
+        }
+        break;
+      }
+      case 'recycle_prospects': {
+        // [Item 6] Recycle past campaign prospects to new campaign
+        const payload: any = job.payload;
+        const { findRecyclableProspects, recycleProspectsToCampaign } = await import('./prospectRecyclingEngine');
+        const prospects = await findRecyclableProspects(payload.organizationId, payload.config);
+        if (prospects.length > 0) {
+          await recycleProspectsToCampaign(
+            payload.organizationId,
+            payload.campaignId,
+            prospects.map(p => p.leadId)
+          );
+        }
+        break;
+      }
       default:
         throw new Error(`Unknown job type: ${job.type}`);
     }

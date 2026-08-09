@@ -571,7 +571,57 @@ export async function GET(req: NextRequest) {
       ORDER BY COUNT(DISTINCT l.id) DESC
     `.catch(() => []);
 
-    // 12. Visual Funnel with Drop-off Analysis
+    // 12. Buyer Pipeline Metrics
+    const buyerMetricsData = await sql`
+      SELECT
+        COUNT(DISTINCT b.id)::int as total_buyers,
+        COUNT(DISTINCT b.id) FILTER (WHERE b.actual_close_count >= 3)::int as vip_buyers,
+        COUNT(DISTINCT b.id) FILTER (WHERE b.verified = true OR b.pof_submitted = true)::int as verified_buyers,
+        COUNT(DISTINCT ba.id)::int as total_assignments,
+        COUNT(DISTINCT ba.id) FILTER (WHERE ba.status = 'pending')::int as pending_assignments,
+        COUNT(DISTINCT ba.id) FILTER (WHERE ba.status = 'SIGNED')::int as completed_deals,
+        COALESCE(AVG(ba.assignment_fee_cents) FILTER (WHERE ba.status = 'SIGNED'), 0)::int as avg_assignment_fee_cents,
+        COALESCE(AVG(EXTRACT(DAY FROM (ba.updated_at - ba.created_at))) FILTER (WHERE ba.status = 'SIGNED'), 0)::int as avg_close_days
+      FROM buyers b
+      LEFT JOIN buyer_assignments ba ON ba.buyer_id = b.id
+      WHERE b.created_at > now() - (${days} || ' days')::interval
+        OR ba.created_at > now() - (${days} || ' days')::interval
+    `.catch(() => [{}]) as any[];
+
+    // 13. Seller Pipeline Metrics
+    const sellerMetricsData = await sql`
+      SELECT
+        COUNT(DISTINCT l.id)::int as total_leads,
+        COUNT(DISTINCT clq.lead_id)::int as contacted,
+        COUNT(*) FILTER (WHERE clq.status = 'replied')::int as replied,
+        COUNT(*) FILTER (WHERE clq.status = 'interested')::int as interested,
+        COUNT(DISTINCT c.id) FILTER (WHERE c.esign_status = 'signed')::int as contracted,
+        COALESCE(AVG(EXTRACT(EPOCH FROM (clq.updated_at - clq.last_sent_at)) / 3600) FILTER (WHERE clq.status = 'replied'), 0)::numeric(6,2) as avg_response_hours,
+        COALESCE(AVG(clq.touch_number) FILTER (WHERE clq.status = 'interested'), 0)::numeric(4,2) as avg_touches_to_interest
+      FROM leads l
+      LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
+      LEFT JOIN contracts c ON c.lead_id = l.id
+      WHERE l.created_at > now() - (${days} || ' days')::interval
+    `.catch(() => [{}]) as any[];
+
+    // 14. Top Lead Sources for Seller Pipeline
+    const topSourcesData = await sql`
+      SELECT
+        COALESCE(l.source, 'Unknown') as source,
+        COUNT(DISTINCT l.id)::int as leads,
+        COUNT(DISTINCT c.id) FILTER (WHERE c.esign_status = 'signed')::int as contracts,
+        ROUND(COUNT(DISTINCT c.id) FILTER (WHERE c.esign_status = 'signed')::numeric /
+              NULLIF(COUNT(DISTINCT l.id), 0) * 100, 2) as contract_rate
+      FROM leads l
+      LEFT JOIN contracts c ON c.lead_id = l.id
+      WHERE l.created_at > now() - (${days} || ' days')::interval
+      GROUP BY COALESCE(l.source, 'Unknown')
+      HAVING COUNT(DISTINCT l.id) >= 10
+      ORDER BY contract_rate DESC NULLS LAST
+      LIMIT 5
+    `.catch(() => []);
+
+    // 15. Visual Funnel with Drop-off Analysis
     const funnelData = await sql`
       WITH stage_counts AS (
         SELECT
@@ -782,6 +832,34 @@ export async function GET(req: NextRequest) {
         totalDropOff: visualFunnel.totalDropOff,
         biggestBottleneck: visualFunnel.biggestBottleneck,
         funnelEfficiency: visualFunnel.efficiency,
+      },
+
+      // Buyer Pipeline Metrics
+      buyerMetrics: {
+        totalBuyers: buyerMetricsData[0]?.total_buyers || 0,
+        vipBuyers: buyerMetricsData[0]?.vip_buyers || 0,
+        verifiedBuyers: buyerMetricsData[0]?.verified_buyers || 0,
+        totalAssignments: buyerMetricsData[0]?.total_assignments || 0,
+        pendingAssignments: buyerMetricsData[0]?.pending_assignments || 0,
+        completedDeals: buyerMetricsData[0]?.completed_deals || 0,
+        avgAssignmentFee: (buyerMetricsData[0]?.avg_assignment_fee_cents || 0) / 100,
+        avgCloseTime: buyerMetricsData[0]?.avg_close_days || 0,
+      },
+
+      // Seller Pipeline Metrics
+      sellerMetrics: {
+        totalLeads: sellerMetricsData[0]?.total_leads || 0,
+        contacted: sellerMetricsData[0]?.contacted || 0,
+        replied: sellerMetricsData[0]?.replied || 0,
+        interested: sellerMetricsData[0]?.interested || 0,
+        contracted: sellerMetricsData[0]?.contracted || 0,
+        avgResponseTime: parseFloat(sellerMetricsData[0]?.avg_response_hours) || 0,
+        avgTouchesToInterest: parseFloat(sellerMetricsData[0]?.avg_touches_to_interest) || 0,
+        topSources: topSourcesData.map((s: any) => ({
+          source: s.source,
+          leads: s.leads,
+          contractRate: parseFloat(s.contract_rate) || 0,
+        })),
       },
 
       // Enhanced AI Insights with ROI projections and confidence scores

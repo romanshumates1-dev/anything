@@ -12,10 +12,12 @@
 
 import sql from '@/app/api/utils/sql';
 import { sendEmailAuto as sendEmail } from '@/app/api/utils/emailProviders';
+import { sendMessage } from '@/app/api/utils/messaging';
 import { scoreBuyer, BuyerSignals, BuyerTier } from '@/app/api/prospects/scoring-engine';
 import { calculateRegionalFee, USState } from '@/app/api/utils/regional-fee-engine';
 import { generateComplianceFooter } from '@/app/api/compliance/regional-rules';
 import { enqueueJob } from './jobs';
+import { isBetaFlagOn } from './betaFlags';
 
 /**
  * Schedule VIP window expiration job for a deal.
@@ -166,6 +168,26 @@ export async function notifyNonVipBuyers(
   );
 
   await Promise.allSettled(emailPromises);
+
+  // [NEW] Send SMS notifications to buyers with phone numbers (if buyerSmsNotify flag enabled)
+  const smsEnabled = await isBetaFlagOn('buyerSmsNotify');
+  if (smsEnabled) {
+    const buyersWithPhone = buyersToNotify.filter((b: any) => b.phone);
+    const smsPromises = buyersWithPhone.map((buyer: any) =>
+      sendMessage({
+        leadId: `buyer_${buyer.id}`,
+        channel: 'sms',
+        to: buyer.phone,
+        text: `Deal Alert: ${address} now available for $${totalPrice.toLocaleString()}. Reply YES for details or call to claim. ID:${dealId}`,
+        transactional: true,
+      }).catch(e => {
+        console.error(`[VIP-WINDOW] SMS failed for buyer ${buyer.phone}:`, e);
+        return { status: 'failed' };
+      })
+    );
+    await Promise.allSettled(smsPromises);
+    console.log(`[VIP-WINDOW] Sent ${buyersWithPhone.length} SMS notifications`);
+  }
 
   console.log(`[VIP-WINDOW] Deal ${dealId}: Notified ${buyersToNotify.length} non-VIP buyers after VIP window expired`);
 

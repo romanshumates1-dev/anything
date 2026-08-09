@@ -110,34 +110,67 @@ export class MockStripeProvider implements StripeProvider {
   }
 }
 
-// ─── Live Stripe Provider (stub) ─────────────────────────────────────────────
+// ─── Live Stripe Provider ────────────────────────────────────────────────────
 
 export class LiveStripeProvider implements StripeProvider {
   readonly type: StripeProviderType = 'live';
+  private stripe: Stripe;
+
+  constructor() {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error('[stripeProvider] STRIPE_SECRET_KEY not configured for live mode.');
+    }
+    this.stripe = new Stripe(secretKey);
+  }
 
   async createPaymentLink(params: CreatePaymentParams): Promise<PaymentResult> {
-    // LIVE: Replace with real Stripe API call
-    // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    // const session = await stripe.checkout.sessions.create({
-    //   mode: 'payment',
-    //   line_items: [{ price_data: { currency: 'usd', product_data: { name: `Assignment Fee - Contract ${params.contractId}` }, unit_amount: params.amountCents }, quantity: 1 }],
-    //   metadata: { contractId: params.contractId, organizationId: params.organizationId },
-    //   success_url: `${baseUrl}/contracts/${params.contractId}?payment=success`,
-    //   cancel_url: `${baseUrl}/contracts/${params.contractId}?payment=cancelled`,
-    // });
-    // return { paymentLink: session.url!, paymentIntentId: session.payment_intent as string, status: 'created' };
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.PUBLIC_WEBHOOK_URL || 'http://localhost:3000';
 
-    const paymentIntentId = `pi_live_${crypto.randomUUID()}`;
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: params.currency || 'usd',
+            product_data: {
+              name: params.description || `Assignment Fee - Contract ${params.contractId}`,
+            },
+            unit_amount: params.amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      customer_email: params.buyerEmail,
+      metadata: {
+        contractId: params.contractId,
+        organizationId: params.organizationId,
+      },
+      success_url: `${baseUrl}/contracts/${params.contractId}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/contracts/${params.contractId}?payment=cancelled`,
+      payment_intent_data: {
+        metadata: {
+          contractId: params.contractId,
+          organizationId: params.organizationId,
+        },
+      },
+    });
+
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id ?? `cs_${session.id}`;
 
     await logEvent('payment_link_created', 'contract', params.contractId, {
       provider: 'live',
+      sessionId: session.id,
       paymentIntentId,
       amountCents: params.amountCents,
-      note: 'LIVE: Replace with real Stripe Checkout Session creation',
+      currency: params.currency || 'usd',
+      url: session.url,
     }, params.organizationId);
 
     return {
-      paymentLink: `https://checkout.stripe.com/pay/${paymentIntentId}`,
+      paymentLink: session.url!,
       paymentIntentId,
       status: 'created',
     };
@@ -148,16 +181,14 @@ export class LiveStripeProvider implements StripeProvider {
     if (!secret) {
       throw new Error('[stripeProvider] STRIPE_WEBHOOK_SECRET not configured.');
     }
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
-    return stripe.webhooks.constructEvent(body, signature, secret);
+    return this.stripe.webhooks.constructEvent(body, signature, secret);
   }
 
   verifyWebhook(params: VerifyWebhookParams): boolean {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!secret) return false;
     try {
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy');
-      stripe.webhooks.constructEvent(params.body, params.signature, secret);
+      this.stripe.webhooks.constructEvent(params.body, params.signature, secret);
       return true;
     } catch {
       return false;
@@ -165,21 +196,29 @@ export class LiveStripeProvider implements StripeProvider {
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {
-    // LIVE: Replace with a real Stripe refund (OWNER-GATED on live/test keys):
-    // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    // const r = await stripe.refunds.create({
-    //   payment_intent: params.paymentIntentId,
-    //   amount: params.amountCents, // omit for full
-    //   reason: 'requested_by_customer',
-    // });
-    // return { refundId: r.id, status: r.status ?? 'pending' };
-    const refundId = `re_live_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+    const refundParams: Stripe.RefundCreateParams = {
+      payment_intent: params.paymentIntentId,
+      reason: 'requested_by_customer',
+    };
+
+    if (params.amountCents !== undefined) {
+      refundParams.amount = params.amountCents;
+    }
+
+    const refund = await this.stripe.refunds.create(refundParams);
+
     await logEvent('payment_refunded', 'payment', params.paymentIntentId, {
       provider: 'live',
-      refundId,
-      note: 'LIVE: Replace with real Stripe refunds.create',
+      refundId: refund.id,
+      amountCents: refund.amount,
+      status: refund.status,
+      reason: params.reason ?? 'requested_by_customer',
     });
-    return { refundId, status: 'pending' };
+
+    return {
+      refundId: refund.id,
+      status: refund.status ?? 'pending',
+    };
   }
 }
 

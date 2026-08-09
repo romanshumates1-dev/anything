@@ -134,6 +134,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </SidebarMenuItem>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild>
+                      <Link href="/analytics/advanced">CRM Analytics</Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
                       <Link href="/settings/users">Users</Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

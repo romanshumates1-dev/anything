@@ -286,6 +286,22 @@ async function handleContractInspection() {
   }
 }
 
+/**
+ * Task 9: Stalled Conversation Recovery (every 6 hours)
+ *
+ * Re-engages conversations that replied but went silent mid-negotiation.
+ * Distinct from resurrection (30-180 day cold leads).
+ * Targets 48-168 hour stalled conversations - highest conversion potential.
+ */
+async function handleStalledRecovery() {
+  const { runStalledRecoveryAll } = await import('@/app/api/utils/stalledConversationEngine');
+  const result = await runStalledRecoveryAll();
+  return {
+    processed: result.totalQueued,
+    detail: `Stalled recovery: ${result.totalQueued} queued, ${result.totalSkipped} skipped across ${result.organizations} orgs`,
+  };
+}
+
 const TASKS: Record<string, CronTask> = {
   'stuck-conversations': { name: 'stuck-conversations', handler: handleStuckConversations },
   'retry-sms': { name: 'retry-sms', handler: handleRetrySms },
@@ -295,6 +311,7 @@ const TASKS: Record<string, CronTask> = {
   'pipeline-health': { name: 'pipeline-health', handler: handlePipelineHealth },
   'resurrection': { name: 'resurrection', handler: handleResurrection },
   'contract-inspection': { name: 'contract-inspection', handler: handleContractInspection },
+  'stalled-recovery': { name: 'stalled-recovery', handler: handleStalledRecovery },
 };
 
 export async function POST(request: Request) {
@@ -362,6 +379,7 @@ export async function GET() {
       'pipeline-health': 'exponential 1-2-4-8 hours (self-healing)',
       'resurrection': 'daily',
       'contract-inspection': 'every 6 hours (inspection period + closing alerts)',
+      'stalled-recovery': 'every 6 hours (re-engage mid-negotiation cold conversations)',
     },
     timestamp: new Date().toISOString(),
   });

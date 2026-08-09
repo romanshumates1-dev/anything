@@ -3,9 +3,11 @@
 import { useSession } from '@/lib/auth-client';
 import { useQuery } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target, Globe } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target, Globe, Brain, MapPin } from 'lucide-react';
 
 // Lazy-loaded, client-only — the globe never blocks analytics (page renders
 // fully without it; the canvas chunk loads on demand).
@@ -86,9 +88,25 @@ export default function AnalyticsPage() {
   return (
     <div className="min-h-screen bg-gray-50/50 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <header>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Analytics</h1>
-          <p className="text-gray-500 mt-1">Conversion, cost, and margin across your campaigns</p>
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Analytics</h1>
+            <p className="text-gray-500 mt-1">Conversion, cost, and margin across your campaigns</p>
+          </div>
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link href="/analytics/advanced">
+                <Brain className="h-4 w-4 mr-2" />
+                AI Campaign Review
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/analytics/advanced">
+                <MapPin className="h-4 w-4 mr-2" />
+                Regional Analytics
+              </Link>
+            </Button>
+          </div>
         </header>
 
         {isLoading ? (

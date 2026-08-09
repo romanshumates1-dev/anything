@@ -16,7 +16,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo', 'emailOutbound', 'callQueue', 'resurrection'] as const;
+export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo', 'emailOutbound', 'callQueue', 'resurrection', 'stalledConversation', 'buyerSmsNotify'] as const;
 export type BetaFlagKey = (typeof BETA_FLAG_KEYS)[number];
 export type BetaFlags = Record<BetaFlagKey, boolean>;
 
@@ -40,6 +40,10 @@ export const DEFAULT_BETA_FLAGS: BetaFlags = {
   emailOutbound: false,
   callQueue: false,
   resurrection: false,
+  // Stalled conversation recovery - re-engage mid-negotiation cold conversations
+  stalledConversation: false,
+  // Buyer SMS notifications - notify buyers via SMS (in addition to email)
+  buyerSmsNotify: false,
 };
 
 const SETTINGS_KEY = 'beta_flags';
