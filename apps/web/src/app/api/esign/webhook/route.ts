@@ -127,20 +127,20 @@ export async function POST(request: Request) {
       });
     }
 
-    // Record the event
+    // Record the event and update contract atomically
     const eventId = `esign_evt_${crypto.randomUUID()}`;
-    await sql`
-      INSERT INTO esign_events (id, contract_id, event_type, external_event_id, event_data)
-      VALUES (${eventId}, ${payload.contract_id}, ${payload.event_type}, ${payload.event_id}, ${JSON.stringify(payload.event_data || {})})
-    `;
-
-    // Update contract status
-    await sql`
-      UPDATE contracts
-      SET esign_status = ${payload.event_type},
-          signed_at = CASE WHEN ${payload.event_type} = 'signed' THEN COALESCE(${payload.signed_at ? new Date(payload.signed_at) : null}::timestamptz, NOW()) ELSE signed_at END
-      WHERE id = ${payload.contract_id}
-    `;
+    await sql.transaction([
+      sql`
+        INSERT INTO esign_events (id, contract_id, event_type, external_event_id, event_data)
+        VALUES (${eventId}, ${payload.contract_id}, ${payload.event_type}, ${payload.event_id}, ${JSON.stringify(payload.event_data || {})})
+      `,
+      sql`
+        UPDATE contracts
+        SET esign_status = ${payload.event_type},
+            signed_at = CASE WHEN ${payload.event_type} = 'signed' THEN COALESCE(${payload.signed_at ? new Date(payload.signed_at) : null}::timestamptz, NOW()) ELSE signed_at END
+        WHERE id = ${payload.contract_id}
+      `,
+    ]);
 
     // Log the event
     await logEvent(`esign_${payload.event_type}`, 'contract', payload.contract_id, {
