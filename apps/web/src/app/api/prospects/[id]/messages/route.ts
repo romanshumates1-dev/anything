@@ -28,6 +28,18 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid prospect ID' }, { status: 400 });
     }
 
+    // Verify lead exists and belongs to organization FIRST (before querying any data)
+    const [lead] = await sql`
+      SELECT l.name, l.email, l.metadata, clq.touch_number, clq.status as queue_status, clq.expected_value
+      FROM leads l
+      LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
+      WHERE l.id = ${prospectId} AND l.organization_id = ${organization.id}
+    `;
+
+    if (!lead) {
+      return NextResponse.json({ error: 'Prospect not found' }, { status: 404 });
+    }
+
     // Get outbound messages from jobs table
     const outboundJobs = await sql`
       SELECT
@@ -77,21 +89,10 @@ export async function GET(
         created_at
       FROM message_events
       WHERE contact_id = ${prospectId}
+        AND organization_id = ${organization.id}
       ORDER BY created_at ASC
       LIMIT 100
     `.catch(() => []);
-
-    // Get lead info - MUST be scoped to organization
-    const [lead] = await sql`
-      SELECT l.name, l.email, l.metadata, clq.touch_number, clq.status as queue_status, clq.expected_value
-      FROM leads l
-      LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      WHERE l.id = ${prospectId} AND l.organization_id = ${organization.id}
-    `;
-
-    if (!lead) {
-      return NextResponse.json({ error: 'Prospect not found' }, { status: 404 });
-    }
 
     // Build messages array
     const messages: Array<{
