@@ -5,144 +5,126 @@ import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowLeft, Rocket, Plus } from 'lucide-react';
+import { Loader2, Plus, Play, Pause, Copy, MoreHorizontal, Rocket } from 'lucide-react';
 
-function AddLeadsControl({ campaignId }: { campaignId: number }) {
-  const queryClient = useQueryClient();
-  const [selected, setSelected] = useState('');
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const { data: leads } = useQuery({
-    queryKey: ['leads'],
-    queryFn: async () => {
-      const res = await fetch('/api/leads');
-      if (!res.ok) throw new Error('Failed to fetch leads');
-      return res.json();
-    },
-  });
-
-  const mutation = useMutation({
-    mutationFn: async (leadId: string) => {
-      const res = await fetch(`/api/campaigns/${campaignId}/leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId: Number(leadId) }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to add lead');
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setMsg(data.added > 0 ? 'Lead added.' : 'Lead already in campaign.');
-      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
-    },
-    onError: (err: any) => setMsg(err.message),
-  });
-
-  return (
-    <div className="flex flex-col gap-2 mt-3">
-      <div className="flex gap-2 items-center">
-        <select
-          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-          value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-        >
-          <option value="">Select a lead…</option>
-          {(leads || []).map((l: any) => (
-            <option key={l.id} value={l.id}>
-              {l.name} ({l.type})
-            </option>
-          ))}
-        </select>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!selected || mutation.isPending}
-          onClick={() => selected && mutation.mutate(selected)}
-        >
-          <Plus className="h-4 w-4 mr-1" /> Add
-        </Button>
-      </div>
-      {msg && <p className="text-xs text-gray-500">{msg}</p>}
-    </div>
-  );
-}
+const statusConfig = {
+  DRAFT: { label: 'Draft', dot: 'neutral' as const, bg: 'bg-[var(--text-muted)]/10' },
+  ACTIVE: { label: 'Active', dot: 'success' as const, bg: 'bg-[var(--color-success)]/10' },
+  PAUSED: { label: 'Paused', dot: 'warning' as const, bg: 'bg-[var(--color-warning)]/10' },
+  COMPLETE: { label: 'Complete', dot: 'info' as const, bg: 'bg-[var(--color-info)]/10' },
+  SCHEDULED: { label: 'Scheduled', dot: 'info' as const, bg: 'bg-[var(--color-info)]/10' },
+};
 
 function CampaignCard({ campaign }: { campaign: any }) {
   const queryClient = useQueryClient();
-  const [launchMsg, setLaunchMsg] = useState<string | null>(null);
+  const status = statusConfig[campaign.status as keyof typeof statusConfig] || statusConfig.DRAFT;
+
+  const metrics = {
+    sent: campaign.total_sent || 0,
+    delivered: campaign.total_delivered || 0,
+    opened: campaign.total_opened || 0,
+    replied: campaign.total_replied || 0,
+    interested: campaign.total_interested || 0,
+  };
+
+  const deliveryRate = metrics.sent > 0 ? Math.round((metrics.delivered / metrics.sent) * 100) : 0;
+  const replyRate = metrics.delivered > 0 ? Math.round((metrics.replied / metrics.delivered) * 100) : 0;
 
   const launch = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/outreach/campaigns/${campaign.id}/start`, { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to launch');
-      }
+      if (!res.ok) throw new Error('Failed to launch');
       return res.json();
     },
-    onSuccess: (data) => {
-      setLaunchMsg(`Started — status ${data.status}.`);
-      queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] });
-    },
-    onError: (err: any) => setLaunchMsg(err.message),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['outreach-campaigns'] }),
   });
 
-  const isLaunched = campaign.status === 'ACTIVE' || campaign.status === 'SCHEDULED';
-
   return (
-    <Card className="border-none shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">{campaign.name}</CardTitle>
+    <GlassCard padding="none" className="overflow-hidden">
+      {/* Header gradient */}
+      <div className={`h-2 ${campaign.status === 'ACTIVE' ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)]' : 'bg-[var(--bg-tertiary)]'}`} />
+
+      <div className="p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)]">{campaign.name}</h3>
+            <p className="text-sm text-[var(--text-muted)]">
+              {campaign.total_contacts || 0} contacts · {campaign.direction || 'outbound'}
+            </p>
+          </div>
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${status.bg}`}>
+            <StatusDot status={status.dot} size="sm" />
+            <span className="text-xs font-medium text-[var(--text-primary)]">{status.label}</span>
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div className="grid grid-cols-5 gap-2 mb-4">
+          {[
+            { label: 'Sent', value: metrics.sent },
+            { label: 'Delivered', value: `${deliveryRate}%` },
+            { label: 'Opened', value: metrics.opened },
+            { label: 'Replied', value: metrics.replied },
+            { label: 'Interested', value: metrics.interested, highlight: true },
+          ].map((m) => (
+            <div key={m.label} className="text-center">
+              <p className={`text-lg font-mono font-semibold ${m.highlight ? 'text-[var(--color-success)]' : 'text-[var(--text-primary)]'}`}>
+                {m.value}
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">{m.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Funnel bar */}
+        <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden mb-4">
+          <div
+            className="h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--color-success)] rounded-full"
+            style={{ width: `${Math.min(100, replyRate * 5)}%` }}
+          />
+        </div>
+
+        {/* Actions */}
         <div className="flex items-center gap-2">
-          {campaign.test_mode && (
-            <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">
-              TEST
-            </Badge>
+          {campaign.status === 'ACTIVE' ? (
+            <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]">
+              <Pause className="h-4 w-4" />
+              Pause
+            </button>
+          ) : (
+            <button
+              onClick={() => launch.mutate()}
+              disabled={launch.isPending}
+              className="flex-1 btn-gradient flex items-center justify-center gap-2 px-4 py-2 rounded-lg"
+            >
+              {launch.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              {campaign.status === 'PAUSED' ? 'Resume' : 'Launch'}
+            </button>
           )}
-          <Badge
-            variant="outline"
-            className={
-              isLaunched
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-gray-50 text-gray-600 border-gray-200'
-            }
-          >
-            {campaign.status}
-          </Badge>
+          <button className="p-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <Copy className="h-4 w-4" />
+          </button>
+          <button className="p-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
         </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-gray-500">{campaign.direction || '—'} · {campaign.status}</p>
-        <p className="text-xs text-gray-400 mt-2">
-          {campaign.total_contacts || 0} contacts
-        </p>
-
-        <AddLeadsControl campaignId={campaign.id} />
-
-        <div className="flex items-center gap-3 mt-4">
-          <Button size="sm" onClick={() => launch.mutate()} disabled={launch.isPending}>
-            <Rocket className="h-4 w-4 mr-1" />
-            {launch.isPending ? 'Launching…' : isLaunched ? 'Re-launch' : 'Launch Campaign'}
-          </Button>
-          {launchMsg && <span className="text-xs text-gray-500">{launchMsg}</span>}
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 
 export default function CampaignsPage() {
   const { data: session, isPending: authLoading } = useSession();
+  const [filter, setFilter] = useState<string>('all');
 
   const { data: campaigns, isLoading } = useQuery({
-    // Distinct key from the Shell's ['campaigns'] (legacy /api/campaigns) so
-    // React Query does not dedupe this outreach list against it.
     queryKey: ['outreach-campaigns'],
     queryFn: async () => {
       const res = await fetch('/api/outreach/campaigns');
@@ -154,8 +136,8 @@ export default function CampaignsPage() {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
       </div>
     );
   }
@@ -164,46 +146,60 @@ export default function CampaignsPage() {
     redirect('/account/signin');
   }
 
+  const filters = ['all', 'active', 'paused', 'draft', 'complete'];
+  const filteredCampaigns = campaigns?.filter((c: any) =>
+    filter === 'all' ? true : c.status?.toLowerCase() === filter
+  ) || [];
+
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <header>
-          <Link href="/" className="text-sm text-gray-500 flex items-center gap-1 mb-2">
-            <ArrowLeft className="h-4 w-4" /> Dashboard
-          </Link>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Campaigns</h1>
-        </header>
-
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle>Create Campaign</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-gray-500">The 4-step wizard is the one campaign-creation flow:</p>
-            <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-              <li>Sending schedule & volume caps</li>
-              <li>Follow-up sequences & AI toggles</li>
-              <li>Compliance / DNC / Test Mode</li>
-              <li>Budget cap & review</li>
-            </ul>
-            <Link href="/campaigns/wizard">
-              <Button className="w-full">Open Campaign Wizard →</Button>
-            </Link>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          {isLoading ? (
-            <div className="py-12 flex justify-center">
-              <Loader2 className="h-6 w-6 animate-spin opacity-30" />
-            </div>
-          ) : !campaigns || campaigns.length === 0 ? (
-            <p className="text-center text-gray-400 py-8">No campaigns yet.</p>
-          ) : (
-            campaigns.map((c: any) => <CampaignCard key={c.id} campaign={c} />)
-          )}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Campaigns</h1>
+          <p className="text-[var(--text-secondary)] mt-1">Manage your outreach sequences</p>
         </div>
+        <Link href="/campaigns/wizard" className="btn-gradient px-5 py-2.5 rounded-lg font-medium flex items-center gap-2">
+          <Plus className="h-4 w-4" />
+          New Campaign
+        </Link>
       </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2">
+        {filters.map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+              filter === f
+                ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+                : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Campaign grid */}
+      {isLoading ? (
+        <div className="py-12 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--accent-blue)]" />
+        </div>
+      ) : filteredCampaigns.length === 0 ? (
+        <GlassCard className="text-center py-12">
+          <p className="text-[var(--text-muted)]">No campaigns found</p>
+          <Link href="/campaigns/wizard" className="text-[var(--accent-blue)] hover:underline mt-2 inline-block">
+            Create your first campaign
+          </Link>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {filteredCampaigns.map((c: any) => (
+            <CampaignCard key={c.id} campaign={c} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
