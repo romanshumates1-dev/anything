@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { GlassCard } from '@/components/ui/GlassCard';
 import {
   ChatBubbleLeftIcon,
   DocumentTextIcon,
@@ -20,58 +21,64 @@ interface ActionItemsProps {
   items: ActionItem[];
 }
 
-const typeIcons = {
-  response_needed: ChatBubbleLeftIcon,
-  contract_expiring: DocumentTextIcon,
-  follow_up: ClockIcon,
-};
-
-const typeColors = {
-  response_needed: 'text-blue-500 bg-blue-50',
-  contract_expiring: 'text-amber-500 bg-amber-50',
-  follow_up: 'text-gray-500 bg-gray-50',
+const typeConfig = {
+  response_needed: {
+    icon: ChatBubbleLeftIcon,
+    color: 'text-[var(--accent-blue)]',
+    bg: 'bg-[var(--accent-blue)]/10',
+  },
+  contract_expiring: {
+    icon: DocumentTextIcon,
+    color: 'text-[var(--color-warning)]',
+    bg: 'bg-[var(--color-warning)]/10',
+  },
+  follow_up: {
+    icon: ClockIcon,
+    color: 'text-[var(--text-muted)]',
+    bg: 'bg-[var(--bg-tertiary)]',
+  },
 };
 
 export function ActionItems({ items }: ActionItemsProps) {
   if (items.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-        <h3 className="text-sm font-medium text-gray-900 mb-4">Action Items</h3>
+      <GlassCard>
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Action Items</h3>
         <div className="text-center py-8">
-          <p className="text-sm text-gray-500">You're all caught up!</p>
+          <p className="text-sm text-[var(--text-muted)]">You're all caught up!</p>
         </div>
-      </div>
+      </GlassCard>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-      <h3 className="text-sm font-medium text-gray-900 mb-4">
-        Action Items{' '}
-        <span className="text-gray-400">({items.length})</span>
+    <GlassCard>
+      <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
+        Action Items
+        <span className="text-[var(--text-muted)] font-normal ml-2">({items.length})</span>
       </h3>
-      <ul className="divide-y divide-gray-100">
+      <ul className="space-y-2">
         {items.slice(0, 5).map((item) => {
-          const Icon = typeIcons[item.type];
+          const { icon: Icon, color, bg } = typeConfig[item.type];
           return (
             <li key={item.id}>
               <Link
                 href={item.href}
-                className="flex items-center gap-3 py-3 hover:bg-gray-50 -mx-2 px-2 rounded"
+                className="flex items-center gap-3 p-3 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
               >
-                <div className={`p-2 rounded-lg ${typeColors[item.type]}`}>
-                  <Icon className="h-4 w-4" />
+                <div className={`p-2 rounded-lg ${bg}`}>
+                  <Icon className={`h-4 w-4 ${color}`} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                     {item.title}
                   </p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="text-xs text-[var(--text-muted)] truncate">
                     {item.subtitle}
                   </p>
                 </div>
                 {item.urgent && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-[var(--color-error)]/10 text-[var(--color-error)] animate-pulse">
                     Urgent
                   </span>
                 )}
@@ -83,11 +90,11 @@ export function ActionItems({ items }: ActionItemsProps) {
       {items.length > 5 && (
         <Link
           href="/tasks"
-          className="block text-center text-sm text-blue-600 hover:text-blue-700 mt-4"
+          className="block text-center text-sm text-[var(--accent-blue)] hover:underline mt-4"
         >
           View all {items.length} items
         </Link>
       )}
-    </div>
+    </GlassCard>
   );
 }
