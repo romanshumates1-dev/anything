@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
+import { redirect } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, TestTube, Key, Trash2 } from 'lucide-react';
+import { Loader2, TestTube, Key, Trash2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import AiProviderCard from '@/components/settings/AiProviderCard';
 import BetaFlagsCard from '@/components/settings/BetaFlagsCard';
@@ -139,21 +139,22 @@ export default function SettingsPage() {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
       </div>
     );
   }
 
-  if (!session) return null;
+  if (!session) {
+    redirect('/account/signin');
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <header>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Settings</h1>
-          <p className="text-gray-500 mt-1">Manage AI provider, test numbers, and API access</p>
-        </header>
+    <div className="space-y-6 max-w-4xl">
+      <div>
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Settings</h1>
+        <p className="text-[var(--text-secondary)] mt-1">Manage AI provider, test numbers, and API access</p>
+      </div>
 
         {/* AI Provider (Anthropic hosted vs local Ollama) */}
         <AiProviderCard />
@@ -167,40 +168,40 @@ export default function SettingsPage() {
         <EventLogPanel />
 
         {/* Test Phone Numbers */}
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TestTube className="h-5 w-5" />
-              Personal Test Numbers
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <AlertTitle>How it works</AlertTitle>
-              <AlertDescription className="text-xs space-y-1">
-                <p>Add a phone number, receive a 6-digit OTP, enter it here to verify.</p>
-                <p>Verified numbers become your Personal Test Mode allowlist. Test campaigns only send to these numbers.</p>
-              </AlertDescription>
-            </Alert>
+        <GlassCard>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-4">
+            <TestTube className="h-5 w-5" />
+            Personal Test Numbers
+          </h3>
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)]">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 text-[var(--accent-blue)] mt-0.5" />
+                <div className="text-xs text-[var(--text-muted)] space-y-1">
+                  <p>Add a phone number, receive a 6-digit OTP, enter it here to verify.</p>
+                  <p>Verified numbers become your Personal Test Mode allowlist.</p>
+                </div>
+              </div>
+            </div>
 
             <AddPhoneForm onSubmit={addPhoneMutation.mutate} />
 
             <div className="space-y-2">
               {phonesLoading ? (
                 <div className="py-4 flex justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin opacity-30" />
+                  <Loader2 className="h-5 w-5 animate-spin text-[var(--accent-blue)]" />
                 </div>
               ) : !testPhones || testPhones.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No test numbers yet.</p>
+                <p className="text-sm text-[var(--text-muted)] text-center py-4">No test numbers yet.</p>
               ) : (
                 testPhones.map((phone: any) => (
-                  <div key={phone.id} className="flex items-center justify-between border rounded-lg p-3">
+                  <div key={phone.id} className="flex items-center justify-between bg-[var(--bg-tertiary)] rounded-lg p-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium">{phone.phone}</span>
+                      <span className="text-sm font-medium text-[var(--text-primary)]">{phone.phone}</span>
                       {phone.verified ? (
-                        <Badge className="bg-green-50 text-green-700 border-green-200">Verified</Badge>
+                        <Badge className="bg-[var(--color-success)]/10 text-[var(--color-success)]">Verified</Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Pending</Badge>
+                        <Badge className="bg-[var(--color-warning)]/10 text-[var(--color-warning)]">Pending</Badge>
                       )}
                     </div>
                     {!phone.verified ? (
@@ -212,51 +213,51 @@ export default function SettingsPage() {
                         onClick={() => deletePhoneMutation.mutate(phone.id)}
                         disabled={deletePhoneMutation.isPending}
                       >
-                        <Trash2 className="h-4 w-4 text-gray-400" />
+                        <Trash2 className="h-4 w-4 text-[var(--text-muted)]" />
                       </Button>
                     )}
                   </div>
                 ))
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </GlassCard>
 
         {/* API Keys */}
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5" />
-              API Keys
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Alert>
-              <AlertTitle>Programmatic access</AlertTitle>
-              <AlertDescription className="text-xs space-y-1">
-                <p>Keys are shown once at creation and stored hashed. They can be scoped and revoked anytime.</p>
-                <p>Use Bearer auth: <code className="bg-gray-100 px-1 rounded">df_live_...</code></p>
-              </AlertDescription>
-            </Alert>
+        <GlassCard>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-4">
+            <Key className="h-5 w-5" />
+            API Keys
+          </h3>
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)]">
+              <div className="flex items-start gap-2">
+                <Info className="h-4 w-4 text-[var(--accent-blue)] mt-0.5" />
+                <div className="text-xs text-[var(--text-muted)] space-y-1">
+                  <p>Keys are shown once at creation and stored hashed. They can be scoped and revoked anytime.</p>
+                  <p>Use Bearer auth: <code className="bg-[var(--bg-primary)] px-1 rounded text-[var(--text-secondary)]">df_live_...</code></p>
+                </div>
+              </div>
+            </div>
 
             <CreateApiKeyForm onCreate={createKeyMutation.mutate} />
 
             <div className="space-y-2">
               {keysLoading ? (
                 <div className="py-4 flex justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin opacity-30" />
+                  <Loader2 className="h-5 w-5 animate-spin text-[var(--accent-blue)]" />
                 </div>
               ) : !apiKeys || apiKeys.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No API keys yet.</p>
+                <p className="text-sm text-[var(--text-muted)] text-center py-4">No API keys yet.</p>
               ) : (
                 apiKeys.map((key: any) => (
-                  <div key={key.id} className="flex items-center justify-between border rounded-lg p-3">
+                  <div key={key.id} className="flex items-center justify-between bg-[var(--bg-tertiary)] rounded-lg p-3">
                     <div>
-                      <div className="text-sm font-medium">{key.name}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-sm font-medium text-[var(--text-primary)]">{key.name}</div>
+                      <div className="text-xs text-[var(--text-muted)]">
                         {key.prefix}...{key.last4} · {key.scopes?.join(', ') || 'no scopes'} · rate {key.rate_limit_per_min}/min · used {key.usage_count || 0}x
                       </div>
-                      {key.revoked && <Badge variant="destructive" className="mt-1">Revoked</Badge>}
+                      {key.revoked && <Badge className="bg-[var(--color-error)]/10 text-[var(--color-error)] mt-1">Revoked</Badge>}
                     </div>
                     {!key.revoked && (
                       <Button
@@ -264,6 +265,7 @@ export default function SettingsPage() {
                         variant="ghost"
                         onClick={() => revokeKeyMutation.mutate(key.id)}
                         disabled={revokeKeyMutation.isPending}
+                        className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                       >
                         Revoke
                       </Button>
@@ -272,10 +274,9 @@ export default function SettingsPage() {
                 ))
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </GlassCard>
       </div>
-    </div>
   );
 }
 
@@ -375,21 +376,28 @@ function CreateApiKeyForm({ onCreate }: { onCreate: (arg0: { name: string; scope
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 border rounded-lg p-4">
+    <form onSubmit={handleSubmit} className="space-y-3 bg-[var(--bg-tertiary)] rounded-lg p-4">
       <div className="space-y-2">
-        <Label>Key Name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Production Key" />
+        <Label className="text-[var(--text-secondary)]">Key Name</Label>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Production Key"
+          className="bg-[var(--bg-primary)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+        />
       </div>
       <div className="space-y-2">
-        <Label>Scopes</Label>
+        <Label className="text-[var(--text-secondary)]">Scopes</Label>
         <div className="flex flex-wrap gap-2">
           {allScopes.map((scope) => (
             <button
               key={scope}
               type="button"
               onClick={() => toggleScope(scope)}
-              className={`px-2 py-1 rounded text-xs border ${
-                scopes.includes(scope) ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'
+              className={`px-2 py-1 rounded text-xs transition-colors ${
+                scopes.includes(scope)
+                  ? 'bg-[var(--accent-blue)] text-white'
+                  : 'bg-[var(--bg-primary)] text-[var(--text-muted)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
               }`}
             >
               {scope}
@@ -397,10 +405,10 @@ function CreateApiKeyForm({ onCreate }: { onCreate: (arg0: { name: string; scope
           ))}
         </div>
       </div>
-      <Button type="submit" disabled={loading || !name.trim()}>
+      <button type="submit" disabled={loading || !name.trim()} className="btn-gradient px-4 py-2 rounded-lg text-sm font-medium">
         {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
         Create API Key
-      </Button>
+      </button>
     </form>
   );
 }
