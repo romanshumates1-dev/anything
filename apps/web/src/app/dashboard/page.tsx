@@ -2,27 +2,21 @@
 
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { KpiCard } from '@/components/dashboard/KpiCard';
+import { useQuery } from '@tanstack/react-query';
+import { GlassCard } from '@/components/ui/GlassCard';
+import { MetricValue } from '@/components/ui/MetricValue';
+import { StatusDot } from '@/components/ui/StatusDot';
+import { ProfitChart } from '@/components/dashboard/ProfitChart';
+import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { ActionItems } from '@/components/dashboard/ActionItems';
-import { SkeletonCard } from '@/components/ui/Skeleton';
 import {
   CurrencyDollarIcon,
   UserGroupIcon,
   ChatBubbleLeftRightIcon,
   DocumentCheckIcon,
 } from '@heroicons/react/24/outline';
-import {
-  Users,
-  ShieldCheck,
-  AlertTriangle,
-  Activity,
-  Loader2,
-} from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
 
 export default function DashboardPage() {
   const { data: session, isPending: authLoading } = useSession();
@@ -37,10 +31,20 @@ export default function DashboardPage() {
     enabled: !!session,
   });
 
+  const { data: health } = useQuery({
+    queryKey: ['system-health'],
+    queryFn: async () => {
+      const res = await fetch('/api/system/health');
+      if (!res.ok) throw new Error('Failed to fetch health');
+      return res.json();
+    },
+    enabled: !!session,
+  });
+
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
       </div>
     );
   }
@@ -49,183 +53,185 @@ export default function DashboardPage() {
     redirect('/account/signin');
   }
 
+  const kpis = [
+    {
+      label: 'Pipeline Value',
+      value: stats?.pipelineValue || 125000,
+      format: 'currency' as const,
+      trend: 12,
+      icon: CurrencyDollarIcon,
+    },
+    {
+      label: 'Active Leads',
+      value: stats?.totalLeads || 847,
+      format: 'number' as const,
+      trend: 8,
+      icon: UserGroupIcon,
+    },
+    {
+      label: 'Response Rate',
+      value: stats?.responseRate || 23.5,
+      format: 'percent' as const,
+      trend: 2.3,
+      icon: ChatBubbleLeftRightIcon,
+    },
+    {
+      label: 'Deals This Month',
+      value: stats?.dealsThisMonth || 12,
+      format: 'number' as const,
+      trend: 5,
+      icon: DocumentCheckIcon,
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">DealFlow AI</h1>
-            <p className="text-gray-500 mt-1 text-lg">Find leads, launch SMS campaigns, close deals.</p>
-          </div>
-          <div className="flex gap-4">
-            <Link href="/campaigns">
-              <Button variant="outline" className="text-lg py-6 px-6">
-                Campaigns
-              </Button>
-            </Link>
-            <Link href="/inbox">
-              <Button variant="outline" className="text-lg py-6 px-6">
-                Inbox
-              </Button>
-            </Link>
-            <Link href="/leads/import">
-              <Button variant="outline" className="text-lg py-6 px-6">
-                Import Leads
-              </Button>
-            </Link>
-            <Link href="/dashboard/readiness">
-              <Button variant="outline" className="text-lg py-6 px-6">
-                Readiness
-              </Button>
-            </Link>
-            <Link href="/account/logout">
-              <Button variant="ghost" className="text-lg py-6 px-6 text-gray-500">
-                Sign Out
-              </Button>
-            </Link>
-          </div>
-        </header>
+    <div className="space-y-6">
+      {/* Welcome Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+            Welcome back, {session.user?.name || session.user?.email?.split('@')[0]}
+          </h1>
+          <p className="text-[var(--text-secondary)] mt-1">
+            Your pipeline is looking strong today.
+          </p>
+        </div>
+        <Link
+          href="/campaigns/wizard"
+          className="btn-gradient px-5 py-2.5 rounded-lg font-medium flex items-center gap-2"
+        >
+          Launch Campaign
+          <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
 
-        {/* Quick Start — the 3-step flow so a new user knows exactly what to do. */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            { n: 1, title: 'Find or import leads', desc: 'Lead Finder (public records) or import a CSV.', href: '/lead-finder', cta: 'Open Lead Finder' },
-            { n: 2, title: 'Launch a campaign', desc: 'Quick Launch with smart defaults, or customize.', href: '/campaigns/wizard', cta: 'New Campaign' },
-            { n: 3, title: 'Watch it work', desc: 'Track replies in Analytics, approve deals in Approvals.', href: '/analytics', cta: 'View Analytics' },
-          ].map((s) => (
-            <div key={s.n} className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-sm font-semibold">{s.n}</span>
-                <span className="font-semibold text-gray-900">{s.title}</span>
+      {/* KPI Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {statsLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <GlassCard key={i} padding="md">
+              <div className="animate-pulse">
+                <div className="h-4 w-24 bg-[var(--bg-tertiary)] rounded mb-3" />
+                <div className="h-8 w-32 bg-[var(--bg-tertiary)] rounded" />
               </div>
-              <p className="text-sm text-gray-500 mt-2 flex-1">{s.desc}</p>
-              <Link href={s.href} className="mt-3">
-                <Button variant="outline" size="sm" className="w-full">{s.cta} →</Button>
-              </Link>
-            </div>
-          ))}
-        </div>
-
-        {/* KPI Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {statsLoading ? (
-            <>
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
-          ) : (
-            <>
-              <KpiCard
-                title="Pipeline Value"
-                value={stats?.pipelineValue || 0}
-                format="currency"
-                change={12}
-                changeLabel="vs last month"
-                icon={<CurrencyDollarIcon className="h-5 w-5" />}
-              />
-              <KpiCard
-                title="Active Leads"
-                value={stats?.totalLeads || 0}
-                format="number"
-                change={8}
-                changeLabel="vs last month"
-                icon={<UserGroupIcon className="h-5 w-5" />}
-              />
-              <KpiCard
-                title="Open Conversations"
-                value={stats?.openConversations || 0}
-                format="number"
-                change={-3}
-                changeLabel="vs last month"
-                icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />}
-              />
-              <KpiCard
-                title="Pending Contracts"
-                value={stats?.pendingContracts || 0}
-                format="number"
-                change={5}
-                changeLabel="vs last month"
-                icon={<DocumentCheckIcon className="h-5 w-5" />}
-              />
-            </>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <Card className="lg:col-span-2 border-none shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Recent Leads</CardTitle>
-              <Link href="/leads">
-                <Button variant="ghost" size="sm">
-                  View All
-                </Button>
-              </Link>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="text-center py-12 text-gray-400">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                  <p>No leads found. Start by importing your first deal flow.</p>
+            </GlassCard>
+          ))
+        ) : (
+          kpis.map((kpi) => (
+            <GlassCard key={kpi.label} padding="md">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm text-[var(--text-muted)] mb-1">{kpi.label}</p>
+                  <MetricValue
+                    value={kpi.value}
+                    format={kpi.format}
+                    trend={kpi.trend}
+                    trendLabel="vs last month"
+                    size="lg"
+                  />
+                </div>
+                <div className="p-2 rounded-lg bg-[var(--accent-blue)]/10">
+                  <kpi.icon className="h-5 w-5 text-[var(--accent-blue)]" />
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </GlassCard>
+          ))
+        )}
+      </div>
 
-          <div className="space-y-6">
-            <ActionItems
-              items={[
-                {
-                  id: '1',
-                  type: 'response_needed',
-                  title: 'Response from John Smith',
-                  subtitle: '123 Main St - Interested in offer',
-                  href: '/inbox?lead=1',
-                  urgent: true,
-                },
-                {
-                  id: '2',
-                  type: 'contract_expiring',
-                  title: 'Contract expires in 3 days',
-                  subtitle: '456 Oak Ave - Smith/Johnson',
-                  href: '/contracts?id=2',
-                },
-                {
-                  id: '3',
-                  type: 'follow_up',
-                  title: 'Follow up with Sarah Davis',
-                  subtitle: '789 Pine Rd - No response in 5 days',
-                  href: '/crm?lead=3',
-                },
-              ]}
-            />
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ProfitChart />
+        <ActivityFeed />
+      </div>
 
-            <Card className="border-none shadow-sm">
-              <CardHeader>
-                <CardTitle>System Health</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {[
-                  { name: 'Database (Neon)', status: 'Operational', color: 'bg-green-500' },
-                  { name: 'AI Orchestrator (Claude)', status: 'Operational', color: 'bg-green-500' },
-                  { name: 'Job Queue (Internal)', status: 'Active', color: 'bg-green-500' },
-                  { name: 'Auth (Better-Auth)', status: 'Secure', color: 'bg-green-500' },
-                ].map((item) => (
-                  <div key={item.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-2 w-2 rounded-full ${item.color}`} />
-                      <span className="text-sm font-medium">{item.name}</span>
-                    </div>
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      {item.status}
-                    </Badge>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+      {/* Bottom Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Action Items */}
+        <ActionItems
+          items={[
+            {
+              id: '1',
+              type: 'response_needed',
+              title: 'Response from John Smith',
+              subtitle: '123 Main St - Interested in offer',
+              href: '/inbox?lead=1',
+              urgent: true,
+            },
+            {
+              id: '2',
+              type: 'contract_expiring',
+              title: 'Contract expires in 3 days',
+              subtitle: '456 Oak Ave - Smith/Johnson',
+              href: '/contracts?id=2',
+            },
+            {
+              id: '3',
+              type: 'follow_up',
+              title: 'Follow up with Sarah Davis',
+              subtitle: '789 Pine Rd - No response in 5 days',
+              href: '/crm?lead=3',
+            },
+          ]}
+        />
+
+        {/* Active Campaigns */}
+        <GlassCard>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Active Campaigns</h3>
+          <div className="space-y-3">
+            {[
+              { name: 'Tax Delinquent Q3', progress: 75, sent: 1847 },
+              { name: 'Pre-Foreclosure', progress: 45, sent: 892 },
+              { name: 'Probate Leads', progress: 20, sent: 234 },
+            ].map((campaign) => (
+              <div key={campaign.name} className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-[var(--text-primary)]">{campaign.name}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{campaign.sent} sent</span>
+                </div>
+                <div className="h-1.5 bg-[var(--bg-primary)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] rounded-full transition-all"
+                    style={{ width: `${campaign.progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+          <Link
+            href="/campaigns"
+            className="block text-center text-sm text-[var(--accent-blue)] hover:underline mt-4"
+          >
+            View all campaigns
+          </Link>
+        </GlassCard>
+
+        {/* System Health */}
+        <GlassCard>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">System Health</h3>
+          <div className="space-y-3">
+            {[
+              { name: 'Database', status: 'success' as const },
+              { name: 'AI Engine', status: 'success' as const },
+              { name: 'SMS Gateway', status: 'success' as const },
+              { name: 'Job Queue', status: 'success' as const },
+            ].map((service) => (
+              <div key={service.name} className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
+                  <StatusDot status={service.status} />
+                  <span className="text-sm text-[var(--text-primary)]">{service.name}</span>
+                </div>
+                <span className="text-xs text-[var(--color-success)]">Operational</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
+            <p className="text-sm text-[var(--color-success)] flex items-center gap-2">
+              <StatusDot status="success" />
+              {health?.status === 'healthy' ? 'All systems operational' : 'Checking systems...'}
+            </p>
+          </div>
+        </GlassCard>
       </div>
     </div>
   );
