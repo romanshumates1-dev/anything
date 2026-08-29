@@ -31,7 +31,7 @@ export default async function LandingPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link
-                  href="/contact"
+                  href="/account/signup"
                   className="inline-flex items-center justify-center rounded-lg bg-blue-700 px-6 py-3 text-base font-medium text-white hover:bg-blue-800 transition-colors shadow-lg"
                 >
                   Start Free Trial
@@ -163,7 +163,7 @@ export default async function LandingPage() {
             Start your free trial. No credit card required. No setup fees.
           </p>
           <Link
-            href="/contact"
+            href="/account/signup"
             className="inline-flex items-center justify-center rounded-lg bg-white px-8 py-3 text-base font-medium text-blue-700 hover:bg-blue-50 transition-colors shadow-lg"
           >
             Get Started Free

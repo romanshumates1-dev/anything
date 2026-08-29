@@ -183,7 +183,7 @@ export default function HowItWorksPage() {
             Start your 30-day free trial today. No credit card required.
           </p>
           <Link
-            href="/contact"
+            href="/account/signup"
             className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700"
           >
             Get Started
