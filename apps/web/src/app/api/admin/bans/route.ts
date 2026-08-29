@@ -14,6 +14,7 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { adminAudit, clientIp } from '@/app/api/utils/adminAudit';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 export async function GET() {
   const admin = await requireAdmin();
@@ -35,6 +36,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
@@ -99,6 +103,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 

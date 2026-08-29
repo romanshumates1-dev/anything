@@ -3,6 +3,7 @@ import { requireAdmin } from '@/app/api/utils/authz';
 import { KNOWN_ROLES, ROLE_ADMIN } from '@/app/api/utils/access-control';
 import { logEvent } from '@/app/api/utils/logger';
 import { adminAudit, clientIp } from '@/app/api/utils/adminAudit';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 /**
  * Admin role assignment + access revocation for a single user. ADMIN-only.
@@ -14,6 +15,9 @@ import { adminAudit, clientIp } from '@/app/api/utils/adminAudit';
  *    immediately instead of when their cookie cache expires.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
@@ -105,6 +109,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
  * password-reset / re-signup flow. ADMIN-only, audit-logged.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
@@ -148,6 +155,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
  * ADMIN-only, audit-logged.
  */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 

@@ -19,6 +19,7 @@ import {
   type DealData,
   type NegotiationRecord,
 } from '../engine';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 interface GenerateContractRequest {
   dealId: string;
@@ -38,6 +39,9 @@ interface GenerateContractRequest {
 }
 
 export async function POST(req: NextRequest) {
+  const csrfError = requireValidCsrf(req);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 

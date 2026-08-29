@@ -11,6 +11,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { getStripeProvider } from '@/app/api/services/stripeProvider';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -63,6 +64,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });

@@ -7,6 +7,7 @@ import { buildPriceLadder } from '@/app/api/services/priceLadder';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 /**
  * Resolve an approval (session-authed, org-scoped). Money-moving route:
@@ -23,6 +24,9 @@ import { recordStageTransition } from '@/app/api/services/stageTransitionRecorde
  * (404) and cannot be acted on.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -97,7 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // Enqueue the next AI turn (idempotent via dedupeKey). Resolve a lead by
       // the contact's phone so the ai_reply handler has a conversation to act on.
       const [contact] = await sql`SELECT phone FROM campaign_contacts WHERE id = ${negotiationId} AND organization_id = ${org} LIMIT 1`;
-      let leadId: number | null = null;
+      let leadId: string | null = null;
       if (contact?.phone) {
         const [lead] = await sql`SELECT id FROM leads WHERE phone = ${contact.phone} LIMIT 1`;
         leadId = lead?.id ?? null;

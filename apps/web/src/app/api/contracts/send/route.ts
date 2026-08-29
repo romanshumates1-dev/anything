@@ -16,6 +16,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 import { getEsignProvider } from '@/app/api/services/esignProvider';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 const PURCHASE_AGREEMENT_TEMPLATE = `
 REAL ESTATE PURCHASE AGREEMENT
@@ -159,6 +160,9 @@ function fillTemplate(template: string, vars: Record<string, string>): string {
 }
 
 export async function POST(req: NextRequest) {
+  const csrfError = requireValidCsrf(req);
+  if (csrfError) return csrfError;
+
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
