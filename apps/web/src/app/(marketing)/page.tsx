@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { CheckCircle, Bot, Shield, Zap, BarChart3, MessageSquare } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { UrgencyBanner } from '@/components/marketing';
 
 // Marketing landing owns "/". Guests see this page; authenticated users are
 // sent to the SaaS app at /dashboard. (Previously /app/page.tsx (dashboard)
@@ -13,6 +14,8 @@ export default async function LandingPage() {
   if (session) redirect("/dashboard");
   return (
     <div className="min-h-screen">
+      {/* Urgency Banner */}
+      <UrgencyBanner variant="spots" spotsRemaining={847} discount={50} />
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
