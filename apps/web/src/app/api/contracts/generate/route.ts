@@ -253,56 +253,47 @@ export async function POST(req: NextRequest) {
     // Generate the contract
     const contract = generateContract(dealData, type);
 
-    // Store the contract in database - failure is an error, not silently ignored
-    let contractRecord;
+    // Store contract and update lead status atomically
     try {
-      contractRecord = await sql`
-        INSERT INTO contracts (
-          id, organization_id, lead_id, type, status, content,
-          regional_addendum, state, disclosures, variables, generated_at
-        )
-        VALUES (
-          ${contract.contractId},
-          ${organization.id},
-          ${dealId},
-          ${type},
-          ${contract.status},
-          ${contract.content},
-          ${contract.regionalAddendum || null},
-          ${contract.state},
-          ${JSON.stringify(contract.disclosures)},
-          ${JSON.stringify(contract.variables)},
-          ${contract.generatedAt}
-        )
-        RETURNING id, status, generated_at
-      `;
-
-      if (!contractRecord || contractRecord.length === 0) {
-        console.error('[CONTRACTS] Contract INSERT returned no rows');
-        return Response.json({ error: 'Failed to save contract to database' }, { status: 500 });
-      }
+      await sql.transaction([
+        sql`
+          INSERT INTO contracts (
+            id, organization_id, lead_id, type, status, content,
+            regional_addendum, state, disclosures, variables, generated_at
+          )
+          VALUES (
+            ${contract.contractId},
+            ${organization.id},
+            ${dealId},
+            ${type},
+            ${contract.status},
+            ${contract.content},
+            ${contract.regionalAddendum || null},
+            ${contract.state},
+            ${JSON.stringify(contract.disclosures)},
+            ${JSON.stringify(contract.variables)},
+            ${contract.generatedAt}
+          )
+        `,
+        sql`
+          UPDATE leads
+          SET status = ${type === 'ASSIGNMENT' ? 'CONTRACT_GENERATED_ASSIGNMENT' : 'CONTRACT_GENERATED'},
+              updated_at = now()
+          WHERE id = ${dealId}
+        `,
+      ]);
     } catch (err: any) {
-      console.error('[CONTRACTS] Failed to store contract in database:', err.message);
+      console.error('[CONTRACTS] Failed to store contract:', err.message);
       return Response.json({ error: 'Failed to save contract to database' }, { status: 500 });
     }
 
-    // Log the event
+    // Log the event (outside transaction - best effort)
     await logEvent('contract_generated', 'contract', contract.contractId, {
       type,
       dealId,
       state: contract.state,
       disclosureCount: contract.disclosures.length,
     }, organization.id);
-
-    // Update deal status
-    await sql`
-      UPDATE leads
-      SET status = ${type === 'ASSIGNMENT' ? 'CONTRACT_GENERATED_ASSIGNMENT' : 'CONTRACT_GENERATED'},
-          updated_at = now()
-      WHERE id = ${dealId}
-    `.catch(() => {
-      // Ignore if status column doesn't accept this value
-    });
 
     return Response.json({
       ok: true,
