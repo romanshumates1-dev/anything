@@ -29,7 +29,25 @@ Comprehensive optimization covering value-based pricing model, UX improvements a
 - Business: Teams, 3-10 deals/month
 - Scale: High-volume operations, 10+ deals/month
 
-### 1.2 SMS Packs (Add-On)
+### 1.2 Overage/Surcharge Fees (Per Tier)
+
+When customers exceed included limits, they pay overage rates. Higher tiers get better rates.
+
+| Tier | SMS Overage | Email Overage | AI Credit Overage |
+|------|-------------|---------------|-------------------|
+| Free | N/A (hard cap) | N/A (hard cap) | N/A (hard cap) |
+| Starter | 18¢/msg | 0.5¢/email | 15¢/credit |
+| Pro | 15¢/msg | 0.3¢/email | 12¢/credit |
+| Business | 12¢/msg | 0.2¢/email | 8¢/credit |
+| Scale | 9¢/msg | 0.1¢/email | 5¢/credit |
+
+**Notes:**
+- Free tier has hard caps - must upgrade to continue
+- Overage rates are higher than pack rates to incentivize buying packs
+- Customers notified at 80% usage with upgrade/pack purchase prompt
+- Overage billing is automatic (no service interruption)
+
+### 1.3 SMS Packs (Add-On)
 
 | Pack | SMS | Price | Per SMS | Margin |
 |------|-----|-------|---------|--------|
@@ -38,7 +56,7 @@ Comprehensive optimization covering value-based pricing model, UX improvements a
 | Pro | 15,000 | $1,299 | 8.66¢ | 83% |
 | Volume | 50,000 | $3,499 | 7¢ | 79% |
 
-### 1.3 AI Credit Packs (Add-On)
+### 1.4 AI Credit Packs (Add-On)
 
 | Pack | Credits | Price | Per Credit | Margin |
 |------|---------|-------|------------|--------|
@@ -47,7 +65,7 @@ Comprehensive optimization covering value-based pricing model, UX improvements a
 | Pro | 10,000 | $449 | 4.49¢ | 96% |
 | Volume | 50,000 | $1,799 | 3.6¢ | 94% |
 
-### 1.4 Credit Costs
+### 1.5 Credit Costs
 
 | Operation | Credits |
 |-----------|---------|
@@ -57,7 +75,7 @@ Comprehensive optimization covering value-based pricing model, UX improvements a
 | Contract analysis | 10 |
 | Buyer matching | 3 |
 
-### 1.5 Cost Verification (Triple-Verified)
+### 1.6 Cost Verification (Triple-Verified)
 
 | Service | Your Cost | Source |
 |---------|-----------|--------|
