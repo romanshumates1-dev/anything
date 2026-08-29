@@ -2,7 +2,7 @@
  * SMS Driver - AWS SNS
  *
  * Uses your own AWS infrastructure instead of Twilio.
- * Cost: ~$0.00645 per SMS (vs Twilio $0.0079+)
+ * Cost: ~$0.015 per SMS (AWS SNS 10DLC with carrier fees)
  */
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 

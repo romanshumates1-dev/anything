@@ -46,12 +46,12 @@ const BENCHMARKS = {
   // AI optimization boost
   aiOptimizationBoost: 1.3, // 30% improvement with AI message optimization
 
-  // Cost per channel
+  // Cost per channel (verified AWS pricing 2026-08)
   costs: {
-    emailPer1000: 0.10,     // AWS SES
-    smsPer1000: 6.45,       // AWS SNS
-    rcsPer1000: 7.00,       // AWS RCS
-    directMailPer1000: 450, // Printed mailers
+    emailPer1000: 0.10,      // AWS SES: $0.10/1000
+    smsPer1000: 15.00,       // AWS SNS 10DLC: ~$0.015/msg
+    rcsPer1000: 15.00,       // AWS RCS (similar to SMS)
+    directMailPer1000: 450,  // Printed mailers
   },
 
   // Deal economics
