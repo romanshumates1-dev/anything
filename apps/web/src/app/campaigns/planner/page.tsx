@@ -2,12 +2,11 @@
 
 import { useState, useMemo } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { GlassCard } from '@/components/ui/GlassCard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ArrowLeft, Calculator, TrendingUp, Users, Repeat, DollarSign, Info, Mail, Phone, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
 
@@ -173,209 +172,215 @@ export default function CampaignPlannerPage() {
   const isMeasured = inputs.measuredN !== null && inputs.measuredN > 0;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-6 flex items-center gap-3">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <div className="flex items-center gap-3">
         <Link href="/campaigns">
-          <Button variant="ghost" size="sm"><ArrowLeft className="mr-1 h-4 w-4" /> Campaigns</Button>
+          <Button variant="ghost" size="sm" className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <ArrowLeft className="mr-1 h-4 w-4" /> Campaigns
+          </Button>
         </Link>
-        <h1 className="text-2xl font-bold">Campaign Financial Planner</h1>
-        <Badge variant="outline" className="ml-2">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Campaign Financial Planner</h1>
+        <Badge className="ml-2 bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]">
           <Calculator className="mr-1 h-3 w-3" /> What does my next ${inputs.budget} buy?
         </Badge>
       </div>
 
-      <Alert className="mb-6">
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          <strong>Governing insight:</strong> A NEW contact costs ~$0.09–0.17 (skip-trace + DNC).
-          An additional SMS touch costs ~$0.011. Email and manual calls cost <strong>$0</strong>.
-          Depth across free channels multiplies touches without multiplying cost.
-          ~80% of wholesale contracts close on follow-up between day 31–180.
-        </AlertDescription>
-      </Alert>
+      <GlassCard className="border-l-4 border-l-[var(--accent-blue)]">
+        <div className="flex gap-3">
+          <Info className="h-5 w-5 text-[var(--accent-blue)] shrink-0 mt-0.5" />
+          <div className="text-sm text-[var(--text-secondary)]">
+            <strong className="text-[var(--text-primary)]">Governing insight:</strong> A NEW contact costs ~$0.09–0.17 (skip-trace + DNC).
+            An additional SMS touch costs ~$0.011. Email and manual calls cost <strong className="text-[var(--color-success)]">$0</strong>.
+            Depth across free channels multiplies touches without multiplying cost.
+            ~80% of wholesale contracts close on follow-up between day 31–180.
+          </div>
+        </div>
+      </GlassCard>
 
       {/* Inputs */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="h-5 w-5" /> Per-Unit Costs & Parameters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <GlassCard>
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-4">
+          <DollarSign className="h-5 w-5 text-[var(--color-success)]" /> Per-Unit Costs & Parameters
+        </h3>
+        <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <div>
-              <Label>Skip-trace ($/contact)</Label>
+              <Label className="text-[var(--text-secondary)]">Skip-trace ($/contact)</Label>
               <Input type="number" step="0.01" min="0" value={inputs.skipTrace}
-                onChange={(e) => set('skipTrace', parseFloat(e.target.value) || 0)} />
+                onChange={(e) => set('skipTrace', parseFloat(e.target.value) || 0)}
+                className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
             </div>
             <div>
-              <Label>DNC scrub ($/contact)</Label>
+              <Label className="text-[var(--text-secondary)]">DNC scrub ($/contact)</Label>
               <Input type="number" step="0.001" min="0" value={inputs.dncScrub}
-                onChange={(e) => set('dncScrub', parseFloat(e.target.value) || 0)} />
+                onChange={(e) => set('dncScrub', parseFloat(e.target.value) || 0)}
+                className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
             </div>
             <div>
-              <Label>SMS segment ($/msg)</Label>
+              <Label className="text-[var(--text-secondary)]">SMS segment ($/msg)</Label>
               <Input type="number" step="0.001" min="0" value={inputs.segmentCost}
-                onChange={(e) => set('segmentCost', parseFloat(e.target.value) || 0)} />
+                onChange={(e) => set('segmentCost', parseFloat(e.target.value) || 0)}
+                className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
             </div>
             <div>
-              <Label>AI ($/conversation)</Label>
+              <Label className="text-[var(--text-secondary)]">AI ($/conversation)</Label>
               <Input type="number" step="0.01" min="0" value={inputs.aiPerConversation}
-                onChange={(e) => set('aiPerConversation', parseFloat(e.target.value) || 0)} />
+                onChange={(e) => set('aiPerConversation', parseFloat(e.target.value) || 0)}
+                className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
             </div>
             <div>
-              <Label>Budget ($)</Label>
+              <Label className="text-[var(--text-secondary)]">Budget ($)</Label>
               <Input type="number" step="50" min="0" value={inputs.budget}
-                onChange={(e) => set('budget', parseFloat(e.target.value) || 0)} />
+                onChange={(e) => set('budget', parseFloat(e.target.value) || 0)}
+                className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
             </div>
           </div>
 
-          <div className="border-t pt-4">
-            <p className="mb-2 text-sm font-medium text-gray-700">Plan A (Breadth): SMS-only, wide net</p>
+          <div className="border-t border-[var(--border-subtle)] pt-4">
+            <p className="mb-2 text-sm font-medium text-[var(--accent-blue)]">Plan A (Breadth): SMS-only, wide net</p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <div>
-                <Label>Total contacts</Label>
+                <Label className="text-[var(--text-secondary)]">Total contacts</Label>
                 <Input type="number" step="100" min="1" value={inputs.contacts}
-                  onChange={(e) => set('contacts', parseInt(e.target.value) || 1)} />
+                  onChange={(e) => set('contacts', parseInt(e.target.value) || 1)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
               </div>
               <div>
-                <Label>SMS touches per contact</Label>
+                <Label className="text-[var(--text-secondary)]">SMS touches per contact</Label>
                 <Input type="number" step="1" min="1" max="5" value={inputs.breadthTouches}
-                  onChange={(e) => set('breadthTouches', parseInt(e.target.value) || 1)} />
+                  onChange={(e) => set('breadthTouches', parseInt(e.target.value) || 1)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
               </div>
             </div>
           </div>
 
-          <div className="border-t pt-4">
-            <p className="mb-2 text-sm font-medium text-gray-700">
+          <div className="border-t border-[var(--border-subtle)] pt-4">
+            <p className="mb-2 text-sm font-medium text-[var(--color-success)]">
               Plan B (Depth): {Math.floor(inputs.contacts / 4)} contacts × {totalDepthTouches} touches across channels
             </p>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> SMS touches</Label>
+                <Label className="flex items-center gap-1 text-[var(--text-secondary)]"><MessageSquare className="h-3 w-3" /> SMS touches</Label>
                 <Input type="number" step="1" min="0" max="12" value={inputs.depthSmsTouches}
-                  onChange={(e) => set('depthSmsTouches', parseInt(e.target.value) || 0)} />
-                <p className="mt-0.5 text-[10px] text-gray-400">${inputs.segmentCost}/msg</p>
+                  onChange={(e) => set('depthSmsTouches', parseInt(e.target.value) || 0)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
+                <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">${inputs.segmentCost}/msg</p>
               </div>
               <div>
-                <Label className="flex items-center gap-1"><Mail className="h-3 w-3" /> Email touches</Label>
+                <Label className="flex items-center gap-1 text-[var(--text-secondary)]"><Mail className="h-3 w-3" /> Email touches</Label>
                 <Input type="number" step="1" min="0" max="12" value={inputs.depthEmailTouches}
-                  onChange={(e) => set('depthEmailTouches', parseInt(e.target.value) || 0)} />
-                <p className="mt-0.5 text-[10px] text-green-600 font-medium">$0.00/msg (free)</p>
+                  onChange={(e) => set('depthEmailTouches', parseInt(e.target.value) || 0)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
+                <p className="mt-0.5 text-[10px] text-[var(--color-success)] font-medium">$0.00/msg (free)</p>
               </div>
               <div>
-                <Label className="flex items-center gap-1"><Phone className="h-3 w-3" /> Call touches</Label>
+                <Label className="flex items-center gap-1 text-[var(--text-secondary)]"><Phone className="h-3 w-3" /> Call touches</Label>
                 <Input type="number" step="1" min="0" max="6" value={inputs.depthCallTouches}
-                  onChange={(e) => set('depthCallTouches', parseInt(e.target.value) || 0)} />
-                <p className="mt-0.5 text-[10px] text-green-600 font-medium">$0.00 (your minutes)</p>
+                  onChange={(e) => set('depthCallTouches', parseInt(e.target.value) || 0)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
+                <p className="mt-0.5 text-[10px] text-[var(--color-success)] font-medium">$0.00 (your minutes)</p>
               </div>
             </div>
           </div>
 
-          <div className="border-t pt-4">
+          <div className="border-t border-[var(--border-subtle)] pt-4">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <div>
-                <Label className="flex items-center gap-1">
+                <Label className="flex items-center gap-1 text-[var(--text-secondary)]">
                   Conversion rate
-                  <Badge variant={isMeasured ? 'default' : 'secondary'} className="ml-1 text-[10px]">
+                  <Badge className={`ml-1 text-[10px] ${isMeasured ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]'}`}>
                     {isMeasured ? `MEASURED (n=${inputs.measuredN})` : 'BENCHMARK'}
                   </Badge>
                 </Label>
                 <Input type="number" step="0.0001" min="0" max="1" value={inputs.conversionRate}
-                  onChange={(e) => set('conversionRate', parseFloat(e.target.value) || 0)} />
+                  onChange={(e) => set('conversionRate', parseFloat(e.target.value) || 0)}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
               </div>
               <div>
-                <Label>Measured sample (n, blank=benchmark)</Label>
+                <Label className="text-[var(--text-secondary)]">Measured sample (n, blank=benchmark)</Label>
                 <Input type="number" step="1" min="0" placeholder="Leave blank for benchmark"
                   value={inputs.measuredN ?? ''}
                   onChange={(e) => {
                     const v = e.target.value.trim();
                     set('measuredN', v ? parseInt(v) || null : null);
-                  }} />
+                  }}
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]" />
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </GlassCard>
 
       {/* Side-by-side Plans */}
-      <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <PlanCard plan={plans.breadth} icon={<Users className="h-5 w-5" />} color="blue" isMeasured={isMeasured} />
         <PlanCard plan={plans.depth} icon={<Repeat className="h-5 w-5" />} color="green" winner isMeasured={isMeasured} />
       </div>
 
       {/* What Would Have To Be True */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" /> What Would Have To Be True
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-3 text-sm text-gray-600">
-            Contacts needed (at depth plan&apos;s effective rate) for target confidence:
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="p-2">Target</th>
-                  <th className="p-2">80% confidence</th>
-                  <th className="p-2">95% confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b">
-                  <td className="p-2 font-medium">&ge;1 contract</td>
-                  <td className="p-2">{whatWouldHaveToBeTrue.n80_1.toLocaleString()} contacts</td>
-                  <td className="p-2">{whatWouldHaveToBeTrue.n95_1.toLocaleString()} contacts</td>
-                </tr>
-                <tr>
-                  <td className="p-2 font-medium">&ge;3 contracts</td>
-                  <td className="p-2">{whatWouldHaveToBeTrue.n80_3.toLocaleString()} contacts</td>
-                  <td className="p-2">{whatWouldHaveToBeTrue.n95_3.toLocaleString()} contacts</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-xs text-gray-500">
-            <Badge variant={isMeasured ? 'default' : 'secondary'} className="mr-1 text-[10px]">
-              {isMeasured ? `MEASURED (n=${inputs.measuredN})` : 'BENCHMARK (unverified for this account)'}
-            </Badge>
-            Base conversion: {(inputs.conversionRate * 100).toFixed(3)}%.
-            Effective with {totalDepthTouches} touches: {((inputs.conversionRate * totalDepthTouches / 2) * 100).toFixed(3)}%.
-          </p>
-        </CardContent>
-      </Card>
+      <GlassCard>
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-4">
+          <TrendingUp className="h-5 w-5 text-[var(--accent-purple)]" /> What Would Have To Be True
+        </h3>
+        <p className="mb-3 text-sm text-[var(--text-secondary)]">
+          Contacts needed (at depth plan&apos;s effective rate) for target confidence:
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border-subtle)] text-left text-[var(--text-muted)]">
+                <th className="p-2">Target</th>
+                <th className="p-2">80% confidence</th>
+                <th className="p-2">95% confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-[var(--border-subtle)]">
+                <td className="p-2 font-medium text-[var(--text-primary)]">&ge;1 contract</td>
+                <td className="p-2 font-mono text-[var(--text-secondary)]">{whatWouldHaveToBeTrue.n80_1.toLocaleString()} contacts</td>
+                <td className="p-2 font-mono text-[var(--text-secondary)]">{whatWouldHaveToBeTrue.n95_1.toLocaleString()} contacts</td>
+              </tr>
+              <tr>
+                <td className="p-2 font-medium text-[var(--text-primary)]">&ge;3 contracts</td>
+                <td className="p-2 font-mono text-[var(--text-secondary)]">{whatWouldHaveToBeTrue.n80_3.toLocaleString()} contacts</td>
+                <td className="p-2 font-mono text-[var(--text-secondary)]">{whatWouldHaveToBeTrue.n95_3.toLocaleString()} contacts</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-[var(--text-muted)]">
+          <Badge className={`mr-1 text-[10px] ${isMeasured ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]'}`}>
+            {isMeasured ? `MEASURED (n=${inputs.measuredN})` : 'BENCHMARK (unverified for this account)'}
+          </Badge>
+          Base conversion: {(inputs.conversionRate * 100).toFixed(3)}%.
+          Effective with {totalDepthTouches} touches: {((inputs.conversionRate * totalDepthTouches / 2) * 100).toFixed(3)}%.
+        </p>
+      </GlassCard>
 
       {/* Budget Feasibility */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget Feasibility at ${inputs.budget}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded border p-3">
-              <p className="text-sm font-medium text-blue-700">Breadth (Plan A)</p>
-              <p className="text-xs text-gray-600">
-                {plans.breadth.totalCost <= inputs.budget
-                  ? `Fits budget (${money(plans.breadth.totalCost)} of ${money(inputs.budget)})`
-                  : `Over budget by ${money(plans.breadth.totalCost - inputs.budget)} — reduce contacts to ~${Math.floor(inputs.budget / (plans.breadth.totalCost / inputs.contacts))}`
-                }
-              </p>
-            </div>
-            <div className="rounded border p-3">
-              <p className="text-sm font-medium text-green-700">Depth (Plan B)</p>
-              <p className="text-xs text-gray-600">
-                {plans.depth.totalCost <= inputs.budget
-                  ? `Fits budget (${money(plans.depth.totalCost)} of ${money(inputs.budget)})`
-                  : `Over budget by ${money(plans.depth.totalCost - inputs.budget)} — reduce contacts to ~${Math.floor(inputs.budget / (plans.depth.totalCost / plans.depth.contacts))}`
-                }
-              </p>
-            </div>
+      <GlassCard>
+        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Budget Feasibility at ${inputs.budget}</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-lg bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/20 p-4">
+            <p className="text-sm font-medium text-[var(--accent-blue)]">Breadth (Plan A)</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              {plans.breadth.totalCost <= inputs.budget
+                ? `Fits budget (${money(plans.breadth.totalCost)} of ${money(inputs.budget)})`
+                : `Over budget by ${money(plans.breadth.totalCost - inputs.budget)} — reduce contacts to ~${Math.floor(inputs.budget / (plans.breadth.totalCost / inputs.contacts))}`
+              }
+            </p>
           </div>
-        </CardContent>
-      </Card>
+          <div className="rounded-lg bg-[var(--color-success)]/10 border border-[var(--color-success)]/20 p-4">
+            <p className="text-sm font-medium text-[var(--color-success)]">Depth (Plan B)</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              {plans.depth.totalCost <= inputs.budget
+                ? `Fits budget (${money(plans.depth.totalCost)} of ${money(inputs.budget)})`
+                : `Over budget by ${money(plans.depth.totalCost - inputs.budget)} — reduce contacts to ~${Math.floor(inputs.budget / (plans.depth.totalCost / plans.depth.contacts))}`
+              }
+            </p>
+          </div>
+        </div>
+      </GlassCard>
     </div>
   );
 }
@@ -387,17 +392,18 @@ function PlanCard({ plan, icon, color, winner, isMeasured }: {
   winner?: boolean;
   isMeasured: boolean;
 }) {
-  const border = winner ? 'border-green-300 ring-1 ring-green-200' : 'border-gray-200';
+  const colorStyles = color === 'blue'
+    ? 'border-[var(--accent-blue)]/30 text-[var(--accent-blue)]'
+    : 'border-[var(--color-success)]/30 text-[var(--color-success)]';
+  const winnerClass = winner ? 'ring-2 ring-[var(--color-success)]/50' : '';
   const touchesPerContact = plan.channels.sms + plan.channels.email + plan.channels.call;
   return (
-    <Card className={border}>
-      <CardHeader>
-        <CardTitle className={`flex items-center gap-2 text-${color}-700`}>
-          {icon} {plan.label}
-          {winner && <Badge className="ml-auto bg-green-100 text-green-800 text-xs">Better $/contract</Badge>}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <GlassCard className={`${winnerClass}`}>
+      <h3 className={`text-lg font-semibold flex items-center gap-2 mb-4 ${color === 'blue' ? 'text-[var(--accent-blue)]' : 'text-[var(--color-success)]'}`}>
+        {icon} {plan.label}
+        {winner && <Badge className="ml-auto bg-[var(--color-success)]/10 text-[var(--color-success)] text-xs">Better $/contract</Badge>}
+      </h3>
+      <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2 text-sm">
           <Stat label="Contacts" value={plan.contacts.toLocaleString()} />
           <Stat label="Touches / contact" value={String(touchesPerContact)} />
@@ -406,12 +412,12 @@ function PlanCard({ plan, icon, color, winner, isMeasured }: {
         </div>
 
         {/* Channel breakdown */}
-        <div className="rounded bg-gray-50 p-2 text-xs">
-          <p className="mb-1 font-medium text-gray-600">Channel mix per contact:</p>
-          <div className="flex gap-3">
+        <div className="rounded-lg bg-[var(--bg-tertiary)] p-3 text-xs">
+          <p className="mb-1 font-medium text-[var(--text-secondary)]">Channel mix per contact:</p>
+          <div className="flex gap-3 text-[var(--text-muted)]">
             {plan.channels.sms > 0 && <span>{plan.channels.sms} SMS ({money(plan.smsSendingCost)})</span>}
-            {plan.channels.email > 0 && <span className="text-green-700">{plan.channels.email} email ($0)</span>}
-            {plan.channels.call > 0 && <span className="text-green-700">{plan.channels.call} calls ($0)</span>}
+            {plan.channels.email > 0 && <span className="text-[var(--color-success)]">{plan.channels.email} email ($0)</span>}
+            {plan.channels.call > 0 && <span className="text-[var(--color-success)]">{plan.channels.call} calls ($0)</span>}
           </div>
         </div>
 
@@ -421,33 +427,33 @@ function PlanCard({ plan, icon, color, winner, isMeasured }: {
           <Stat label="Total cost" value={money(plan.totalCost)} bold />
           <Stat label="Expected contracts (λ)" value={plan.lambda.toFixed(2)} />
         </div>
-        <div className="border-t pt-2">
-          <p className="mb-1 text-xs font-medium text-gray-500">Poisson probabilities:</p>
+        <div className="border-t border-[var(--border-subtle)] pt-2">
+          <p className="mb-1 text-xs font-medium text-[var(--text-muted)]">Poisson probabilities:</p>
           <div className="grid grid-cols-3 gap-2 text-sm">
             <Stat label="P(≥1)" value={pctFmt(plan.pGte1)} />
             <Stat label="P(≥2)" value={pctFmt(plan.pGte2)} />
             <Stat label="P(≥3)" value={pctFmt(plan.pGte3)} />
           </div>
         </div>
-        <div className="border-t pt-2 text-sm">
+        <div className="border-t border-[var(--border-subtle)] pt-2 text-sm">
           <Stat label="Cost per expected contract" value={plan.lambda > 0 ? money(plan.costPerExpectedContract) : '∞'} bold />
         </div>
-        <p className="text-[10px] text-gray-400">
-          <Badge variant={isMeasured ? 'default' : 'secondary'} className="text-[9px]">
+        <p className="text-[10px] text-[var(--text-muted)]">
+          <Badge className={`text-[9px] ${isMeasured ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]' : 'bg-[var(--text-muted)]/10 text-[var(--text-muted)]'}`}>
             {isMeasured ? 'MEASURED' : 'BENCHMARK'}
           </Badge>{' '}
           Conversion inputs are {isMeasured ? 'from your account data' : 'unverified industry benchmarks'}.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </GlassCard>
   );
 }
 
 function Stat({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div>
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`${bold ? 'font-bold' : 'font-medium'}`}>{value}</p>
+      <p className="text-xs text-[var(--text-muted)]">{label}</p>
+      <p className={`font-mono ${bold ? 'font-bold text-[var(--text-primary)]' : 'font-medium text-[var(--text-secondary)]'}`}>{value}</p>
     </div>
   );
 }
