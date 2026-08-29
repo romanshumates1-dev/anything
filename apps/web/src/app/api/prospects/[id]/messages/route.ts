@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import { getOrganization } from '@/lib/organization-context';
+import { auth } from '@/lib/auth';
+import { headers } from 'next/headers';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -7,6 +10,16 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const organization = await getOrganization();
+  if (!organization) {
+    return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   try {
     const resolvedParams = await context.params;
     const prospectId = parseInt(resolvedParams.id);
@@ -68,13 +81,17 @@ export async function GET(
       LIMIT 100
     `.catch(() => []);
 
-    // Get lead info
+    // Get lead info - MUST be scoped to organization
     const [lead] = await sql`
       SELECT l.name, l.email, l.metadata, clq.touch_number, clq.status as queue_status, clq.expected_value
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      WHERE l.id = ${prospectId}
+      WHERE l.id = ${prospectId} AND l.organization_id = ${organization.id}
     `;
+
+    if (!lead) {
+      return NextResponse.json({ error: 'Prospect not found' }, { status: 404 });
+    }
 
     // Build messages array
     const messages: Array<{
