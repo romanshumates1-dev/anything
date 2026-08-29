@@ -21,110 +21,118 @@ interface TierFeature {
 interface Tier {
   id: string;
   name: string;
+  slug: string;
   description: string;
   price: number;
-  originalPrice: number;
-  period: string;
+  originalPrice?: number;
+  period?: string;
   popular: boolean;
   cta: string;
   href: string;
-  features: TierFeature[];
+  features: TierFeature[] | string[];
   limits: {
-    users: number;
-    aiCredits: number | string;
-    leads: string;
+    users?: number;
+    aiCredits?: number | string;
+    leads?: string;
     sms: number | string;
+    email: number;
+    ai: number;
+  };
+  overage?: {
+    sms: number;
+    email: number;
+    ai: number;
   };
 }
 
 const TIERS: Tier[] = [
   {
-    id: 'starter',
-    name: 'Starter',
-    description: 'Perfect for new wholesalers',
-    price: 29,
-    originalPrice: 58,
+    id: 'free',
+    name: 'Free',
+    slug: 'free',
+    description: 'Try before you buy',
+    price: 0,
     period: '/mo',
     popular: false,
-    cta: 'Start Free Trial',
+    cta: 'Start Free',
+    href: '/account/signup?plan=free',
+    features: ['25 emails/month', '5 AI credits', 'Basic CRM', 'Lead tracking'],
+    limits: { sms: 0, email: 25, ai: 5 },
+  },
+  {
+    id: 'starter',
+    name: 'Starter',
+    slug: 'starter',
+    description: 'For new wholesalers',
+    price: 129,
+    originalPrice: 258,
+    period: '/mo',
+    popular: false,
+    cta: 'Get Started',
     href: '/account/signup?plan=starter',
-    features: [
-      { text: '500 AI credits/month', included: true },
-      { text: '1,000 leads', included: true },
-      { text: '500 SMS messages', included: true },
-      { text: '3 campaigns', included: true },
-      { text: 'AI lead classification', included: true },
-      { text: 'Email campaigns', included: true },
-      { text: 'Basic CRM', included: true },
-      { text: 'AI negotiation', included: false },
-      { text: 'Contract generation', included: false },
-      { text: 'Buyer matching', included: false },
-    ],
-    limits: {
-      users: 2,
-      aiCredits: 500,
-      leads: '1,000',
-      sms: 500,
-    },
+    features: ['100 SMS/month', '500 emails/month', '250 AI credits', 'Basic analytics', 'Email support'],
+    limits: { sms: 100, email: 500, ai: 250 },
+    overage: { sms: 0.18, email: 0.005, ai: 0.15 },
   },
   {
     id: 'pro',
     name: 'Pro',
-    description: 'For active wholesalers doing 1-5 deals/month',
-    price: 79,
-    originalPrice: 158,
+    slug: 'pro',
+    description: 'For active wholesalers',
+    price: 399,
+    originalPrice: 798,
     period: '/mo',
     popular: true,
-    cta: 'Start Free Trial',
+    cta: 'Go Pro',
     href: '/account/signup?plan=pro',
-    features: [
-      { text: '2,500 AI credits/month', included: true },
-      { text: '10,000 leads', included: true },
-      { text: '5,000 SMS messages', included: true },
-      { text: '10 campaigns', included: true },
-      { text: 'AI lead classification', included: true },
-      { text: 'AI negotiation assistant', included: true, highlight: true },
-      { text: 'Contract generation', included: true, highlight: true },
-      { text: 'Buyer matching', included: true, highlight: true },
-      { text: 'Priority support', included: true },
-      { text: 'API access', included: false },
-    ],
-    limits: {
-      users: 5,
-      aiCredits: '2,500',
-      leads: '10,000',
-      sms: '5,000',
-    },
+    features: ['300 SMS/month', '2,500 emails/month', '1,500 AI credits', 'Advanced analytics', 'Priority support', 'Custom templates'],
+    limits: { sms: 300, email: 2500, ai: 1500 },
+    overage: { sms: 0.15, email: 0.003, ai: 0.12 },
   },
   {
     id: 'business',
     name: 'Business',
-    description: 'For teams scaling to 5-20 deals/month',
-    price: 199,
-    originalPrice: 398,
+    slug: 'business',
+    description: 'For growing teams',
+    price: 899,
+    originalPrice: 1798,
     period: '/mo',
     popular: false,
-    cta: 'Start Free Trial',
+    cta: 'Scale Up',
     href: '/account/signup?plan=business',
-    features: [
-      { text: '10,000 AI credits/month', included: true },
-      { text: 'Unlimited leads', included: true, highlight: true },
-      { text: '25,000 SMS messages', included: true },
-      { text: 'Unlimited campaigns', included: true },
-      { text: 'Everything in Pro', included: true },
-      { text: 'Team collaboration', included: true, highlight: true },
-      { text: 'API access', included: true },
-      { text: 'Phone support', included: true },
-      { text: 'Custom integrations', included: true },
-      { text: 'Dedicated account manager', included: false },
-    ],
-    limits: {
-      users: 15,
-      aiCredits: '10,000',
-      leads: 'Unlimited',
-      sms: '25,000',
-    },
+    features: ['1,000 SMS/month', '10,000 emails/month', '5,000 AI credits', 'Team features', 'API access', 'Dedicated success manager'],
+    limits: { sms: 1000, email: 10000, ai: 5000 },
+    overage: { sms: 0.12, email: 0.002, ai: 0.08 },
   },
+  {
+    id: 'scale',
+    name: 'Scale',
+    slug: 'scale',
+    description: 'For high-volume operations',
+    price: 2499,
+    originalPrice: 4998,
+    period: '/mo',
+    popular: false,
+    cta: 'Contact Sales',
+    href: '/account/signup?plan=scale',
+    features: ['3,000 SMS/month', '50,000 emails/month', '20,000 AI credits', 'White-label options', 'Custom integrations', 'SLA guarantee'],
+    limits: { sms: 3000, email: 50000, ai: 20000 },
+    overage: { sms: 0.09, email: 0.001, ai: 0.05 },
+  },
+];
+
+const SMS_PACKS = [
+  { name: 'Starter', sms: 1000, price: 149, perSms: 0.149 },
+  { name: 'Growth', sms: 5000, price: 599, perSms: 0.1198 },
+  { name: 'Pro', sms: 15000, price: 1299, perSms: 0.0866 },
+  { name: 'Volume', sms: 50000, price: 3499, perSms: 0.07 },
+];
+
+const AI_PACKS = [
+  { name: 'Starter', credits: 500, price: 49, perCredit: 0.098 },
+  { name: 'Growth', credits: 2500, price: 149, perCredit: 0.0596 },
+  { name: 'Pro', credits: 10000, price: 449, perCredit: 0.0449 },
+  { name: 'Volume', credits: 50000, price: 1799, perCredit: 0.036 },
 ];
 
 const CREDIT_PACKS = [
@@ -246,11 +254,11 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid lg:grid-cols-3 gap-8 mb-20">
+          <div className="grid lg:grid-cols-5 gap-6 mb-20">
             {TIERS.map((tier) => (
               <div
                 key={tier.id}
-                className={`relative rounded-2xl border-2 p-8 flex flex-col ${
+                className={`relative rounded-2xl border-2 p-6 flex flex-col ${
                   tier.popular
                     ? 'border-blue-500 bg-blue-50/30 shadow-xl scale-105 z-10'
                     : 'border-gray-200 bg-white shadow-sm'
@@ -270,48 +278,53 @@ export default function PricingPage() {
                 <div className="mb-6">
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-bold text-gray-900">${tier.price}</span>
-                    <span className="text-gray-500">{tier.period}</span>
+                    {tier.period && <span className="text-gray-500">{tier.period}</span>}
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm text-gray-400 line-through">${tier.originalPrice}/mo</span>
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">50% OFF</span>
-                  </div>
+                  {tier.originalPrice && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm text-gray-400 line-through">${tier.originalPrice}/mo</span>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">50% OFF</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3 mb-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-gray-900">{tier.limits.users}</div>
-                    <div className="text-xs text-gray-500">Users</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-gray-900">{tier.limits.aiCredits}</div>
-                    <div className="text-xs text-gray-500">AI Credits</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-gray-900">{tier.limits.leads}</div>
-                    <div className="text-xs text-gray-500">Leads</div>
-                  </div>
+                <div className="grid grid-cols-3 gap-2 mb-6 p-3 bg-gray-50 rounded-lg">
                   <div className="text-center">
                     <div className="text-lg font-bold text-gray-900">{tier.limits.sms}</div>
                     <div className="text-xs text-gray-500">SMS</div>
                   </div>
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-gray-900">{tier.limits.email}</div>
+                    <div className="text-xs text-gray-500">Emails</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-gray-900">{tier.limits.ai}</div>
+                    <div className="text-xs text-gray-500">AI</div>
+                  </div>
                 </div>
 
-                <ul className="space-y-3 flex-1 mb-8">
+                <ul className="space-y-2 flex-1 mb-6">
                   {tier.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      {feature.included ? (
-                        <Check className={`h-5 w-5 flex-shrink-0 mt-0.5 ${feature.highlight ? 'text-blue-600' : 'text-green-500'}`} />
-                      ) : (
-                        <X className="h-5 w-5 text-gray-300 flex-shrink-0 mt-0.5" />
-                      )}
-                      <span className={`text-sm ${feature.included ? (feature.highlight ? 'text-gray-900 font-medium' : 'text-gray-600') : 'text-gray-400'}`}>
-                        {feature.text}
+                      <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-500" />
+                      <span className="text-sm text-gray-600">
+                        {typeof feature === 'string' ? feature : feature.text}
                       </span>
                     </li>
                   ))}
                 </ul>
+
+                {tier.overage && (
+                  <div className="mt-4 pt-4 border-t border-gray-200 mb-6">
+                    <p className="text-xs text-gray-500 font-medium mb-2">Overage rates:</p>
+                    <div className="text-xs text-gray-500 space-y-1">
+                      <p>SMS: ${tier.overage.sms}/msg</p>
+                      <p>Email: ${tier.overage.email}/email</p>
+                      <p>AI: ${tier.overage.ai}/credit</p>
+                    </div>
+                  </div>
+                )}
 
                 <Link
                   href={tier.href}
