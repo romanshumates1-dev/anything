@@ -8,9 +8,12 @@
  * PUT  /api/esign/self-hosted - Apply signature
  */
 import { NextRequest } from 'next/server';
+import { createHash } from 'crypto';
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
+import { enqueueJob } from '@/app/api/utils/jobs';
+import { alertSellerSigned, alertBuyersMatched } from '@/app/api/alerts/notification-engine';
 import {
   createDocument,
   createSigningSession,
@@ -24,6 +27,10 @@ import {
   type ESignDocument,
   type SigningSession,
 } from './engine';
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 interface CreateDocumentRequest {
   title: string;
@@ -223,9 +230,10 @@ export async function POST(req: NextRequest) {
       sessionCache.set(session.token, session);
 
       // Persist session to database
+      const tokenHash = hashToken(session.token);
       await sql`
         INSERT INTO esign_sessions (token, document_id, signer_id, created_at, expires_at, used)
-        VALUES (${session.token}, ${session.documentId}, ${session.signerId}, ${session.createdAt}, ${session.expiresAt}, ${session.used})
+        VALUES (${tokenHash}, ${session.documentId}, ${session.signerId}, ${session.createdAt}, ${session.expiresAt}, ${session.used})
       `.catch(console.error);
 
       signingUrls[signer.email] = `${baseUrl}/sign/${document.id}?token=${session.token}&signer=${signer.id}`;
@@ -303,12 +311,18 @@ export async function GET(req: NextRequest) {
   }
 
   // Get specific document - check cache first, then database
+  // SECURITY: Must verify organization ownership to prevent IDOR
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   let document = documentCache.get(documentId);
 
   if (!document) {
-    // Try to load from database
+    // Try to load from database - SECURITY: scoped to organization
     const [dbDoc] = await sql`
-      SELECT envelope_data FROM esign_envelopes WHERE id = ${documentId}
+      SELECT envelope_data FROM esign_envelopes
+      WHERE id = ${documentId} AND organization_id = ${organization.id}
     `.catch(() => [null]);
 
     if (dbDoc?.envelope_data) {
@@ -357,10 +371,11 @@ export async function PUT(req: NextRequest) {
   // Verify session - check cache first, then database
   let session = sessionCache.get(token);
   if (!session) {
+    const tokenHash = hashToken(token);
     const [dbSession] = await sql`
       SELECT token, document_id as "documentId", signer_id as "signerId",
              created_at as "createdAt", expires_at as "expiresAt", used
-      FROM esign_sessions WHERE token = ${token}
+      FROM esign_sessions WHERE token = ${tokenHash}
     `.catch(() => [null]);
     if (dbSession) {
       session = dbSession as SigningSession;
@@ -424,14 +439,45 @@ export async function PUT(req: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4000';
     await sendCompletionNotification(result.document, baseUrl);
 
-    // Update deal status
+    // Update deal status and trigger buyer matching for purchase agreements
     const dealId = result.document.metadata?.dealId;
+    const contractType = result.document.metadata?.contractType;
+    const organizationId = result.document.metadata?.organizationId;
+
     if (dealId) {
-      const newStatus = result.document.metadata?.contractType === 'purchase_agreement' ? 'SIGNED' : 'ASSIGNED';
+      const newStatus = contractType === 'purchase_agreement' ? 'SIGNED' : 'ASSIGNED';
       await sql`
         UPDATE leads SET status = ${newStatus}, updated_at = NOW()
         WHERE id = ${dealId}
       `.catch(console.error);
+
+      // AUTO-TRIGGER: When seller signs purchase agreement, automatically match and notify buyers
+      if (contractType === 'purchase_agreement' && organizationId) {
+        const contractData = result.document.metadata?.contractData || {};
+        const sellerSigner = result.document.signers.find(s => s.role === 'seller');
+
+        // Alert owner about seller signing
+        await alertSellerSigned(
+          String(dealId),
+          sellerSigner?.name || 'Seller',
+          contractData.propertyAddress || 'Property',
+          contractData.purchasePrice || 0
+        ).catch(console.error);
+
+        // Queue automatic buyer matching job
+        await enqueueJob('match_buyers_auto', {
+          dealId: String(dealId),
+          organizationId,
+          propertyAddress: contractData.propertyAddress,
+          purchasePrice: contractData.purchasePrice,
+          notifyBuyers: true,
+        }, {
+          maxAttempts: 3,
+          dedupeKey: `buyer_match_${dealId}`,
+        }).catch(console.error);
+
+        console.log(`[ESIGN] Purchase agreement signed for deal ${dealId} - buyer matching queued`);
+      }
     }
   }
 
