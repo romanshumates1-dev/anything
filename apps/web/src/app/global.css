@@ -3,7 +3,39 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Primary - Deep blue (trust) */
+  /* Dark Premium Backgrounds */
+  --bg-primary: #0F172A;
+  --bg-secondary: #1E293B;
+  --bg-tertiary: #334155;
+  --bg-surface: #0F172A;
+
+  /* Accent Colors */
+  --accent-blue: #3B82F6;
+  --accent-blue-glow: rgba(59, 130, 246, 0.5);
+  --accent-purple: #8B5CF6;
+  --accent-purple-glow: rgba(139, 92, 246, 0.5);
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-success-glow: rgba(16, 185, 129, 0.5);
+  --color-warning: #F59E0B;
+  --color-warning-glow: rgba(245, 158, 11, 0.5);
+  --color-error: #EF4444;
+  --color-error-glow: rgba(239, 68, 68, 0.5);
+  --color-info: #06B6D4;
+
+  /* Text Colors */
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  /* Borders & Glass */
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-medium: rgba(255, 255, 255, 0.2);
+  --glass-bg: rgba(30, 41, 59, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.1);
+
+  /* Legacy color mappings */
   --color-primary-50: #EFF6FF;
   --color-primary-100: #DBEAFE;
   --color-primary-200: #BFDBFE;
@@ -13,26 +45,22 @@
   --color-primary-600: #1E3A8A;
   --color-primary-700: #1E3A8A;
 
-  /* Success - Emerald green (money) */
   --color-success-50: #ECFDF5;
   --color-success-100: #D1FAE5;
   --color-success-500: #059669;
   --color-success-600: #047857;
   --color-success-700: #065F46;
 
-  /* Warning - Amber */
   --color-warning-50: #FFFBEB;
   --color-warning-100: #FEF3C7;
   --color-warning-500: #D97706;
   --color-warning-600: #B45309;
 
-  /* Error - Red */
   --color-error-50: #FEF2F2;
   --color-error-100: #FEE2E2;
   --color-error-500: #DC2626;
   --color-error-600: #B91C1C;
 
-  /* Neutrals */
   --color-gray-50: #F8FAFC;
   --color-gray-100: #F1F5F9;
   --color-gray-200: #E2E8F0;
@@ -66,9 +94,11 @@
   --radius-xl: 1rem;
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+  --shadow-glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
 
   /* Existing component variables */
     --background: hsl(0 0% 100%);
@@ -187,4 +217,79 @@
     body {
         @apply bg-background text-foreground;
     }
+}
+
+/* Dark Premium Utility Classes */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.btn-gradient {
+  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  transition: all 0.2s ease;
+}
+
+.btn-gradient:hover {
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+  transform: translateY(-1px);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot-success {
+  background: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success-glow);
+}
+
+.status-dot-warning {
+  background: var(--color-warning);
+  box-shadow: 0 0 8px var(--color-warning-glow);
+}
+
+.status-dot-error {
+  background: var(--color-error);
+  box-shadow: 0 0 8px var(--color-error-glow);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Number animation for KPIs */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-count {
+  animation: countUp 0.5s ease-out forwards;
+}
+
+/* Shimmer for loading states */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-dark {
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
