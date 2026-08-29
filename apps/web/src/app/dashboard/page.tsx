@@ -5,6 +5,15 @@ import { redirect } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { KpiCard } from '@/components/dashboard/KpiCard';
+import { ActionItems } from '@/components/dashboard/ActionItems';
+import { SkeletonCard } from '@/components/ui/Skeleton';
+import {
+  CurrencyDollarIcon,
+  UserGroupIcon,
+  ChatBubbleLeftRightIcon,
+  DocumentCheckIcon,
+} from '@heroicons/react/24/outline';
 import {
   Users,
   ShieldCheck,
@@ -39,28 +48,6 @@ export default function DashboardPage() {
   if (!session) {
     redirect('/account/signin');
   }
-
-  const statCards = [
-    { name: 'Total Leads', value: stats?.totalLeads || 0, icon: Users, color: 'text-blue-600' },
-    {
-      name: 'Requires Human',
-      value: stats?.requiresHuman || 0,
-      icon: AlertTriangle,
-      color: 'text-amber-600',
-    },
-    {
-      name: 'Pending Jobs',
-      value: stats?.pendingJobs || 0,
-      icon: Activity,
-      color: 'text-purple-600',
-    },
-    {
-      name: 'Audit Logs',
-      value: stats?.auditCount || 0,
-      icon: ShieldCheck,
-      color: 'text-green-600',
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50/50 p-6">
@@ -119,22 +106,51 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {/* KPI Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {statCards.map((stat) => (
-            <Card key={stat.name} className="border-none shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">{stat.name}</CardTitle>
-                <stat.icon className={`h-4 w-4 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                {statsLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin opacity-20" />
-                ) : (
-                  <div className="text-2xl font-bold">{stat.value}</div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+          {statsLoading ? (
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
+          ) : (
+            <>
+              <KpiCard
+                title="Pipeline Value"
+                value={stats?.pipelineValue || 0}
+                format="currency"
+                change={12}
+                changeLabel="vs last month"
+                icon={<CurrencyDollarIcon className="h-5 w-5" />}
+              />
+              <KpiCard
+                title="Active Leads"
+                value={stats?.totalLeads || 0}
+                format="number"
+                change={8}
+                changeLabel="vs last month"
+                icon={<UserGroupIcon className="h-5 w-5" />}
+              />
+              <KpiCard
+                title="Open Conversations"
+                value={stats?.openConversations || 0}
+                format="number"
+                change={-3}
+                changeLabel="vs last month"
+                icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />}
+              />
+              <KpiCard
+                title="Pending Contracts"
+                value={stats?.pendingContracts || 0}
+                format="number"
+                change={5}
+                changeLabel="vs last month"
+                icon={<DocumentCheckIcon className="h-5 w-5" />}
+              />
+            </>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -157,29 +173,58 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle>System Health</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {[
-                { name: 'Database (Neon)', status: 'Operational', color: 'bg-green-500' },
-                { name: 'AI Orchestrator (Claude)', status: 'Operational', color: 'bg-green-500' },
-                { name: 'Job Queue (Internal)', status: 'Active', color: 'bg-green-500' },
-                { name: 'Auth (Better-Auth)', status: 'Secure', color: 'bg-green-500' },
-              ].map((item) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`h-2 w-2 rounded-full ${item.color}`} />
-                    <span className="text-sm font-medium">{item.name}</span>
+          <div className="space-y-6">
+            <ActionItems
+              items={[
+                {
+                  id: '1',
+                  type: 'response_needed',
+                  title: 'Response from John Smith',
+                  subtitle: '123 Main St - Interested in offer',
+                  href: '/inbox?lead=1',
+                  urgent: true,
+                },
+                {
+                  id: '2',
+                  type: 'contract_expiring',
+                  title: 'Contract expires in 3 days',
+                  subtitle: '456 Oak Ave - Smith/Johnson',
+                  href: '/contracts?id=2',
+                },
+                {
+                  id: '3',
+                  type: 'follow_up',
+                  title: 'Follow up with Sarah Davis',
+                  subtitle: '789 Pine Rd - No response in 5 days',
+                  href: '/crm?lead=3',
+                },
+              ]}
+            />
+
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle>System Health</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {[
+                  { name: 'Database (Neon)', status: 'Operational', color: 'bg-green-500' },
+                  { name: 'AI Orchestrator (Claude)', status: 'Operational', color: 'bg-green-500' },
+                  { name: 'Job Queue (Internal)', status: 'Active', color: 'bg-green-500' },
+                  { name: 'Auth (Better-Auth)', status: 'Secure', color: 'bg-green-500' },
+                ].map((item) => (
+                  <div key={item.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-2 w-2 rounded-full ${item.color}`} />
+                      <span className="text-sm font-medium">{item.name}</span>
+                    </div>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      {item.status}
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    {item.status}
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
