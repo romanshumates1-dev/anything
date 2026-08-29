@@ -7,6 +7,7 @@
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
+import { rateLimitByUser } from '@/app/api/utils/rateLimit';
 
 const TOKEN_EXPIRY_HOURS = 1;
 
@@ -23,6 +24,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Valid email required' }, { status: 400 });
   }
 
+  // Rate limit: 3 reset requests per email per hour
+  const rateLimit = await rateLimitByUser(email, 'password_reset', 3, 3600);
+  if (!rateLimit.allowed) {
+    return Response.json({ ok: true }); // Don't reveal rate limit (enumeration prevention)
+  }
+
   try {
     const [user] = await sql`
       SELECT id, email, name FROM "user" WHERE lower(email) = ${email} LIMIT 1
@@ -33,11 +40,12 @@ export async function POST(req: NextRequest) {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
 
     await sql`
       INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
-      VALUES (${crypto.randomUUID()}, ${user.id}, ${token}, ${expiresAt})
+      VALUES (${crypto.randomUUID()}, ${user.id}, ${tokenHash}, ${expiresAt})
     `;
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || 'http://localhost:4000';

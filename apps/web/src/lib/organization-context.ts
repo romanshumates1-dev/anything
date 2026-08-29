@@ -39,9 +39,15 @@ type UserRoleRow = {
  */
 export async function getOrganization(): Promise<Organization | null> {
   try {
-    // LOCAL DEV BYPASS
+    // LOCAL DEV BYPASS - Only works with explicit secret + development mode
+    // SECURITY: Never rely on NODE_ENV alone as it could be misconfigured
     const headersList = await headers();
-    if (process.env.NODE_ENV === 'development' && headersList.get('x-local-dev') === 'true') {
+    const devSecret = process.env.LOCAL_DEV_SECRET;
+    if (
+      process.env.NODE_ENV === 'development' &&
+      devSecret &&
+      headersList.get('x-local-dev') === devSecret
+    ) {
       console.log('[ORG-CONTEXT] Local dev bypass active');
 
       try {

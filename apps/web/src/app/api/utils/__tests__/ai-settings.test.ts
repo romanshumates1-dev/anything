@@ -14,9 +14,9 @@ beforeEach(() => {
 });
 
 describe('getAiConfig — DB → env → default', () => {
-  it('defaults to anthropic when nothing is set', async () => {
+  it('defaults to ollama when nothing is set (cost savings)', async () => {
     const cfg = await getAiConfig(1000);
-    expect(cfg.provider).toBe('anthropic');
+    expect(cfg.provider).toBe('ollama');
     expect(cfg.source).toBe('default');
   });
 
@@ -42,12 +42,12 @@ describe('getAiConfig — DB → env → default', () => {
   it('ignores an invalid provider in the DB and falls back to env/default', async () => {
     mockSql.mockResolvedValue([{ value: { provider: 'gpt-4' } }]);
     const cfg = await getAiConfig(4000);
-    expect(cfg.provider).toBe('anthropic');
+    expect(cfg.provider).toBe('ollama'); // default is now ollama for cost savings
   });
 
   it('falls back to env when the settings table is missing (throws)', async () => {
     mockSql.mockRejectedValue(new Error('relation "app_settings" does not exist'));
     const cfg = await getAiConfig(5000);
-    expect(cfg.provider).toBe('anthropic');
+    expect(cfg.provider).toBe('ollama'); // default is now ollama for cost savings
   });
 });

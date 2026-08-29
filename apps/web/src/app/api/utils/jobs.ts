@@ -213,6 +213,17 @@ export async function processNextJob() {
             });
           }
         }
+        // Record stage transition: NEW → CONTACTED (funnel analytics fix)
+        if (payload.leadId && payload.isOpening) {
+          const { recordStageTransition } = await import('@/app/api/services/stageTransitionRecorder');
+          await recordStageTransition({
+            leadId: payload.leadId,
+            fromStage: 'NEW',
+            toStage: 'CONTACTED',
+            channel: payload.channel || 'sms',
+            campaignId: payload.campaignId,
+          }).catch(() => {}); // Best-effort, never block send
+        }
         break;
       }
       case 'send_email': {
@@ -220,11 +231,18 @@ export async function processNextJob() {
         const { canSendEmail, recordEmailSend } = await import('./emailWarmup');
         const allowance = await canSendEmail(ep.organizationId);
         if (!allowance.allowed) {
+          // Properly defer: reset to pending with future run_at, unlock, refund attempt
           await sql`
-            UPDATE jobs SET status = 'pending', run_at = ${new Date(Date.now() + 12 * 3600_000)}, locked_until = NULL, updated_at = NOW()
+            UPDATE jobs
+            SET status = 'pending',
+                run_at = ${new Date(Date.now() + 12 * 3600_000)},
+                locked_until = NULL,
+                attempts = GREATEST(attempts - 1, 0),
+                error_message = ${'deferred:warmup:' + (allowance.reason || 'limit')},
+                updated_at = NOW()
             WHERE id = ${job.id}
           `;
-          return { deferred: true, reason: allowance.reason };
+          return { success: true, jobId: job.id, type: 'send_email', deferred: true, reason: allowance.reason };
         }
         const { sendEmail, withCanSpamFooter } = await import('./emailDriver');
         const emailBody = withCanSpamFooter(ep.body || ep.text || '', {
@@ -429,6 +447,239 @@ export async function processNextJob() {
             prospects.map(p => p.leadId)
           );
         }
+        break;
+      }
+      case 'match_buyers_auto': {
+        // AUTO-TRIGGER: When seller signs purchase agreement, match and notify buyers
+        // This closes the gap between seller signing → buyer notification (was manual, now automatic)
+        const payload: any = job.payload;
+        const { matchAndNotifyBuyers } = await import('./buyerMatchEngine');
+        const result = await matchAndNotifyBuyers({
+          dealId: payload.dealId,
+          organizationId: payload.organizationId,
+          propertyAddress: payload.propertyAddress,
+          purchasePrice: payload.purchasePrice,
+          notifyBuyers: payload.notifyBuyers ?? true,
+        });
+        console.log(`[match_buyers_auto] Deal ${payload.dealId}: ${result.matchedCount} buyers matched, ${result.notifiedCount} notified`);
+        break;
+      }
+      case 'discover_buyers_auto': {
+        // AUTO-DISCOVERY: Find new buyer leads from public records when not enough existing matches
+        // Triggered by buyerMatchEngine when < 5 matches or no VIP buyers
+        const payload: any = job.payload;
+        const { discoverBuyersForDeal } = await import('./buyerDiscoveryEngine');
+        const result = await discoverBuyersForDeal({
+          dealId: payload.dealId,
+          organizationId: payload.organizationId,
+          propertyZip: payload.propertyZip,
+          propertyCounty: payload.propertyCounty,
+          propertyState: payload.propertyState,
+          priceRange: payload.priceRange,
+          propertyType: payload.propertyType,
+          limit: payload.limit || 50,
+        });
+        console.log(`[discover_buyers_auto] Deal ${payload.dealId}: ${result.discovered} discovered, ${result.added} added, ${result.outreachQueued} outreach queued`);
+        break;
+      }
+      case 'buyer_outreach_new': {
+        // Outreach to newly discovered buyer leads
+        const payload: any = job.payload;
+        const { sendEmailAuto } = await import('./emailProviders');
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+
+        // Send intro email to discovered buyer
+        if (payload.buyerEmail) {
+          await sendEmailAuto(payload.organizationId, {
+            to: payload.buyerEmail,
+            subject: `Investment Opportunity in ${payload.propertyZip}`,
+            text: `Hi ${payload.buyerName},\n\nWe noticed you're an active investor in the ${payload.propertyZip} area. We have a deal that matches your buy criteria.\n\nReply if you'd like details.\n\nBest regards`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                <h2>Investment Opportunity</h2>
+                <p>Hi ${payload.buyerName},</p>
+                <p>We noticed you're an active investor in the <strong>${payload.propertyZip}</strong> area based on recent transaction activity.</p>
+                <p>We have a deal that matches your buy criteria and wanted to reach out.</p>
+                <p><strong>Reply to this email</strong> if you'd like to see the details.</p>
+              </div>
+            `,
+          }).catch(console.error);
+        }
+
+        // Send SMS if phone available
+        if (payload.buyerPhone) {
+          await sendPipelineSMS({
+            to: payload.buyerPhone,
+            message: `Hi ${payload.buyerName.split(' ')[0]}, we have a deal in ${payload.propertyZip} that fits your buy box. Reply YES for details.`,
+            leadId: payload.dealId,
+            organizationId: payload.organizationId,
+            channel: 'buyer',
+          }).catch(console.error);
+        }
+        break;
+      }
+      case 'generate_seller_leads': {
+        // Auto-generate seller leads from public records for campaign
+        const payload: any = job.payload;
+        const { generateSellerLeads } = await import('./leadGenerationEngine');
+        const result = await generateSellerLeads({
+          organizationId: payload.organizationId,
+          count: payload.count,
+          regions: payload.regions,
+        });
+        console.log(`[generate_seller_leads] Generated ${result.generated} seller leads`);
+        break;
+      }
+      case 'generate_buyer_leads': {
+        // Auto-generate buyer leads from public records for campaign
+        const payload: any = job.payload;
+        const { generateBuyerLeads } = await import('./leadGenerationEngine');
+        const result = await generateBuyerLeads({
+          organizationId: payload.organizationId,
+          count: payload.count,
+          regions: payload.regions,
+        });
+        console.log(`[generate_buyer_leads] Generated ${result.generated} buyer leads`);
+        break;
+      }
+      case 'generate_buyer_leads_region': {
+        // Auto-generate buyer leads for specific region to ensure coverage
+        const payload: any = job.payload;
+        const { generateBuyerLeadsForRegion } = await import('./leadGenerationEngine');
+        const result = await generateBuyerLeadsForRegion({
+          organizationId: payload.organizationId,
+          region: payload.region,
+          count: payload.count,
+          priceRange: payload.priceRange,
+        });
+        console.log(`[generate_buyer_leads_region] Generated ${result.generated} buyer leads for ${payload.region}`);
+        break;
+      }
+      case 'start_campaign': {
+        // Start an outreach campaign (queue openings)
+        const payload: any = job.payload;
+        const { dispatchOpenings } = await import('./cadenceEngine');
+
+        // Update campaign status to ACTIVE
+        await sql`
+          UPDATE outreach_campaigns
+          SET status = 'ACTIVE', started_at = NOW()
+          WHERE id = ${payload.campaignId}
+        `.catch(console.error);
+
+        // Queue opening messages
+        await dispatchOpenings(payload.campaignId, payload.organizationId);
+        console.log(`[start_campaign] Started campaign ${payload.campaignId}`);
+        break;
+      }
+      case 'buyer_cadence_step': {
+        // Buyer multi-touch sequence step (equivalent to seller cadence)
+        const payload: any = job.payload;
+        const { sendEmailAuto } = await import('./emailProviders');
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+
+        // Get buyer details
+        const [buyer] = await sql`
+          SELECT * FROM buyers WHERE id = ${payload.buyerId}
+        `.catch(() => [null]);
+
+        if (!buyer) {
+          console.log(`[buyer_cadence_step] Buyer ${payload.buyerId} not found, skipping`);
+          break;
+        }
+
+        // Check if buyer opted out or already converted
+        if (buyer.is_blacklisted || buyer.status === 'CLOSED' || buyer.status === 'LOST') {
+          console.log(`[buyer_cadence_step] Buyer ${payload.buyerId} opted out or closed, skipping`);
+          break;
+        }
+
+        const firstName = (buyer.name || '').split(' ')[0] || 'there';
+        const dealContext = payload.dealContext || {};
+
+        // Generate message based on template type
+        let message = '';
+        let subject = '';
+        switch (payload.templateType) {
+          case 'intro':
+            subject = 'Investment Opportunities in Your Area';
+            message = `Hi ${firstName}, we're looking for cash buyers in your area. We consistently source off-market deals at 20-30% below market. Interested in first access?`;
+            break;
+          case 'deal_alert':
+            message = `${firstName}, new off-market deal just came in. Cash buyers get first look. Reply YES for details.`;
+            break;
+          case 'followup':
+            subject = 'Still Looking for Deals?';
+            message = `Hi ${firstName}, following up on investment opportunities. We have several deals that might fit your criteria. Want to see what's available?`;
+            break;
+          case 'urgency':
+            message = `${firstName}, we have a deal that needs to close in 2 weeks. Looking for a cash buyer. Can you move fast?`;
+            break;
+          case 'last_chance':
+            subject = 'Before I Close Your File';
+            message = `${firstName}, before I mark you inactive - are you still buying? We'd love to keep you on our VIP buyer list.`;
+            break;
+        }
+
+        // Send via appropriate channel
+        if (payload.channel === 'sms' && buyer.phone) {
+          await sendPipelineSMS({
+            to: buyer.phone,
+            message,
+            leadId: payload.buyerId,
+            organizationId: payload.organizationId,
+            channel: 'buyer',
+          });
+        } else if (payload.channel === 'email' && buyer.email) {
+          await sendEmailAuto(payload.organizationId, {
+            to: buyer.email,
+            subject,
+            text: message,
+            html: `<p>${message}</p>`,
+          });
+        }
+
+        // Update buyer touch count
+        await sql`
+          UPDATE buyers
+          SET metadata = jsonb_set(
+            COALESCE(metadata, '{}'::jsonb),
+            '{touch_count}',
+            (COALESCE((metadata->>'touch_count')::int, 0) + 1)::text::jsonb
+          ),
+          updated_at = NOW()
+          WHERE id = ${payload.buyerId}
+        `.catch(console.error);
+
+        console.log(`[buyer_cadence_step] Sent ${payload.channel} to buyer ${payload.buyerId} (step ${payload.sequenceOrder})`);
+        break;
+      }
+      case 'classify_buyer_response': {
+        // AI classification of buyer responses
+        const payload: any = job.payload;
+        const { classifyBuyerResponse, transitionBuyerStage } = await import('./buyerPipelineEngine');
+
+        const classification = await classifyBuyerResponse(payload.message, {
+          name: payload.buyerName,
+          previousInteractions: payload.previousInteractions || 0,
+        });
+
+        // Update buyer based on classification
+        let newStage = 'CONTACTED';
+        if (classification.interestLevel === 'HOT') {
+          newStage = 'INTERESTED';
+        } else if (classification.interestLevel === 'NOT_INTERESTED') {
+          newStage = 'LOST';
+        }
+
+        await transitionBuyerStage(
+          payload.buyerId,
+          newStage as any,
+          payload.organizationId,
+          { classification }
+        );
+
+        console.log(`[classify_buyer_response] Buyer ${payload.buyerId}: ${classification.interestLevel} → ${newStage}`);
         break;
       }
       default:

@@ -13,7 +13,7 @@ import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
-  apiVersion: '2023-10-16',
+  apiVersion: '2025-01-27.acacia' as any,
 });
 
 interface CreatePaymentRequest {

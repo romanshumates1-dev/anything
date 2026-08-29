@@ -151,7 +151,7 @@ export async function POST(request: Request) {
         break;
       }
 
-      case 'payment_intent.refunded': {
+      case 'charge.refunded': {
         await sql`
           UPDATE payments_ledger
           SET status = 'refunded',

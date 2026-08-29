@@ -16,9 +16,16 @@ export type AdminCheck =
   | { ok: false; response: Response };
 
 export async function requireAdmin(): Promise<AdminCheck> {
-  // LOCAL DEV BYPASS - Remove before production
   const headersList = await headers();
-  if (process.env.NODE_ENV === 'development' && headersList.get('x-local-dev') === 'true') {
+
+  // LOCAL DEV BYPASS - Only works with explicit secret + development mode
+  // SECURITY: Never rely on NODE_ENV alone as it could be misconfigured
+  const devSecret = process.env.LOCAL_DEV_SECRET;
+  if (
+    process.env.NODE_ENV === 'development' &&
+    devSecret &&
+    headersList.get('x-local-dev') === devSecret
+  ) {
     return { ok: true, userId: 'local-dev', email: 'dev@localhost' };
   }
 

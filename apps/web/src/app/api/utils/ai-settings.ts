@@ -48,8 +48,9 @@ function normalizeProvider(v: unknown): AiProvider | null {
 /** Env/default view (no DB) — used as the fallback and by the resolver. */
 function fromEnv(): AiConfig {
   const envProvider = normalizeProvider(process.env.AI_PROVIDER);
+  // Default to Ollama for cost savings - fallback chain handles unreachable Ollama
   return {
-    provider: envProvider ?? 'anthropic',
+    provider: envProvider ?? 'ollama',
     ollamaBaseUrl: (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, ''),
     ollamaModel: process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL,
     source: envProvider ? 'env' : 'default',

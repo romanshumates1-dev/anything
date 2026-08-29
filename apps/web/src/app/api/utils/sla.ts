@@ -27,8 +27,8 @@ export const ACK_SMS_BODY =
 
 /** Record the moment an inbound reply arrives (before any AI job is enqueued). */
 export async function recordReplyReceived(
-  conversationId: number,
-  leadId: number
+  conversationId: number | string,
+  leadId: number | string
 ): Promise<number> {
   const [row] = await sql`
     INSERT INTO inbound_latency (conversation_id, lead_id, reply_received_at)

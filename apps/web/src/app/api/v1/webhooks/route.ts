@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
 import { authenticateApiKey } from '../auth/utils';
+import { encryptSensitive, safeDecrypt } from '@/app/api/utils/encryption';
 
 export async function GET(request: NextRequest) {
   const authResult = await authenticateApiKey(request);
@@ -37,13 +38,15 @@ export async function POST(request: NextRequest) {
 
     const organizationId = authResult.organizationId!;
     const secret = crypto.randomBytes(16).toString('hex');
+    const encryptedSecret = encryptSensitive(secret);
 
     const [webhook] = await sql`
       INSERT INTO webhooks (id, organization_id, url, secret, events)
-      VALUES (gen_random_uuid()::text, ${organizationId}, ${url}, ${secret}, ${events})
+      VALUES (gen_random_uuid()::text, ${organizationId}, ${url}, ${encryptedSecret}, ${events})
       RETURNING id, url, events, active, last_delivery_at, created_at
     `;
 
+    // Return plaintext secret only on creation (user must save it)
     return NextResponse.json({ ...webhook, secret }, { status: 201 });
   } catch (error: any) {
     console.error('POST /api/v1/webhooks error', error);

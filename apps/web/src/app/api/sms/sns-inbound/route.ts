@@ -169,16 +169,28 @@ export async function POST(request: Request) {
         fromStage: null,
         toStage: 'CLOSED_LOST',
         channel: 'sms',
-        reason: 'opt_out',
+        metadata: { reason: 'opt_out' },
       });
     }
     await logEvent('sms_opt_out', from, 'sns_inbound', { keyword: upperText, messageSid });
     return Response.json({ status: 'opted_out' });
   }
 
-  const wantsHuman = await detectHumanRequest(text);
-  if (wantsHuman) {
-    await handleHumanRequest(from, text);
+  const humanDetection = detectHumanRequest(text);
+  if (humanDetection.isHumanRequest) {
+    const humanLeadId = await resolveLeadIdByPhone(from);
+    if (humanLeadId) {
+      const [humanLead] = await sql`SELECT organization_id FROM leads WHERE id = ${humanLeadId}`;
+      if (humanLead) {
+        await handleHumanRequest(
+          Number(humanLeadId) || 0,
+          messageSid || crypto.randomUUID(),
+          text,
+          humanLead.organization_id,
+          humanDetection
+        );
+      }
+    }
     await logEvent('human_request', from, 'sns_inbound', { text, messageSid });
     return Response.json({ status: 'human_requested' });
   }
@@ -217,10 +229,9 @@ export async function POST(request: Request) {
     await recordRun({
       task: 'sns_inbound',
       flow: 'ai_reply_enqueued',
-      status: 'success',
-      organizationId: lead.organization_id,
-      durationMs: 0,
-      metadata: { leadId: lead.id, messageSid },
+      step: 'process',
+      status: 'pass',
+      detail: JSON.stringify({ leadId: lead.id, messageSid }),
     });
 
     return Response.json({ status: 'processed', leadId: lead.id });

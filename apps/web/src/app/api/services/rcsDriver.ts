@@ -16,11 +16,17 @@
  * Fallback: If RCS fails, falls back to SMS (may charge for both)
  */
 
-import {
-  PinpointClient,
-  SendMessagesCommand,
-  GetChannelCommand
-} from '@aws-sdk/client-pinpoint';
+// Pinpoint SDK is optional - only loaded if AWS_RCS_ENABLED=true
+// @ts-ignore - dynamic import handles missing module
+let PinpointClient: any, SendMessagesCommand: any, GetChannelCommand: any;
+try {
+  const pinpoint = require('@aws-sdk/client-pinpoint');
+  PinpointClient = pinpoint.PinpointClient;
+  SendMessagesCommand = pinpoint.SendMessagesCommand;
+  GetChannelCommand = pinpoint.GetChannelCommand;
+} catch {
+  // Pinpoint SDK not installed - RCS will be disabled
+}
 
 interface RCSMessage {
   to: string;

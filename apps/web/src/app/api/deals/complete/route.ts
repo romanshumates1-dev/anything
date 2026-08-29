@@ -161,44 +161,55 @@ export async function POST(req: NextRequest) {
       }, { status: 403 });
     }
 
-    // Handle sign action
+    // Handle sign action - ATOMIC TRANSACTION
     if (action === 'sign') {
-      await sql`
-        UPDATE leads SET status = 'ASSIGNED', updated_at = NOW()
-        WHERE id = ${dealId}
-      `;
+      const assignmentId = crypto.randomUUID();
 
-      // [MEDIUM FIX] Schema correction: use lead_id not deal_id (matches buyer_assignments schema)
-      if (buyerId) {
-        await sql`
-          INSERT INTO buyer_assignments (id, lead_id, buyer_id, status, created_at)
-          VALUES (${crypto.randomUUID()}, ${dealId}, ${buyerId}, 'signed', NOW())
+      // Use transaction for atomicity
+      await sql.transaction([
+        sql`UPDATE leads SET status = 'ASSIGNED', updated_at = NOW() WHERE id = ${dealId}`,
+        ...(buyerId ? [sql`
+          INSERT INTO buyer_assignments (id, organization_id, lead_id, buyer_id, status, created_at)
+          VALUES (${assignmentId}, ${organization.id}, ${dealId}, ${buyerId}, 'signed', NOW())
           ON CONFLICT (lead_id, buyer_id) DO UPDATE SET
             status = 'signed',
             updated_at = NOW()
-        `.catch(console.error);
-      }
+        `] : []),
+      ]);
+
+      // Record stage transition (best-effort, outside transaction)
+      const { recordStageTransition } = await import('@/app/api/services/stageTransitionRecorder');
+      await recordStageTransition({
+        leadId: dealId,
+        fromStage: deal.status,
+        toStage: 'ASSIGNED',
+        channel: 'contract',
+      }).catch(() => {});
 
       console.log(`[DEAL] ${dealId} signed by buyer ${buyerId}`);
       return Response.json({ status: 'ASSIGNED', message: 'Assignment contract signed' });
     }
 
-    // Handle confirm action (final step)
+    // Handle confirm action (final step) - ATOMIC TRANSACTION
     if (action === 'confirm') {
       if (deal.status !== 'ASSIGNED') {
         return Response.json({ error: 'Deal must be signed before confirming' }, { status: 400 });
       }
 
-      await sql`
-        UPDATE leads SET status = 'CLOSED_WON', updated_at = NOW()
-        WHERE id = ${dealId}
-      `;
+      // Use transaction for atomicity
+      await sql.transaction([
+        sql`UPDATE leads SET status = 'CLOSED_WON', updated_at = NOW() WHERE id = ${dealId}`,
+        sql`UPDATE buyer_assignments SET status = 'confirmed', updated_at = NOW() WHERE lead_id = ${dealId}`,
+      ]);
 
-      // [MEDIUM FIX] Schema correction: use lead_id not deal_id
-      await sql`
-        UPDATE buyer_assignments SET status = 'confirmed', updated_at = NOW()
-        WHERE lead_id = ${dealId}
-      `.catch(console.error);
+      // Record stage transition (best-effort, outside transaction)
+      const { recordStageTransition } = await import('@/app/api/services/stageTransitionRecorder');
+      await recordStageTransition({
+        leadId: dealId,
+        fromStage: 'ASSIGNED',
+        toStage: 'CLOSED_WON',
+        channel: 'contract',
+      }).catch(() => {});
 
       const summary = generateSimpleSummary(deal);
 

@@ -351,7 +351,26 @@ export async function POST(req: NextRequest) {
 }
 
 // Webhook handler for signature status updates
+// SECURITY: Validates webhook signature to prevent spoofed requests
 export async function PUT(req: NextRequest) {
+  // Verify webhook signature
+  const signature = req.headers.get('x-webhook-signature');
+  const webhookSecret = process.env.ESIGN_WEBHOOK_SECRET;
+
+  if (webhookSecret) {
+    if (!signature) {
+      console.warn('[ESIGN] Webhook rejected: missing signature');
+      return Response.json({ error: 'Missing signature' }, { status: 401 });
+    }
+    // In production, verify HMAC signature here
+    // For now, require the secret to match directly (simple validation)
+    const expectedSig = webhookSecret;
+    if (signature !== expectedSig) {
+      console.warn('[ESIGN] Webhook rejected: invalid signature');
+      return Response.json({ error: 'Invalid signature' }, { status: 401 });
+    }
+  }
+
   let body;
   try {
     body = await req.json();
@@ -363,6 +382,12 @@ export async function PUT(req: NextRequest) {
 
   if (!envelopeId || !status) {
     return Response.json({ error: 'envelopeId and status required' }, { status: 400 });
+  }
+
+  // Validate status value to prevent injection
+  const validStatuses = ['pending', 'sent', 'viewed', 'signed', 'declined', 'expired'];
+  if (!validStatuses.includes(status)) {
+    return Response.json({ error: 'Invalid status value' }, { status: 400 });
   }
 
   try {

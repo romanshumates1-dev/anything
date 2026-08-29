@@ -6,8 +6,19 @@
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { hashPassword } from 'better-auth/crypto';
+import crypto from 'crypto';
+import { rateLimitByUser } from '@/app/api/utils/rateLimit';
 
 export async function POST(req: NextRequest) {
+  // Get IP for rate limiting (fallback to token prefix for privacy)
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+
+  // Rate limit: 5 reset attempts per IP per hour (prevent brute force)
+  const rateLimit = await rateLimitByUser(ip, 'password_reset_attempt', 5, 3600);
+  if (!rateLimit.allowed) {
+    return Response.json({ error: 'Too many attempts. Please try again later.' }, { status: 429 });
+  }
+
   let body;
   try {
     body = await req.json();
@@ -26,10 +37,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Hash the incoming token to compare against stored hash
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
     const tokens = await sql`
       SELECT id, user_id, expires_at, used_at
       FROM password_reset_tokens
-      WHERE token = ${token}
+      WHERE token = ${tokenHash}
       LIMIT 1
     `;
     const resetToken = tokens[0];

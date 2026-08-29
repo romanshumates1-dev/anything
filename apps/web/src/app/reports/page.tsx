@@ -132,7 +132,7 @@ export default function ReportsPage() {
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary transition-all"
-                        style={{ width: `${Math.max(5, phase.probability * 100)}%` }}
+                        style={{ width: `${Math.max(5, phase.conversionRate * 100)}%` }}
                       />
                     </div>
                   </div>

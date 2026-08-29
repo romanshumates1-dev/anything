@@ -302,6 +302,60 @@ async function handleStalledRecovery() {
   };
 }
 
+/**
+ * Task 10: Buyer Pipeline Maintenance (every 6 hours)
+ *
+ * Runs buyer-side equivalents of seller pipeline maintenance:
+ * - Re-engage stalled buyers (48-168h since last activity)
+ * - Reactivate dormant buyers (60-180 days inactive)
+ */
+async function handleBuyerPipeline() {
+  const { runBuyerPipelineMaintenance } = await import('@/app/api/utils/buyerPipelineEngine');
+
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM buyers
+    WHERE updated_at > NOW() - INTERVAL '180 days'
+  `.catch(() => []);
+
+  let totalReengaged = 0;
+  let totalReactivated = 0;
+
+  for (const org of orgs as any[]) {
+    const result = await runBuyerPipelineMaintenance(org.organization_id);
+    totalReengaged += result.stalledReengaged;
+    totalReactivated += result.dormantReactivated;
+  }
+
+  return {
+    processed: totalReengaged + totalReactivated,
+    detail: `Buyer pipeline: ${totalReengaged} stalled re-engaged, ${totalReactivated} dormant reactivated across ${(orgs as any[]).length} orgs`,
+  };
+}
+
+/**
+ * Task 11: Ghost Error Sweep (daily, pre-campaign)
+ *
+ * Comprehensive system-wide scan for silent failures, orphaned records,
+ * stuck processes, and inconsistent state. Auto-fixes safe issues.
+ */
+async function handleGhostSweep() {
+  const { runGhostErrorSweep } = await import('@/app/api/utils/ghostErrorSweep');
+  const result = await runGhostErrorSweep(true); // autoFix enabled
+
+  const summary = [
+    `Critical: ${result.summary.critical}`,
+    `Warning: ${result.summary.warning}`,
+    `Info: ${result.summary.info}`,
+    `Auto-fixed: ${result.summary.autoFixed}`,
+    `Duration: ${result.duration_ms}ms`,
+  ].join(', ');
+
+  return {
+    processed: result.errors.length,
+    detail: `Ghost sweep: ${summary}`,
+  };
+}
+
 const TASKS: Record<string, CronTask> = {
   'stuck-conversations': { name: 'stuck-conversations', handler: handleStuckConversations },
   'retry-sms': { name: 'retry-sms', handler: handleRetrySms },
@@ -312,6 +366,8 @@ const TASKS: Record<string, CronTask> = {
   'resurrection': { name: 'resurrection', handler: handleResurrection },
   'contract-inspection': { name: 'contract-inspection', handler: handleContractInspection },
   'stalled-recovery': { name: 'stalled-recovery', handler: handleStalledRecovery },
+  'buyer-pipeline': { name: 'buyer-pipeline', handler: handleBuyerPipeline },
+  'ghost-sweep': { name: 'ghost-sweep', handler: handleGhostSweep },
 };
 
 export async function POST(request: Request) {
@@ -380,6 +436,8 @@ export async function GET() {
       'resurrection': 'daily',
       'contract-inspection': 'every 6 hours (inspection period + closing alerts)',
       'stalled-recovery': 'every 6 hours (re-engage mid-negotiation cold conversations)',
+      'buyer-pipeline': 'every 6 hours (buyer re-engagement + reactivation)',
+      'ghost-sweep': 'daily (pre-campaign system health check + auto-fix)',
     },
     timestamp: new Date().toISOString(),
   });

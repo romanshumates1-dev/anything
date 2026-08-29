@@ -100,7 +100,11 @@ export async function POST(request: Request) {
 
       // Funnel analytics (P4): every imported lead enters the funnel at NEW.
       // One INSERT per chunk (not per row) — best-effort, never blocks import.
-      await recordStageTransitionsBulk(rows.map((r: any) => r.id), 'NEW', { channel: 'system' });
+      await recordStageTransitionsBulk(
+        rows.map((r: any) => r.id),
+        'NEW',
+        { channel: 'system' }
+      );
     }
 
     // 5. Persist failures (capped storage; first 1000 to avoid runaway rows).

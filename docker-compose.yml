@@ -19,7 +19,7 @@ services:
   # Main Next.js application
   app:
     build:
-      context: apps/web
+      context: .
       dockerfile: Dockerfile
     image: dealflow-ai:latest
     env_file: apps/web/.env
@@ -44,7 +44,7 @@ services:
   # Background job worker (drains job queue every 3 seconds)
   worker:
     image: dealflow-ai:latest
-    command: ["node", "scripts/worker.mjs"]
+    command: ["node", "apps/web/scripts/worker.mjs"]
     env_file: apps/web/.env
     environment:
       APP_URL: http://app:4000
