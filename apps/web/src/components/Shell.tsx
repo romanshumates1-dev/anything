@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/lib/auth-client";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter } from "lucide-react";
+import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet } from "lucide-react";
 import DemoModeBanner from "@/components/DemoModeBanner";
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
   { href: '/leads', label: 'Contacts', icon: Users },
   { href: '/inbox', label: 'Inbox', icon: MessageSquare },
   { href: '/contracts', label: 'Contracts', icon: FileText },
+  { href: '/payouts', label: 'Payouts', icon: Wallet },
   { href: '/approvals', label: 'Approvals', icon: CheckCircle, badge: true },
   { type: 'separator' as const },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },

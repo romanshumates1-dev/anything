@@ -36,6 +36,9 @@ export async function GET() {
         c.inspection_days,
         c.assigned_at,
         c.esign_status,
+        c.contract_price_cents,
+        c.assignment_fee_cents,
+        c.metadata,
         -- Aggregate esign events into JSON array
         COALESCE(
           (SELECT json_agg(json_build_object(
