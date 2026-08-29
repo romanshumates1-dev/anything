@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
+import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 import {
   parseSourcedRecords,
@@ -44,6 +45,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   try {
     const { id } = await params;
     const sourceId = Number(id);
@@ -51,7 +57,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ error: 'Invalid source id' }, { status: 400 });
     }
 
-    const [source] = await sql`SELECT * FROM lead_sources WHERE id = ${sourceId} LIMIT 1`;
+    const [source] = await sql`
+      SELECT * FROM lead_sources
+      WHERE id = ${sourceId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `;
     if (!source) return Response.json({ error: 'Source not found' }, { status: 404 });
 
     if (source.terms_status !== 'PERMITTED') {
