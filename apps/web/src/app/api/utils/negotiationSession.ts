@@ -95,7 +95,7 @@ export async function advanceRound(sessionId: string, counterText: string | null
   if (counterText != null) {
     const counter = parseCounterCents(counterText);
     if (counter == null) {
-      await pauseSession(sessionId, 'unparseable_counter');
+      await pauseSession(sessionId, s.organization_id, 'unparseable_counter');
       await sql`
         INSERT INTO human_approvals (id, organization_id, type, context, status)
         VALUES (${randomUUID()}, ${s.organization_id}, 'NEGOTIATION_UNPARSEABLE',
@@ -173,8 +173,8 @@ export async function advanceRound(sessionId: string, counterText: string | null
 
 /** Owner pause / take-over: instantly reverts the lead to escalation mode and
  *  CANCELS any queued (unsent) offer jobs for this session. */
-export async function pauseSession(sessionId: string, reason = 'owner_pause'): Promise<{ cancelled: number }> {
-  await sql`UPDATE negotiation_sessions SET status = 'paused', updated_at = now() WHERE id = ${sessionId}`;
+export async function pauseSession(sessionId: string, organizationId: string, reason = 'owner_pause'): Promise<{ cancelled: number }> {
+  await sql`UPDATE negotiation_sessions SET status = 'paused', updated_at = now() WHERE id = ${sessionId} AND organization_id = ${organizationId}`;
   const cancelled = await sql`
     UPDATE jobs SET status = 'cancelled', updated_at = now()
     WHERE type = 'send_message'
