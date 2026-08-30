@@ -5,7 +5,6 @@ import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { StatusDot } from '@/components/ui/StatusDot';
 import {
   Search,
   Database,
@@ -17,7 +16,13 @@ import {
   Plus,
   Download,
   Loader2,
+  Rocket,
+  Save,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 
 const sources = [
   { id: 'propstream', name: 'PropStream', icon: Database, quality: 8.5, costPer: 0.02, enabled: true },
@@ -43,10 +48,16 @@ const mockLeads = [
 
 export default function LeadFinderPage() {
   const { data: session, isPending } = useSession();
+  const queryClient = useQueryClient();
+  const router = useRouter();
   const [selectedSources, setSelectedSources] = useState<string[]>(['propstream', 'csv']);
   const [selectedDistress, setSelectedDistress] = useState<string[]>([]);
   const [aiRecommended, setAiRecommended] = useState(false);
   const [selectedLeads, setSelectedLeads] = useState<number[]>([]);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [listName, setListName] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<{ name: string; count: number } | null>(null);
 
   const { data: realLeads } = useQuery({
     queryKey: ['lf-prospects'],
@@ -56,6 +67,64 @@ export default function LeadFinderPage() {
       return res.json();
     },
     enabled: !!session,
+  });
+
+  // Save leads to a new contact list and hand off for campaign use
+  const saveListMutation = useMutation({
+    mutationFn: async () => {
+      if (!listName.trim()) {
+        throw new Error('Please enter a name for the list');
+      }
+      if (selectedLeads.length === 0) {
+        throw new Error('Please select at least one lead');
+      }
+
+      // Create contact list
+      const listRes = await fetch('/api/contact-lists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: listName.trim(),
+          source_type: 'lead-finder',
+          consent_mode: 'unverified',
+        }),
+      });
+
+      if (!listRes.ok) {
+        const err = await listRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to create contact list');
+      }
+
+      const list = await listRes.json();
+
+      // Hand off selected leads to create contacts
+      const handoffRes = await fetch('/api/lead-finder/create-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadIds: selectedLeads,
+        }),
+      });
+
+      if (!handoffRes.ok) {
+        const err = await handoffRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to hand off leads');
+      }
+
+      const handoff = await handoffRes.json();
+      return { list, handoff };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['contact-lists'] });
+      queryClient.invalidateQueries({ queryKey: ['lf-prospects'] });
+      setSaveSuccess({ name: data.list.name, count: data.handoff.created });
+      setShowSaveDialog(false);
+      setSelectedLeads([]);
+      setListName('');
+    },
+    onError: (err: Error) => {
+      setSaveError(err.message);
+    },
   });
 
   if (isPending) {
@@ -271,6 +340,28 @@ export default function LeadFinderPage() {
         </div>
       </div>
 
+      {/* Success Banner */}
+      {saveSuccess && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-[var(--color-success)] text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5" />
+            <span className="text-sm font-medium">
+              Created list "{saveSuccess.name}" with {saveSuccess.count} leads
+            </span>
+            <button
+              onClick={() => router.push('/campaigns/wizard')}
+              className="ml-2 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm font-medium flex items-center gap-1"
+            >
+              <Rocket className="h-4 w-4" />
+              Create Campaign
+            </button>
+            <button onClick={() => setSaveSuccess(null)} className="ml-2 opacity-70 hover:opacity-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Action Bar */}
       {selectedLeads.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
@@ -279,7 +370,10 @@ export default function LeadFinderPage() {
               {selectedLeads.length} selected
             </span>
             <div className="h-4 w-px bg-[var(--border-subtle)]" />
-            <button className="btn-gradient px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+            <button
+              onClick={() => setShowSaveDialog(true)}
+              className="btn-gradient px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+            >
               <Plus className="h-4 w-4" />
               Add to Campaign
             </button>
@@ -291,6 +385,88 @@ export default function LeadFinderPage() {
             <span className="text-sm text-[var(--text-muted)]">
               Est. ${(selectedLeads.length * 0.02).toFixed(2)}
             </span>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Save to List Dialog */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <GlassCard padding="md" className="max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Save className="h-5 w-5" />
+                Save Lead List
+              </h3>
+              <button
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setSaveError(null);
+                }}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
+              Create a contact list from your selected leads. This will hand off{' '}
+              <strong>{selectedLeads.length}</strong> leads for skip-tracing before campaign use.
+            </p>
+
+            {saveError && (
+              <div className="bg-[var(--color-error)]/10 border border-[var(--color-error)]/30 text-[var(--color-error)] px-3 py-2 rounded-lg text-sm mb-4">
+                {saveError}
+              </div>
+            )}
+
+            <div className="space-y-3 mb-6">
+              <label className="block">
+                <span className="text-sm font-medium text-[var(--text-primary)]">List Name</span>
+                <input
+                  type="text"
+                  value={listName}
+                  onChange={(e) => setListName(e.target.value)}
+                  placeholder="e.g., Q1 Distressed Sellers - Miami"
+                  className="mt-1 w-full px-3 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-blue)]"
+                />
+              </label>
+            </div>
+
+            <div className="bg-[var(--accent-blue)]/10 border border-[var(--accent-blue)]/20 rounded-lg p-3 mb-6">
+              <p className="text-sm text-[var(--accent-blue)]">
+                After saving, you can select this list in the Campaign Wizard under "Lists" or "Lead Finder" tabs.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowSaveDialog(false);
+                  setSaveError(null);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => saveListMutation.mutate()}
+                disabled={saveListMutation.isPending || !listName.trim()}
+                className="btn-gradient px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {saveListMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Create List
+                  </>
+                )}
+              </button>
+            </div>
           </GlassCard>
         </div>
       )}
