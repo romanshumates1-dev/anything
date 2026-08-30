@@ -6,6 +6,7 @@
 -- 3. migrations/001_add_missing_tables.sql
 -- 4. migrations/002_pause_ai.sql
 -- 5. migrations/003_auth_tables.sql
+-- 6-30: SaaS platform migrations (organizations, subscriptions, etc.)
 -- ============================================================================
 
 -- Check what tables and types exist at each step
@@ -40,5 +41,21 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' O
 -- Step 5: Load migration 003
 \echo '--- STEP 5: Loading migrations/003_auth_tables.sql ---'
 \i apps/web/db/migrations/003_auth_tables.sql
+
+-- SaaS Platform Migrations
+\echo '--- STEP 6: Loading SaaS migrations ---'
+\i apps/web/db/migrations/022_organizations.sql
+\i apps/web/db/migrations/023_organization_members.sql
+\i apps/web/db/migrations/024_invitations.sql
+\i apps/web/db/migrations/025_subscription_plans.sql
+\i apps/web/db/migrations/026_organization_subscriptions.sql
+\i apps/web/db/migrations/027_usage_ledger.sql
+\i apps/web/db/migrations/028_twilio_accounts.sql
+\i apps/web/db/migrations/029_ai_providers.sql
+\i apps/web/db/migrations/030_add_tenant_to_existing_tables.sql
+
+-- Seed subscription plans
+\echo '--- Seeding subscription plans ---'
+\i apps/web/db/seeds/subscription_plans.sql
 
 \echo '=== BOOTSTRAP TEST COMPLETE ==='

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Bot, Shield, Zap, BarChart3, CheckCircle, Lock, Activity, Gauge } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -38,6 +39,20 @@ export default function FeaturesPage() {
               <p className="text-sm text-gray-600">{f.desc}</p>
             </div>
           ))}
+        </div>
+
+        {/* CTA Section */}
+        <div className="mt-16 text-center bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-12 text-white">
+          <h2 className="text-2xl font-bold mb-4">Ready to automate your wholesaling?</h2>
+          <p className="text-blue-100 mb-6 max-w-lg mx-auto">
+            Start your 14-day free trial. No credit card required.
+          </p>
+          <Link
+            href="/account/signup"
+            className="inline-block rounded-lg bg-white px-8 py-3 text-base font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+          >
+            Start Free Trial
+          </Link>
         </div>
       </div>
     </div>

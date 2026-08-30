@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { requireAdmin } from '@/app/api/utils/authz';
 import crypto from 'crypto';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 function hashKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
@@ -46,6 +47,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   // Domain-lock layer 4 (issuance): keys are only ISSUABLE to allowed-domain
   // admins. Key VALIDITY is enforced per-request in src/middleware.ts via the
   // owner join.

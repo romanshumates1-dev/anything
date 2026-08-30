@@ -1,5 +1,157 @@
 # BREAKAGE_TABLE.md — DealFlow AI
 
+## Session 2026-07-22 (t) — Closing session (s)'s 2 spun-off items + real screenshots
+
+Picked up session (s)'s 2 spun-off items (`recordStageTransition` wiring, legacy
+`campaigns`/`campaign_leads` IDOR gap) plus the still-open `/how-it-works` screenshots.
+Full detail and commit hashes are in SESSION_HANDOFF.md's session (t) section — this
+entry records the specific evidence, not a repeat of the narrative.
+
+**`/how-it-works` screenshots (commit `163ed6a`):** 5 real Playwright captures at
+1280x720, session-email banner clipped. Surfaced 375 orphaned rows across 10 tables
+(`organization_id='default'`, the exact phantom string bug #35 fixed elsewhere) —
+owner-confirmed before running the bulk repair (`scripts/backfill-default-org-id.mjs`).
+Suite re-run after: 668/22/0, unchanged — pure data fix.
+
+**`recordStageTransition` wiring (commit `bc969fd`):** RED (against original code, 9
+test files): 15 failed / 21 passed. GREEN (after fix): 36/36. Full suite: 712/22/0.
+Live-DB proof: real funnel counts `{"ENGAGED":1,"NEGOTIATING":1,"CONTACTED":1,"NEW":1}`
+after a throwaway lead's real lifecycle, row deleted after. Independently re-verified
+by a second agent (re-ran RED→GREEN itself, read all 9 diffs) — verdict: real wiring
+confirmed, but the commit's "typecheck exit 0" claim was FALSE (see below).
+
+**Legacy `campaigns`/`campaign_leads` org-scoping (commit `ceb5496`, migration 042):**
+RED (against original routes): 11 failed. GREEN (after fix): 18 passed. Independently
+re-verified by a second agent, who re-swapped the pre-fix route back in and re-ran the
+new tests itself: 4 failed/2 passed (RED) → 6/6 (GREEN) — matches. Retirement was
+investigated and rejected: `flows.test.ts`/`full-wholesale-pipeline.test.ts`/
+`flows-live.test.ts` directly exercise these route handlers as the tested pipeline;
+deleting them would have broken real, passing, DB-backed coverage.
+
+**Adversarial verification caught a real inaccuracy:** both commits claimed a clean
+typecheck. Both independent verifiers ran the real compiler and got 56 errors, not 0.
+Root cause: `npx tsc --noEmit` is unreliable in this environment — running it directly
+returns npm's own stub (`This is not the tsc command you are looking for`, exit 1, zero
+real typechecking) rather than the actual compiler, apparently depending on ambient
+shell/Yarn-PnP state. `yarn tsc --noEmit` is the confirmed-reliable replacement (used by
+both verifiers, and by me independently afterward — same 56-error output both times).
+Diffed against a worktree at each fix's parent commit: identical 56-error set before
+either fix — pre-existing, not a regression, confined to exactly 9 test-mock files
+(`sms-gateway.test.ts`, `voice-gateway.test.ts`, `usageTracker.test.ts`,
+`cadenceEngine.test.ts`, `demoAllowlist.test.ts`, `inspectionClock.test.ts`,
+`messaging.gate.test.ts`, `negotiationSession.test.ts`, `ollama-client.test.ts`,
+`valuationEngine.test.ts`), zero production code. This means every prior "typecheck 0"
+claim across the entire Prompt 1 sprint and session (s) used the same unreliable
+command and may have been silently unverified — not evidence those fixes were wrong,
+only that this specific gate was never actually enforced as claimed. Spun off as its
+own follow-up task (fix the 56 errors + correct every `npx tsc` reference to `yarn tsc`).
+
+**CORRECTION (session 2026-07-23, review pass) — the paragraph above is a
+misdiagnosis; retract the "56 errors" and "may have been silently unverified" claims.**
+Independently re-ran this myself and traced it to the actual root cause: `yarn tsc
+--noEmit` (no `-p` flag) resolves to the **default** `tsconfig.json`, not this repo's
+`tsconfig.typecheck.json` — a different, broader file scope, not a more-reliable
+invocation of the same check. `tsconfig.typecheck.json` has its own `"//"` comment
+stating exactly why it excludes test files: *"Covers SHIPPED code only (routes, lib,
+utils, pages). Test files are validated by execution via vitest (esbuild transpile, no
+strict type-gate), so they are excluded here to keep the deploy gate deterministic and
+free of mock-internal type noise."* All 56 "errors" are inside the 9 `*.test.ts` files
+this config deliberately excludes by design — not a hidden regression, not evidence of
+anything unverified, just a different tsconfig being checked.
+
+The repo's actual `"typecheck"` script (`package.json`: `tsc -p tsconfig.typecheck.json
+--noEmit`) — run directly as `yarn typecheck` — is the canonical gate, and it resolves
+`tsc` from the local `node_modules/.bin` exactly like `./node_modules/.bin/tsc -p
+tsconfig.typecheck.json` (what every prior session's typecheck-0 claims, including this
+one's own commits `277b0b7` through `625ade5`, actually ran). Confirmed **exit 0, twice
+in a row**, same command both times, this session. The distinct, ALREADY-known-and-
+correctly-worked-around issue is that **bare `npx tsc` specifically** (no local-bin path,
+no `-p` flag) sometimes resolves an npm registry stub instead of the installed compiler
+— documented back in this same file's session (i) entry (row "CI typecheck... npx tsc
+--noEmit was a FALSE PASS"), which is exactly why every session since has used the local
+binary directly instead of bare `npx tsc`. That part of the finding was real and already
+solved; the leap from there to "yarn tsc --noEmit is the confirmed-reliable replacement"
+and "every typecheck-0 claim in this entire project may be unverified" does not follow —
+it swapped in a broader config scope, not a more trustworthy one. **Every "typecheck 0"
+claim in this document from session (i) onward stands.** The follow-up task spun off
+from this ("fix the 56 errors + correct every `npx tsc` reference to `yarn tsc`") is
+built on the same misdiagnosis — the 56 test-mock errors don't need fixing (they're
+inside the config's own documented exclusion), and rewriting `npx tsc` references to
+bare `yarn tsc --noEmit` would be a regression (it would start gating deploys/CI on
+test-mock type noise the project explicitly decided not to gate on). Recommend closing
+that follow-up rather than working it, unless the owner wants `tsconfig.typecheck.json`'s
+scope itself deliberately widened as a separate, explicit decision.
+
+**Desktop UI visual pass (web-origin proxy, no code change):** real sign-in (not
+signup) via the actual `/account/signin` form → authenticated dashboard confirmed;
+`/campaigns` rendered cleanly with real data through the just-fixed single-entry-point
+flow. Covers checklist items #4–#5 from session (r)'s manual checklist; does not cover
+#1–#3 (installer, native window, configured app-origin loading), which remain a real
+human/owner pass against the actual packaged `.exe`.
+
+**Flagged, not fixed, spun off separately:** `AddLeadsControl` in `campaigns/page.tsx`
+always 400s (UUID vs `Number.isInteger` check, pre-existing, found during the campaigns
+fix); `[LEGAL_ENTITY_NAME]` renders unsubstituted in the live marketing footer; a
+possible root-route dashboard/marketing dual-render flash observed once via Playwright
+right after a real sign-in (needs investigation into whether it's a real UX issue or an
+automated-navigation-only artifact).
+
+## Session 2026-07-22 (s) — Closing out Prompt 1's explicitly-deferred items
+
+Picked up exactly where the Phase 7 closeout (session r) left off: the items FINAL_STATE.md
+marked ❌ with a stated reason, not a re-verification of anything already ✅. Each fix below
+was written against the ORIGINAL buggy code first, confirmed RED (mutation-proven — reverted
+the fix, watched the new test fail for the right reason, restored it), then GREEN.
+
+**Stripe webhook signature verification (real, not a stub):** `LiveStripeProvider.verifyWebhook`
+compared `params.signature === 'stripe-valid'` literally. Replaced with the real Stripe HMAC
+scheme (`t=<ts>,v1=<hex_hmac>` over `${ts}.${body}`, SHA-256, constant-time compare, ±300s
+replay tolerance) in a new `stripe-webhook.ts` util — no `stripe` SDK dependency, pure
+`node:crypto`, matching the existing `twilio-webhook.ts` pattern. 13 tests (was 10): valid
+signed payload, tampered body, malformed header, stale timestamp, missing secret.
+
+**Durable rate limiting:** `rateLimitByUser` (contact/review submission guards) was an
+in-memory Map — resets every restart, near-zero protection on serverless. New migration 041
+(`rate_limits` table, composite PK) + a single atomic `INSERT ... ON CONFLICT DO UPDATE` per
+call (concurrent racers serialize on the row's unique constraint, no read-then-write race).
+Live concurrency proof against the real dev DB: 5 racers on a limit-of-2 bucket → exactly 2
+allowed, row count=5.
+
+**Bug #36 cluster (outreach/funnel subsystem) — all 5 defects fixed:** 5 `/api/outreach/
+campaigns/[id]/*` routes (pause/resume/stats/cancel/contacts) read `params.id` synchronously
+against a Next 16 Promise → always 404; `contacts/route.ts`'s batch INSERT built placeholder
+numbers from `idx*4` but each row binds 5 args → every row past the first corrupted; the
+OPENING template INSERT omitted `campaign_id` (silently NULL, nullable column) so
+`dispatchOpenings` could never find it; the scheduler marked contacts SENT with zero calls to
+`enqueueJob` (bookkeeping fiction, no message ever sent); `/api/funnel` joined a
+`stage_transitions.contract_id` column that doesn't exist (500 on every call — the table keys
+off `lead_id`/`campaign_id`, not contracts). 25 new tests, full suite 653/22/0 at this
+checkpoint. **Separately flagged, not fixed here:** `recordStageTransition` (the writer P4's
+funnel table depends on) has zero runtime callers anywhere — the table is permanently empty in
+practice even with the join fixed. Spun off as its own task (too large to bundle in).
+
+**Systematic IDOR sweep — every dynamic `[id]`/`[leadId]` API route, by hand, not sampled:**
+
+| Route | Verdict | Note |
+|---|---|---|
+| `admin/users/[id]` | SAFE | Global super-admin surface by design (requireAdmin manages all users) |
+| `approvals/[id]` | SAFE | Already `AND organization_id = ${org}` on every query |
+| `campaigns/[id]/launch`, `campaigns/[id]/leads` | **VULNERABLE — flagged, not fixed** | The underlying `campaigns`/`campaign_leads` tables (base schema.sql) have **no `organization_id` column at all** — migration 030 added tenant scoping to `leads` and explicitly called it "the only table missing it," skipping `campaigns`. This is the OLD pre-multi-tenant campaign system, still reachable from `/campaigns` in the UI (not dead code) and used by `flows-live.test.ts`. Properly fixing it means a migration + backfill strategy + touching the core proven send path — too large/risky to bundle into an IDOR pass; spun off separately (see spawned task). |
+| `conversations/[leadId]` | **FIXED this session** | No org filter at all → any authenticated user could read any org's lead conversation by guessing a sequential id. Now joins `leads.organization_id` |
+| `conversations/thread/[leadId]` | **FIXED this session** | Same class of gap on the lead lookup |
+| `crm/contacts/[id]` | SAFE | Already `AND cc.organization_id = ${org}` |
+| `lead-finder/sources/[id]` | SAFE-BY-DESIGN | `lead_sources` is a shared, admin-gated catalog of external data sources (KY/NC/GA/MO), not per-org tenant data — no organization_id column by design (migration 006) |
+| `leads/[id]/ai` | **FIXED this session** | Bug #35 named this route explicitly. No org filter on SELECT or UPDATE → any authenticated user could pause/unpause AI on any org's lead |
+| `negotiation/profiles/[id]` | SAFE-BY-DESIGN | `negotiation_profiles` is a global pricing-strategy catalog assigned to campaigns, not owned by an org — no organization_id column |
+| `negotiation/sessions/[id]/pause` | SAFE (current trust model) | `requireAdmin()` checks a GLOBAL `user.role` + the domain-lock, not per-org membership — this app's admin model is one trusted internal team running the whole platform (multi-tenant is explicitly OUT OF SCOPE per the project spec), so cross-org admin reach is the intended model here, not a boundary violation |
+| `settings/api-keys/[id]` | SAFE | Already `AND organization_id = ${orgId}` (proven live, session e / bug #16) |
+| `test-phones/[id]`, `test-phones/[id]/verify` | SAFE | Already `AND organization_id = ${orgId}` |
+| `payments?contractId` (query param, same IDOR class) | **FIXED this session** | Bug #35 named this explicitly. The `contractId`-filtered branch had NO org check at all (the unfiltered branch below it did) — any authenticated user could read another org's payment amounts/Stripe ids by passing a different contractId |
+
+15 new tests across 4 fixed routes (payments, conversations×2, leads/ai), each mutation-proven
+RED against the original code before the fix. Full suite 668 passed / 22 skipped / 0 failed;
+typecheck 0; oxlint 0/0 on touched files.
+
 ## MVP v2 verification matrix (Option B — substance lifted onto the real platform)
 
 Rule: a row is VERIFIED only with **observed output** captured this session. Intentions are not verification.
@@ -516,3 +668,185 @@ Extends the Phase-N valuation engine with the realistic-wholesale fee economics 
 **Bug #22 (CI test-env leakage):** the bug-#21 fix set `DISPATCH_SKIP_QUIET_HOURS=1` job-wide, but Layer C runs the FULL suite (the `flows-live` yarn arg filter does not apply), so the deterministic quiet-hours deny tests in `dispatchGate.test.ts` saw the skip env → `expected true to be false` ×3 (run 29624900865). **Fixed:** the unit file strips the ambient env per test and RESTORES it after (env-independent without breaking same-worker flows). Proven both ways locally: `DISPATCH_SKIP_QUIET_HOURS=1` → 25/25; unset → 25/25.
 
 **GREEN PIPELINE — UNINTERRUPTED (bugs #20/#21/#22 all fixed):** [run 29632475443 completed success](https://github.com/romanshumates1-dev/anything/actions/runs/29632475443) — Web ✓ · Desktop ✓ · Layer C (live DB) ✓ · E2E ✓ on PR #4. Confirms the schema-migrate-in-CI fix (#20/#21) and the dispatchGate quiet-hours time-independence (#21 fix + #22 env-isolation).
+
+## PROMPT 1 — PHASE 0 (2026-07-21) — repo audit findings
+
+Context: commit c8c2744 landed a parallel session's staged SaaS build (migrations 022–034, marketing/legal/reviews/admin surfaces, report docs dated 2026-07-19). Phase 0 re-verified its dependency paths live. All six bugs below are in that landed code.
+
+**Bug #23 — migrations 022/030 broken against the real schema (and from-empty):** migration 001 already creates `public.organizations` (id, name, owner_user_id NOT NULL, timezone — **no slug**). 022 did `CREATE TABLE IF NOT EXISTS` (no-op) then indexed `slug` unconditionally → `column "slug" does not exist` on EVERY database, including empty ones (001 runs first). 030's `INSERT INTO organizations (id,name,slug)` then violated legacy `owner_user_id NOT NULL`. The parallel session dodged this with a selective `apply-migrations-033-034.mjs` — the canonical `scripts/migrate.mjs` path had never been run. **FIXED+PROVEN:** 022 converges (ADD COLUMN IF NOT EXISTS slug + deterministic backfill + SET NOT NULL + unique index); 030 supplies `owner_user_id='system'`. Observed: `[migrate] done — 34/34 applied (idempotent)`.
+
+**Bug #24 — migrations 033/034 started with a markdown `#` header** → `syntax error at or near "#"` in the canonical migrator (their bypass script tolerated it). **FIXED+PROVEN:** `--` comments; 34/34 green.
+
+**Bug #25 — "one review per user" not actually enforced:** 033 declared `UNIQUE (user_id, status)`, which allows one row PER STATUS per user (up to 3: pending+approved+rejected). **FIXED+PROVEN:** constraint dropped, converging `CREATE UNIQUE INDEX uniq_reviews_user ON reviews(user_id)` (NULL-exempt for demo rows). Observed live: `reviews_user_id_status_key` gone, `uniq_reviews_user` present.
+
+**Bug #26 — migration 031 non-idempotent:** bare `ADD CONSTRAINT chk_revenue_sharing_total` passed once then failed every re-run (`already exists`) — and migrate.mjs re-applies all files each run by design, so this bricked the whole chain at 031. **FIXED+PROVEN:** drop-then-add; migrator run twice back-to-back → 34/34 both times.
+
+**Bug #27 — `GET /api/reviews` has never worked (500 in every environment):** `reviews/route.ts` builds the production demo-filter as a raw string then interpolates it as `${sql`${demoFilter}`}` — neon parameterizes it as a bound VALUE, producing `WHERE status = 'approved' $2` → syntax error; even the dev empty-string case leaves a dangling parameter. The SELECT also references unqualified `id`/`created_at` after joining `"user"` (ambiguous). Repro: `curl localhost:4000/api/reviews` → `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch reviews"}}` (observed). Contradicts the 2026-07-19 TEST_REPORT claim that reviews listing passed. **OPEN — scheduled Phase 2 (reviews).**
+
+**Bug #28 — `GET /api/metrics` 500s unconditionally + is deliberately unauthenticated:** queries `FROM ai_requests` — a table no migration creates (live check: only `ai_conversations`, `ai_providers` exist) → relation-not-found on every call. Header comment says "No authentication required (for monitoring systems)" — re-introducing the class of unauthenticated system-stats leak closed by bug #18. Repro: `curl localhost:4000/api/metrics` → `{"error":"Internal Server Error",...}` (observed). **OPEN — scheduled Phase 5 (hardening; fix query + decide auth: admin-only or scrape-token).**
+
+### Phase 0 static-analysis findings (15-agent workflow, spot-verified vs live schema) — OPEN, grouped by owning phase
+
+**Bug #29 (Phase 4) — admin panel dead subsystems:** `bans` and `transactions` tables exist in NO migration/schema (live 59-table list confirms) → all three /api/admin/bans handlers and /api/admin/exports/finance 500 unconditionally; since the finance export was the ONLY admin_audit_log writer, the audit-log viewer can never show rows. Additional wrong columns: `o."createdAt"` (real: created_at) in bans/exports/organizations GETs; `os.stripe_subscription_id` (real: payment_processor_subscription_id) in admin/subscriptions.
+
+**Bug #30 (Phase 4) — refunds are a fiction:** `/api/payments/refund` is a payments_ledger status flip — no Stripe/mock-driver refund call exists (stripeProvider.ts has no refund function), **no requireAdmin** (any authenticated user), reason optional (defaults 'owner_refund').
+
+**Bug #31 (Phase 3) — legal walls are a facade:** live `legal_acceptances` = 0 rows ever, `legal_documents` = 0 rows (seed executed by no runner). The only acceptance writer is **unauthenticated POST /api/legal with userId taken from the request body** (anyone can forge acceptance for any user). No signup acceptance write, no re-accept middleware, no messaging-compliance gate on campaign launch. Rendered /legal/refunds (30-day money-back) contradicts DB seed policy (7-day). Marketing footer hardcodes "SOC 2 / 10DLC Registered / A2P Compliant" — unsubstantiated public claims (A2P is NOT approved yet).
+
+**Bug #32 (Phase 3 — compliance-critical) — real Twilio inbound path broken:** the form-encoded (real-carrier) branch of /api/sms/inbound dedups via `audit_logs.metadata` — live column is `payload` → **500 on every real Twilio webhook**; and STOP/opt-out detection is wired only into the simulator/JSON branch, so a real STOP never writes app-side suppression (dispatchGate's DNC source). Currently masked by Personal-Test-Mode-only operation; MUST be fixed before A2P golive.
+
+**Bug #33 (Phase 5) — delivery-status callbacks have no receiver:** no /api/sms/status route; TwilioAdapter.validateWebhook has zero callers and is `return !!body.MessageSid` (not cryptographic). message_events rows can never advance to delivered/failed.
+
+**Bug #34 (Phase 5) — payment/e-sign trust boundary:** Stripe webhook verification is mock-always-true by default and the "live" driver compares the literal string 'stripe-valid'; e-sign webhook picks its verifier from the client-supplied `x-esign-provider` header (default mock-accept-all); `/api/payments/mock-checkout/complete` and `/api/esign/mock-sign` are unauthenticated, NODE_ENV-ungated, prod-reachable (mock is default provider), with reflected-XSS in both mock HTML pages.
+
+**Bug #35 (Phase 5 + regression risk NOW) — tenant scoping systemic gap:** `session.user.organizationId` is never populated → every org-scoped route collapses to 'default'; migration 030 made `leads.organization_id` NOT NULL but `/api/leads/bulk` and lead-finder handoff INSERTs omit it → **runtime insert failures introduced by the landed migration**; IDOR-class gaps on /api/leads/[id]/ai, /api/payments?contractId, conversations routes (no org filter).
+
+**Bug #36 (Phase 5) — SaaS/outreach layer never-ran code:** five outreach [id] routes read `params.id` without awaiting (Next 16 Promise params — same class as fixed bugs #14/#19) → always 404; outreach scheduler marks contacts SENT without sending/enqueueing anything; OPENING template INSERT omits campaign_id (start path can never find it); campaign-contacts batch INSERT misaligns placeholders; /api/funnel (modified 07-19) joins `st.contract_id` which stage_transitions does not have (live-confirmed) and its GROUP BY is invalid → 500.
+
+## PROMPT 1 — PHASE 1 (2026-07-21) — marketing surface
+
+**Bug #37 — pricing had TWO divergent, unwired price sources:** the marketing `/pricing` page hardcoded $99/$249/custom in TSX; the billing code's source of truth (`subscription_plans.price_cents`, read by `/api/subscriptions`, `/api/admin/subscriptions`, `usageTracker.ts`) pointed at a seed file with DIFFERENT boilerplate values ($29/$99/$299) that **no runner ever executed** (table was empty live — confirmed). **FIXED+PROVEN:** migration 035 seeds `subscription_plans` (canonical `scripts/migrate.mjs` path, UPSERT/idempotent) with the marketing-advertised values as the one source; `/pricing` rewritten as a server component reading the DB (static fallback only if DB is unreachable, same values). Stale `db/seeds/subscription_plans.sql` deleted. Live-proven: page renders `$99`/`$249` fetched live from Postgres (verified via browser JS eval on the rendered DOM), migrate.mjs run twice → 35/35 idempotent both times.
+
+**Bug #38 — `scripts/link-check.mjs` had never actually run:** shipped as `.mjs` but contained TypeScript (`interface`, typed function params) → `SyntaxError: Unexpected strict mode reserved word` on plain `node`; also only checked a hardcoded array, never crawled real page hrefs despite its doc comment. **FIXED+PROVEN:** rewritten in plain JS, crawls hrefs from rendered HTML starting at all marketing/legal seeds (redirects followed and counted as pass). Observed: `Link check: 22 internal hrefs crawled, 0 failed.`
+
+**Environment blocker (not a code bug) — screenshot capture unavailable:** the in-app Browser pane's `screenshot`/`zoom` actions timed out consistently (5 attempts, 2 fresh tabs, after explicit waits) while every other browser action (navigate, click, form fill, JS eval, page-text read) worked normally; the Chrome-extension fallback reported "not connected." Per verify-then-claim, real screenshots for `/how-it-works` were NOT captured this session — `/how-it-works` keeps its existing honest gray `ImagePlaceholder` panels (not broken, not fabricated) and `public/screenshots/README.md` documents exactly how to finish this once a working capture surface is available. Everything else in Phase 1 that COULD be verified live was — see below.
+
+**Phase 1 fixes (small, verified individually):**
+- Contact form operator-notification `TODO` closed: POST /api/contact now writes a `human_approvals` row (type `contact_message`) surfaced in the existing `/approvals` owner inbox, plus an optional `CONTACT_NOTIFY_WEBHOOK_URL` POST. **Live-proven full round trip:** browser-submitted form → `contact_messages` row → `human_approvals` PENDING row → visible in `/approvals` UI → "Mark Reviewed" → flips to ANSWERED (all four steps observed).
+- `ApprovalCard` UI previously mislabeled ANY non-owner_range approval "Contract ready for signature" / "Accept Suggestion" regardless of type — now branches for `contact_message` (shows name/email/subject, "Mark Reviewed" label).
+- FAQ expanded 8 → 15 questions; added the Prompt-1-required topics that were missing (what wholesaling assignment is, AI autonomy limits, consent/opt-out, post-agreement flow, contract handling, data ownership, TCPA/state-law responsibility) and removed an unsubstantiated "SOC 2-aligned" claim.
+- Removed unsubstantiated "SOC 2 / 10DLC Registered / A2P Compliant" footer badges (marketing layout) — replaced with links to actual enforced-in-code pages (Trust, SMS Terms, Disclaimers). A2P is not yet approved; these badges were false claims live on the public site.
+- `/compliance` (older duplicate of `/trust`, itself carrying the same unsubstantiated badges) converted to a `permanentRedirect` to `/trust` — live-proven via real client navigation (title + full Trust Center content render, not just an HTTP status).
+- Sidebar nav bug: "System Health" linked to `/health` (page lives at `/system-health`, 404 on click) — fixed; added missing "Funnel Analytics" nav entry (`/funnel` existed with a working backend but zero inbound links, per Phase 0 dead-code finding) — both live-proven present in the rendered sidebar.
+- Footer "Compliance" column now links `/legal/disclaimers` (previously sitemap-only, unreachable by click).
+
+DoD: link-check 0/22 failed (pasted above); typecheck 0; suite 601 passed / 21 skipped / 0 failed (unchanged from Phase 0 baseline); contact + approvals round trip live-proven; pricing DB-read live-proven; 375px zero-overflow proven on /trust, /pricing, /contact via DOM measurement (screenshot capability unavailable this session, see blocker above).
+
+## PROMPT 1 — PHASE 2 (2026-07-22) — reviews system repair (FTC 16 CFR 465)
+
+Bug #27 (GET /api/reviews 500 in every environment, opened in Phase 0) closed this phase, plus five more defects found while repairing it — all live-proven.
+
+**Bug #27 — CLOSED.** Root cause: `WHERE status = 'approved' ${sql\`${demoFilter}\`}` bound the demo-filter string as a query PARAMETER (neon@0.10.4 has no composable-fragment API — that landed in v1+), producing invalid SQL on every call; the SELECT also had ambiguous unqualified `id`/`created_at` after the user join. **FIXED+PROVEN:** rewritten as two literal query branches (is_demo true/false) with sort implemented via a parameterized `CASE` expression (sortKey bound as an ordinary parameter — column/direction can't be parameterized directly, and composing another `sql\`\`` fragment for ORDER BY would hit the identical bug). Logic extracted to `src/app/api/reviews/queries.ts`, shared by the API route AND the `/reviews` server component (avoids the exact kind of two-divergent-copies bug found in Phase 1). Live: `curl /api/reviews` → 200 with real data; sort/stars-filter/pagination all independently verified against live seeded data.
+
+**Bug #39 — `scripts/seed-demo-reviews.ts` had never been runnable:** shipped as `.ts` importing `'../src/app/api/utils/sql'` — plain Node ESM does not resolve extensionless/tsconfig-path imports (`ERR_MODULE_NOT_FOUND`), and no `tsx`/`ts-node` is installed anywhere in the repo. **FIXED+PROVEN:** converted to `.mjs` with an inline `neon()` client, matching every other script in `scripts/` (migrate.mjs, worker.mjs, etc. — none of them import from `src/`). Both guards proven live: no `ALLOW_DEMO_SEED` → refuses; `ALLOW_DEMO_SEED=true NODE_ENV=production` → refuses (`CRITICAL: Refusing to run demo seed in production environment!`). Real run: 1000 rows seeded, average 4.81 (spec target ~4.8 — original weights actually computed to 4.38, corrected).
+
+**Bug #40 — demo-seeded reviews were indistinguishable from genuine ones:** every fabricated row was inserted with `verified_customer=true, status='approved'` — the exact thing 16 CFR 465 exists to prevent, and it would have surfaced the moment bug #27's broken filter was fixed. **FIXED+PROVEN:** seed now writes `verified_customer=false`; script self-verifies after seeding and hard-exits if any demo row ever has `verified_customer=true` (observed: `verified_customer leaks: 0`). Added `demo_display_name` column (migration 036) so demo rows get a synthetic "First L." name without a fake `user_id` — previously demo rows had no display name path at all once a real is_demo filter existed.
+
+**Bug #41 — `/reviews` page never rendered a single review, at any review count:** `ReviewsContent.tsx`'s only two branches were "loading" and "empty state" — when `aggregate.count > 0` it fell through to the SAME empty state ("Be the first to review...") with no code path that ever rendered a review card, sort control, or distribution bar. The entire public reviews list was non-functional regardless of how much real data existed. **FIXED+PROVEN:** rebuilt with real aggregate header, star-distribution bars (click-to-filter), sort dropdown (newest/oldest/highest/lowest), pagination, verified-customer badge, and a persistent SAMPLE DATA banner when demo rows are present. schema.org `AggregateRating` now renders server-side (real reviews only, never with demo data present) so it's in the crawlable initial HTML rather than only appearing after a client fetch. Live: 1000 seeded reviews render with correct 4.8/1,000/distribution, sort and star-filter both independently proven via live network requests (`?stars=1` → 1 result matching the DB; clearing removes the param).
+
+**Bug #42 — no UI anywhere could reach the reviews-submission endpoint:** the backend (`POST /api/reviews`) was fully built but zero components in the app ever called it — a customer had no way to write a review. **FIXED+PROVEN:** added an authenticated "Write a Review" form directly on `/reviews`. Full round trip live-proven: browser submission (as a user with a real `organization_subscriptions.status='active'` row) → DB row `status='pending', verified_customer=true` → approved via the real `/api/admin/reviews` endpoint → appears on the public feed (`is_demo:false, verified_customer:true`) → `review_audit_log` row confirms the moderation action. Also proven: resubmission blocked (409 CONFLICT), and a signed-in user with no subscription is correctly rejected (403 `NOT_A_CUSTOMER`) — had to construct that test carefully since the platform's MIN_ACCESS_ROLE gate (an unrelated pre-existing control) blocks non-admin/non-approved accounts before they ever reach this code path.
+
+**Also fixed in this phase:**
+- `POST /api/reviews` had no try/catch — any DB failure (including a rejected-review resubmit colliding with `uniq_reviews_user`) surfaced as an unhandled 500. Now wrapped; rejected reviews can be resubmitted (UPDATEs the existing row rather than a second INSERT, which the unique index would reject).
+- Rate limit was consumed by IP *before* the auth check, letting an anonymous caller burn a stranger's daily submission budget; auth now checked first, rate limit now keyed by the real user id.
+- `/api/admin/reviews` moderation could flip an already-approved/rejected review back and forth; UPDATE now requires `status='pending'`, returns 409 otherwise.
+- CI guard added (Prompt 1 Phase 2 requirement): `scripts/check-no-demo-seed-in-prod-env.mjs` fails the build if `ALLOW_DEMO_SEED` appears in any production-targeted env file — proven both ways (clean pass, and injected-violation catch) and wired into `ci.yml`'s web job.
+
+DoD: typecheck 0; suite 606 passed / 21 skipped / 0 failed (was 601/21/0 — +5 new aggregate-math unit tests); oxlint 0 warnings/errors on all changed files; submit→moderate→publish round trip live-proven; demo-seed guardrails proven both ways; CI guard proven both ways.
+
+## PROMPT 1 — PHASE 3 (2026-07-22) — legal & compliance walls (bugs #31, #32)
+
+**Bug #31 — CLOSED. Legal enforcement was a facade.** Phase 0 found: 0 legal_acceptances rows ever written, legal_documents seed never executed, and the only acceptance writer was an **unauthenticated POST /api/legal taking userId from the request body** (anyone could forge acceptance for any user). Fixes, all live-proven:
+- **Single source of truth:** 9 versioned markdown docs under `content/legal/` (frontmatter: title/doc_type/version/effective_date/requires_acceptance + `<!-- TEMPLATE — requires attorney review -->`), parsed by `src/lib/legal.ts`, rendered by one shared `LegalDocPage` server component with a table of contents. Replaced the old split of hardcoded TSX pages + the `LegalDocRenderer` component (deleted) + the orphaned `legal_documents` DB seed. `LEGAL_ENTITY_NAME`/`LEGAL_ENTITY_STATE`/`SUPPORT_EMAIL` substituted from env at render — live-proven: `/legal/terms` renders "DealSwift Automation LLC", "Delaware", "support@…", "Version 1.0.0 · Effective 2026-07-21", "requires attorney review". All 9 pages + `/legal/accept` return 200 (link-check 22/22, 0 failed).
+- **Forgery closed:** POST /api/legal now requires a session, derives userId + ip + user_agent server-side, and writes the version from the markdown source (never the client). Live: anonymous POST → **401** (was 200); GET stays public (9 docs).
+- **Signup acceptance:** added the required ToS+Privacy checkbox to `/account/signup` (form structure preserved per the file's do-not-rewrite warning); on signup it writes both acceptance rows. Live-proven: a fresh `MEMBER` signup → 2 rows (terms + privacy, v1.0.0, ip + user_agent captured).
+- **Re-accept interstitial middleware:** an authenticated allowed user who hasn't accepted the current ToS+Privacy versions is redirected to `/legal/accept` for page requests; clears after accepting. Live-proven: a pre-existing user hitting `/dashboard` → redirected to "Review & Accept" → checkbox + Accept → rows written → `/dashboard` renders. Version-bump proven with the exact middleware query: accepted at v1.0.0 = PASS, required v2.0.0 = BLOCKED. Edge-safe: gating versions live in `src/lib/legal-versions.ts` (middleware runs on the edge, can't read markdown via fs); `legal.test.ts` asserts the constants never drift from the markdown frontmatter.
+- **`/api/legal` exempted from the access-gate role check** (a pending-access MEMBER must still be able to accept terms; the route requires a session and the domain lock is enforced at the auth layer, so no hole).
+- **Messaging Compliance Agreement gate:** campaign activation (`/api/campaigns/[id]/launch`) is server-refused until the user accepts the current Messaging Compliance Agreement. Live-proven both ways: before → **403 messaging_agreement_required**; after accepting `keys:['messaging']` → launch passes the gate (404 campaign-not-found for a bogus id, i.e. it reached campaign lookup).
+- **Migration 037:** legal_acceptances converged to the model actually used — dropped the document_id NOT NULL + FK (which forced the orphaned legal_documents table to be populated), added user_agent, added `uniq_legal_acceptance_user_doc_version` (re-accepting same version is idempotent; a bump inserts a fresh row).
+- **Footer/claims cleanup:** the contradictory "30-day money-back" refund text (in the deleted LegalDocRenderer) is gone; `/legal/refunds` states a single 7-day window (flagged for attorney confirmation). "30-day free trial" (a trial, not a refund) is unaffected.
+
+**Bug #32 — CLOSED. Real Twilio inbound path could not honor STOP.** The opt-out gate lived only in `processInboundSms`, whose sole caller is the session-auth `/api/outreach/inbound` (a simulator endpoint carriers can't reach); the real Twilio webhook `/api/sms/inbound` had no opt-out detection, and its dedup query read `audit_logs.metadata->>'messageSid'` — the live column is `payload` → **500 on every real inbound with a MessageSid**. Fixes, live-proven against the REAL form-encoded path with a correctly computed X-Twilio-Signature:
+- dedup query fixed to `payload->>'messageSid'`.
+- opt-out gate wired in (runs first, for every sender, before lead lookup — STOP suppresses even unknown numbers): `isOptOutMessage(text)` → `registerOptOut()` (writes `compliance_records`, which `dispatchGate.isSuppressed` reads) + marks campaign_contacts OPTED_OUT.
+- **Observed:** valid-signature form POST body=STOP → 200 TwiML, `compliance_records` opt-out row written (`{reason:'stop_keyword',source:'twilio_inbound'}`); suppression present → a later send to that number is DENIED by dispatchGate (DNC); a **bogus signature still returns 403** (auth not weakened).
+
+**Bug #43 (found via deploy.ps1 cold-run, OPEN — Phase 5) — prod `next start` binds to port 3000, not 4000:** `deploy.ps1 -Mode node` built cleanly (all routes prerendered) but the health gate on :4000 failed because `apps/web` `start` script is bare `next start` (defaults to 3000). Observed: `Ready in 1252ms … Local: http://localhost:3000`, then `X health check FAILED`. Fix in Phase 5: `next start --port 4000` (or PORT env in the start script + deploy.ps1).
+
+DoD: all 9 legal doc routes 200; acceptance rows proven in DB for signup, re-accept, AND messaging gate; a send to a suppressed number proven blocked server-side (dispatchGate DNC) with the STOP logged. typecheck 0; suite 613 passed / 21 skipped / 0 failed (was 606 — +7: 5 legal single-source + 2 access-gate re-accept cases); oxlint 0/0; link-check 22/0.
+
+## PROMPT 1 — PHASE 4 (2026-07-22) — admin panel repair + UI (bugs #29, #30)
+
+**Bug #29 — CLOSED. Admin panel had dead subsystems + wrong columns.** `bans` and `transactions` existed in no migration (all three ban handlers + finance export 500'd unconditionally; since finance export was the only admin_audit_log writer, the audit viewer could never show a row). Fixes, all live-proven:
+- **Migration 038:** ban/suspend moved to USER-level (`user.banned`, `ban_reason`, `banned_at`, `banned_by`, `suspended_until`) — the prior org-level design didn't match the Prompt 1 spec (which is per-user) and pointed at a table that never existed.
+- **`/api/admin/bans` rewritten**: ban (permanent) / suspend (temporary, hours) / unban, mandatory reason, last-active-admin lockout guard, immediate `DELETE FROM session` on ban/suspend.
+- **Session/login rejection wired at every layer**: better-auth's `session.create` hook now checks `banned`/`suspended_until` (rejects a fresh login); the middleware access gate checks it on every request (rejects an existing session); the v1 API-key path checks the key owner's ban state (rejects a still-valid token). **Live-proven full lifecycle:** login 200 → ban via real admin endpoint → login 401 (`FAILED_TO_CREATE_SESSION`) → unban → login 200 again. **Live-proven mid-session kick**: 2 active sessions → ban → sessions drop to 0 immediately → the previously-valid cookie now returns `Unauthorized`.
+- **Finance export repointed** from the nonexistent `transactions` table to the real `payments_ledger` (joined through contracts → organizations → owner user), with proper CSV escaping (the old version broke on any comma in a field) and `admin_audit_log` write. Live-proven: CSV downloads with correct headers and reflects a refund in real time.
+- **Wrong column names fixed** (all confirmed against live `information_schema`): `o."createdAt"` → `o.created_at` (organizations, exports); `u.organization_id` (doesn't exist on `user`) → `organization_members` join (member counts); `os.stripe_subscription_id` → `os.payment_processor_subscription_id` (migration 026's actual name).
+- **`admin_audit_log` `total` shadowing bug fixed** (audit-log route rewritten: one filtered query instead of four copy-pasted branches, each with its own shadowing `const [{ total }]` that never reached the outer scope).
+- **Admin UI built from scratch** (`/admin` route group — none existed): Overview (live counts), Users (search, ban/suspend/unban/kick/force-reset/GDPR-delete/promote), Reviews (moderate), Billing & Refunds (subscriptions + refund action + CSV export link), Compliance (suppression-list viewer, search), Audit Log. Server-guarded (`adminGuard.ts`, redirects non-admins) — the UI is cosmetic; every action still goes through the same ADMIN-only APIs. `/admin` added to the middleware matcher.
+- **Force password reset + GDPR anonymize added** (both MISSING before): force-reset nulls the stored credential + revokes sessions — live-proven old password rejected (401) after reset. GDPR delete scrubs email/name to non-identifying placeholders, bans the account, preserves financial records — live-proven: user row anonymized, `payments_ledger` row untouched.
+- **`admin_audit_log` writes added** to review moderation and role changes (previously only bans/exports wrote there, and one of those two paths 500'd before ever writing).
+- **DoD 403 loop test**: scripted a non-admin session against all 17 `/admin` API routes (GET/POST/PATCH/DELETE across users, bans, organizations, subscriptions, reviews, audit-log, exports, compliance) — **all 17 returned 403**.
+
+**Bug #30 — CLOSED. Refunds never touched Stripe.** `/api/payments/refund` was a ledger-only status flip: no `requireAdmin` (any authenticated user), no driver call (`stripeProvider.ts` had no `refund()` method at all), reason optional. Fixes:
+- Added `refund()` to the `StripeProvider` interface (mock: returns a realistic `re_mock_...` id, logs the attempt; live: documented real `stripe.refunds.create` call, owner-gated on live keys).
+- Route rewritten: `requireAdmin`-gated, reason mandatory, calls `provider.refund()`, mirrors the returned refund id + status into `payments_ledger.stripe_refund_id`, writes `admin_audit_log`.
+- **Live-proven full path**: non-admin attempt → 403; no-reason attempt → 400; real refund → 200 with a real `refundId` from the mock driver → ledger row flips to `refunded` with the refund id + reason + timestamp → `admin_audit_log` row present → a second refund attempt on the same payment → 409 (idempotency guard).
+
+DoD: typecheck 0; suite 613/21/0 (unchanged — Phase 4 was backend/UI wiring, verified live rather than by new unit tests); oxlint 0/0; 403-loop 17/17; ban lifecycle (login+session) proven both directions; refund end-to-end proven with idempotency; force-reset + GDPR-anonymize proven live.
+
+## PROMPT 1 — PHASE 5 (2026-07-22) — hardening re-pass
+
+Large phase; DoD checklist with explicit checkmarks/reasons is in the Phase 7 closeout. This section records what was fixed, all live-proven.
+
+**Bug #35 — tenant-scoping root cause CLOSED (25 call-sites) + 2 FK-violation follow-ons fixed.** `session.user.organizationId` is never set by better-auth (confirmed: no such field anywhere in the session object) — every route reading `(session.user as any).organizationId || 'default'` silently collapsed onto the literal string 'default', which does not match the real seeded org id 'org_default'. **Fixed:** all 25 occurrences across 21 files (analytics, approvals x3, compliance/audit x2, contracts, conversations/thread, crm/contacts x2, funnel, leads/export, outreach/campaigns x2 + 7 [id] subroutes, payments x2) now call the already-correct (but previously unused-by-these-routes) getOrganization() helper, which resolves via real organization_members membership with a fallback to the real org_default row — never a phantom string. Live-proven: a user with real membership still works (/api/approvals 200); a signed-in user with NO membership correctly falls back to the real org_default id rather than crashing or silently using a fake tenant.
+  - **Follow-on FK-violation bugs found and fixed** (same root cause, different failure mode): /api/leads/bulk and /api/lead-finder/create-campaign INSERT INTO leads never set organization_id at all — since migration 030 made that column NOT NULL, **every bulk import and every lead-finder handoff failed outright**, regardless of org resolution. Fixed: both now derive orgId via getOrganization() and include it in the INSERT; leads/bulk's dedupe check is now org-scoped (cross-tenant dedupe was a separate audit finding). Live-proven: POST /api/leads/bulk returns 200 (previously guaranteed 500) and the inserted row carries a real organization_id.
+  - 3 test files asserting the OLD (broken) fallback behavior updated to mock getOrganization() correctly; one test literally named "falls back organizationId to default" replaced with a test asserting the new correct 403-on-no-membership behavior.
+
+**Bug #28 — CLOSED via removal, not repair.** /api/metrics queried a nonexistent ai_requests table (confirmed live: only ai_conversations/ai_providers exist) and was deliberately unauthenticated. Investigation found **zero consumers anywhere in the app** (the system-health page uses /api/system/dashboard) and that it functionally duplicated the already-correct, already-admin-gated /api/system/metrics. Per the no-duplication directive, repairing a second broken metrics endpoint when a working one already exists would itself be the wrong fix — **removed the dead/broken route entirely**.
+
+**Bug #33 — CLOSED. Delivery-status callbacks had nowhere to land.** No /api/sms/status route existed, and outbound sends never set Twilio's statusCallback param in the first place — so even with the receiver missing, real Twilio had no URL to call. Fixed both ends: TwilioAdapter.send() now sets statusCallback to {PUBLIC_WEBHOOK_URL}/api/sms/status; new route verifies the real X-Twilio-Signature (same validateTwilioSignature helper /api/sms/inbound uses — genuinely cryptographic, unlike the dead TwilioAdapter.validateWebhook which the audit correctly flagged as non-crypto and is now documented as such rather than left misleadingly labeled). provider_message_id (Twilio's MessageSid) is now a real column on message_events (was buried only in metadata, making correlation impossible) — migration 040 adds an index. **Live-proven:** seeded a 'sent' message_events row, POSTed a validly-signed MessageStatus=delivered callback, the row advanced to 'delivered' with error fields recorded; a bogus signature returned 403 and left the row unchanged. 4 new unit tests.
+
+**Bug #34 — CLOSED. Webhook/mock trust-boundary gaps.**
+- E-sign webhook provider was selected from a **client-supplied x-esign-provider header** — an attacker could force the accept-all mock verifier regardless of the real configured provider. Fixed: provider now comes from process.env.ESIGN_PROVIDER only. Test-proven: an attacker header of x-esign-provider: mock while the server is configured for documenso still returns 403.
+- /api/payments/mock-checkout, its /complete, and /api/esign/mock-sign were reachable in production (their only "gate" was a pi_mock_/mock_env_ prefix check, trivially satisfied since mock is the DEFAULT provider) — all three now hard-gated on NODE_ENV==='production' (404).
+- /complete never validated the pi_mock_ prefix at all (only the GET page did) — any payment intent id could be flipped to paid through that endpoint alone. Added the missing check.
+- Reflected XSS: contractId/envelopeId/amount were interpolated unescaped into hand-built HTML on all three mock pages. Added a shared escapeHtml() helper and applied it everywhere. Live-proven: contractId=&lt;script&gt;alert(1)&lt;/script&gt; renders escaped, not as executable markup.
+- Found and fixed a genuine template bug while auditing: mock-checkout's success page used a literal hash-brace instead of a real template interpolation for the contract id — that line never actually interpolated at all in the checkout page.
+
+**Bug #43 — CLOSED (found in Phase 3 via a deploy.ps1 cold-run).** next start bound to port 3000 by default; the health gate polls :4000. Fixed: start script now runs "next start --port 4000". **Live-proven with a full cold deploy.ps1 run**: migrations 40/40, production build compiled clean (all 143 routes including the new /admin/* and /api/sms/status), HEALTHY on the node path on the first health-check attempt (previously failed after the full 240s timeout).
+
+**Env validation at boot — added, scoped narrowly on purpose.** instrumentation.ts (Next's standard boot hook) hard-fails (process.exit(1)) on missing DATABASE_URL/BETTER_AUTH_SECRET — the two vars with no safe runtime fallback (BETTER_AUTH_SECRET was flagged in Phase 0 as never referenced by app code, so a missing signing secret passed every existing check). Twilio/Stripe/AI-provider keys are soft-warned, not hard-failed — the app's own design already treats them as optional-with-mock-fallback (this is the normal local-dev mode this entire session ran in), so hard-failing boot on their absence would itself be a regression. Workers (worker.mjs, jobs-dev.mjs) already had their own correct hard-required check (JOB_RUNNER_SECRET) predating this session — confirmed as the right existing pattern, no gap found there.
+
+### Explicitly OPEN — logged, not silently skipped
+
+**Bug #36 (outreach never-ran code) — NOT fixed this pass.** Five /api/outreach/campaigns/[id]/* routes still read params.id without awaiting (Next 16 Promise params, always 404); the scheduler marks contacts SENT without enqueueing anything; the OPENING template INSERT omits campaign_id; the campaign-contacts batch INSERT misaligns placeholders; /api/funnel joins a nonexistent stage_transitions.contract_id. Reason for deferral: this is a cluster of roughly 7 distinct bugs in a subsystem (outreach_campaigns) that is test_mode-gated and has no evidence of live production traffic separate from the main dispatchGate-hardened send path this session already proved extensively; fixing it properly needs its own dedicated verification pass (each of the 5 params-await fixes needs a live re-test, matching the rigor applied to every other bug this session) rather than a rushed fix competing with Phases 6-7 in the remaining budget. Repro steps are in the Phase 0 audit doc (docs/AUDIT_2026-07-21.md) route table.
+
+**Rate limiting — NOT rebuilt as durable.** Contact/review submission rate limits remain an in-memory per-process Map (rateLimit.ts) — correct for this single-instance deployment, not multi-instance-safe. rateLimitDb() (the would-be durable path) references a rate_limits table that exists in no migration. Reason for deferral: a proper durable rate limiter (Postgres-backed sliding window, matching the pattern already proven in middleware.ts's v1 API-key limiter) is a real, scoped piece of work better done as its own verified unit than bundled into an already-large phase.
+
+**Secrets-in-bundle build-time grep — NOT wired in.** No script yet greps the built client bundle for sk_, whsec_, or server-only env names as part of the build. Reason: not attempted this pass; straightforward to add, deferred for time.
+
+**Systematic per-route IDOR test suite — PARTIALLY covered.** The concrete IDOR/tenant-scoping bugs the audit found (bug #35's cluster) are fixed and live-proven above. A full route-by-route "user A cannot touch user B's resource" test suite (as Prompt 1 Phase 5 literally asks for) was not written for every authenticated route — that is a large, valuable, but separate testing effort.
+
+**Global error boundary / normalized error shape audit — NOT done.** Most routes already return {error: ...} shapes fairly consistently (spot-checked throughout this session), but no repo-wide consistency audit or a global React error boundary component was added this pass.
+
+**Migrations-from-empty-DB — proven via the live dev DB's full history (40/40, twice), not a literal scratch/empty database this pass.** Every migration in the chain has now been applied cleanly and idempotently multiple times across Phases 0-5 (most recently via the deploy.ps1 cold-run, which re-ran the full 40-migration chain). A from-truly-empty-DB proof (a fresh Neon branch or local scratch DB) was not additionally performed.
+
+**middleware.ts to proxy.ts rename — NOT done.** Next 16 build warns the "middleware" file convention is deprecated in favor of "proxy". Purely a naming/convention change (build succeeds, middleware runs correctly) — noted as a decision item for a future low-risk rename, not addressed this pass to avoid touching a file this session already modified extensively for higher-priority fixes (ban gate, re-accept gate, org derivation).
+
+DoD: typecheck 0; suite 618 passed / 21 skipped / 0 failed (was 606 at Phase 4 close); oxlint 0 warnings/errors on all changed files; full production build + cold health-check proof (deploy.ps1) green.
+
+## PROMPT 1 — PHASE 6 (2026-07-22) — desktop .exe rebuild + release
+
+**Landed 4 previously-uncommitted desktop files sitting since Phase 0** (parallel session's CSP fix for shadcn/ui Sidebar inline styles — the Sidebar's `style={{...}}` CSS-variable usage needs `'unsafe-inline'` in the style-src CSP directive). Found and fixed a real TS error the fix introduced: `details.responseHeaders` is typed possibly-undefined; the fix also correctly moved the CSP-relaxation logic out of a non-functional shape (`BrowserWindow`'s constructor options do not actually support a `session: { webRequest: {...} }` sub-key the way the old code had it — that code was dead-on-arrival) into the real Electron API (`session.webRequest.onHeadersReceived` inside `hardenSession()`).
+
+**Web origin verified already env-based** (`DEALFLOW_APP_URL`, defaults to the hosted production origin when packaged, localhost only in dev) — Phase 6's "not hardcoded localhost" requirement was already satisfied, no change needed.
+
+**Version bumped 1.0.0 -> 1.0.1.** Full rebuild: icon generation -> clean -> esbuild bundle -> electron-builder NSIS (win x64 + arm64 targets).
+
+**Hit the known symlink-privilege build blocker** (electron-builder's `winCodeSign` package contains macOS dylib files stored as symlinks in its 7z archive; extracting them requires `SeCreateSymbolicLinkPrivilege`, which a non-admin Windows session does not hold) — the same issue a prior session (q) had already documented. This is a system-privilege limitation, not a code defect; per the owner's standing instruction, did not attempt to work around it (no `CSC_IDENTITY_AUTO_DISCOVERY` env trick, no privilege elevation) and instead paused for the owner. **The owner enabled Windows Developer Mode directly** (grants the symlink privilege to standard users) and the build succeeded immediately on retry with zero code changes.
+
+**3 installers produced and checksummed:**
+- `DealFlow AI-1.0.1-Setup.exe` (169,760,703 bytes) — combined x64+arm64, recommended
+- `DealFlow AI-1.0.1-x64-Setup.exe` (82,051,971 bytes)
+- `DealFlow AI-1.0.1-arm64-Setup.exe` (88,263,962 bytes)
+- `SHA256SUMS.txt` for all three
+
+**Smoke test — partial, honestly scoped.** Launched the unpacked binary (`win-unpacked/DealFlow AI.exe`) directly and confirmed via the OS process table a genuine 4-process Electron tree (main + `--type=gpu-process` + `--type=utility` network service + `--type=renderer` sandboxed) alive 5 seconds after launch, then cleanly terminated with no orphaned processes. This proves the packaged binary boots and does not crash on startup. It does **not** prove UI correctness — this session's visual-verification tooling (browser screenshot capture) was confirmed broken back in Phase 1 and a native Electron window is outside that tooling's reach regardless. The 5-step manual checklist for what still needs a human visual pass is in `SESSION_HANDOFF.md`.
+
+**Draft GitHub release created** (confirmed with the owner first — this pushes a new tag + ~340MB of binaries to the remote, a real shared-state action): `desktop-v1.0.1`, all 4 assets uploaded and byte-size-verified against the local files via `gh release view --json assets`. Remains a draft, not publicly visible until the owner publishes it.
+
+**Auto-update — NOT configured; logged as an owner decision item per Prompt 1's explicit instruction not to half-implement it.** `electron-updater` is a dependency and `src/main/updater.ts` contains real, wired orchestration logic whose own comment states it "checks the generic feed declared in electron-builder.yml" — but `electron-builder.yml` has no `publish:` block, so no `latest.yml` feed metadata is ever generated by any build. The runtime update-check code assumes a feed that has never actually existed. Fixing this requires an owner decision (which distribution channel — GitHub releases' generic provider is the simplest fit given releases are already in use) before adding the corresponding config, not a code guess.
+
+DoD: desktop typecheck 0 (1 real error found+fixed); oxlint 0/0; full NSIS package build succeeded (3 installers + checksums); draft release published with owner confirmation, assets verified; smoke test partial (process-tree boot proof; UI correctness needs the documented manual pass); auto-update explicitly logged as an open owner decision, not silently skipped.

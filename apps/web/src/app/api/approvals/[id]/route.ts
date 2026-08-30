@@ -1,10 +1,13 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import crypto from 'crypto';
 import { buildPriceLadder } from '@/app/api/services/priceLadder';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
+import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 /**
  * Resolve an approval (session-authed, org-scoped). Money-moving route:
@@ -21,13 +24,20 @@ import { logEvent } from '@/app/api/utils/logger';
  * (404) and cannot be acted on.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const action = body?.action;
@@ -91,12 +101,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // Enqueue the next AI turn (idempotent via dedupeKey). Resolve a lead by
       // the contact's phone so the ai_reply handler has a conversation to act on.
       const [contact] = await sql`SELECT phone FROM campaign_contacts WHERE id = ${negotiationId} AND organization_id = ${org} LIMIT 1`;
-      let leadId: number | null = null;
+      let leadId: string | null = null;
       if (contact?.phone) {
         const [lead] = await sql`SELECT id FROM leads WHERE phone = ${contact.phone} LIMIT 1`;
         leadId = lead?.id ?? null;
       }
       await enqueueJob('ai_reply', { leadId, negotiationId, organizationId: org }, { dedupeKey: `neg_turn_${negotiationId}` });
+
+      // Funnel analytics (P4): unblocking the negotiation is the real
+      // "negotiating" event. Reuses the leadId already resolved above for the
+      // AI-turn enqueue — best-effort, never blocks the approval.
+      if (leadId) {
+        await recordStageTransition({
+          leadId,
+          fromStage: 'ENGAGED',
+          toStage: 'NEGOTIATING',
+          channel: 'system',
+        });
+      }
 
       await logEvent('owner_range_approved', 'negotiation', String(negotiationId), { min, max, direction }, session.user.id);
 

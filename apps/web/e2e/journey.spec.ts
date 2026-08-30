@@ -6,7 +6,14 @@ import { db } from './db';
 import { TEST_PHONE } from './global-setup';
 
 const env = loadEnv();
-const ORG = 'default'; // better-auth users carry no organizationId → app uses 'default'
+// NOTE: the org is NOT a module constant. It used to be
+//   const ORG = 'default'; // better-auth users carry no organizationId → app uses 'default'
+// which was wrong: getOrganization() resolves a membership row, else falls back
+// to 'org_default' — it never yields the bare string 'default'. That phantom
+// 'default' is the same value that left 375 rows across 10 tables orphaned and
+// permanently invisible (BREAKAGE_TABLE #35 / session (t)'s backfill); that
+// backfill repaired DB rows, not this constant. It is now read back from the
+// campaign the app actually created, below, so it cannot drift again.
 
 /**
  * Full campaign → inbox → approvals journey (the sprint's 10 steps):
@@ -95,6 +102,15 @@ test('full journey: wizard → launch → inbox/thread → approve range → neg
   await expect(page.getByText('Yes, what is your offer?').first()).toBeVisible();
 
   // --- Seed an owner-range approval tied to a contact of this campaign ---
+  // Authoritative org: whatever the app stamped on the campaign it just
+  // created. See the note at the top of this file — hardcoding 'default' here
+  // made this query match nothing, so `contact?.id` came back undefined.
+  const [campRow] = await sql`
+    SELECT organization_id FROM outreach_campaigns WHERE id = ${created.id}
+  `;
+  const ORG = (campRow as { organization_id: string } | undefined)?.organization_id;
+  expect(ORG, 'campaign should carry an organization_id').toBeTruthy();
+
   const [contact] = await sql`
     SELECT id FROM campaign_contacts WHERE campaign_id = ${created.id} AND organization_id = ${ORG} LIMIT 1
   `;

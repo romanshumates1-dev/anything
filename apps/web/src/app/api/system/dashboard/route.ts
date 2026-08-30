@@ -26,7 +26,7 @@ async function dbTile(): Promise<Tile> {
     // green <300ms · amber <1500ms · red otherwise (Neon over HTTP is ~100-400ms)
     const status = latencyMs < 300 ? 'green' : latencyMs < 1500 ? 'amber' : 'red';
     return { status, latencyMs };
-  } catch (e: any) {
+  } catch {
     return { status: 'red', error: 'unreachable' };
   }
 }

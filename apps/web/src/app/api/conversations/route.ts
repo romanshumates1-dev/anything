@@ -1,14 +1,21 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
+import { getOrganization } from '@/lib/organization-context';
 
 /**
  * Inbox list: one row per conversation with a last-message preview.
+ * SECURITY: Scoped to organization to prevent cross-tenant data access.
  */
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const org = await getOrganization();
+  if (!org) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
   }
 
   try {
@@ -25,6 +32,7 @@ export async function GET() {
         (c.history -> -1 ->> 'content') AS last_message
       FROM ai_conversations c
       JOIN leads l ON l.id = c.lead_id
+      WHERE l.organization_id = ${org.id}
       ORDER BY c.last_message_at DESC NULLS LAST
       LIMIT 100
     `;

@@ -55,8 +55,9 @@ export async function sendMessage(payload: SendMessagePayload) {
 
   // 0. UNIVERSAL DISPATCH GATE (P2.0-W). This is the non-gateway transmit path
   // (no Twilio configured / non-sms channel) — it must be gated identically to
-  // the gateway or a config difference silently removes compliance. SMS only:
-  // the gate's spec covers sms/voice/rvm; email keeps the consent check below.
+  // the gateway or a config difference silently removes compliance.
+  // FIX: Now applies dispatchGate to BOTH SMS and email channels for unified
+  // compliance. Email sends now go through the same opt-out/suppression check.
   if (channel === 'sms') {
     const gate = await dispatchGate({
       phone: to,
@@ -67,6 +68,25 @@ export async function sendMessage(payload: SendMessagePayload) {
       boundedNegotiation: payload.boundedNegotiation
         ? { text, ...payload.boundedNegotiation }
         : undefined,
+    });
+    if (!gate.allow) {
+      await setCampaignLeadStatus('failed');
+      await logEvent('message_suppressed', 'message', String(leadId), {
+        to,
+        channel,
+        reason: gate.code,
+        detail: gate.reason,
+      });
+      return { status: 'suppressed' as const, gateCode: gate.code, retryAt: gate.retryAt };
+    }
+  } else if (channel === 'email') {
+    // Email channel: dispatchGate checks opt-out suppression (CAN-SPAM compliance)
+    const gate = await dispatchGate({
+      phone: '', // Not used for email
+      email: to,
+      channel: 'email',
+      betaFlag: payload.betaFlag,
+      transactional: payload.transactional,
     });
     if (!gate.allow) {
       await setCampaignLeadStatus('failed');
@@ -160,11 +180,12 @@ export async function sendMessage(payload: SendMessagePayload) {
 
     return { status: 'sent' as const, delivery };
   } catch (error: any) {
+    const errorMsg = error?.message || 'unknown';
     await setCampaignLeadStatus('failed');
     await logEvent('message_failed', 'message', String(leadId), {
       to,
       channel,
-      error: 'unknown',
+      error: errorMsg,
     });
     await recordRun({
       task: 'process_jobs',
@@ -172,7 +193,7 @@ export async function sendMessage(payload: SendMessagePayload) {
       step: 'send_message',
       status: 'fail',
       passed: false,
-      detail: 'unknown',
+      detail: errorMsg,
       dbAssertion: campaignLeadId != null ? "campaign_leads.status='failed'" : 'no campaign_lead',
       logAssertion: "audit_logs.action='message_failed'",
     });

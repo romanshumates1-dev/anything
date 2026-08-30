@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { processInboundSms } from '@/app/api/services/inboundSms';
 import { withContactLock } from '@/app/api/utils/contactLock';
+import { recordStageTransition, resolveLeadIdByPhone } from '@/app/api/services/stageTransitionRecorder';
 
 export async function POST(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -15,7 +17,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { from, to, message } = body as { from: string; to: string; message: string };
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
 
     if (!from || !message) {
       return NextResponse.json({ error: 'Missing from or message' }, { status: 400 });
@@ -26,6 +32,7 @@ export async function POST(request: NextRequest) {
 
     // If it's a contact reply, wrap in a contact lock to prevent double-processing
     if (result.action === 'contact_reply') {
+      const replyCampaignId = result.campaignId;
       await withContactLock(result.contactId, async () => {
         // In production: classify intent, negotiate, etc.
         // For now, just mark as ENGAGED if reply is affirmative
@@ -35,6 +42,20 @@ export async function POST(request: NextRequest) {
             SET status = 'ENGAGED', updated_at = now()
             WHERE id = ${result.contactId}
           `;
+
+          // Funnel analytics (P4): an affirmative reply is the real "engaged"
+          // event. Resolve lead_id by phone (campaign_contacts carries no
+          // reliable lead_id column) — best-effort, never blocks the reply.
+          const leadId = await resolveLeadIdByPhone(from);
+          if (leadId) {
+            await recordStageTransition({
+              leadId,
+              fromStage: 'CONTACTED',
+              toStage: 'ENGAGED',
+              campaignId: replyCampaignId,
+              channel: 'inbound',
+            });
+          }
         }
       });
     }

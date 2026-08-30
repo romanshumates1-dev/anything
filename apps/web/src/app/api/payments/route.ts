@@ -7,9 +7,11 @@
  */
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { getStripeProvider } from '@/app/api/services/stripeProvider';
+import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -21,16 +23,26 @@ export async function GET(request: Request) {
   const contractId = searchParams.get('contractId');
 
   try {
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
 
     let rows;
     if (contractId) {
+      // Bug #35: this branch previously filtered on contract_id alone, with
+      // no organization check at all — any authenticated user from ANY org
+      // could read another org's payment amounts/Stripe ids by passing a
+      // different contractId. Joined to contracts for the same org filter
+      // the unfiltered branch below already applies.
       rows = await sql`
-        SELECT id, contract_id, buyer_id, amount_cents, currency,
-               stripe_payment_intent_id, status, reason, created_at, paid_at, refunded_at
-        FROM payments_ledger
-        WHERE contract_id = ${contractId}
-        ORDER BY created_at DESC
+        SELECT pl.id, pl.contract_id, pl.buyer_id, pl.amount_cents, pl.currency,
+               pl.stripe_payment_intent_id, pl.status, pl.reason, pl.created_at, pl.paid_at, pl.refunded_at
+        FROM payments_ledger pl
+        JOIN contracts c ON c.id = pl.contract_id
+        WHERE pl.contract_id = ${contractId} AND c.organization_id = ${org}
+        ORDER BY pl.created_at DESC
       `;
     } else {
       rows = await sql`
@@ -52,6 +64,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const csrfError = requireValidCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -69,7 +84,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'amountCents must be positive' }, { status: 400 });
     }
 
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
 
     // Verify contract exists and belongs to this org
     const contractRows = await sql`

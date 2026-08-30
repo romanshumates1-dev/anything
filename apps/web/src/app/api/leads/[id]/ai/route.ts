@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '../../../utils/logger';
 
@@ -25,6 +26,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return Response.json({ error: 'Lead ID is required' }, { status: 400 });
   }
 
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   // Body is optional; a bare toggle sends no body.
   let explicit: boolean | undefined;
   try {
@@ -34,14 +40,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // no/invalid body -> toggle
   }
 
-  const [lead] = await sql`SELECT id, ai_paused FROM leads WHERE id = ${leadId} LIMIT 1`;
+  // Bug #35 (IDOR): previously had no org filter — any authenticated user
+  // could pause/unpause AI on any other org's lead by guessing its id.
+  const [lead] = await sql`SELECT id, ai_paused FROM leads WHERE id = ${leadId} AND organization_id = ${organization.id} LIMIT 1`;
   if (!lead) {
     return Response.json({ error: 'Lead not found' }, { status: 404 });
   }
 
   const next = explicit !== undefined ? explicit : !lead.ai_paused;
 
-  await sql`UPDATE leads SET ai_paused = ${next} WHERE id = ${leadId}`;
+  await sql`UPDATE leads SET ai_paused = ${next} WHERE id = ${leadId} AND organization_id = ${organization.id}`;
 
   await logEvent('ai_pause_toggled', 'lead', String(leadId), { aiPaused: next }, session.user.id);
 

@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
 /**
@@ -15,7 +16,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
     const { id } = await params;
 
     const [contact] = await sql`
@@ -70,7 +75,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const org = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const org = organization.id;
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
 

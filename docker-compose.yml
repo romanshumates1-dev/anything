@@ -1,21 +1,22 @@
-# DealFlow AI — local/prod-like container stack.
+# DealFlow AI — Self-Hosted Production Stack
 #
-# Services:
-#   app     — the Next.js web server (from the multi-stage Dockerfile)
-#   worker  — the always-on job drainer (scripts/worker.mjs, same image)
-#   ollama  — OPTIONAL local LLM, only in the `ollama` profile
+# Zero-Cost Self-Hosting:
+#   AI:     Ollama (local, free)
+#   Email:  Gmail SMTP (500/day free) or AWS SES (~$0.10/1000)
+#   SMS:    AWS SNS (~$0.00645/msg)
+#   Social: Free (Instagram/Facebook/TikTok/Twitter APIs)
+#   DB:     Neon free tier (0.5GB, 190 compute hrs/mo)
 #
-# DATABASE: the app uses @neondatabase/serverless (HTTP/WS), which does NOT
-# speak the vanilla Postgres wire protocol. So DATABASE_URL must point at Neon
-# (cloud) — set it in .env. A `postgres:16-alpine` service is intentionally NOT
-# included as the app's primary DB because the neon serverless driver cannot
-# talk to it without Neon's local wsproxy; running one here would be a ghost
-# dependency. For a fully-local DB, add the neon proxy in a follow-up (see
-# DEPLOY.md "fully-local Postgres" note).
+# Usage:
+#   docker compose up -d           # Start app + worker + ollama
+#   docker compose logs -f         # View logs
+#   docker compose down            # Stop all
 #
-# Profiles: `dev` (default) and `prod`. Bring up: `docker compose up`.
+# The app uses @neondatabase/serverless (HTTP/WS) so DATABASE_URL must point
+# to Neon cloud. Set all env vars in apps/web/.env before starting.
 
 services:
+  # Main Next.js application
   app:
     build:
       context: .
@@ -25,34 +26,36 @@ services:
     environment:
       PORT: 4000
       NODE_ENV: production
+      # Use the local ollama container
+      OLLAMA_BASE_URL: http://ollama:11434
     ports:
       - "4000:4000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/system/health').then(r=>r.json()).then(j=>process.exit(j.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4000/api/system/health"]
+      interval: 30s
+      timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+    depends_on:
+      ollama:
+        condition: service_started
     restart: unless-stopped
-    profiles: ["dev", "prod"]
 
+  # Background job worker (drains job queue every 3 seconds)
   worker:
     image: dealflow-ai:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
     command: ["node", "apps/web/scripts/worker.mjs"]
     env_file: apps/web/.env
     environment:
       APP_URL: http://app:4000
       JOB_POLL_INTERVAL_MS: "3000"
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       app:
         condition: service_healthy
     restart: unless-stopped
-    profiles: ["dev", "prod"]
 
-  # Optional local LLM for AI_PROVIDER=ollama testing. `docker compose --profile ollama up`.
+  # Local Ollama for FREE AI (no API costs)
   ollama:
     image: ollama/ollama:latest
     volumes:
@@ -60,7 +63,8 @@ services:
     ports:
       - "11434:11434"
     restart: unless-stopped
-    profiles: ["ollama"]
+    # Auto-pull the model on first start
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5:7b && wait"]
 
 volumes:
   ollama_models:

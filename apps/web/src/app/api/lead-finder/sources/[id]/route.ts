@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
+import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 
 /**
@@ -13,11 +14,20 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   try {
     const { id } = await props.params;
     const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
-    const [current] = await sql`SELECT * FROM lead_sources WHERE id = ${id} LIMIT 1`;
+    const [current] = await sql`
+      SELECT * FROM lead_sources
+      WHERE id = ${id} AND organization_id = ${organization.id}
+      LIMIT 1
+    `;
     if (!current) return Response.json({ error: 'Source not found' }, { status: 404 });
 
     const enabled = typeof b.enabled === 'boolean' ? b.enabled : current.enabled;
@@ -46,7 +56,7 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
           distress_weight = ${distressWeight},
           notes = ${notes},
           updated_at = now()
-      WHERE id = ${id}
+      WHERE id = ${id} AND organization_id = ${organization.id}
       RETURNING *
     `;
     await logEvent('lead_source_updated', 'lead_source', String(id), { enabled, termsStatus, accessMethod }, admin.userId);
@@ -61,9 +71,18 @@ export async function DELETE(_request: Request, props: { params: Promise<{ id: s
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   try {
     const { id } = await props.params;
-    const [row] = await sql`DELETE FROM lead_sources WHERE id = ${id} RETURNING id, name`;
+    const [row] = await sql`
+      DELETE FROM lead_sources
+      WHERE id = ${id} AND organization_id = ${organization.id}
+      RETURNING id, name
+    `;
     if (!row) return Response.json({ error: 'Source not found' }, { status: 404 });
     await logEvent('lead_source_deleted', 'lead_source', String(id), { name: row.name }, admin.userId);
     return Response.json({ success: true });

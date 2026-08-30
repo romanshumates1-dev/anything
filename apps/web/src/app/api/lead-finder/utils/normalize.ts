@@ -234,6 +234,95 @@ export function parseSourcedCsv(text: string, opts: ParseOptions): SourcedParseR
   return { rows, failures, totalRows };
 }
 
+/**
+ * Parse already-structured records (a JSON API response) into normalized
+ * sourced leads.
+ *
+ * Deliberately shares mapHeaders / isContactHeader / deriveSignals /
+ * buildDedupeKey with parseSourcedCsv rather than reimplementing them. The
+ * contact-stripping guarantee in this module's header is the whole reason:
+ * a second, parallel parser would be a second place for a phone number to slip
+ * into raw_fields, and the schema has no contact columns to catch it. One
+ * normalizer, one guarantee.
+ *
+ * Values are stringified before matching so a numeric SODA field (assessed
+ * value, parcel number) is treated exactly like its CSV equivalent.
+ */
+export function parseSourcedRecords(
+  records: Array<Record<string, unknown>>,
+  opts: ParseOptions
+): SourcedParseResult {
+  const failures: SourcedParseFailure[] = [];
+  const rows: NormalizedSourcedLead[] = [];
+
+  for (let i = 0; i < records.length; i++) {
+    const rec = records[i] ?? {};
+    const keys = Object.keys(rec);
+    // Reuse the CSV header mapper by treating the record's keys as a header row.
+    const hm = mapHeaders(keys);
+
+    const rawFields: Record<string, string> = {};
+    keys.forEach((k, idx) => {
+      if (hm.contactCols.has(idx)) return; // strip contact fields, same rule as CSV
+      const val = scrubContactValues(normalizeWhitespace(stringifyCell(rec[k])));
+      if (val) rawFields[k] = val;
+    });
+
+    const get = (field: string): string | null => {
+      const idx = hm.byField[field];
+      if (idx === undefined) return null;
+      return normalizeWhitespace(stringifyCell(rec[keys[idx]])) || null;
+    };
+
+    const ownerName = get('ownerName');
+    const propertyAddress = get('propertyAddress');
+    const mailingAddress = get('mailingAddress');
+    const parcelId = get('parcelId');
+    const county = get('county') || (opts.fallbackCounty ? normalizeWhitespace(opts.fallbackCounty) : null);
+    const assessedValueCents = parseMoneyCents(get('assessedValueCents'));
+
+    if (!ownerName && !propertyAddress && !parcelId) {
+      failures.push({ rowNumber: i + 1, raw: rawFields, reason: 'No owner name, property address, or parcel id' });
+      continue;
+    }
+
+    const signals = deriveSignals({
+      recordType: opts.sourceRecordType,
+      category: opts.sourceCategory,
+      mailingAddress,
+      propertyAddress,
+      rawFields,
+    });
+
+    rows.push({
+      ownerName,
+      propertyAddress,
+      mailingAddress,
+      parcelId,
+      county,
+      assessedValueCents,
+      signals,
+      rawFields,
+      dedupeKey: buildDedupeKey(county, parcelId, propertyAddress, ownerName),
+    });
+  }
+
+  return { rows, failures, totalRows: records.length };
+}
+
+/**
+ * SODA returns strings, numbers, booleans, and nested objects (e.g. a
+ * `location` point). Only flat scalars are usable as field values; an object
+ * stringified via String() becomes "[object Object]", which would then be
+ * matched and stored as if it were an address.
+ */
+function stringifyCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return ''; // objects/arrays are not scalar field values
+}
+
 /** Remove rows colliding on dedupeKey within the batch (keep first). */
 export function dedupeInBatch(rows: NormalizedSourcedLead[]): {
   unique: NormalizedSourcedLead[];
@@ -321,12 +410,30 @@ export interface ScoreInput {
   signals: string[];
   assessedValueCents: number | null;
   sourceWeight: number; // 0–100 registry distress_weight
+  // Enhanced equity calculation for deal viability (revenue optimization)
+  estimatedArv?: number | null; // After-repair value
+  estimatedDebt?: number | null; // Existing debt/mortgage
+  estimatedRepairs?: number | null; // Estimated repair costs
 }
 
 export interface ScoreResult {
   score: number; // 0–100 SIGNAL-BASED ESTIMATE
   reasons: string[];
+  // Deal viability metrics (revenue optimization)
+  estimatedProfitMargin?: number | null; // Calculated: (ARV * 0.70 - repairs - debt)
+  dealViable?: boolean; // True if positive margin
 }
+
+/**
+ * Signal synergy pairs: combinations that multiply motivation rather than just adding.
+ * Research shows probate+foreclosure together indicates extreme urgency.
+ */
+const SIGNAL_SYNERGIES: Array<{ pair: [string, string]; bonus: number; reason: string }> = [
+  { pair: ['probate', 'pre_foreclosure'], bonus: 15, reason: 'Probate + pre-foreclosure synergy (extreme urgency)' },
+  { pair: ['probate', 'tax_delinquent'], bonus: 12, reason: 'Probate + tax delinquent synergy (inherited debt)' },
+  { pair: ['pre_foreclosure', 'vacant_or_code'], bonus: 10, reason: 'Pre-foreclosure + vacant/code synergy (abandoned distress)' },
+  { pair: ['tax_delinquent', 'vacant_or_code'], bonus: 10, reason: 'Tax delinquent + vacant synergy (severe neglect)' },
+];
 
 /**
  * 0–100 signal-based score. Distinct distress signals COMPOUND (stacking gives
@@ -350,9 +457,21 @@ export function scoreSourcedLead(input: ScoreInput): ScoreResult {
     if (SIGNAL_LABEL[s]) reasons.push(SIGNAL_LABEL[s]);
   });
 
+  // Apply synergy bonuses BEFORE diminishing returns: certain signal combinations
+  // should multiply motivation, not just add. This captures that probate+foreclosure
+  // together indicates a much more urgent seller than either alone.
+  const signalSet = new Set(distinct);
+  for (const synergy of SIGNAL_SYNERGIES) {
+    if (signalSet.has(synergy.pair[0]) && signalSet.has(synergy.pair[1])) {
+      base += synergy.bonus;
+      reasons.push(synergy.reason + ` (+${synergy.bonus})`);
+    }
+  }
+
   // Scale by source distress weight (registry): a probate source (w90) lifts,
-  // a low-signal source (w60) tempers. Weight 80 ≈ neutral.
-  const weightFactor = 0.6 + (input.sourceWeight / 100) * 0.5; // 0.6–1.1
+  // a low-signal source (w60) tempers. Weight 50 ≈ neutral.
+  // Range 0.5-1.5 for better differentiation between low and high-weight sources
+  const weightFactor = 0.5 + (input.sourceWeight / 100) * 1.0; // 0.5–1.5
   let score = Math.round(base * weightFactor);
 
   // Equity/margin proxy: having an assessed value = quantifiable deal room.
@@ -368,5 +487,38 @@ export function scoreSourcedLead(input: ScoreInput): ScoreResult {
   }
 
   score = Math.max(0, Math.min(100, score));
-  return { score, reasons };
+
+  // Calculate deal viability if ARV data is available (revenue optimization)
+  // Wholesaling formula: MAO = ARV * 0.70 - repairs - wholesale_fee
+  // A negative margin means the deal cannot close profitably
+  let estimatedProfitMargin: number | null = null;
+  let dealViable: boolean | undefined = undefined;
+
+  if (input.estimatedArv && input.estimatedArv > 0) {
+    const arv = input.estimatedArv;
+    const debt = input.estimatedDebt ?? 0;
+    const repairs = input.estimatedRepairs ?? 0;
+    const wholesaleFee = 12500; // Industry median: $5K-$35K, using $12.5K median
+
+    // MAO (Maximum Allowable Offer) = ARV * 0.70 - repairs - wholesale_fee
+    const mao = arv * 0.70 - repairs - wholesaleFee;
+    estimatedProfitMargin = mao - debt;
+    dealViable = estimatedProfitMargin > 0;
+
+    if (dealViable) {
+      reasons.push(`Deal viable: est. profit margin $${Math.round(estimatedProfitMargin).toLocaleString()} (ARV: $${arv.toLocaleString()})`);
+      // Boost score for viable deals with good margins
+      if (estimatedProfitMargin >= 25000) {
+        score = Math.min(100, score + 10);
+        reasons.push('High profit margin (>$25K) (+10)');
+      }
+    } else {
+      reasons.push(`Low viability: negative margin $${Math.round(estimatedProfitMargin).toLocaleString()} (ARV: $${arv.toLocaleString()})`);
+      // Penalize non-viable deals to deprioritize them
+      score = Math.max(0, score - 15);
+    }
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  return { score, reasons, estimatedProfitMargin, dealViable };
 }

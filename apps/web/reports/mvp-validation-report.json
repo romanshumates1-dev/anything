@@ -1,0 +1,105 @@
+{
+  "timestamp": "2026-08-01T02:23:30.494Z",
+  "system": {
+    "checks": {
+      "database": true,
+      "memory": true,
+      "cpu": true,
+      "diskEstimate": true,
+      "nodeVersion": true,
+      "freeStack": true
+    },
+    "passed": true
+  },
+  "pipeline": {
+    "stages": {
+      "import": true,
+      "process": true,
+      "segment": true,
+      "generate": true,
+      "queue": true,
+      "send": true,
+      "track": true,
+      "reply": true,
+      "progress": true
+    },
+    "passed": true
+  },
+  "scale": {
+    "metrics": {
+      "insertRate": 2660,
+      "queryRate": 25,
+      "updateRate": 9434,
+      "memoryUsage": 9,
+      "estimatedCapacity": 86400,
+      "bottlenecks": [
+        "Query rate below 50/sec",
+        "Gmail SMTP limited to 500/day"
+      ]
+    },
+    "passed": false
+  },
+  "email": {
+    "checks": {
+      "smtpConfig": true,
+      "sendCapability": true,
+      "deliverabilityFactors": [
+        {
+          "name": "SPF",
+          "status": "Gmail handles",
+          "risk": "LOW"
+        },
+        {
+          "name": "DKIM",
+          "status": "Gmail handles",
+          "risk": "LOW"
+        },
+        {
+          "name": "DMARC",
+          "status": "Gmail handles",
+          "risk": "LOW"
+        },
+        {
+          "name": "Domain age",
+          "status": "Gmail domain (trusted)",
+          "risk": "LOW"
+        },
+        {
+          "name": "IP reputation",
+          "status": "Shared Gmail pool",
+          "risk": "LOW"
+        },
+        {
+          "name": "Content",
+          "status": "No spam triggers",
+          "risk": "LOW"
+        },
+        {
+          "name": "Volume",
+          "status": "500/day limit",
+          "risk": "MEDIUM (for scale)"
+        }
+      ],
+      "scaleStrategy": "SES recommended for scale"
+    },
+    "passed": true
+  },
+  "logic": {
+    "checks": {
+      "stageTransitions": true,
+      "noStagnation": true,
+      "automationTriggers": true
+    },
+    "passed": true
+  },
+  "failures": {
+    "checks": {
+      "queueOverload": true,
+      "partialFailure": true,
+      "invalidData": true,
+      "restartRecovery": true
+    },
+    "passed": true
+  },
+  "overall": "CONDITIONALLY READY"
+}

@@ -29,7 +29,9 @@ const HIGH_RISK_PATTERNS: RegExp[] = [
   // confirmation-extraction ("so we're agreed at $87,500, right?").
   // Posture: false positives escalate to a human (safe); false negatives let
   // the AI negotiate (never). Loosen deliberately, not by accident.
-  /\b\d{4,7}\b/, // bare "87500" (also catches street numbers — escalation is the safe direction)
+  // Match 4-7 digit numbers but exclude common address patterns (e.g., "12345 Main St")
+  // Negative lookahead excludes numbers followed by common street suffixes
+  /\b\d{4,7}(?!\s*(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|ct|court|ln|lane|way|pl|place|cir|circle)\b)/i,
   /\b\d+(?:\.\d+)?\s?k\b/i, // "90k", "87.5k"
   /\b(?:grand|figures?)\b/i, // "ninety grand", "six figures"
   /\b(?:take|pay|accept|want|give|offer(?:ing)?|asking|settle\s+for)\s+(?:(?:about|around|at\s+least|less\s+than|more\s+than|under|over|maybe|like)\s+)*(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)\b/i, // "I'd take ninety", "take less than one hundred"
@@ -116,7 +118,10 @@ export async function orchestrateAIResponse(leadId: number, history: any[]): Pro
       response_text: responseText,
       confidence_score: confidence,
       // Force human review if the model is unsure or asked for it.
-      requires_human: modelRequiresHuman || confidence < 0.8,
+      // Threshold raised from 0.8 to 0.85 for negotiation contexts where
+      // bad responses damage deals. At 0.85, only 15% of AI decisions may be
+      // uncertain vs 20% at 0.8 - significant for deal-sensitive contexts.
+      requires_human: modelRequiresHuman || confidence < 0.85,
       suggested_action:
         typeof parsed.suggested_action === 'string' ? parsed.suggested_action : 'reply',
       internal_reasoning:

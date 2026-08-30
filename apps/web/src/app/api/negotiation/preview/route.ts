@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/app/api/utils/authz';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
+import { getOrganization } from '@/lib/organization-context';
 import { getProfile } from '@/app/api/utils/negotiationProfiles';
 import { computeValuation, type ValuationInputs } from '@/app/api/utils/valuationEngine';
 
@@ -15,10 +16,15 @@ export async function POST(request: Request) {
     return Response.json({ error: 'negotiationProfiles beta flag is off' }, { status: 403 });
   }
 
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as { profileId?: string; inputs?: Partial<ValuationInputs> };
   if (!body.profileId) return Response.json({ error: 'profileId is required' }, { status: 400 });
 
-  const profile = await getProfile(body.profileId);
+  const profile = await getProfile(body.profileId, organization.id);
   if (!profile) return Response.json({ error: 'profile not found' }, { status: 404 });
 
   const inputs: ValuationInputs = {

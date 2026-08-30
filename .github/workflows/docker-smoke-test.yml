@@ -1,0 +1,43 @@
+name: Docker Smoke Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: corepack enable && yarn install --immutable
+      
+      - name: Build web app
+        run: yarn workspace web build
+        
+      - name: Build Docker image
+        run: docker build -t dealflow-ai:test .
+        
+      - name: Run health check
+        run: |
+          docker run -d --name df-test -p 4000:4000 dealflow-ai:test
+          sleep 5
+          curl -f http://localhost:4000/api/system/health || exit 1
+          
+      - name: Verify health endpoint
+        run: |
+          RESPONSE=$(curl -s http://localhost:4000/api/system/health)
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q '"ok":true' || exit 1
+          
+      - name: Cleanup
+        if: always()
+        run: docker rm -f df-test

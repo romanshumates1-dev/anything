@@ -4,7 +4,8 @@
  * Tests the full webhook lifecycle: valid events, tampered signatures,
  * idempotent replay, invalid transitions, and missing fields.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import crypto from 'node:crypto';
 
 // Mock sql and logger
 vi.mock('@/app/api/utils/sql', () => ({
@@ -15,30 +16,47 @@ vi.mock('@/app/api/utils/logger', () => ({
   logEvent: vi.fn(),
 }));
 
+vi.mock('@/app/api/services/stripeProvider', () => ({
+  getStripeProvider: vi.fn(),
+  resetStripeProvider: vi.fn(),
+}));
+
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 
 // We'll test the webhook handler by importing it
 import { POST } from './route';
-import { resetStripeProvider } from '@/app/api/services/stripeProvider';
+import { getStripeProvider, resetStripeProvider } from '@/app/api/services/stripeProvider';
 import { resetEsignProvider } from '@/app/api/services/esignProvider';
 
-function createMockRequest(body: any, signature = 'any', provider = 'mock'): Request {
+function createMockRequest(body: any, signature = 'any'): Request {
   return new Request('http://localhost:4000/api/esign/webhook', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-esign-signature': signature,
-      'x-esign-provider': provider,
     },
     body: JSON.stringify(body),
   });
 }
 
+const ORIGINAL_ESIGN_PROVIDER = process.env.ESIGN_PROVIDER;
+
 describe('E-Sign Webhook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStripeProvider();
+    resetEsignProvider();
+  });
+
+  afterEach(() => {
+    // Phase 5 fix (bug #34): the provider is now resolved from server config
+    // (ESIGN_PROVIDER), never a client-supplied x-esign-provider header — a
+    // caller could previously force the accept-all mock verifier regardless
+    // of the real configured provider. Restore the ambient env after tests
+    // that set it.
+    if (ORIGINAL_ESIGN_PROVIDER === undefined) delete process.env.ESIGN_PROVIDER;
+    else process.env.ESIGN_PROVIDER = ORIGINAL_ESIGN_PROVIDER;
     resetEsignProvider();
   });
 
@@ -80,11 +98,12 @@ describe('E-Sign Webhook', () => {
     expect(logEvent).toHaveBeenCalledWith('esign_signed', 'contract', 'contract-1', expect.any(Object));
   });
 
-  it('rejects tampered signature for documenso provider', async () => {
+  it('rejects tampered signature for documenso provider (server-configured, not client-selected)', async () => {
+    process.env.ESIGN_PROVIDER = 'documenso';
+    resetEsignProvider();
     const response = await POST(createMockRequest(
       { event_type: 'signed', envelope_id: 'env-1', contract_id: 'c-1', event_id: 'evt-1' },
-      'invalid',
-      'documenso'
+      'invalid'
     ));
 
     expect(response.status).toBe(403);
@@ -92,16 +111,35 @@ describe('E-Sign Webhook', () => {
     expect(data.error).toBe('Invalid signature');
   });
 
-  it('rejects tampered signature for docusign provider', async () => {
+  it('rejects tampered signature for docusign provider (server-configured, not client-selected)', async () => {
+    process.env.ESIGN_PROVIDER = 'docusign';
+    resetEsignProvider();
     const response = await POST(createMockRequest(
       { event_type: 'signed', envelope_id: 'env-1', contract_id: 'c-1', event_id: 'evt-1' },
-      'invalid',
-      'docusign'
+      'invalid'
     ));
 
     expect(response.status).toBe(403);
     const data = await response.json();
     expect(data.error).toBe('Invalid signature');
+  });
+
+  it('a client-supplied x-esign-provider header can no longer select the verifier (bug #34)', async () => {
+    // Server config says documenso (real verification); attacker tries to
+    // force mock (accept-all) via the header. Must still 403.
+    process.env.ESIGN_PROVIDER = 'documenso';
+    resetEsignProvider();
+    const req = new Request('http://localhost:4000/api/esign/webhook', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-esign-signature': 'anything',
+        'x-esign-provider': 'mock', // attacker-controlled, must be ignored
+      },
+      body: JSON.stringify({ event_type: 'signed', envelope_id: 'env-1', contract_id: 'c-1', event_id: 'evt-1' }),
+    });
+    const response = await POST(req);
+    expect(response.status).toBe(403);
   });
 
   it('returns 200 idempotent for duplicate webhook events', async () => {
@@ -214,5 +252,75 @@ describe('E-Sign Webhook', () => {
     expect(response.status).toBe(400);
     const data = await response.json();
     expect(data.error).toBe('Invalid JSON body');
+  });
+
+  it('accepts a valid documenso signature', async () => {
+    process.env.ESIGN_PROVIDER = 'documenso';
+    process.env.DOCUMENSO_WEBHOOK_SECRET = 'secret';
+    resetEsignProvider();
+    const body = { event_type: 'signed', envelope_id: 'env-1', contract_id: 'c-1', event_id: 'evt-1' };
+
+    const signature = crypto
+      .createHmac('sha256', 'secret')
+      .update(JSON.stringify(body))
+      .digest('hex');
+
+    (sql as any).mockImplementation(async (strings: any) => {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) return [];
+      if (query.includes('select esign_status, organization_id from contracts')) {
+        return [{ esign_status: 'sent', organization_id: 'org-1' }];
+      }
+      return [];
+    });
+
+    const response = await POST(createMockRequest(
+      body,
+      signature
+    ));
+
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it('creates a payment link when contract is signed and fee_collection is collect_now', async () => {
+    const mockCreatePaymentLink = vi.fn().mockResolvedValue({ paymentIntentId: 'pi_123' });
+    (getStripeProvider as vi.Mock).mockReturnValue({
+      createPaymentLink: mockCreatePaymentLink,
+    });
+
+    // Mock: contract exists with fee_collection = 'collect_now'
+    (sql as any).mockImplementation(async (strings: any, ...values: any[]) => {
+      const query = strings.join('?').toLowerCase();
+      if (query.includes('select 1 from esign_events')) return [];
+      if (query.includes('select esign_status, organization_id from contracts')) {
+        return [{ esign_status: 'sent', organization_id: 'org-1', fee_collection: 'collect_now', fee_config: { value: 50000 } }];
+      }
+      return [];
+    });
+
+    const response = await POST(createMockRequest({
+      event_type: 'signed',
+      envelope_id: 'env-123',
+      contract_id: 'contract-1',
+      event_id: 'evt-1',
+      signed_at: '2026-07-18T12:00:00Z',
+    }));
+
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockCreatePaymentLink).toHaveBeenCalledWith({
+      contractId: 'contract-1',
+      organizationId: 'org-1',
+      amountCents: 50000,
+      description: 'Assignment Fee - Contract contract-1',
+    });
+    
+    const insertCall = (sql as any).mock.calls.find(call => call[0].join('?').toLowerCase().includes('insert into payments_ledger'));
+    expect(insertCall).toBeDefined();
+
+    expect(logEvent).toHaveBeenCalledWith('payment_created_on_sign', 'contract', 'contract-1', expect.any(Object));
   });
 });

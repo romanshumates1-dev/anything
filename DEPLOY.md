@@ -32,32 +32,54 @@ poll loop as `scripts/jobs-dev.mjs` (pointed at the prod URL) — no app changes
 
 ---
 
-## Container Deployment (alternative to Vercel)
+## Free Deployment Options (alternatives to Vercel)
 
-If you prefer container deployment (Fly.io, Railway, or any Docker host):
+### Option 1: Railway (RECOMMENDED for free tier)
+Railway offers a generous free tier (~$5/month credit) with:
+- Automatic deploys from GitHub
+- Built-in cron jobs
+- Easy environment variable management
 
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+railway login
+
+# Deploy from the apps/web directory
+cd apps/web
+railway init
+railway up
+```
+
+### Option 2: Render (free tier available)
+```bash
+# Create a new Web Service pointing to apps/web
+# Build command: yarn build
+# Start command: yarn start
+```
+
+### Option 3: Fly.io (generous free tier)
+```bash
+flyctl launch --dockerfile apps/web/Dockerfile
+flyctl secrets set DATABASE_URL="..." BETTER_AUTH_SECRET="..."
+flyctl deploy
+```
+
+### Option 4: Docker Compose (self-hosted, completely free)
 ```bash
 # One-time setup
 cp apps/web/.env.example apps/web/.env
-# Fill in DATABASE_URL (Neon), BETTER_AUTH_SECRET, etc.
+# Fill in DATABASE_URL (Neon free tier), BETTER_AUTH_SECRET, etc.
 
 # Start the stack
 docker compose up -d
 
 # Verify health
 curl http://localhost:4000/api/system/health
-
-# Stop
-docker compose down
 ```
 
-**Important:** The app uses `@neondatabase/serverless` which speaks HTTP/WebSocket to Neon.
-A vanilla `postgres:16-alpine` container CANNOT be used as the database because:
-- The serverless driver does NOT speak the Postgres wire protocol
-- For fully-local testing, you would need Neon's local WebSocket proxy
-- For now, `DATABASE_URL` must point at a real Neon branch (free tier works)
-
-See docker-compose.yml for the worker container timing and profiles (ollama optional).
+**Database Note:** The app uses `@neondatabase/serverless`. Use Neon's free tier
+(0.5 GB storage, 190 compute hours/month) — it's more than enough for launch.
 
 ---
 
@@ -93,17 +115,25 @@ Variables). Never commit values; `apps/web/.env` is gitignored.
 - `MIN_ACCESS_ROLE` — `ADMIN` (loosen to `MEMBER` later to open the app up).
 - `SEED_ADMIN_EMAILS` — `roman.shumate@dealswiftautomation.com`.
 
-**AI (Anthropic — the only AI vendor)**
-- `ANTHROPIC_API_KEY` — Anthropic key (**account needs credit — see step 7**).
-- `ANTHROPIC_MODEL` — e.g. `claude-sonnet-5`.
+**AI (choose one)**
+- `AI_PROVIDER` — `ollama` (free/local) or `anthropic` (paid) or `bedrock` (AWS).
+- For Ollama (FREE): `OLLAMA_BASE_URL=http://localhost:11434`, `OLLAMA_MODEL=qwen2.5:7b`
+- For Anthropic: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL=claude-sonnet-5` (requires credit)
+- For Bedrock: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `BEDROCK_MODEL_NEGOTIATE`
 
-**SMS (Twilio)**
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` — Twilio credentials.
-- `TWILIO_MESSAGING_SERVICE_SID` and/or `TWILIO_FROM_NUMBER` — sending number/service.
-- `TWILIO_NUMBER_TYPE`, `TWILIO_10DLC_ASSIGNED_MPS`, `TWILIO_10DLC_TMOBILE_DAILY_CAP` — 10DLC throughput caps.
+**SMS (choose one)**
+- **AWS SNS (RECOMMENDED — cheaper at ~$0.00645/SMS):**
+  - `AWS_SNS_SMS_ENABLED=true`
+  - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION=us-east-1`
+  - Inbound webhook: `https://yourapp.com/api/sms/sns-inbound`
+- **Twilio (alternative):**
+  - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`
+  - `TWILIO_MESSAGING_SERVICE_SID` and/or `TWILIO_FROM_NUMBER`
+  - `TWILIO_NUMBER_TYPE`, `TWILIO_10DLC_ASSIGNED_MPS`, `TWILIO_10DLC_TMOBILE_DAILY_CAP`
+  - Inbound webhook: `https://yourapp.com/api/sms/inbound`
 - `OWNER_NUMBER` — E.164 owner phone for owner-range round trips.
-- `PUBLIC_WEBHOOK_URL` — `https://dealswiftautomation.com/api/sms/inbound` (Twilio signs against this).
-- `SMS_INBOUND_SECRET` — shared secret for the simulator branch of the inbound webhook.
+- `PUBLIC_WEBHOOK_URL` — webhook URL for signature validation.
+- `SMS_INBOUND_SECRET` — shared secret for the simulator branch.
 
 **Job runner / cron**
 - `JOB_RUNNER_SECRET` — secret the cron request sends to `POST /api/jobs/process`.
@@ -149,6 +179,7 @@ grants ADMIN on first signup for any `SEED_ADMIN_EMAILS` address.
 - **Root directory:** `apps/web`
 - **Build command:** `yarn build`  (→ `next build`)
 - **Start command:** `yarn start`  (→ `next start`)  — Vercel handles this itself.
+- **Secrets-in-bundle check:** `yarn check:secrets-in-bundle` (run automatically by `deploy.ps1` right after the build, in the node path) greps `.next/static` — the actual client-shipped JS — for the literal value of every configured server-only secret plus known secret-shaped literal prefixes (`sk_live_`, `sk_test_`, `whsec_`, `sk-ant-`, a Postgres URL with embedded credentials). Fails the deploy if anything is found. Vercel doesn't run this by itself — if wiring it into a CI/CD build step later, run it as a post-build check with the same env the build used.
 
 **BLOCKED-ON-OWNER:** in the Vercel project **`anything-web`**, import the GitHub repo,
 set root dir `apps/web`, add the env vars from step 2 (use `apps/web/.env.example`
@@ -184,31 +215,52 @@ GET + POST — so set `CRON_SECRET` in Vercel and it works with no extra config 
 
 ---
 
-## 6. Twilio console  — **BLOCKED-ON-OWNER**
+## 6. SMS Provider — AWS SNS (recommended) or Twilio
 
-In the Twilio console for the sending number / Messaging Service, set the inbound
-webhook to **POST** `https://dealswiftautomation.com/api/sms/inbound`. This must
-exactly match `PUBLIC_WEBHOOK_URL` (the route validates Twilio's signature against it).
+### Option A: AWS SNS (RECOMMENDED — no 10DLC wait, cheaper)
 
-**BLOCKED-ON-OWNER:** requires the owner's Twilio login.
+AWS SNS bypasses Twilio's 10DLC registration requirement and costs ~20% less:
+- ~$0.00645/SMS vs Twilio's $0.0079+
+- No 10DLC approval wait
+- Uses your existing AWS credentials
 
-### ⚠️ 6a. 10DLC / campaign registration — HARD GATE on live SMS
+**Setup:**
+1. In AWS Console → SNS → Text messaging (SMS), configure:
+   - Account-level SMS settings
+   - Spending limit (starts at $1/month by default)
+2. In AWS Console → SNS → Topics, create an SNS topic for inbound SMS
+3. Subscribe your webhook: `https://yourapp.com/api/sms/sns-inbound`
+4. Set env vars: `AWS_SNS_SMS_ENABLED=true`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
 
-**The owner does NOT yet have 10DLC / campaign acceptance.** Until Twilio approves the
-brand + campaign registration, **do not enable live outbound SMS** — unregistered A2P
-10DLC traffic is filtered/blocked by carriers and can incur penalties. Concretely:
-- Keep campaigns in **Personal Test Mode** (allowlisted numbers only) or mock mode.
-- Do **not** run the "real SMS loopback" / scale-send verification steps live.
-- The inbound webhook + signature verification are fine to wire (receiving costs nothing).
-- Flip to live sending only after 10DLC is approved AND quiet-hours/opt-out/DNC are green.
+For receiving SMS, you'll need an AWS Pinpoint number or use a virtual number service
+that can forward to your SNS topic.
+
+### Option B: Twilio (alternative)
+
+If you prefer Twilio, set the inbound webhook to:
+`POST https://dealswiftautomation.com/api/sms/inbound`
+
+**⚠️ 10DLC requirement:** Twilio A2P SMS requires 10DLC registration. Until approved:
+- Keep campaigns in Personal Test Mode (allowlisted numbers only)
+- Do not run live scale-send operations
 
 ---
 
-## 7. Anthropic billing  — **BLOCKED-ON-OWNER**
+## 7. AI Provider — FREE with Ollama (default)
 
-The Anthropic key currently authenticates but has **$0 credit** (calls 400 with
-"credit balance too low"). Add credits at console.anthropic.com → Plans & Billing,
-or AI replies will dead-letter. No code change needed.
+The app defaults to **Ollama** for AI, which is completely free. To use it:
+
+1. Install Ollama: https://ollama.ai/download
+2. Pull a model: `ollama pull qwen2.5:7b` (recommended, ~4.7GB)
+3. Start the server: `ollama serve` (runs on port 11434)
+4. Set in .env: `AI_PROVIDER=ollama`
+
+The app will automatically use the local Ollama server for all AI operations
+(negotiation, classification, etc.) — no API keys or billing required.
+
+**Alternative: Anthropic (paid)**
+If you prefer Claude's quality, set `AI_PROVIDER=anthropic` with a valid
+`ANTHROPIC_API_KEY`. Requires credit at console.anthropic.com → Plans & Billing.
 
 ---
 

@@ -128,6 +128,31 @@ export async function processNextJob() {
     switch (job.type) {
       case 'send_message': {
         const payload: any = job.payload;
+        // Phase 12: throughput guard — check MPS cap, daily cap, opt-out/delivery auto-pause
+        if (payload.organizationId && payload.channel === 'sms') {
+          const { checkThroughput } = await import('./smsGuards');
+          const throughput = await checkThroughput(payload.organizationId);
+          if (!throughput.canSend) {
+            // Defer 60s for rate limits, 5min for auto-pause conditions
+            const deferMs = throughput.mps.blocked ? 60_000 : 5 * 60_000;
+            await sql`
+              UPDATE jobs SET status = 'pending', run_at = ${new Date(Date.now() + deferMs)},
+                locked_until = NULL, attempts = GREATEST(attempts - 1, 0),
+                error_message = ${'deferred:throughput:' + (throughput.reason ?? 'cap')},
+                updated_at = ${new Date()}
+              WHERE id = ${job.id}
+            `;
+            return { success: true, jobId: job.id, type: job.type, gate: 'FLAG_OFF' as DenyCode };
+          }
+        }
+        // Phase 12: duplicate-send detector
+        if (payload.to && payload.text) {
+          const { isDuplicateSend } = await import('./smsGuards');
+          if (await isDuplicateSend({ phone: payload.to, text: payload.text, campaignId: payload.campaignId })) {
+            await sql`UPDATE jobs SET status = 'completed', error_message = 'suppressed:duplicate_send', updated_at = ${new Date()} WHERE id = ${job.id}`;
+            return { success: true, jobId: job.id, type: job.type, gate: 'DNC' as DenyCode };
+          }
+        }
         // Route SMS through the Twilio gateway only when Twilio is actually
         // configured. With no provider, fall back to the provider-agnostic
         // sendMessage seam (which simulates delivery when SMS_PROVIDER_URL is
@@ -147,10 +172,13 @@ export async function processNextJob() {
             // Phase A: numeric-guard context rides with bounded-mode sends.
             boundedNegotiation: payload.boundedNegotiation,
           });
-          // Log gateway result for auditability
+          // Log gateway result for auditability. provider_message_id (the
+          // Twilio MessageSid) is now a real column, not just buried in
+          // metadata — the status-callback receiver (BREAKAGE_TABLE #33)
+          // correlates inbound delivery updates back to this row by it.
           await sql`
-            INSERT INTO message_events (id, organization_id, campaign_id, contact_id, direction, status, provider, metadata)
-            VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${JSON.stringify({ gatewayStatus: result.status, providerMessageId: result.providerId, errorMessage: result.errorMessage }) })
+            INSERT INTO message_events (id, organization_id, campaign_id, contact_id, direction, status, provider, provider_message_id, metadata)
+            VALUES (${result.messageUuid}, ${payload.organizationId}, ${payload.campaignId}, ${payload.contactId}, 'outbound', ${result.status}, ${result.provider}, ${result.providerId ?? null}, ${JSON.stringify({ gatewayStatus: result.status, errorMessage: result.errorMessage }) })
             ON CONFLICT (id) DO NOTHING
           `;
           if (result.gateCode) {
@@ -184,6 +212,66 @@ export async function processNextJob() {
               consentBasis: payload.consentBasis ?? null,
             });
           }
+        }
+        // Record stage transition: NEW → CONTACTED (funnel analytics fix)
+        if (payload.leadId && payload.isOpening) {
+          const { recordStageTransition } = await import('@/app/api/services/stageTransitionRecorder');
+          await recordStageTransition({
+            leadId: payload.leadId,
+            fromStage: 'NEW',
+            toStage: 'CONTACTED',
+            channel: payload.channel || 'sms',
+            campaignId: payload.campaignId,
+          }).catch(() => {}); // Best-effort, never block send
+        }
+        break;
+      }
+      case 'send_email': {
+        const ep: any = job.payload;
+        const { canSendEmail, recordEmailSend } = await import('./emailWarmup');
+        const allowance = await canSendEmail(ep.organizationId);
+        if (!allowance.allowed) {
+          // Properly defer: reset to pending with future run_at, unlock, refund attempt
+          await sql`
+            UPDATE jobs
+            SET status = 'pending',
+                run_at = ${new Date(Date.now() + 12 * 3600_000)},
+                locked_until = NULL,
+                attempts = GREATEST(attempts - 1, 0),
+                error_message = ${'deferred:warmup:' + (allowance.reason || 'limit')},
+                updated_at = NOW()
+            WHERE id = ${job.id}
+          `;
+          return { success: true, jobId: job.id, type: 'send_email', deferred: true, reason: allowance.reason };
+        }
+        const { sendEmail, withCanSpamFooter } = await import('./emailDriver');
+        const emailBody = withCanSpamFooter(ep.body || ep.text || '', {
+          unsubscribeUrl: ep.unsubscribeUrl || `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/unsubscribe?t=${encodeURIComponent(ep.to)}`,
+          postalAddress: ep.postalAddress || process.env.POSTAL_ADDRESS || '',
+        });
+        const result = await sendEmail({
+          to: ep.to,
+          subject: ep.subject || 'Regarding your property',
+          body: emailBody,
+          unsubscribeUrl: ep.unsubscribeUrl || `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/unsubscribe?t=${encodeURIComponent(ep.to)}`,
+          postalAddress: ep.postalAddress || process.env.POSTAL_ADDRESS || '',
+          organizationId: ep.organizationId,
+          campaignId: ep.campaignId,
+          contactId: ep.contactId,
+          leadId: ep.leadId,
+          coldOutbound: true,
+        });
+        if (result.status === 'dispatched') {
+          await recordEmailSend(ep.organizationId);
+        }
+        if (result.status === 'suppressed') {
+          return await handleGateDenial(job.id, result.gateCode, undefined, 'send_email');
+        }
+        if (result.status === 'blocked' || result.status === 'failed') {
+          throw new Error(result.status === 'blocked' ? result.reason : result.errorMessage);
+        }
+        if (ep.contactId && ep.campaignId) {
+          await scheduleNextStep(ep.contactId, ep.campaignId, ep.organizationId);
         }
         break;
       }
@@ -250,6 +338,348 @@ export async function processNextJob() {
         // Phase V-R: day-3 / day-N−2 unassigned-contract notifications.
         // Exactly-once via dedupe keys at enqueue; fresh state check at fire time.
         await processInspectionUrgency(job.payload as any);
+        break;
+      }
+      case 'send_owner_notification': {
+        const ownerNumber = process.env.OWNER_NUMBER;
+        if (!ownerNumber) {
+          console.error('[jobs] OWNER_NUMBER not set, cannot send notification.');
+          // Mark as completed to not retry this.
+          await sql`UPDATE jobs SET status = 'completed', error_message = 'OWNER_NUMBER not set' WHERE id = ${job.id}`;
+          return { success: true, jobId: job.id, type: job.type, gate: 'FLAG_OFF' };
+        }
+        const payload: any = job.payload;
+        const gateway = await getGateway();
+        await gateway.send({
+          to: ownerNumber,
+          text: payload.message,
+          leadId: 'owner-notification', // Placeholder for logs
+          transactional: true,
+          organizationId: payload.organizationId,
+        });
+        break;
+      }
+      case 'vip_window_expired': {
+        // [REVENUE OPTIMIZATION] Notify non-VIP buyers after VIP exclusivity window expires
+        // This job is scheduled when VIP buyers are notified and fires after 2 hours
+        const payload: any = job.payload;
+        const { notifyNonVipBuyers } = await import('./vipWindowHandler');
+        await notifyNonVipBuyers(payload.dealId, payload.organizationId);
+        break;
+      }
+      case 'stalled_conversation_recovery': {
+        // [REVENUE OPTIMIZATION] Re-engage conversations that went cold mid-negotiation
+        // Targets leads that replied but then stopped responding (48-168h threshold)
+        const payload: any = job.payload;
+        const { queueStalledReengagement } = await import('./stalledConversationEngine');
+        await queueStalledReengagement(payload.organizationId);
+        break;
+      }
+      case 'stalled_recovery_all': {
+        // System-wide stalled conversation recovery (called by cron)
+        const { runStalledRecoveryAll } = await import('./stalledConversationEngine');
+        await runStalledRecoveryAll();
+        break;
+      }
+      case 'send_pipeline_sms': {
+        // [Item 0] AWS SNS SMS for pipeline outreach
+        const payload: any = job.payload;
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+        const result = await sendPipelineSMS(payload);
+        if (!result.success) {
+          if (result.status === 'opted_out' || result.status === 'invalid_number') {
+            // Don't retry these - mark as complete with suppression note
+            await sql`UPDATE jobs SET status = 'completed', error_message = ${'suppressed:' + result.status}, updated_at = ${new Date()} WHERE id = ${job.id}`;
+            return { success: true, jobId: job.id, type: job.type, gate: 'DNC' as DenyCode };
+          }
+          throw new Error(result.errorMessage || 'SMS send failed');
+        }
+        break;
+      }
+      case 'notify_call_request': {
+        // [Item 2] Notify owner of scheduled call request
+        const payload: any = job.payload;
+        const { notifyOwnerOfCallRequest } = await import('./callSchedulingEngine');
+        // Get the call record
+        const [call] = await sql`SELECT * FROM scheduled_calls WHERE id = ${payload.callId}`;
+        if (call) {
+          await notifyOwnerOfCallRequest({
+            id: call.id,
+            leadId: call.lead_id,
+            organizationId: call.organization_id,
+            context: call.context,
+            reason: call.reason,
+            status: call.status,
+            ownerNotified: call.owner_notified,
+            leadPhone: call.lead_phone,
+            leadEmail: call.lead_email,
+            leadName: call.lead_name,
+            propertyAddress: call.property_address,
+            createdAt: call.created_at,
+          });
+        }
+        break;
+      }
+      case 'send_social_response': {
+        // [Item 3] Send response via social media platform
+        const payload: any = job.payload;
+        const { sendSocialMessage } = await import('./socialMediaEngine');
+        const result = await sendSocialMessage(
+          payload.organizationId,
+          payload.platform,
+          payload.platformUserId,
+          payload.message
+        );
+        if (!result.success) {
+          throw new Error(result.error || 'Social media send failed');
+        }
+        break;
+      }
+      case 'recycle_prospects': {
+        // [Item 6] Recycle past campaign prospects to new campaign
+        const payload: any = job.payload;
+        const { findRecyclableProspects, recycleProspectsToCampaign } = await import('./prospectRecyclingEngine');
+        const prospects = await findRecyclableProspects(payload.organizationId, payload.config);
+        if (prospects.length > 0) {
+          await recycleProspectsToCampaign(
+            payload.organizationId,
+            payload.campaignId,
+            prospects.map(p => p.leadId)
+          );
+        }
+        break;
+      }
+      case 'match_buyers_auto': {
+        // AUTO-TRIGGER: When seller signs purchase agreement, match and notify buyers
+        // This closes the gap between seller signing → buyer notification (was manual, now automatic)
+        const payload: any = job.payload;
+        const { matchAndNotifyBuyers } = await import('./buyerMatchEngine');
+        const result = await matchAndNotifyBuyers({
+          dealId: payload.dealId,
+          organizationId: payload.organizationId,
+          propertyAddress: payload.propertyAddress,
+          purchasePrice: payload.purchasePrice,
+          notifyBuyers: payload.notifyBuyers ?? true,
+        });
+        console.log(`[match_buyers_auto] Deal ${payload.dealId}: ${result.matchedCount} buyers matched, ${result.notifiedCount} notified`);
+        break;
+      }
+      case 'discover_buyers_auto': {
+        // AUTO-DISCOVERY: Find new buyer leads from public records when not enough existing matches
+        // Triggered by buyerMatchEngine when < 5 matches or no VIP buyers
+        const payload: any = job.payload;
+        const { discoverBuyersForDeal } = await import('./buyerDiscoveryEngine');
+        const result = await discoverBuyersForDeal({
+          dealId: payload.dealId,
+          organizationId: payload.organizationId,
+          propertyZip: payload.propertyZip,
+          propertyCounty: payload.propertyCounty,
+          propertyState: payload.propertyState,
+          priceRange: payload.priceRange,
+          propertyType: payload.propertyType,
+          limit: payload.limit || 50,
+        });
+        console.log(`[discover_buyers_auto] Deal ${payload.dealId}: ${result.discovered} discovered, ${result.added} added, ${result.outreachQueued} outreach queued`);
+        break;
+      }
+      case 'buyer_outreach_new': {
+        // Outreach to newly discovered buyer leads
+        const payload: any = job.payload;
+        const { sendEmailAuto } = await import('./emailProviders');
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+
+        // Send intro email to discovered buyer
+        if (payload.buyerEmail) {
+          await sendEmailAuto(payload.organizationId, {
+            to: payload.buyerEmail,
+            subject: `Investment Opportunity in ${payload.propertyZip}`,
+            text: `Hi ${payload.buyerName},\n\nWe noticed you're an active investor in the ${payload.propertyZip} area. We have a deal that matches your buy criteria.\n\nReply if you'd like details.\n\nBest regards`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                <h2>Investment Opportunity</h2>
+                <p>Hi ${payload.buyerName},</p>
+                <p>We noticed you're an active investor in the <strong>${payload.propertyZip}</strong> area based on recent transaction activity.</p>
+                <p>We have a deal that matches your buy criteria and wanted to reach out.</p>
+                <p><strong>Reply to this email</strong> if you'd like to see the details.</p>
+              </div>
+            `,
+          }).catch(console.error);
+        }
+
+        // Send SMS if phone available
+        if (payload.buyerPhone) {
+          await sendPipelineSMS({
+            to: payload.buyerPhone,
+            message: `Hi ${payload.buyerName.split(' ')[0]}, we have a deal in ${payload.propertyZip} that fits your buy box. Reply YES for details.`,
+            leadId: payload.dealId,
+            organizationId: payload.organizationId,
+            channel: 'buyer',
+          }).catch(console.error);
+        }
+        break;
+      }
+      case 'generate_seller_leads': {
+        // Auto-generate seller leads from public records for campaign
+        const payload: any = job.payload;
+        const { generateSellerLeads } = await import('./leadGenerationEngine');
+        const result = await generateSellerLeads({
+          organizationId: payload.organizationId,
+          count: payload.count,
+          regions: payload.regions,
+        });
+        console.log(`[generate_seller_leads] Generated ${result.generated} seller leads`);
+        break;
+      }
+      case 'generate_buyer_leads': {
+        // Auto-generate buyer leads from public records for campaign
+        const payload: any = job.payload;
+        const { generateBuyerLeads } = await import('./leadGenerationEngine');
+        const result = await generateBuyerLeads({
+          organizationId: payload.organizationId,
+          count: payload.count,
+          regions: payload.regions,
+        });
+        console.log(`[generate_buyer_leads] Generated ${result.generated} buyer leads`);
+        break;
+      }
+      case 'generate_buyer_leads_region': {
+        // Auto-generate buyer leads for specific region to ensure coverage
+        const payload: any = job.payload;
+        const { generateBuyerLeadsForRegion } = await import('./leadGenerationEngine');
+        const result = await generateBuyerLeadsForRegion({
+          organizationId: payload.organizationId,
+          region: payload.region,
+          count: payload.count,
+          priceRange: payload.priceRange,
+        });
+        console.log(`[generate_buyer_leads_region] Generated ${result.generated} buyer leads for ${payload.region}`);
+        break;
+      }
+      case 'start_campaign': {
+        // Start an outreach campaign (queue openings)
+        const payload: any = job.payload;
+        const { dispatchOpenings } = await import('./cadenceEngine');
+
+        // Update campaign status to ACTIVE
+        await sql`
+          UPDATE outreach_campaigns
+          SET status = 'ACTIVE', started_at = NOW()
+          WHERE id = ${payload.campaignId}
+        `.catch(console.error);
+
+        // Queue opening messages
+        await dispatchOpenings(payload.campaignId, payload.organizationId);
+        console.log(`[start_campaign] Started campaign ${payload.campaignId}`);
+        break;
+      }
+      case 'buyer_cadence_step': {
+        // Buyer multi-touch sequence step (equivalent to seller cadence)
+        const payload: any = job.payload;
+        const { sendEmailAuto } = await import('./emailProviders');
+        const { sendPipelineSMS } = await import('./smsOutreachEngine');
+
+        // Get buyer details
+        const [buyer] = await sql`
+          SELECT * FROM buyers WHERE id = ${payload.buyerId}
+        `.catch(() => [null]);
+
+        if (!buyer) {
+          console.log(`[buyer_cadence_step] Buyer ${payload.buyerId} not found, skipping`);
+          break;
+        }
+
+        // Check if buyer opted out or already converted
+        if (buyer.is_blacklisted || buyer.status === 'CLOSED' || buyer.status === 'LOST') {
+          console.log(`[buyer_cadence_step] Buyer ${payload.buyerId} opted out or closed, skipping`);
+          break;
+        }
+
+        const firstName = (buyer.name || '').split(' ')[0] || 'there';
+        const dealContext = payload.dealContext || {};
+
+        // Generate message based on template type
+        let message = '';
+        let subject = '';
+        switch (payload.templateType) {
+          case 'intro':
+            subject = 'Investment Opportunities in Your Area';
+            message = `Hi ${firstName}, we're looking for cash buyers in your area. We consistently source off-market deals at 20-30% below market. Interested in first access?`;
+            break;
+          case 'deal_alert':
+            message = `${firstName}, new off-market deal just came in. Cash buyers get first look. Reply YES for details.`;
+            break;
+          case 'followup':
+            subject = 'Still Looking for Deals?';
+            message = `Hi ${firstName}, following up on investment opportunities. We have several deals that might fit your criteria. Want to see what's available?`;
+            break;
+          case 'urgency':
+            message = `${firstName}, we have a deal that needs to close in 2 weeks. Looking for a cash buyer. Can you move fast?`;
+            break;
+          case 'last_chance':
+            subject = 'Before I Close Your File';
+            message = `${firstName}, before I mark you inactive - are you still buying? We'd love to keep you on our VIP buyer list.`;
+            break;
+        }
+
+        // Send via appropriate channel
+        if (payload.channel === 'sms' && buyer.phone) {
+          await sendPipelineSMS({
+            to: buyer.phone,
+            message,
+            leadId: payload.buyerId,
+            organizationId: payload.organizationId,
+            channel: 'buyer',
+          });
+        } else if (payload.channel === 'email' && buyer.email) {
+          await sendEmailAuto(payload.organizationId, {
+            to: buyer.email,
+            subject,
+            text: message,
+            html: `<p>${message}</p>`,
+          });
+        }
+
+        // Update buyer touch count
+        await sql`
+          UPDATE buyers
+          SET metadata = jsonb_set(
+            COALESCE(metadata, '{}'::jsonb),
+            '{touch_count}',
+            (COALESCE((metadata->>'touch_count')::int, 0) + 1)::text::jsonb
+          ),
+          updated_at = NOW()
+          WHERE id = ${payload.buyerId}
+        `.catch(console.error);
+
+        console.log(`[buyer_cadence_step] Sent ${payload.channel} to buyer ${payload.buyerId} (step ${payload.sequenceOrder})`);
+        break;
+      }
+      case 'classify_buyer_response': {
+        // AI classification of buyer responses
+        const payload: any = job.payload;
+        const { classifyBuyerResponse, transitionBuyerStage } = await import('./buyerPipelineEngine');
+
+        const classification = await classifyBuyerResponse(payload.message, {
+          name: payload.buyerName,
+          previousInteractions: payload.previousInteractions || 0,
+        });
+
+        // Update buyer based on classification
+        let newStage = 'CONTACTED';
+        if (classification.interestLevel === 'HOT') {
+          newStage = 'INTERESTED';
+        } else if (classification.interestLevel === 'NOT_INTERESTED') {
+          newStage = 'LOST';
+        }
+
+        await transitionBuyerStage(
+          payload.buyerId,
+          newStage as any,
+          payload.organizationId,
+          { classification }
+        );
+
+        console.log(`[classify_buyer_response] Buyer ${payload.buyerId}: ${classification.interestLevel} → ${newStage}`);
         break;
       }
       default:

@@ -53,6 +53,9 @@ vi.mock('@/app/api/utils/numberPoolStore', () => ({
   activePoolCount: mockActivePoolCount,
 }));
 
+const { fn: checkUsageLimit } = vi.hoisted(() => ({ fn: vi.fn(async () => ({ allowed: true, limit: { used: 0, quota: 1000, hardLimitReached: false, softLimitReached: false } })) }));
+vi.mock('@/app/api/services/usageTracker', () => ({ checkUsageLimit: (...args: any[]) => (checkUsageLimit as any)(...args) }));
+
 import { SMSGateway } from './sms-gateway';
 import { checkConsent } from '@/app/api/utils/compliance';
 

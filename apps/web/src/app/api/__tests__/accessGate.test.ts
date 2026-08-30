@@ -26,8 +26,11 @@ function reqWithSession(path: string, token = 'tok123.signature') {
 }
 
 function sessionUser(email: string, role: string | null) {
-  return [{ email, role }];
+  return [{ id: 'u_test', email, role }];
 }
+
+// The re-accept gate's query returns accepted doc_types; both present = no gate.
+const bothLegalAccepted = [{ document_type: 'terms' }, { document_type: 'privacy' }];
 
 beforeEach(() => {
   mockSql.mockReset();
@@ -69,11 +72,34 @@ describe('role gate (MIN_ACCESS_ROLE default ADMIN)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('allowed-domain ADMIN passes through (non-vacuous counterpart)', async () => {
-    mockSql.mockResolvedValue(sessionUser('roman.shumate@dealswiftautomation.com', 'ADMIN'));
+  it('allowed-domain ADMIN who accepted current legal passes through (non-vacuous counterpart)', async () => {
+    // call 1: session lookup; call 2: legal re-accept check (both accepted).
+    mockSql
+      .mockResolvedValueOnce(sessionUser('roman.shumate@dealswiftautomation.com', 'ADMIN'))
+      .mockResolvedValueOnce(bothLegalAccepted);
     const res = await enforceAccessGate(reqWithSession('/dashboard'));
     expect(res.status).toBe(200);
     expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('allowed-domain ADMIN who has NOT accepted current legal → redirect to /legal/accept', async () => {
+    // call 1: session lookup; call 2: legal re-accept check returns nothing.
+    mockSql
+      .mockResolvedValueOnce(sessionUser('roman.shumate@dealswiftautomation.com', 'ADMIN'))
+      .mockResolvedValueOnce([]);
+    const res = await enforceAccessGate(reqWithSession('/dashboard'));
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(res.headers.get('location')).toContain('/legal/accept');
+  });
+
+  it('the /legal/accept page itself is exempt from the re-accept gate (no loop)', async () => {
+    // Only the session lookup runs; the gate must not redirect its own target.
+    // Note: /legal/accept isn't in the matcher, but enforceAccessGate must be
+    // self-consistent if ever called with it.
+    mockSql.mockResolvedValue(sessionUser('roman.shumate@dealswiftautomation.com', 'ADMIN'));
+    const res = await enforceAccessGate(reqWithSession('/legal/accept'));
+    expect(res.status).toBe(200);
   });
 
   it('missing role is treated as below the gate (fail closed)', async () => {

@@ -1,7 +1,17 @@
+/**
+ * @deprecated Use `generateContract` from '@/app/api/contracts' instead.
+ * This legacy template-based system is superseded by the regional contract
+ * engine which provides state-specific addenda, disclosures, and compliance.
+ *
+ * Migration:
+ *   import { generateContract } from '@/app/api/contracts';
+ *   const contract = generateContract(dealData, 'PURCHASE_AGREEMENT');
+ */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { scheduleInspectionUrgency } from '@/app/api/utils/inspectionClock';
 
+/** @deprecated Use `generateContract` from '@/app/api/contracts' */
 export async function generateContractFromTemplate(params: {
   organizationId: string;
   templateId: string;

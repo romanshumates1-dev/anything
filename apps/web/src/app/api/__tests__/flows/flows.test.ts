@@ -30,7 +30,19 @@ vi.mock('@/app/api/utils/messaging', () => ({ sendMessage: (...a: any[]) => send
 const complianceMocks2 = vi.hoisted(() => ({ checkConsent: vi.fn(async () => true), registerOptOut: vi.fn() }));
 vi.mock('@/app/api/utils/compliance', () => complianceMocks2);
 
-// ---- Import REAL handlers + utilities the registry binds to ----
+const { fn: getOrganization } = vi.hoisted(() => ({ fn: vi.fn(async () => ({ id: 'org_default', name: 'Default', slug: 'default' })) }));
+vi.mock('@/lib/organization-context', () => ({
+  getOrganization: (...args: any[]) => (getOrganization as any)(...args),
+}));
+
+// Phase 3 messaging-compliance gate: this flow tests campaign activation for an
+// already-onboarded user, so the agreement is accepted.
+vi.mock('@/lib/legal-acceptance', () => ({
+  hasAcceptedMessagingAgreement: vi.fn(async () => true),
+  hasAcceptedCurrentLegal: vi.fn(async () => true),
+}));
+
+// ---- Import REAL handlers + utilities the registry binds to
 import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';
 import * as campaignLeads from '../../campaigns/[id]/leads/route';

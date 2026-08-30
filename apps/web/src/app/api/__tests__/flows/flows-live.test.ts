@@ -36,6 +36,7 @@ import * as thread from '../../conversations/[leadId]/route';
 import * as bulk from '../../leads/bulk/route';
 import * as imports from '../../imports/route';
 import { enqueueJob } from '../../utils/jobs';
+import { ACCEPTANCE_DOC_TYPES, MESSAGING_AGREEMENT_VERSION } from '@/lib/legal-versions';
 
 const RUN_ID = `live-${Date.now()}`;
 const PHONE = `+1999${String(Date.now()).slice(-7)}`;
@@ -70,10 +71,37 @@ function assertFlowPassed(flow: string) {
 }
 
 describe.runIf(LIVE)('LAYER C — live flow execution against real Postgres', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     process.env.JOB_RUNNER_SECRET = SECRET;
     process.env.SMS_INBOUND_SECRET = SECRET;
     delete process.env.SMS_PROVIDER_URL; // mock delivery adapter (Phase 1)
+
+    // Phase 3 legal wall: POST /api/campaigns/[id]/launch 403s
+    // ('messaging_agreement_required') until the CALLER has accepted the
+    // CURRENT Messaging Compliance Agreement. The session here is mocked as a
+    // bare { user: { id: 'flow-runner' } } with no backing rows, so
+    // launch_campaign has returned 403 ever since that gate landed (ae31366),
+    // cascading into process_jobs / verify_inbox / inbound_reply /
+    // verify_thread. It was deterministic, not flaky — but the 5s-timeout bug
+    // failed this same test first and hid it.
+    //
+    // Versions come from the real constants, so a version bump moves the test
+    // with the gate instead of silently re-breaking it.
+    //
+    // legal_acceptances.user_id is FK'd to "user", so that row must exist
+    // first. Both inserts are idempotent: the Neon test branch persists
+    // across runs, and 037 added uniq(user_id, document_type, version).
+    await sql`
+      INSERT INTO "user" (id, name, email, "emailVerified")
+      VALUES ('flow-runner', 'Flow Runner', 'flow-runner@ci.invalid', true)
+      ON CONFLICT DO NOTHING
+    `;
+    await sql`
+      INSERT INTO legal_acceptances (user_id, document_type, version, ip_address, user_agent)
+      VALUES ('flow-runner', ${ACCEPTANCE_DOC_TYPES.messaging}, ${MESSAGING_AGREEMENT_VERSION},
+              '127.0.0.1', 'layer-c-flow-runner')
+      ON CONFLICT DO NOTHING
+    `;
   });
 
   it('campaign_lifecycle: lead → campaign → launch → job → inbox → reply → thread', async () => {

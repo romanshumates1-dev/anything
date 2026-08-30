@@ -8,6 +8,7 @@
  * - Failover on provider-level failure (never on recipient-level like invalid number)
  * - Compliance gates: opt-out, TCPA window, throughput caps
  * - Unified delivery state tracking
+ * - Usage limit enforcement (SaaS)
  */
 
 import { randomUUID } from 'node:crypto';
@@ -17,6 +18,7 @@ import { dispatchGate, type DenyCode } from '@/app/api/utils/dispatchGate';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { pickNumber, activePoolCount } from '@/app/api/utils/numberPoolStore';
 import { logEvent } from '@/app/api/utils/logger';
+import { checkUsageLimit, recordUsage } from '@/app/api/services/usageTracker';
 import { CircuitBreaker } from './circuit-breaker';
 import { ISMSProvider, DeliveryStatus } from './providers';
 
@@ -138,7 +140,30 @@ export class SMSGateway {
     const messageUuid = message.messageUuid || randomUUID();
     const { leadId, to, text, conversationThread, campaignId, organizationId, contactId } = message;
 
-    // 0. UNIVERSAL DISPATCH GATE (P2.0-W) — every SMS that leaves this system
+    // 0. USAGE LIMIT CHECK (SaaS) — enforce subscription limits before any send
+    if (organizationId) {
+      const usageCheck = await checkUsageLimit(organizationId, 'sms', 1);
+      if (!usageCheck.allowed) {
+        await logEvent('message_blocked_usage_limit', 'message', String(leadId), {
+          messageUuid,
+          to,
+          reason: usageCheck.limit.hardLimitReached ? 'hard_limit_reached' : 'soft_limit_reached',
+          limit: usageCheck.limit,
+        });
+        return {
+          messageUuid,
+          status: 'failed',
+          provider: 'gateway',
+          leadId,
+          to,
+          dispatchTime: new Date(),
+          errorMessage: usageCheck.message || 'Usage limit exceeded',
+          gateCode: 'USAGE_LIMIT',
+        };
+      }
+    }
+
+    // 1. UNIVERSAL DISPATCH GATE (P2.0-W) — every SMS that leaves this system
     // passes here AT TRANSMIT TIME. A cadence step gated when its job was
     // processed can still drain minutes later; this is the check that cannot
     // go stale. Gate order (DNC ≻ flag ≻ consent ≻ quiet hours ≻ window) and
@@ -188,7 +213,7 @@ export class SMSGateway {
       };
     }
 
-    // 1. IDEMPOTENCY CHECK
+    // 2. IDEMPOTENCY CHECK
     if (this.config.idempotencyEnabled !== false) {
       const cached = idempotencyCache.get(messageUuid);
       if (cached && Date.now() - cached.deliveredAt < CACHE_TTL_MS) {
@@ -210,7 +235,7 @@ export class SMSGateway {
       }
     }
 
-    // 2. COMPLIANCE GATES
+    // 3. COMPLIANCE GATES
     if (this.config.complianceCheckEnabled !== false) {
       const hasConsent = await checkConsent(to, 'sms');
       if (!hasConsent) {
@@ -231,7 +256,7 @@ export class SMSGateway {
       }
     }
 
-    // 3. TEST-MODE HARD-ABORT (safety-critical)
+    // 4. TEST-MODE HARD-ABORT (safety-critical)
     // Enforcement at the last hop before provider dispatch so no upstream path can bypass it.
     if (campaignId && organizationId) {
       const [campaign] = await sql`
@@ -269,7 +294,7 @@ export class SMSGateway {
       }
     }
 
-    // 3.5 INT-3 LOCAL PRESENCE — pick a from-number matching the lead's area
+    // 4.5 INT-3 LOCAL PRESENCE — pick a from-number matching the lead's area
     // code. Placed AFTER every abort-style check so a blocked send never burns
     // a pool slot (pickNumber atomically claims one against the daily cap).
     // Semantics (owner Decision 2 + null-means-don't-send):
@@ -310,10 +335,10 @@ export class SMSGateway {
       }
     }
 
-    // 4. SELECT PROVIDER (sticky or primary)
+    // 5. SELECT PROVIDER (sticky or primary)
     let provider = this.selectProvider(conversationThread || String(leadId));
 
-    // 5. ATTEMPT DISPATCH WITH FAILOVER
+    // 6. ATTEMPT DISPATCH WITH FAILOVER
     let dispatchRecord: GatewayDeliveryRecord | null = null;
     let lastError: Error | null = null;
 
@@ -352,6 +377,11 @@ export class SMSGateway {
           deliveredAt: Date.now(),
         });
 
+        // Record usage for successful SMS send
+        if (organizationId) {
+          await recordUsage(organizationId, 'sms', 1);
+        }
+
         await logEvent('message_dispatched_gateway', 'message', String(leadId), {
           messageUuid,
           provider: provider.name,
@@ -378,7 +408,7 @@ export class SMSGateway {
       }
     }
 
-    // 6. ALL PROVIDERS EXHAUSTED
+    // 7. ALL PROVIDERS EXHAUSTED
     await logEvent('message_dispatch_failed_all_providers', 'message', String(leadId), {
       messageUuid,
       to,

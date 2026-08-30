@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
 
@@ -11,7 +12,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const { searchParams } = new URL(request.url);
     const campaignId = searchParams.get('campaignId');
 
@@ -44,7 +49,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const userId = session.user.id;
 
     await recordComplianceAction({

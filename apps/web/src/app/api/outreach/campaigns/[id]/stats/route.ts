@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
@@ -13,8 +14,12 @@ export async function GET(
   }
 
   try {
-    const campaignId = params.id;
-    const organizationId = (session.user as any).organizationId || 'default';
+    const { id: campaignId } = await params;
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
 
     const campaignRows = await sql`
       SELECT * FROM outreach_campaigns WHERE id = ${campaignId} AND organization_id = ${organizationId}

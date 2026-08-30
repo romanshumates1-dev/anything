@@ -32,13 +32,21 @@ vi.mock('@/app/api/utils/numberPoolStore', () => ({
   activePoolCount: vi.fn(async () => 0),
 }));
 
+const { checkUsageLimitMock } = vi.hoisted(() => ({ checkUsageLimitMock: vi.fn(async () => ({ allowed: true, limit: { used: 0, quota: 1000, hardLimitReached: false, softLimitReached: false } })) }));
+const { recordUsageMock } = vi.hoisted(() => ({ recordUsageMock: vi.fn(async () => {}) }));
+
+vi.mock('@/app/api/services/usageTracker', () => ({
+  checkUsageLimit: (...args: any[]) => (checkUsageLimitMock as any)(...args),
+  recordUsage: (...args: any[]) => (recordUsageMock as any)(...args),
+}));
+
 import { SMSGateway } from './sms-gateway';
 import { ISMSProvider, DeliveryStatus, ProviderNormalizedEvent } from './providers';
 
 class MockProvider implements ISMSProvider {
   name = 'primary';
   async isHealthy() { return true; }
-  async send(to: string, text: string, uuid: string) { return `primary_${uuid.slice(0, 8)}`; }
+  async send(to: string, text: string, messageUuid: string, _from?: string) { return `primary_${messageUuid.slice(0, 8)}`; }
   async getDeliveryStatus(_id: string): Promise<DeliveryStatus> { return 'sent'; }
   validateWebhook(body: any) { return !!body?.messageId; }
   normalizeWebhookEvent(body: any): ProviderNormalizedEvent | null {
@@ -60,9 +68,11 @@ beforeEach(() => {
 
 describe('Item 6a — gateway test-mode allowlist', () => {
   it('BLOCKS a non-allowlisted recipient in a test_mode campaign', async () => {
+    // campaign lookup, allowlist lookup (empty), INSERT INTO message_events
     mockSql
-      .mockResolvedValueOnce([{ test_mode: true }]) // campaign lookup
-      .mockResolvedValueOnce([]); // allowlist lookup -> empty (not verified)
+      .mockResolvedValueOnce([{ test_mode: true }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]); // For the INSERT in blocked path
 
     const result = await makeGateway().send({
       leadId: 1,
@@ -88,9 +98,11 @@ describe('Item 6a — gateway test-mode allowlist', () => {
   });
 
   it('ALLOWS a verified allowlisted recipient through to a provider', async () => {
+    // campaign lookup, allowlist lookup (verified), INSERT INTO usage_ledger
     mockSql
-      .mockResolvedValueOnce([{ test_mode: true }]) // campaign lookup
-      .mockResolvedValueOnce([{ id: 'allow-1' }]); // allowlist lookup -> verified
+      .mockResolvedValueOnce([{ test_mode: true }])
+      .mockResolvedValueOnce([{ id: 'allow-1' }])
+      .mockResolvedValueOnce([]); // For recordUsage INSERT
 
     const result = await makeGateway().send({
       leadId: 2,
@@ -101,7 +113,8 @@ describe('Item 6a — gateway test-mode allowlist', () => {
       contactId: 'contact-2',
     });
 
-    expect(result.provider).not.toBe('gateway'); // not blocked by the gateway
+    // When allowed, provider should be 'primary' (the MockProvider name), not 'gateway'
+    expect(result.provider).toBe('primary');
     expect(result.errorMessage ?? '').not.toContain('BLOCKED_TEST_MODE');
     expect(result.status).toBe('dispatched');
   });
@@ -118,7 +131,8 @@ describe('Item 6a — gateway test-mode allowlist', () => {
       contactId: 'contact-3',
     });
 
-    expect(result.provider).not.toBe('gateway');
+    // When not in test_mode, provider should be 'primary', not 'gateway'
+    expect(result.provider).toBe('primary');
     expect(result.status).toBe('dispatched');
   });
 });

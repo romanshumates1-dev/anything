@@ -9,10 +9,59 @@
  *
  * ORDER MATTERS (cheapest/most-absolute first):
  *   1. DNC / opt-out      — absolute, permanent, suppresses EVERY channel
+ *   1.5 DNC registry      — federal/state list + 31-day Safe Harbor freshness,
+ *                           COLD OUTBOUND ONLY (migration 043)
  *   2. beta flag          — an OFF integration must emit zero events
  *   3. consentBasis       — voice/RVM only (TCPA prior-express-consent posture)
+ *   3.2 SMS consent       — cold SMS under sms_consent_policy='required'
  *   4. quiet hours        — 8am-9pm LEAD-LOCAL
  *   5. send-window snap   — cadence steps only (10-11am / 2-4pm lead-local)
+ *
+ * WHY 1.5 AND 3.2 ARE COLD-OUTBOUND-ONLY: the National DNC Registry and TCPA
+ * prior-express-consent both govern SOLICITATIONS. A reply inside a
+ * conversation the consumer started is not a solicitation, and an
+ * established-business-relationship reply must not be suppressed by a registry
+ * listing — doing so would break every inbound thread. Internal opt-out (step
+ * 1) has no such carve-out: STOP means stop, on every channel, forever.
+ *
+ * EMAIL IS A DIFFERENT STATUTE, NOT A FOURTH PHONE CHANNEL.
+ * Email is governed by CAN-SPAM (15 U.S.C. 7701), the TCPA does not reach it,
+ * and applying telephony rules to it would be both wrong and needlessly
+ * restrictive. For channel==='email' this gate applies EXACTLY ONE rule —
+ * opt-out suppression (step 1), because honouring an unsubscribe is CAN-SPAM's
+ * central duty (and its 10-business-day deadline is why we suppress
+ * immediately rather than on a schedule). Everything else is skipped, on
+ * purpose:
+ *   - DNC registry            — a TELEPHONE registry; meaningless for email.
+ *   - sms_consent_policy      — SMS-specific by construction.
+ *   - quiet hours / windows   — TCPA time-of-day limits apply to calls/texts,
+ *                               not email.
+ *   - consentBasis            — CAN-SPAM is opt-OUT, not opt-in: prior consent
+ *                               is NOT required to send. This is precisely why
+ *                               email is testable today while 10DLC is pending.
+ * What CAN-SPAM does require lives at the composition layer, not here: a
+ * functioning unsubscribe, a real physical postal address, non-deceptive
+ * headers and subject lines. The email driver owns those.
+ *
+ * MAIL IS THE LEAST-REGULATED CHANNEL, AND THE ONLY UNIVERSAL SELLER REACH.
+ * Physical mail is not a "call" (TCPA does not reach it), not "electronic mail"
+ * (CAN-SPAM does not reach it), and carries no carrier/registration layer at
+ * all — no 10DLC, no A2P, no campaign approval. So this gate applies exactly
+ * one rule to it, the same one email gets: internal opt-out suppression.
+ *
+ * That is honoured even though no federal statute compels it here, because a
+ * recipient who has told us to stop has told us to stop, and several states run
+ * their own do-not-mail / solicitation rules. Suppression is cheap; a
+ * complaint is not.
+ *
+ * Operationally this is the channel that satisfies "reach sellers at volume
+ * without carrier registration": sourced_leads.mailing_address comes straight
+ * from the public record, so EVERY sourced lead is mail-reachable with no
+ * skip-trace, no enrichment, and no per-record cost before the send itself.
+ *
+ * The suppression TARGET differs by channel: `phone` for telephony, `email`
+ * for email, `mailingAddress` for mail. Sending to the wrong key would fail
+ * OPEN, so it is resolved once, explicitly, at the top of the gate.
  *
  * TIMEZONE: derived from the phone's area code. Unknown/ambiguous → MOST
  * RESTRICTIVE: the send must be legal in EVERY US timezone the number could be
@@ -24,7 +73,16 @@ import { timezonesForPhone } from '@/app/api/utils/area-codes';
 import { isBetaFlagOn, type BetaFlagKey } from '@/app/api/utils/betaFlags';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 
-export type DispatchChannel = 'sms' | 'voice' | 'rvm';
+export type DispatchChannel = 'sms' | 'voice' | 'rvm' | 'email' | 'mail';
+
+/**
+ * Telephony channels. Email is governed by CAN-SPAM (15 U.S.C. 7701), a
+ * fundamentally different statute from the TCPA — so nearly every rule in this
+ * gate is telephony-only and email takes an explicit, narrow path. See the
+ * EMAIL note in the header docblock for exactly which rules apply.
+ */
+export const TELEPHONY_CHANNELS: DispatchChannel[] = ['sms', 'voice', 'rvm'];
+export const isTelephony = (c: DispatchChannel): boolean => TELEPHONY_CHANNELS.includes(c);
 
 /** Consent bases that permit an automated voice/RVM touch. Anything else = skip. */
 export const VALID_CONSENT_BASES = ['manual-list-attested', 'inbound-initiated'] as const;
@@ -36,15 +94,77 @@ export const SEND_WINDOWS = [
   { startHour: 14, endHour: 16 },
 ] as const;
 
-export type DenyCode = 'DNC' | 'FLAG_OFF' | 'NO_CONSENT' | 'QUIET_HOURS' | 'OUTSIDE_WINDOW' | 'PROFILE_NO_COLD' | 'NUMERIC_GUARD' | 'DEMO_NOT_VERIFIED';
+/**
+ * PREFERRED_HOURS for optimal response rates (not just compliance).
+ * Research: Tue-Thu 10am-2pm local time has 23% higher open rates.
+ * Use for non-cadence sends to optimize for engagement, not just compliance.
+ */
+export const PREFERRED_HOURS = { startHour: 10, endHour: 14 } as const;
+export const PREFERRED_DAYS = [2, 3, 4] as const; // Tue, Wed, Thu (0=Sun)
+
+/**
+ * State-specific quiet hours that are STRICTER than federal.
+ * These override the federal 9pm cutoff when lead state is known.
+ * Violations can result in significant penalties per violation.
+ *
+ * TCPA compliance: Federal floor is 8am-9pm, but state laws can be stricter.
+ * Impact: Avoid potential state-level TCPA violations ($500-$1500 per violation).
+ */
+export const STATE_QUIET_HOURS: Record<string, { startHour: number; endHour: number }> = {
+  FL: { startHour: 8, endHour: 20 }, // Florida Telemarketing Act: 8am-8pm ($10k/violation)
+  OR: { startHour: 9, endHour: 20 }, // Oregon: 9am-8pm (stricter than federal)
+  WA: { startHour: 9, endHour: 20 }, // Washington: 9am-8pm
+  CT: { startHour: 9, endHour: 21 }, // Connecticut: 9am-9pm (stricter start)
+  IN: { startHour: 9, endHour: 20 }, // Indiana: 9am-8pm
+  KY: { startHour: 10, endHour: 21 }, // Kentucky: 10am-9pm (late start)
+  LA: { startHour: 8, endHour: 20 }, // Louisiana: 8am-8pm
+  ME: { startHour: 9, endHour: 20 }, // Maine: 9am-8pm
+  NY: { startHour: 9, endHour: 21 }, // New York: 9am-9pm (stricter start)
+  PA: { startHour: 9, endHour: 21 }, // Pennsylvania: 9am-9pm (stricter start)
+  TX: { startHour: 9, endHour: 21 }, // Texas: 9am-9pm (stricter start)
+  WY: { startHour: 9, endHour: 20 }, // Wyoming: 9am-8pm
+};
+
+export type DenyCode =
+  | 'DNC'              // internal opt-out (someone texted STOP to us) — absolute
+  | 'DNC_REGISTRY'     // on the federal/state Do-Not-Call registry
+  | 'DNC_STALE'        // registry coverage for this NPA is missing or >31 days old
+  | 'FLAG_OFF'
+  | 'NO_CONSENT'
+  | 'QUIET_HOURS'
+  | 'OUTSIDE_WINDOW'
+  | 'PROFILE_NO_COLD'
+  | 'NUMERIC_GUARD'
+  | 'DEMO_NOT_VERIFIED'
+  | 'USAGE_LIMIT'
+  | 'COMPLIANCE_GATE'; // Phase 0A: jurisdiction×channel not attorney-reviewed
 
 export type DispatchDecision =
   | { allow: true; timezones: string[] }
   | { allow: false; code: DenyCode; reason: string; retryAt?: Date; timezones: string[] };
 
 export interface DispatchRequest {
-  /** Lead phone — drives both DNC lookup and lead-local timezone. */
+  /**
+   * Lead phone — drives DNC lookup and lead-local timezone. Required for the
+   * telephony channels; ignored when channel==='email' (pass '' there).
+   */
   phone: string;
+  /**
+   * Recipient address. REQUIRED when channel==='email' — it is the suppression
+   * key, and looking up the wrong key would fail OPEN (we would send to
+   * someone who unsubscribed), so the gate denies outright when it is missing
+   * rather than falling back to `phone`.
+   */
+  email?: string | null;
+  /**
+   * Deliverable postal address. REQUIRED when channel==='mail' — it is the
+   * suppression key for that channel, same fail-closed rule as `email`.
+   *
+   * Note this needs NO enrichment: sourced_leads.mailing_address is populated
+   * by both parsers straight from the public record, which is what makes
+   * direct mail reachable without skip trace.
+   */
+  mailingAddress?: string | null;
   channel: DispatchChannel;
   /** Which beta flag gates this dispatch (omit for always-on paths). */
   betaFlag?: BetaFlagKey;
@@ -70,6 +190,26 @@ export interface DispatchRequest {
   /** Phase N: the lead's profile's allows_cold_outbound. Only consulted when
    *  coldOutbound is true. Default (undefined) = allowed. */
   profileAllowsCold?: boolean;
+  /**
+   * Owning org, used ONLY to resolve per-org send policy (sms_consent_policy,
+   * dnc_enforcement — migration 043).
+   *
+   * Deliberately OPTIONAL: making it required would have meant editing every
+   * existing call site in the same change that introduces the DNC checks, which
+   * is exactly how a safety-critical gate acquires a silent regression. When it
+   * is absent the DNC *presence* check still runs (it needs no policy), and
+   * only the two TIGHTENING behaviours are skipped — 'strict' staleness denial
+   * and 'required' per-number SMS consent. See getOrgSendPolicy().
+   */
+  organizationId?: string | null;
+  /**
+   * Phase 0A: jurisdiction for the compliance gate registry check.
+   * Derived from lead metadata (state+county). When present on a cold send,
+   * the gate registry is checked — fail-closed if unreviewed.
+   */
+  jurisdiction?: string | null;
+  /** Lead metadata — used to derive jurisdiction when jurisdiction is not explicit. */
+  leadMetadata?: any;
   /**
    * Phase A: bounded-negotiation numeric guard. Present ONLY on bounded-mode
    * conversation sends. The final outbound text is parsed; any dollar amount
@@ -98,9 +238,27 @@ function inRange(h: number, startHour: number, endHour: number): boolean {
   return h >= startHour && h < endHour;
 }
 
-/** Quiet hours pass ONLY if legal in every candidate zone (most restrictive). */
-export function isWithinQuietHours(tzs: string[], at: Date): boolean {
-  return tzs.every((tz) => inRange(localHourIn(tz, at), QUIET_HOURS.startHour, QUIET_HOURS.endHour));
+/**
+ * Quiet hours pass ONLY if legal in every candidate zone (most restrictive).
+ * Optionally applies state-specific hours when lead state is known.
+ */
+export function isWithinQuietHours(tzs: string[], at: Date, leadState?: string): boolean {
+  // Use state-specific quiet hours if stricter than federal
+  const quietHours = leadState && STATE_QUIET_HOURS[leadState]
+    ? STATE_QUIET_HOURS[leadState]
+    : QUIET_HOURS;
+
+  return tzs.every((tz) => inRange(localHourIn(tz, at), quietHours.startHour, quietHours.endHour));
+}
+
+/**
+ * Get the effective quiet hours for a lead, considering state-specific rules.
+ */
+export function getEffectiveQuietHours(leadState?: string): { startHour: number; endHour: number } {
+  if (leadState && STATE_QUIET_HOURS[leadState]) {
+    return STATE_QUIET_HOURS[leadState];
+  }
+  return QUIET_HOURS;
 }
 
 /** Send window pass ONLY if inside a window in every candidate zone. */
@@ -129,11 +287,18 @@ function nextAllowed(from: Date, predicate: (d: Date) => boolean): Date | null {
   return null;
 }
 
-/** True if this target has EVER opted out on ANY channel (STOP suppresses everything, permanently). */
-export async function isSuppressed(phone: string): Promise<boolean> {
+/**
+ * True if this target has EVER opted out on ANY channel (STOP suppresses
+ * everything, permanently).
+ *
+ * `target` is a phone for telephony and an email address for email — the
+ * lookup is deliberately channel-agnostic so an unsubscribe recorded against
+ * one identifier keeps suppressing it everywhere it appears.
+ */
+export async function isSuppressed(target: string): Promise<boolean> {
   const rows = await sql`
     SELECT 1 FROM compliance_records
-    WHERE target = ${phone} AND type = 'opt-out'
+    WHERE target = ${target} AND type = 'opt-out'
     LIMIT 1
   `;
   return rows.length > 0;
@@ -148,9 +313,91 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
   const tzs = timezonesForPhone(req.phone);
 
   try {
+    // ── NON-TELEPHONY (email, mail). Neither is reached by the TCPA, so every
+    // telephony rule below is skipped rather than merely inapplicable. See the
+    // EMAIL and MAIL notes in the header docblock.
+    if (!isTelephony(req.channel)) {
+      const target =
+        req.channel === 'email' ? (req.email ?? '').trim() : (req.mailingAddress ?? '').trim();
+      if (!target) {
+        // Fail CLOSED. Falling back to `phone` here would look up the wrong
+        // suppression key and happily send to someone who opted out.
+        return {
+          allow: false,
+          code: 'NO_CONSENT',
+          reason:
+            req.channel === 'email'
+              ? 'SKIPPED: email channel requires an email address (suppression key)'
+              : 'SKIPPED: mail channel requires a mailing address (suppression key)',
+          timezones: tzs,
+        };
+      }
+      if (await isSuppressed(target)) {
+        return {
+          allow: false,
+          code: 'DNC',
+          reason:
+            req.channel === 'email'
+              ? 'Recipient unsubscribed (CAN-SPAM opt-out honoured on all channels)'
+              : 'Recipient opted out of mail (honoured on all channels)',
+          timezones: tzs,
+        };
+      }
+      // An OFF integration must still emit zero events.
+      if (req.betaFlag && !(await isBetaFlagOn(req.betaFlag))) {
+        return { allow: false, code: 'FLAG_OFF', reason: `Beta flag ${req.betaFlag} is off`, timezones: tzs };
+      }
+      return { allow: true, timezones: tzs };
+    }
+
     // 1. DNC / opt-out — absolute, every channel, permanent.
     if (await isSuppressed(req.phone)) {
       return { allow: false, code: 'DNC', reason: 'Recipient opted out (suppressed on all channels)', timezones: tzs };
+    }
+
+    // 1.5 DNC REGISTRY (federal/state) + Safe Harbor freshness.
+    // Cold outbound only — see the header note on why replies are exempt.
+    // Runs BEFORE the beta-flag check because a registry listing is a fact about
+    // the recipient, not a feature toggle: we want the deny reason to say "on
+    // the DNC list", not "flag off", when both are true.
+    if (req.coldOutbound) {
+      const { checkDncRegistry, isAreaCoverageFresh, getOrgSendPolicy, SAFE_HARBOR_DAYS } =
+        await import('./dncRegistry');
+      const policy = await getOrgSendPolicy(req.organizationId);
+
+      if (policy.dncEnforcement !== 'off') {
+        // Presence check needs no policy and is never wrong to enforce.
+        const hit = await checkDncRegistry(req.phone);
+        if (hit.listed) {
+          const where = hit.jurisdiction ? `${hit.source}/${hit.jurisdiction}` : hit.source;
+          return {
+            allow: false,
+            code: 'DNC_REGISTRY',
+            reason: `Recipient is on the ${where} Do-Not-Call registry`,
+            timezones: tzs,
+          };
+        }
+
+        // Freshness only bites in 'strict'. A snapshot older than 31 days (or
+        // absent) confers NO safe harbour under 16 CFR 310.4(b)(3)(iv), so a
+        // "not listed" answer derived from it is not defensible — strict mode
+        // therefore refuses to rely on it rather than sending on stale data.
+        if (policy.dncEnforcement === 'strict') {
+          const cov = await isAreaCoverageFresh(req.phone, at);
+          if (!cov.fresh) {
+            const detail =
+              cov.lastFetchedAt === null
+                ? 'no registry coverage imported for this area code'
+                : `registry coverage is ${Math.floor(cov.ageDays ?? 0)} days old (limit ${SAFE_HARBOR_DAYS})`;
+            return {
+              allow: false,
+              code: 'DNC_STALE',
+              reason: `SKIPPED: ${detail} — Safe Harbor requires a scrub within ${SAFE_HARBOR_DAYS} days`,
+              timezones: tzs,
+            };
+          }
+        }
+      }
     }
 
     // 2. Beta flag — an OFF integration emits zero events.
@@ -187,6 +434,27 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
       }
     }
 
+    // 3.2 SMS OPT-IN. Only for a COLD first-touch, and only when the org has
+    // opted into the consent-first posture (sms_consent_policy='required').
+    // Under 'attested' the operator asserts a lawful basis for the list itself
+    // and this check is skipped — that is the cold-outreach posture and it
+    // carries the TCPA/carrier exposure documented in AWS_CREDITS_PLAN.md.
+    // Accepted proof is a recorded consent (compliance_records type='consent');
+    // an 'unverified' contact list is explicitly NOT proof.
+    if (req.channel === 'sms' && req.coldOutbound) {
+      const { getOrgSendPolicy, hasSmsConsent } = await import('./dncRegistry');
+      const policy = await getOrgSendPolicy(req.organizationId);
+      if (policy.smsConsentPolicy === 'required' && !(await hasSmsConsent(req.phone))) {
+        return {
+          allow: false,
+          code: 'NO_CONSENT',
+          reason:
+            'SKIPPED: no recorded SMS consent for a cold first-touch (org policy sms_consent_policy=required)',
+          timezones: tzs,
+        };
+      }
+    }
+
     // 3.4 Phase A: numeric guard on bounded-negotiation sends. Absolute block —
     // a leaked number is a compliance/authority breach, never retried as-is.
     if (req.boundedNegotiation) {
@@ -197,6 +465,28 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
           allow: false,
           code: 'NUMERIC_GUARD',
           reason: `NUMERIC GUARD BLOCKED: ${verdict.reason}`,
+          timezones: tzs,
+        };
+      }
+    }
+
+    // 3.3 Phase 0A: compliance gate registry — fail-closed per jurisdiction×channel.
+    // Cold outbound only. Checked after DNC/flag/consent so those absolute denials
+    // still win, but before time gates so a locked market never silently defers.
+    if (req.coldOutbound && req.organizationId) {
+      const { checkComplianceGate, jurisdictionForLead } = await import('./complianceGate');
+      const jurisdiction = req.jurisdiction ?? jurisdictionForLead(req.leadMetadata);
+      const gateResult = await checkComplianceGate({
+        organizationId: req.organizationId,
+        jurisdiction,
+        channel: req.channel,
+        coldOutbound: true,
+      });
+      if (!gateResult.allowed) {
+        return {
+          allow: false,
+          code: 'COMPLIANCE_GATE',
+          reason: gateResult.reason,
           timezones: tzs,
         };
       }
@@ -222,13 +512,20 @@ export async function dispatchGate(req: DispatchRequest): Promise<DispatchDecisi
     const skipTimeGates = process.env.DISPATCH_SKIP_QUIET_HOURS === '1';
 
     // 4. Quiet hours 8am–9pm lead-local (all candidate zones).
+    // FIX: Now uses state-specific quiet hours when lead state is known.
+    // Florida Telemarketing Act: 8am-8pm = $10k/violation if breached.
     // Transactional sends (recipient-requested, e.g. OTP) skip time gates only.
     if (req.transactional || skipTimeGates) {
       return { allow: true, timezones: tzs };
     }
-    if (!isWithinQuietHours(tzs, at)) {
-      const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d)) ?? undefined;
-      return { allow: false, code: 'QUIET_HOURS', reason: 'Outside 8am-9pm lead-local', retryAt, timezones: tzs };
+    const leadState = req.leadMetadata?.state as string | undefined;
+    const effectiveHours = getEffectiveQuietHours(leadState);
+    if (!isWithinQuietHours(tzs, at, leadState)) {
+      const retryAt = nextAllowed(at, (d) => isWithinQuietHours(tzs, d, leadState)) ?? undefined;
+      const stateNote = leadState && STATE_QUIET_HOURS[leadState]
+        ? ` (${leadState} stricter: ${effectiveHours.startHour}am-${effectiveHours.endHour > 12 ? effectiveHours.endHour - 12 : effectiveHours.endHour}pm)`
+        : '';
+      return { allow: false, code: 'QUIET_HOURS', reason: `Outside ${effectiveHours.startHour}am-${effectiveHours.endHour > 12 ? effectiveHours.endHour - 12 : effectiveHours.endHour}pm lead-local${stateNote}`, retryAt, timezones: tzs };
     }
 
     // 5. Send-window snapping — cadence steps only.

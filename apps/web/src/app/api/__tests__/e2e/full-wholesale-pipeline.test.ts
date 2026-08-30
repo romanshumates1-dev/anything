@@ -28,6 +28,18 @@ vi.mock('@/lib/auth', () => ({
 const { fn: logEvent } = vi.hoisted(() => ({ fn: vi.fn(async () => {}) }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
+const { fn: getOrganization } = vi.hoisted(() => ({ fn: vi.fn(async () => ({ id: 'org_default', name: 'Default', slug: 'default' })) }));
+vi.mock('@/lib/organization-context', () => ({
+  getOrganization: (...args: any[]) => (getOrganization as any)(...args),
+}));
+
+// Phase 3 messaging-compliance gate: the full pipeline runs as an onboarded
+// user who has accepted the Messaging Compliance Agreement.
+vi.mock('@/lib/legal-acceptance', () => ({
+  hasAcceptedMessagingAgreement: vi.fn(async () => true),
+  hasAcceptedCurrentLegal: vi.fn(async () => true),
+}));
+
 import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';
 import * as campaignLeads from '../../campaigns/[id]/leads/route';

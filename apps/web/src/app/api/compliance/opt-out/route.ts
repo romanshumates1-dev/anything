@@ -18,6 +18,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Target and Channel required' }, { status: 400 });
     }
 
+    // Validate channel is one of the accepted values
+    if (!['sms', 'email', 'mail'].includes(channel)) {
+      return Response.json({ error: 'Invalid channel. Must be sms, email, or mail' }, { status: 400 });
+    }
+
     await registerOptOut(target, channel, { reason });
     await logEvent('compliance_opt_out_received', 'compliance', target, { channel, reason });
 

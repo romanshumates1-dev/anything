@@ -2,8 +2,8 @@
  * INT-3 — number pool STORE (live DB).
  *
  * Only the things that genuinely need Postgres live here: the atomic cap claim,
- * the lazy daily reset, and the rotation-cap setting round-trip. The selection
- * algorithm itself is pure and tested with no DB in numberPool.select.test.ts.
+ * the lazy daily reset, and the rotation-cap setting round-trip. The input
+ * validation is tested in numberPoolStore.validation.test.ts (no DB required).
  *
  * Gate matches the repo pattern (flows-live.test.ts, sla.test.ts):
  *   RUN_LIVE_FLOWS=1 DATABASE_URL=... vitest run
@@ -49,11 +49,6 @@ describe.skipIf(!LIVE)('numberPoolStore — INT-3 pool storage (live DB)', () =>
     expect(await store.getRotationCap()).toBe(125); // no row -> default
     await store.setRotationCap(40);
     expect(await store.getRotationCap()).toBe(40);
-  });
-
-  it('rejects a nonsense rotation cap rather than storing it', async () => {
-    await expect(store.setRotationCap(-1)).rejects.toThrow();
-    await expect(store.setRotationCap(1.5)).rejects.toThrow();
   });
 
   it('pickNumber returns the exact-area-code match and increments its counter', async () => {
@@ -114,5 +109,12 @@ describe.skipIf(!LIVE)('numberPoolStore — INT-3 pool storage (live DB)', () =>
     await sql`UPDATE number_pool SET active = false WHERE phone_number = ${P502}`;
     const picked = await store.pickNumber('+15025559999');
     expect(picked).not.toBe(P502);
+  });
+});
+
+// Guard so the file is never a silent no-op when LIVE is disabled.
+describe.skipIf(LIVE)('numberPoolStore — skipped (set RUN_LIVE_FLOWS=1 + DATABASE_URL to enable)', () => {
+  it('is intentionally skipped without a live DB', () => {
+    expect(LIVE).toBe(false);
   });
 });

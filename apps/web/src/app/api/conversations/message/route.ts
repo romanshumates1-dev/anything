@@ -5,6 +5,7 @@ import { detectHighRisk, orchestrateAIResponse } from '../../utils/ai-orchestrat
 import { checkConsent } from '../../utils/compliance';
 import { enqueueJob } from '../../utils/jobs';
 import { logEvent } from '../../utils/logger';
+import { getOrganization } from '@/lib/organization-context';
 
 const MAX_MESSAGE_LENGTH = 4000;
 
@@ -17,6 +18,11 @@ export async function POST(request: Request) {
 
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const org = await getOrganization();
+  if (!org) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
   }
 
   try {
@@ -40,8 +46,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Load lead
-    const [lead] = await sql`SELECT * FROM leads WHERE id = ${leadId} LIMIT 1`;
+    // 1. Load lead (SECURITY: scoped to organization to prevent IDOR)
+    const [lead] = await sql`SELECT * FROM leads WHERE id = ${leadId} AND organization_id = ${org.id} LIMIT 1`;
     if (!lead) return Response.json({ error: 'Lead not found' }, { status: 404 });
 
     // 2. Compliance — a missing contact must NOT be treated as consent.

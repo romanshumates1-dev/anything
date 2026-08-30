@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-08-01T04:27:17.008Z",
+  "criteria": {
+    "runtimeErrors": {
+      "status": "PASS",
+      "errors": []
+    },
+    "coherentMessaging": {
+      "status": "PASS",
+      "samples": [
+        {
+          "lead": "Test Lead 1",
+          "message": "Hi Test Lead 1,\n\nI noticed your property at 123 Main St.\n\nI can close in 7 days, all cash: $150k–$160k.\n\nNo contingencies, no inspections, as-is condition.\n\nAre you open to discussing this?",
+          "coherent": true,
+          "checks": {
+            "hasName": true,
+            "hasAddress": true,
+            "hasOffer": true,
+            "isComplete": true
+          }
+        },
+        {
+          "lead": "Test Lead 2",
+          "message": "Hi Test Lead 2,\n\nI noticed your property at 456 Oak Ave.\n\nI can close in 7 days, all cash: $150k–$160k.\n\nNo contingencies, no inspections, as-is condition.\n\nAre you open to discussing this?",
+          "coherent": true,
+          "checks": {
+            "hasName": true,
+            "hasAddress": true,
+            "hasOffer": true,
+            "isComplete": true
+          }
+        },
+        {
+          "lead": "Test Lead 3",
+          "message": "Hi Test Lead 3,\n\nI noticed your property at 789 Elm St.\n\nI can close in 7 days, all cash: $150k–$160k.\n\nNo contingencies, no inspections, as-is condition.\n\nAre you open to discussing this?",
+          "coherent": true,
+          "checks": {
+            "hasName": true,
+            "hasAddress": true,
+            "hasOffer": true,
+            "isComplete": true
+          }
+        }
+      ]
+    },
+    "accurateClassification": {
+      "status": "PASS",
+      "samples": [
+        {
+          "text": "Yes, interested. Tell me more.",
+          "expected": "ACCEPTANCE_SIGNAL",
+          "actual": "ACCEPTANCE_SIGNAL",
+          "correct": true
+        },
+        {
+          "text": "Your offer is too low.",
+          "expected": "PRICE_PUSHBACK",
+          "actual": "PRICE_PUSHBACK",
+          "correct": true
+        },
+        {
+          "text": "Can you send proof of funds?",
+          "expected": "NEEDS_PROOF",
+          "actual": "NEEDS_PROOF",
+          "correct": true
+        },
+        {
+          "text": "I have another offer.",
+          "expected": "COMPETITOR_PRESSURE",
+          "actual": "COMPETITOR_PRESSURE",
+          "correct": true
+        },
+        {
+          "text": "Not sure yet.",
+          "expected": "HESITATION",
+          "actual": "HESITATION",
+          "correct": true
+        }
+      ]
+    },
+    "scaleStability": {
+      "status": "FAIL",
+      "metrics": {
+        "total_leads": "8197",
+        "scored_leads": "6970",
+        "queued_leads": "5283",
+        "replies_received": "2940"
+      }
+    },
+    "e2eFlow": {
+      "status": "PASS",
+      "proof": [
+        "✅ Lead Scoring",
+        "✅ Valuation",
+        "✅ Probability",
+        "✅ Campaign Queue"
+      ]
+    },
+    "optimizationLoop": {
+      "status": "PASS",
+      "data": {
+        "enabled": true,
+        "functional": true
+      }
+    },
+    "campaignUX": {
+      "status": "PASS",
+      "validation": "Scripts and docs present"
+    }
+  },
+  "overallStatus": "FAIL"
+}

@@ -1,92 +1,98 @@
-/**
- * Phase P1 — Dev-only mock-sign endpoint.
- *
- * This simulates an e-sign provider firing a webhook. In dev, the mock provider
- * generates a signing link pointing here. Clicking "simulate sign" triggers this
- * endpoint, which behaves identically to the real e-sign webhook path.
- *
- * In production/CI this route is inert — it only responds to mock envelope IDs.
- */
-import sql from '@/app/api/utils/sql';
-import { logEvent } from '@/app/api/utils/logger';
+import { type NextRequest } from 'next/server';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
   const envelopeId = searchParams.get('envelopeId');
   const contractId = searchParams.get('contractId');
 
   if (!envelopeId || !contractId) {
-    return new Response(JSON.stringify({ error: 'Missing envelopeId or contractId' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response('Missing envelopeId or contractId', { status: 400 });
   }
 
-  // Only process mock envelope IDs (safety check — real providers never use mock_ prefix)
-  if (!envelopeId.startsWith('mock_env_')) {
-    return new Response(JSON.stringify({ error: 'Invalid envelope ID for mock endpoint' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  const webhookUrl = new URL('/api/esign/webhook', request.url).toString();
 
-  try {
-    // Record the signed event (same logic as the real webhook handler)
-    const eventId = `mock_sign_${crypto.randomUUID()}`;
+  const signedEvent = {
+    event_type: 'signed',
+    envelope_id: envelopeId,
+    contract_id: contractId,
+    event_id: `mock_evt_signed_${crypto.randomUUID()}`,
+    signed_at: new Date().toISOString(),
+    event_data: {
+      signer: 'Mock Signer',
+      ip_address: '127.0.0.1',
+    },
+  };
 
-    await sql`
-      INSERT INTO esign_events (id, contract_id, event_type, external_event_id, event_data)
-      VALUES (${eventId}, ${contractId}, 'signed', ${envelopeId}, ${JSON.stringify({
-        envelopeId,
-        signedAt: new Date().toISOString(),
-        source: 'mock-simulate',
-      })})
-      ON CONFLICT (contract_id, external_event_id) WHERE external_event_id IS NOT NULL
-      DO NOTHING
-    `;
+  const viewedEvent = {
+    ...signedEvent,
+    event_type: 'viewed',
+    event_id: `mock_evt_viewed_${crypto.randomUUID()}`,
+  };
 
-    // Update contract esign_status
-    await sql`
-      UPDATE contracts SET esign_status = 'signed', signed_at = NOW()
-      WHERE id = ${contractId}
-    `;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Mock E-Sign</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body { font-family: sans-serif; max-width: 800px; margin: auto; padding: 1rem; background-color: #f7f7f7; }
+        h1, h2 { color: #333; }
+        pre { background-color: #eee; padding: 1rem; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+        button { background-color: #007bff; color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+      </style>
+    </head>
+    <body>
+      <h1>Mock E-Sign Simulation</h1>
+      <p>This page simulates the e-signing process for development purposes.</p>
+      
+      <h2>Contract Details</h2>
+      <p><strong>Contract ID:</strong> ${contractId}</p>
+      <p><strong>Envelope ID:</strong> ${envelopeId}</p>
 
-    await logEvent('contract_signed', 'contract', contractId, {
-      envelopeId,
-      source: 'mock-simulate',
-    });
+      <h2>Simulate Webhook Events</h2>
+      <p>Click a button to send a mock webhook event to the <code>/api/esign/webhook</code> endpoint.</p>
 
-    // Return a simple HTML page with success + a close button
-    return new Response(
-      `<!DOCTYPE html>
-<html>
-<head><title>Contract Signed</title>
-<style>
-  body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
-  .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-  h1 { color: #16a34a; margin-bottom: 0.5rem; }
-  p { color: #555; margin-bottom: 1.5rem; }
-  .badge { background: #dcfce7; color: #15803d; padding: 0.5rem 1rem; border-radius: 999px; font-weight: 600; display: inline-block; margin-bottom: 1rem; }
-</style></head>
-<body>
-  <div class="card">
-    <div class="badge">✓ SIGNED</div>
-    <h1>Document Signed</h1>
-    <p>The contract has been signed successfully. This window can be closed.</p>
-    <p style="font-size: 0.875rem; color: #999;">Contract: ${contractId.slice(0, 8)}… | Envelope: ${envelopeId.slice(0, 16)}…</p>
-  </div>
-</body>
-</html>`,
-      {
-        status: 200,
-        headers: { 'Content-Type': 'text/html' },
-      }
-    );
-  } catch (error: any) {
-    console.error('mock-sign error', error);
-    return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+      <button id="viewedBtn">Simulate 'viewed' Event</button>
+      <button id="signedBtn">Simulate 'signed' Event</button>
+      
+      <script>
+        const webhookUrl = '${webhookUrl}';
+        const viewedPayload = ${JSON.stringify(viewedEvent)};
+        const signedPayload = ${JSON.stringify(signedEvent)};
+
+        async function sendWebhook(payload) {
+          try {
+            const response = await fetch(webhookUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                // In a real mock, the signature would be generated. For dev,
+                // we rely on the webhook handler's mock provider check because
+                // process.env.ESIGN_PROVIDER is 'mock'.
+                'x-esign-signature': 'mock-signature'
+              },
+              body: JSON.stringify(payload)
+            });
+            
+            const result = await response.json();
+            alert('Webhook sent!
+Status: ' + response.status + '
+Response: ' + JSON.stringify(result, null, 2));
+          } catch (error) {
+            alert('Error sending webhook: ' + error);
+          }
+        }
+
+        document.getElementById('viewedBtn').addEventListener('click', () => sendWebhook(viewedPayload));
+        document.getElementById('signedBtn').addEventListener('click', () => sendWebhook(signedPayload));
+      </script>
+    </body>
+    </html>
+  `;
+
+  return new Response(html, {
+    headers: { 'Content-Type': 'text/html' },
+  });
 }

@@ -33,6 +33,7 @@ import { showNotification } from "./notifications";
 
 import { refreshTrayMenu, setBadgeCount } from "./tray";
 import { getSettingsWindow } from "./settings-window";
+import { registerPipelineIpc } from "./pipeline";
 
 function appInfo(): AppInfo {
   return {
@@ -166,5 +167,8 @@ export function registerIpcHandlers(): void {
 
   // Ensure the OS login-item state matches persisted settings at startup.
   syncLaunchOnStartup(getSettings().launchOnStartup);
+
+  // Register pipeline operations IPC handlers
+  registerPipelineIpc(getMainWindow);
 
 }

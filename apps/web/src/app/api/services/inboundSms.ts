@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { isOptOutMessage } from './optOutDetection';
 import { registerOptOut } from '@/app/api/utils/compliance';
+import { sendMessage } from '@/app/api/utils/messaging';
 
 export async function processInboundSms(params: {
   from: string;
@@ -34,8 +35,20 @@ export async function processInboundSms(params: {
     // Register compliance opt-out
     await registerOptOut(from, 'sms', { organizationId, reason: 'stop_keyword' });
 
-    // TODO: Send legally-required confirmation SMS via Twilio
-    // await sendSms({ to: from, body: "You've been unsubscribed..." });
+    // [TCPA COMPLIANCE] Send legally-required opt-out confirmation SMS
+    // TCPA requires confirmation within reasonable time
+    try {
+      await sendMessage({
+        leadId: contactRows[0]?.id || 'opt-out',
+        channel: 'sms',
+        to: from,
+        text: "You've been unsubscribed and will not receive further messages from us. Reply START to re-subscribe.",
+        transactional: true, // Bypass dispatch gate for compliance message
+      });
+    } catch (e) {
+      // Log but don't fail - opt-out was still registered
+      console.error('[INBOUND-SMS] Failed to send opt-out confirmation:', e);
+    }
 
     return { action: 'opted_out', contactId: contactRows[0]?.id ?? null };
   }
@@ -81,11 +94,36 @@ export async function processInboundSms(params: {
   };
 }
 
+/**
+ * Check if a phone number belongs to a known operator/owner within the organization.
+ *
+ * Checks two sources:
+ * 1. organization_members.phone - explicit staff phones
+ * 2. users.phone where user belongs to org - member account phones
+ *
+ * This distinguishes operator replies from lead replies for proper routing.
+ */
 async function isKnownOwnerNumber(organizationId: string, phone: string): Promise<boolean> {
-  // TODO: Replace with actual owner lookup when owner numbers are stored
-  // For now, check if the number appears in leads table as a verified owner
-  const rows = await sql`
-    SELECT 1 FROM leads WHERE phone = ${phone} LIMIT 1
+  // Normalize phone for comparison (strip non-digits, ensure E.164 format match)
+  const normalizedPhone = phone.replace(/\D/g, '');
+  const e164Phone = normalizedPhone.startsWith('1') ? `+${normalizedPhone}` : `+1${normalizedPhone}`;
+
+  // Check organization_members table for staff phones
+  const memberRows = await sql`
+    SELECT 1 FROM organization_members
+    WHERE organization_id = ${organizationId}
+      AND (phone = ${phone} OR phone = ${e164Phone} OR phone = ${normalizedPhone})
+    LIMIT 1
   `;
-  return rows.length > 0;
+  if (memberRows.length > 0) return true;
+
+  // Check users table for members of this organization
+  const userRows = await sql`
+    SELECT 1 FROM users u
+    JOIN organization_members om ON om.user_id = u.id
+    WHERE om.organization_id = ${organizationId}
+      AND (u.phone = ${phone} OR u.phone = ${e164Phone} OR u.phone = ${normalizedPhone})
+    LIMIT 1
+  `;
+  return userRows.length > 0;
 }

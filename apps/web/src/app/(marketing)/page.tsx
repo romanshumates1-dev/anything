@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { CheckCircle, Bot, Shield, Zap, BarChart3, MessageSquare } from "lucide-react";
 import { auth } from "@/lib/auth";
+import { UrgencyBanner } from '@/components/marketing';
 
 // Marketing landing owns "/". Guests see this page; authenticated users are
 // sent to the SaaS app at /dashboard. (Previously /app/page.tsx (dashboard)
@@ -13,6 +14,8 @@ export default async function LandingPage() {
   if (session) redirect("/dashboard");
   return (
     <div className="min-h-screen">
+      {/* Urgency Banner */}
+      <UrgencyBanner variant="spots" spotsRemaining={847} discount={50} />
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <div className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
@@ -31,7 +34,7 @@ export default async function LandingPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link
-                  href="/contact"
+                  href="/account/signup"
                   className="inline-flex items-center justify-center rounded-lg bg-blue-700 px-6 py-3 text-base font-medium text-white hover:bg-blue-800 transition-colors shadow-lg"
                 >
                   Start Free Trial
@@ -163,7 +166,7 @@ export default async function LandingPage() {
             Start your free trial. No credit card required. No setup fees.
           </p>
           <Link
-            href="/contact"
+            href="/account/signup"
             className="inline-flex items-center justify-center rounded-lg bg-white px-8 py-3 text-base font-medium text-blue-700 hover:bg-blue-50 transition-colors shadow-lg"
           >
             Get Started Free

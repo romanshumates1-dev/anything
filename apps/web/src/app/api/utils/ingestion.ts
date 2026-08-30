@@ -47,17 +47,40 @@ const HEADER_ALIASES: Record<string, string> = {
   source: 'source',
 };
 
-/** Normalize a phone to E.164-ish (keeps a leading +). Returns '' if none. */
+/**
+ * Validate NANP area code rules: NPA (area code) must start 2-9, NXX (exchange) must start 2-9.
+ * Pattern: [2-9]XX-[2-9]XX-XXXX where X is 0-9
+ * This prevents invalid phone patterns from passing through.
+ */
+function isValidNANP(tenDigits: string): boolean {
+  // Format: NPA (3) + NXX (3) + subscriber (4) = 10 digits
+  // NPA: first digit must be 2-9
+  // NXX: first digit must be 2-9
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(tenDigits);
+}
+
+/** Normalize a phone to E.164-ish (keeps a leading +). Returns '' if none or invalid. */
 export function normalizePhone(phone: string | null | undefined): string {
   if (!phone) return '';
   const trimmed = String(phone).trim();
   const hasPlus = trimmed.startsWith('+');
   const digits = trimmed.replace(/[^0-9]/g, '');
   if (!digits) return '';
+
+  // Handle bare 10-digit US numbers
   if (!hasPlus && digits.length === 10) {
-    // Default bare 10-digit US numbers to +1
+    // Validate NANP rules before defaulting to +1
+    if (!isValidNANP(digits)) return '';
     return '+1' + digits;
   }
+
+  // Handle +1 prefixed numbers (11 digits)
+  if (digits.length === 11 && digits.startsWith('1')) {
+    const tenDigit = digits.slice(1);
+    if (!isValidNANP(tenDigit)) return '';
+    return '+' + digits;
+  }
+
   return (hasPlus ? '+' : '') + digits;
 }
 

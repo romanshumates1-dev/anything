@@ -85,11 +85,23 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Track mount state to handle React StrictMode double-mount and prevent
+    // animation from continuing after cleanup.
+    let isMounted = true;
+    let rafId: number | null = null;
+
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
     const size = 380;
-    canvas.width = size * DPR;
-    canvas.height = size * DPR;
-    ctx.scale(DPR, DPR);
+
+    // Setup canvas dimensions (also called on resize).
+    const setupCanvas = () => {
+      canvas.width = size * DPR;
+      canvas.height = size * DPR;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform before scaling
+      ctx.scale(DPR, DPR);
+    };
+    setupCanvas();
+
     const cx = size / 2, cy = size / 2, R = size / 2 - 24;
 
     // Flatten points once; cap for perf.
@@ -97,8 +109,8 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
     for (const c of campaigns) for (const p of c.points) flat.push({ ...p, color: c.color });
     const capped = flat.slice(0, 400);
 
-    let raf = 0;
     let t = 0;
+    let lastFrameTime = performance.now();
 
     const project = (lat: number, lng: number) => {
       const phi = (lat * Math.PI) / 180;
@@ -232,11 +244,24 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
         ctx.fill();
       }
 
-      if (!reducedMotion && !rot.current.dragging) rot.current.lng += rot.current.vel;
-      t += 1;
-      raf = requestAnimationFrame(draw);
+      // Use delta time for smooth rotation regardless of frame rate.
+      const now = performance.now();
+      const delta = Math.min((now - lastFrameTime) / 16.667, 3); // Cap at 3x to prevent jumps
+      lastFrameTime = now;
+
+      if (!reducedMotion && !rot.current.dragging) {
+        rot.current.lng += rot.current.vel * delta;
+      }
+      t += delta;
+
+      // Only schedule next frame if still mounted (handles StrictMode double-mount).
+      if (isMounted) {
+        rafId = requestAnimationFrame(draw);
+      }
     };
-    draw();
+
+    // Start the animation loop.
+    rafId = requestAnimationFrame(draw);
 
     // Drag to rotate.
     const onDown = (e: PointerEvent) => { rot.current.dragging = true; rot.current.lastX = e.clientX; };
@@ -250,11 +275,31 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
 
+    // Handle window resize to maintain crisp rendering.
+    const onResize = () => {
+      if (!isMounted) return;
+      setupCanvas();
+    };
+    window.addEventListener('resize', onResize);
+
     return () => {
-      cancelAnimationFrame(raf);
+      // Mark as unmounted FIRST to prevent new frames from being scheduled.
+      isMounted = false;
+
+      // Cancel any pending animation frame.
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+
+      // Remove event listeners.
       canvas.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('resize', onResize);
+
+      // Reset dragging state to prevent stale state on remount.
+      rot.current.dragging = false;
     };
   }, [campaigns, reducedMotion]);
 

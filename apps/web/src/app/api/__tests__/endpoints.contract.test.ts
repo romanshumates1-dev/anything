@@ -18,6 +18,11 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(async () => new Headers()),
 }));
 
+const { fn: getOrganization } = vi.hoisted(() => ({ fn: vi.fn(async () => ({ id: 'org_default', name: 'Default', slug: 'default' })) }));
+vi.mock('@/lib/organization-context', () => ({
+  getOrganization: (...args: any[]) => (getOrganization as any)(...args),
+}));
+
 const loggerMocks = vi.hoisted(() => ({
   logEvent: vi.fn(async () => {}),
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },

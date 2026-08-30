@@ -50,8 +50,8 @@ export async function listProfiles(): Promise<NegotiationProfile[]> {
   return rows.map(toProfile);
 }
 
-export async function getProfile(id: string): Promise<NegotiationProfile | null> {
-  const [row] = (await sql`SELECT * FROM negotiation_profiles WHERE id = ${id}`) as Row[];
+export async function getProfile(id: string, organizationId: string): Promise<NegotiationProfile | null> {
+  const [row] = (await sql`SELECT * FROM negotiation_profiles WHERE id = ${id} AND organization_id = ${organizationId}`) as Row[];
   return row ? toProfile(row) : null;
 }
 
@@ -126,9 +126,9 @@ export async function createProfile(p: ProfileInput): Promise<NegotiationProfile
   return toProfile(row);
 }
 
-export async function updateProfile(id: string, patch: Partial<ProfileInput>): Promise<NegotiationProfile | null> {
+export async function updateProfile(id: string, organizationId: string, patch: Partial<ProfileInput>): Promise<NegotiationProfile | null> {
   // Read-modify-write keeps this simple and avoids dynamic SQL assembly.
-  const existing = await getProfile(id);
+  const existing = await getProfile(id, organizationId);
   if (!existing) return null;
   const merged: ProfileInput = {
     name: patch.name ?? existing.name,
@@ -156,7 +156,7 @@ export async function updateProfile(id: string, patch: Partial<ProfileInput>): P
       tone = ${merged.tone}, cadence_overrides = ${JSON.stringify(merged.cadenceOverrides)}::jsonb,
       allows_cold_outbound = ${merged.allowsColdOutbound}, requires_manual_comps = ${merged.requiresManualComps},
       double_close_advisory = ${merged.doubleCloseAdvisory}, updated_at = now()
-    WHERE id = ${id} RETURNING *
+    WHERE id = ${id} AND organization_id = ${organizationId} RETURNING *
   `) as Row[];
   return row ? toProfile(row) : null;
 }

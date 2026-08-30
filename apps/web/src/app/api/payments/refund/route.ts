@@ -1,66 +1,88 @@
 /**
- * Phase P2 — Owner-initiated refund endpoint.
+ * Admin-initiated refund (Phase 4).
  *
  * POST /api/payments/refund
- * Body: { paymentId: string, reason?: string }
+ * Body: { paymentId: string, reason: string, amountCents?: number }
  *
- * Only marks the ledger as refunded (append-only). The actual Stripe refund
- * is OWNER-GATED (requires live Stripe keys).
+ * The prior version was a ledger-only status flip open to ANY authenticated
+ * user, with an optional reason and NO Stripe call (BREAKAGE_TABLE #30). Now:
+ *  - ADMIN-only (requireAdmin),
+ *  - reason MANDATORY,
+ *  - executes through the configured Stripe provider (mock in dev; live/test
+ *    keys are owner-gated),
+ *  - mirrors the returned refund id + status into payments_ledger,
+ *  - writes an admin_audit_log row.
  */
 import sql from '@/app/api/utils/sql';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { requireAdmin } from '@/app/api/utils/authz';
+import { getStripeProvider } from '@/app/api/services/stripeProvider';
+import { adminAudit, clientIp } from '@/app/api/utils/adminAudit';
 import { logEvent } from '@/app/api/utils/logger';
 
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
 
   try {
-    const body = await request.json();
-    const { paymentId, reason } = body;
+    const body = await request.json().catch(() => ({}));
+    const { paymentId, reason, amountCents } = body ?? {};
 
     if (!paymentId) {
       return Response.json({ error: 'Missing paymentId' }, { status: 400 });
     }
-
-    const org = (session.user as any).organizationId || 'default';
-
-    // Find the payment and verify org ownership via contract
-    const rows = await sql`
-      SELECT pl.id, pl.contract_id, pl.status, pl.stripe_payment_intent_id
-      FROM payments_ledger pl
-      JOIN contracts c ON c.id = pl.contract_id
-      WHERE pl.id = ${paymentId} AND c.organization_id = ${org}
-      LIMIT 1
-    `;
-
-    if (rows.length === 0) {
-      return Response.json({ error: 'Payment not found' }, { status: 404 });
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return Response.json({ error: 'reason is required' }, { status: 400 });
     }
 
-    const payment = rows[0];
-
+    // Admins refund across all orgs; look the payment up directly.
+    const [payment] = await sql`
+      SELECT id, contract_id, status, stripe_payment_intent_id, amount_cents
+      FROM payments_ledger WHERE id = ${paymentId} LIMIT 1
+    `;
+    if (!payment) {
+      return Response.json({ error: 'Payment not found' }, { status: 404 });
+    }
     if (payment.status !== 'paid') {
       return Response.json({ error: `Cannot refund payment with status: ${payment.status}` }, { status: 409 });
     }
+    if (!payment.stripe_payment_intent_id) {
+      return Response.json({ error: 'Payment has no payment intent to refund' }, { status: 409 });
+    }
 
-    // Mark as refunded in ledger
-    await sql`
-      UPDATE payments_ledger
-      SET status = 'refunded', refunded_at = NOW(), reason = ${reason || 'owner_refund'}
-      WHERE id = ${paymentId} AND status = 'paid'
-    `;
-
-    await logEvent('payment_refunded', 'contract', payment.contract_id, {
-      paymentId,
-      reason: reason || 'owner_refund',
-      stripePaymentIntentId: payment.stripe_payment_intent_id,
+    // Execute through the configured provider (mock/live). Full refund unless a
+    // partial amountCents is given.
+    const provider = getStripeProvider();
+    const refund = await provider.refund({
+      paymentIntentId: payment.stripe_payment_intent_id,
+      amountCents: Number.isFinite(amountCents) ? amountCents : undefined,
+      reason,
     });
 
-    return Response.json({ ok: true, status: 'refunded' });
+    // Mirror to the ledger (idempotent: only flip a still-'paid' row).
+    const [updated] = await sql`
+      UPDATE payments_ledger
+      SET status = 'refunded', refunded_at = now(), reason = ${reason}, stripe_refund_id = ${refund.refundId}
+      WHERE id = ${paymentId} AND status = 'paid'
+      RETURNING id
+    `;
+    if (!updated) {
+      return Response.json({ error: 'Payment was already refunded' }, { status: 409 });
+    }
+
+    await logEvent('payment_refunded', 'contract', payment.contract_id, {
+      paymentId, reason, refundId: refund.refundId, provider: provider.type,
+    }, undefined);
+
+    await adminAudit({
+      actorId: admin.userId,
+      action: 'payment_refunded',
+      targetType: 'payment',
+      targetId: paymentId,
+      metadata: { reason, refundId: refund.refundId, provider: provider.type, amountCents: amountCents ?? payment.amount_cents },
+      ip: clientIp(request),
+    });
+
+    return Response.json({ ok: true, status: 'refunded', refundId: refund.refundId, provider: provider.type });
   } catch (error: any) {
     console.error('POST /api/payments/refund error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });

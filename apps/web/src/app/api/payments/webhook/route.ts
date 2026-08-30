@@ -14,7 +14,9 @@
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { enqueueJob } from '@/app/api/utils/jobs';
 import { getStripeProvider, type StripeProviderType } from '@/app/api/services/stripeProvider';
+import type Stripe from 'stripe';
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     // Parse the event
-    let event;
+    let event: Stripe.Event;
     try {
       event = provider.parseWebhookEvent(body, signature);
     } catch {
@@ -58,14 +60,15 @@ export async function POST(request: Request) {
       });
     }
 
-    const pi = event.data.object;
+    const pi = event.data.object as Stripe.PaymentIntent;
     const paymentIntentId = pi.id;
 
     // Find the ledger entry for this payment intent
     const ledgerRows = await sql`
-      SELECT id, contract_id, amount_cents, status
-      FROM payments_ledger
-      WHERE stripe_payment_intent_id = ${paymentIntentId}
+      SELECT pl.id, pl.contract_id, pl.amount_cents, pl.status, c.organization_id
+      FROM payments_ledger pl
+      JOIN contracts c ON c.id = pl.contract_id
+      WHERE pl.stripe_payment_intent_id = ${paymentIntentId}
       LIMIT 1
     `;
 
@@ -110,6 +113,16 @@ export async function POST(request: Request) {
           amountCents: ledger.amount_cents,
         });
 
+        // P2: Notify owner on success
+        await enqueueJob(
+          'send_owner_notification',
+          {
+            message: `✅ Payment of $${(ledger.amount_cents / 100).toFixed(2)} for contract ${ledger.contract_id} has been received.`,
+            organizationId: ledger.organization_id,
+          },
+          { dedupeKey: `payment-succeeded-notification-${paymentIntentId}` }
+        );
+
         break;
       }
 
@@ -125,10 +138,20 @@ export async function POST(request: Request) {
           paymentIntentId,
         });
 
+        // P2: Notify owner on failure
+        await enqueueJob(
+          'send_owner_notification',
+          {
+            message: `❌ Payment for contract ${ledger.contract_id} has failed.`,
+            organizationId: ledger.organization_id,
+          },
+          { dedupeKey: `payment-failed-notification-${paymentIntentId}` }
+        );
+
         break;
       }
 
-      case 'payment_intent.refunded': {
+      case 'charge.refunded': {
         await sql`
           UPDATE payments_ledger
           SET status = 'refunded',

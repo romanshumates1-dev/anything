@@ -12,6 +12,10 @@
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import {
+  validateDocumensoSignature,
+  validateDocusignSignature,
+} from '@/app/api/utils/esign-webhook';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -112,10 +116,11 @@ export class DocumensoProvider implements EsignProvider {
   }
 
   verifyWebhook(params: VerifyWebhookParams): boolean {
-    // LIVE: Verify Documenso webhook signature
-    // const expectedSig = crypto.createHmac('sha256', this.apiKey).update(params.body).digest('hex');
-    // return timingSafeEqual(params.signature, expectedSig);
-    return params.signature === 'documenso-valid';
+    return validateDocumensoSignature({
+      body: params.body,
+      signature: params.signature,
+      secret: process.env.DOCUMENSO_WEBHOOK_SECRET || '',
+    });
   }
 }
 
@@ -153,10 +158,11 @@ export class DocusignStub implements EsignProvider {
   }
 
   verifyWebhook(params: VerifyWebhookParams): boolean {
-    // LIVE: Verify DocuSign Connect webhook signature (HMAC-SHA256)
-    // const expectedSig = crypto.createHmac('sha256', this.apiKey).update(params.body).digest('base64');
-    // return timingSafeEqual(params.signature, expectedSig);
-    return params.signature === 'docusign-valid';
+    return validateDocusignSignature({
+      body: params.body,
+      signature: params.signature,
+      secret: process.env.DOCUSIGN_WEBHOOK_SECRET || '',
+    });
   }
 }
 

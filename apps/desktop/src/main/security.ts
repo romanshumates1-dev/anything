@@ -8,6 +8,7 @@
  *   - Deny all permission requests (camera/mic/geolocation/etc.) by default
  *   - Strip/deny webview attachment and disable insecure features
  *   - Never allow loading remote content into a privileged context
+ *   - Relax CSP for inline styles (required for Tailwind CSS + shadcn components)
  */
 import { shell, session } from "electron";
 import type { WebContents } from "electron";
@@ -125,5 +126,38 @@ export function hardenSession(): void {
       return;
     }
     callback(-3); // -3 = use the default result from Chromium.
+  });
+
+  // Relax CSP for inline styles - required by Tailwind CSS + shadcn/ui components
+  // The sidebar component uses inline styles for CSS variables (--sidebar-width, etc.)
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    const headers = details.responseHeaders ?? {};
+    const csp = headers["content-security-policy"];
+    if (csp) {
+      // Append 'unsafe-inline' for styles if not already present
+      // Handle both single and double quote variants
+      const newCsp = csp.map((h) => {
+        if (h.includes("style-src") && !h.includes("'unsafe-inline'") && !h.includes('"unsafe-inline"')) {
+          // Replace style-src 'self' or style-src "self" or style-src * with + 'unsafe-inline'
+          let modified = h;
+          // Try to find and modify style-src directive
+          if (h.includes("style-src 'self'")) {
+            modified = h.replace("style-src 'self'", "style-src 'self' 'unsafe-inline'");
+          } else if (h.includes('style-src "self"')) {
+            modified = h.replace('style-src "self"', 'style-src "self" "unsafe-inline"');
+          } else {
+            // General case: add 'unsafe-inline' after style-src and its sources
+            modified = h.replace(/style-src\s+([^;]+)/, "style-src $1 'unsafe-inline'");
+          }
+          return modified;
+        }
+        return h;
+      });
+      callback({ responseHeaders: { ...headers, "content-security-policy": newCsp } });
+    } else {
+      // No CSP header - inject one that allows inline styles for app styling
+      const newCsp = ["default-src 'self'; style-src 'self' 'unsafe-inline'"];
+      callback({ responseHeaders: { ...headers, "content-security-policy": newCsp } });
+    }
   });
 }

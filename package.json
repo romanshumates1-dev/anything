@@ -30,10 +30,14 @@
     "desktop:dist:linux": "yarn workspace desktop dist:linux"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "eslint": "^9.27.0",
     "oxfmt": "^0.35.0",
     "oxlint": "^1.50.0",
     "typescript-eslint": "^8.33.0"
   },
-  "packageManager": "yarn@4.12.0"
+  "packageManager": "yarn@4.12.0",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1098.0"
+  }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport';
@@ -110,7 +111,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid contacts after parsing', failures: invalidRows }, { status: 400 });
     }
 
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const campaignId = crypto.randomUUID();
     const openingMessageId = crypto.randomUUID();
 
@@ -122,8 +127,8 @@ export async function POST(request: NextRequest) {
     const _result = await sql.transaction([
       sql`INSERT INTO outreach_campaigns (id, organization_id, direction, name, status, daily_volume_max, duration_days, opening_message_id, linked_seller_lead_id, test_mode, dnc_scrub_enabled, litigator_scrub_enabled, ai_negotiation_enabled, ai_valuation_enabled, resurrection_enabled, ab_variants_enabled, budget_cap)
           VALUES (${campaignId}, ${organizationId}, ${direction}, ${name.trim()}, 'DRAFT', ${finalDailyMax}, ${finalDuration}, ${openingMessageId}, ${linkedSellerLeadId || null}, ${testMode}, ${dncScrubEnabled}, ${litigatorScrubEnabled}, ${aiNegotiationEnabled}, ${aiValuationEnabled}, ${resurrectionEnabled}, ${abVariantsEnabled}, ${budgetCap || null})`,
-      sql`INSERT INTO campaign_message_templates (id, organization_id, kind, body, sequence_order, delay_hours)
-          VALUES (${openingMessageId}, ${organizationId}, 'OPENING', ${openingMessage}, 0, 0)`,
+      sql`INSERT INTO campaign_message_templates (id, organization_id, campaign_id, kind, body, sequence_order, delay_hours)
+          VALUES (${openingMessageId}, ${organizationId}, ${campaignId}, 'OPENING', ${openingMessage}, 0, 0)`,
       ...followUps.map((fu, idx) => {
         const fuId = crypto.randomUUID();
         return sql`INSERT INTO campaign_message_templates (id, organization_id, campaign_id, kind, body, sequence_order, delay_hours)
@@ -170,7 +175,11 @@ export async function GET() {
   }
 
   try {
-    const organizationId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const organizationId = organization.id;
     const rows = await sql`
       SELECT 
         oc.*,

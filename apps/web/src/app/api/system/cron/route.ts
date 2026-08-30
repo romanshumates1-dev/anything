@@ -17,6 +17,7 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
+import { checkInspectionPeriods } from '@/app/api/services/contractNotifications';
 
 type CronTask = {
   name: string;
@@ -158,11 +159,215 @@ async function handleLogCleanup() {
   return { processed: deleted, detail: `Cleaned ${deleted} old log entries` };
 }
 
+/**
+ * Task 5: Dead-letter alert (every 15 minutes)
+ *
+ * Scans for jobs that exhausted all retries and notifies the owner.
+ * Nothing silently dropped — Phase 0B requirement.
+ */
+async function handleDeadLetterAlert() {
+  const { alertDeadLetters } = await import('@/app/api/utils/jobSupervisor');
+  const { repairStuckCampaignContacts } = await import('@/app/api/utils/jobSupervisor');
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM jobs
+    WHERE status = 'dead'
+      AND (payload->>'dead_alerted')::boolean IS NOT TRUE
+  `.catch(() => []);
+  let totalAlerted = 0;
+  for (const org of orgs as any[]) {
+    const count = await alertDeadLetters(org.organization_id);
+    totalAlerted += count;
+  }
+  const repaired = await repairStuckCampaignContacts();
+  return { processed: totalAlerted, detail: `Dead-letter alerts: ${totalAlerted} jobs, ${repaired} stuck contacts repaired` };
+}
+
+/**
+ * Task 6: Pipeline Health Check (exponential: 1-2-4-8 hours)
+ *
+ * Self-healing AI provider monitoring. If primary AI is down, automatically
+ * falls back to Ollama. Also checks for stuck contracts, contacts, dead jobs.
+ */
+async function handlePipelineHealth() {
+  const {
+    runPipelineHealthCheck,
+    updateHealthState,
+  } = await import('@/app/api/utils/pipeline-health-engine');
+
+  const report = await runPipelineHealthCheck({ autoHeal: true });
+  const criticalIssues = report.issues.filter((i) => i.severity === 'critical');
+  const healthy = criticalIssues.length === 0;
+
+  // Update state for exponential backoff
+  const { consecutiveFailures, nextCheckMs } = await updateHealthState(healthy);
+
+  const summary = [
+    `AI: ${report.activeProvider} (fallback=${report.fallbackActivated})`,
+    `Issues: ${report.issues.length} (${criticalIssues.length} critical)`,
+    `Healed: ${report.healed.filter((h) => h.success).length}`,
+    `Next check: ${Math.round(nextCheckMs / 3600000)}h`,
+  ].join(', ');
+
+  return {
+    processed: report.issues.length + report.healed.length,
+    detail: summary,
+  };
+}
+
+/**
+ * Task 7: Resurrection (daily)
+ *
+ * Re-touches COLD/DEAL_NO_AGREEMENT leads at 30/60/90/180 days.
+ * Opted-out contacts are excluded at the query level.
+ */
+async function handleResurrection() {
+  const { runResurrection } = await import('@/app/api/utils/resurrectionEngine');
+  // Run for all orgs that have the resurrection flag on
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM app_settings
+    WHERE key = 'beta_flags' AND (value->>'resurrection')::boolean = true
+  `.catch(() => []);
+  let totalQueued = 0;
+  let totalSkipped = 0;
+  for (const org of orgs as any[]) {
+    const result = await runResurrection(org.organization_id);
+    totalQueued += result.queued;
+    totalSkipped += result.skipped;
+  }
+  return { processed: totalQueued, detail: `Resurrection: ${totalQueued} queued, ${totalSkipped} skipped across ${(orgs as any[]).length} orgs` };
+}
+
+/**
+ * Task 8: Contract Inspection Monitor (every 6 hours)
+ *
+ * Monitors contracts approaching inspection period expiry.
+ * Sends alerts at N-7, N-4, N-2, and N-0 (critical) days.
+ * Prevents silent expiry of contracts without buyer assignment.
+ */
+async function handleContractInspection() {
+  try {
+    await checkInspectionPeriods();
+
+    // Also check for closing deadlines
+    const closingContracts = await sql`
+      SELECT
+        c.id,
+        c.property_address,
+        ba.buyer_id,
+        ba.assignment_fee_cents,
+        b.name as buyer_name,
+        c.metadata->>'closingDate' as closing_date,
+        EXTRACT(DAY FROM ((c.metadata->>'closingDate')::date - CURRENT_DATE))::int as days_to_close
+      FROM contracts c
+      JOIN buyer_assignments ba ON ba.contract_id = c.id
+      JOIN buyers b ON b.id = ba.buyer_id
+      WHERE c.status = 'ASSIGNED'
+        AND ba.status = 'SIGNED'
+        AND c.metadata->>'closingDate' IS NOT NULL
+        AND ((c.metadata->>'closingDate')::date - CURRENT_DATE) <= 3
+        AND ((c.metadata->>'closingDate')::date - CURRENT_DATE) >= 0
+    `.catch(() => []);
+
+    const { scheduleClosingReminder } = await import('@/app/api/services/contractNotifications');
+    for (const contract of closingContracts as any[]) {
+      await scheduleClosingReminder({
+        contractId: contract.id,
+        closingDate: new Date(contract.closing_date),
+        propertyAddress: contract.property_address || 'Unknown',
+        buyerName: contract.buyer_name,
+        assignmentFee: contract.assignment_fee_cents,
+      });
+    }
+
+    return { processed: closingContracts.length, detail: `Checked inspection periods and ${closingContracts.length} closing contracts` };
+  } catch (error: any) {
+    console.error('Contract inspection error:', error);
+    return { processed: 0, detail: `Error: ${error.message}` };
+  }
+}
+
+/**
+ * Task 9: Stalled Conversation Recovery (every 6 hours)
+ *
+ * Re-engages conversations that replied but went silent mid-negotiation.
+ * Distinct from resurrection (30-180 day cold leads).
+ * Targets 48-168 hour stalled conversations - highest conversion potential.
+ */
+async function handleStalledRecovery() {
+  const { runStalledRecoveryAll } = await import('@/app/api/utils/stalledConversationEngine');
+  const result = await runStalledRecoveryAll();
+  return {
+    processed: result.totalQueued,
+    detail: `Stalled recovery: ${result.totalQueued} queued, ${result.totalSkipped} skipped across ${result.organizations} orgs`,
+  };
+}
+
+/**
+ * Task 10: Buyer Pipeline Maintenance (every 6 hours)
+ *
+ * Runs buyer-side equivalents of seller pipeline maintenance:
+ * - Re-engage stalled buyers (48-168h since last activity)
+ * - Reactivate dormant buyers (60-180 days inactive)
+ */
+async function handleBuyerPipeline() {
+  const { runBuyerPipelineMaintenance } = await import('@/app/api/utils/buyerPipelineEngine');
+
+  const orgs = await sql`
+    SELECT DISTINCT organization_id FROM buyers
+    WHERE updated_at > NOW() - INTERVAL '180 days'
+  `.catch(() => []);
+
+  let totalReengaged = 0;
+  let totalReactivated = 0;
+
+  for (const org of orgs as any[]) {
+    const result = await runBuyerPipelineMaintenance(org.organization_id);
+    totalReengaged += result.stalledReengaged;
+    totalReactivated += result.dormantReactivated;
+  }
+
+  return {
+    processed: totalReengaged + totalReactivated,
+    detail: `Buyer pipeline: ${totalReengaged} stalled re-engaged, ${totalReactivated} dormant reactivated across ${(orgs as any[]).length} orgs`,
+  };
+}
+
+/**
+ * Task 11: Ghost Error Sweep (daily, pre-campaign)
+ *
+ * Comprehensive system-wide scan for silent failures, orphaned records,
+ * stuck processes, and inconsistent state. Auto-fixes safe issues.
+ */
+async function handleGhostSweep() {
+  const { runGhostErrorSweep } = await import('@/app/api/utils/ghostErrorSweep');
+  const result = await runGhostErrorSweep(true); // autoFix enabled
+
+  const summary = [
+    `Critical: ${result.summary.critical}`,
+    `Warning: ${result.summary.warning}`,
+    `Info: ${result.summary.info}`,
+    `Auto-fixed: ${result.summary.autoFixed}`,
+    `Duration: ${result.duration_ms}ms`,
+  ].join(', ');
+
+  return {
+    processed: result.errors.length,
+    detail: `Ghost sweep: ${summary}`,
+  };
+}
+
 const TASKS: Record<string, CronTask> = {
   'stuck-conversations': { name: 'stuck-conversations', handler: handleStuckConversations },
   'retry-sms': { name: 'retry-sms', handler: handleRetrySms },
   'daily-report': { name: 'daily-report', handler: handleDailyReport },
   'log-cleanup': { name: 'log-cleanup', handler: handleLogCleanup },
+  'dead-letter-alert': { name: 'dead-letter-alert', handler: handleDeadLetterAlert },
+  'pipeline-health': { name: 'pipeline-health', handler: handlePipelineHealth },
+  'resurrection': { name: 'resurrection', handler: handleResurrection },
+  'contract-inspection': { name: 'contract-inspection', handler: handleContractInspection },
+  'stalled-recovery': { name: 'stalled-recovery', handler: handleStalledRecovery },
+  'buyer-pipeline': { name: 'buyer-pipeline', handler: handleBuyerPipeline },
+  'ghost-sweep': { name: 'ghost-sweep', handler: handleGhostSweep },
 };
 
 export async function POST(request: Request) {
@@ -226,6 +431,13 @@ export async function GET() {
       'retry-sms': 'hourly',
       'daily-report': 'nightly',
       'log-cleanup': 'weekly',
+      'dead-letter-alert': 'every 15 minutes',
+      'pipeline-health': 'exponential 1-2-4-8 hours (self-healing)',
+      'resurrection': 'daily',
+      'contract-inspection': 'every 6 hours (inspection period + closing alerts)',
+      'stalled-recovery': 'every 6 hours (re-engage mid-negotiation cold conversations)',
+      'buyer-pipeline': 'every 6 hours (buyer re-engagement + reactivation)',
+      'ghost-sweep': 'daily (pre-campaign system health check + auto-fix)',
     },
     timestamp: new Date().toISOString(),
   });

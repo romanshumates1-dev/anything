@@ -6,8 +6,18 @@
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { escapeHtml } from '@/app/api/utils/escapeHtml';
 
 export async function POST(request: Request) {
+  // Hard production gate (BREAKAGE_TABLE #34) — see mock-checkout/route.ts
+  // for why the pi_mock_ prefix alone was never a real safety boundary.
+  if (process.env.NODE_ENV === 'production') {
+    return new Response(JSON.stringify({ error: 'Not available in production' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     const formData = await request.formData();
     const paymentIntentId = formData.get('pi') as string;
@@ -16,6 +26,14 @@ export async function POST(request: Request) {
 
     if (!paymentIntentId || !contractId || !amount) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    // The GET page checks this prefix, but /complete itself never did — this
+    // endpoint alone could flip ANY payment intent id to paid.
+    if (!paymentIntentId.startsWith('pi_mock_')) {
+      return new Response(JSON.stringify({ error: 'Invalid PI ID for mock endpoint' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -56,7 +74,7 @@ export async function POST(request: Request) {
     <div class="badge">✓ PAID</div>
     <h1>Payment Successful</h1>
     <p>Your assignment fee has been processed. This window can be closed.</p>
-    <p style="font-size: 0.875rem; color: #999;">Contract: ${contractId.slice(0, 8)}… | Amount: $${(Number(amount) / 100).toFixed(2)}</p>
+    <p style="font-size: 0.875rem; color: #999;">Contract: ${escapeHtml(contractId.slice(0, 8))}… | Amount: $${(Number(amount) / 100).toFixed(2)}</p>
   </div>
 </body>
 </html>`,

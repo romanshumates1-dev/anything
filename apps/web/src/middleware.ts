@@ -4,6 +4,8 @@ import {
   hasRequiredRole,
   isEmailDomainAllowed,
 } from '@/app/api/utils/access-control';
+import { REQUIRED_ACCEPTANCE_VERSIONS, ACCEPTANCE_DOC_TYPES } from '@/lib/legal-versions';
+import { isAccessDenied } from '@/lib/user-status';
 
 /**
  * Two independent server-side gates run here, on the edge, before any route
@@ -123,7 +125,8 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
   const prefix = key.split('_').slice(0, 2).join('_') + '_';
 
   const [record] = await sql`
-    SELECT k.id, k.revoked, k.rate_limit_per_min, u.email AS owner_email, u.role AS owner_role
+    SELECT k.id, k.revoked, k.rate_limit_per_min, u.email AS owner_email, u.role AS owner_role,
+           u.banned AS owner_banned, u.suspended_until AS owner_suspended_until
     FROM api_keys k
     LEFT JOIN "user" u ON u.id = k.created_by
     WHERE k.key_hash = ${keyHash} AND k.prefix = ${prefix}
@@ -134,13 +137,15 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
     return NextResponse.json({ error: 'Invalid or revoked API key' }, { status: 401 });
   }
 
-  // Domain-lock layer 4: keys are only VALID for allowed-domain users with an
-  // approved role. Fail closed on ownerless keys (created_by no longer
-  // resolves to a user) — reissue under a live admin account instead.
+  // Domain-lock layer 4 + ban gate: keys are only VALID for allowed-domain,
+  // approved-role, NON-banned users. Fail closed on ownerless keys (created_by
+  // no longer resolves) — reissue under a live admin account instead. Banning
+  // a user thus rejects their API tokens too (Phase 4 DoD).
   if (
     !record.owner_email ||
     !isEmailDomainAllowed(record.owner_email) ||
-    !hasRequiredRole(record.owner_role)
+    !hasRequiredRole(record.owner_role) ||
+    isAccessDenied({ banned: record.owner_banned, suspended_until: record.owner_suspended_until })
   ) {
     return NextResponse.json({ error: 'API key owner is not authorized' }, { status: 403 });
   }
@@ -178,14 +183,28 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
 const ACCESS_GATE_EXEMPT_PREFIXES = [
   '/api/auth',
   '/api/sms/inbound',
+  '/api/sms/status',
   '/api/jobs/process',
   '/api/system',
   '/api/openapi',
+  // Recording legal acceptance is a PRE-access action: a brand-new signup is a
+  // pending-access MEMBER, but must still be able to accept ToS/Privacy (and
+  // the re-accept gate) before an admin grants full access. The route itself
+  // requires a valid session, and out-of-domain users can't create accounts,
+  // so exempting it from the role gate opens no hole. (Phase 3)
+  '/api/legal',
+  // Public, unauthenticated funnel: inbound consent capture from a public
+  // landing page. No session is required (or desirable) because the point is
+  // public reachability.
+  '/api/consent',
 ];
 
 interface SessionUserRow {
+  id: string;
   email: string;
   role: string | null;
+  banned: boolean;
+  suspended_until: string | null;
 }
 
 /**
@@ -207,7 +226,7 @@ async function lookupSessionUser(req: NextRequest): Promise<SessionUserRow | nul
   if (!token) return null;
 
   const [row] = await sql`
-    SELECT u.email, u.role
+    SELECT u.id, u.email, u.role, u.banned, u.suspended_until
     FROM session s
     JOIN "user" u ON u.id = s."userId"
     WHERE s.token = ${token} AND s."expiresAt" > now()
@@ -242,6 +261,20 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
 
   const isApi = pathname.startsWith('/api/');
 
+  // Ban gate (Phase 4): a banned or currently-suspended user is rejected even
+  // on an already-minted session. Deleting their session rows on ban makes
+  // this immediate; this check also covers a session that outlived the DELETE
+  // and rejects the account regardless of role/domain.
+  if (isAccessDenied(user)) {
+    if (isApi) {
+      return NextResponse.json(
+        { error: 'Account suspended', code: 'ACCOUNT_BANNED' },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL('/access-restricted', req.url));
+  }
+
   if (!isEmailDomainAllowed(user.email)) {
     if (isApi) {
       return NextResponse.json(
@@ -262,10 +295,44 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(new URL('/pending-access', req.url));
   }
 
+  // Re-accept gate: an authenticated, allowed user who has NOT accepted the
+  // current ToS + Privacy versions is held at the /legal/accept interstitial
+  // for page requests. On a version bump, existing acceptance rows carry the
+  // old version, so this fires until they re-accept. API requests are not
+  // redirected here (their own routes enforce what they need); this gate is
+  // about the interactive app surface. The interstitial page itself and the
+  // acceptance endpoint are exempt so the user can actually accept.
+  if (!isApi && pathname !== '/legal/accept') {
+    try {
+      const rows = await sql`
+        SELECT document_type FROM legal_acceptances
+        WHERE user_id = ${user.id}
+          AND (
+            (document_type = ${ACCEPTANCE_DOC_TYPES.tos} AND version = ${REQUIRED_ACCEPTANCE_VERSIONS.tos})
+            OR (document_type = ${ACCEPTANCE_DOC_TYPES.privacy} AND version = ${REQUIRED_ACCEPTANCE_VERSIONS.privacy})
+          )
+      `;
+      const accepted = new Set((rows as { document_type: string }[]).map((r) => r.document_type));
+      const needsReaccept =
+        !accepted.has(ACCEPTANCE_DOC_TYPES.tos) || !accepted.has(ACCEPTANCE_DOC_TYPES.privacy);
+      if (needsReaccept) {
+        return NextResponse.redirect(new URL('/legal/accept', req.url));
+      }
+    } catch (error) {
+      // Fail-open on a DB hiccup: never lock the whole app out of a transient
+      // error. The gate re-fires on the next request.
+      console.error('[middleware] legal re-accept check failed', error);
+    }
+  }
+
   return NextResponse.next();
 }
 
 export function middleware(req: NextRequest): Promise<NextResponse> {
+  // Public monitoring endpoint - bypass all auth
+  if (req.nextUrl.pathname === '/api/campaigns/monitor') {
+    return Promise.resolve(NextResponse.next());
+  }
   if (req.nextUrl.pathname.startsWith('/api/v1/')) {
     return enforceRateLimit(req);
   }
@@ -279,6 +346,7 @@ export function middleware(req: NextRequest): Promise<NextResponse> {
 export const config = {
   matcher: [
     '/api/:path*',
+    '/admin/:path*',
     '/dashboard/:path*',
     '/campaigns/:path*',
     '/inbox/:path*',

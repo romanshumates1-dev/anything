@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
+import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 
 export async function GET(
@@ -14,7 +15,11 @@ export async function GET(
 
   try {
     const leadId = params.leadId;
-    const orgId = (session.user as any).organizationId || 'default';
+    const organization = await getOrganization();
+    if (!organization) {
+      return NextResponse.json({ error: 'No organization found' }, { status: 403 });
+    }
+    const orgId = organization.id;
 
     const messages = await sql`
       SELECT 

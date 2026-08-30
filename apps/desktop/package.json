@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "DealFlow AI",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DealFlow AI — cross-platform desktop application for the real-estate SaaS.",
   "author": {
     "name": "DealFlow AI"
@@ -20,9 +20,12 @@
     "dist": "node scripts/generate-icons.mjs && node scripts/clean.mjs && node scripts/build.mjs && electron-builder",
     "dist:win": "node scripts/generate-icons.mjs && node scripts/clean.mjs && node scripts/build.mjs && electron-builder --win",
     "dist:mac": "node scripts/generate-icons.mjs && node scripts/clean.mjs && node scripts/build.mjs && electron-builder --mac",
-    "dist:linux": "node scripts/generate-icons.mjs && node scripts/clean.mjs && node scripts/build.mjs && electron-builder --linux"
+    "dist:linux": "node scripts/generate-icons.mjs && node scripts/clean.mjs && node scripts/build.mjs && electron-builder --linux",
+    "windows:installer": "node scripts/windows-installer.mjs",
+    "windows:dir": "node scripts/windows-installer.mjs --dir-only"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "electron-log": "^5.2.4",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9"
