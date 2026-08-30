@@ -313,8 +313,8 @@ export default function CampaignPlannerPage() {
 
       {/* Side-by-side Plans */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <PlanCard plan={plans.breadth} icon={<Users className="h-5 w-5" />} color="blue" isMeasured={isMeasured} />
-        <PlanCard plan={plans.depth} icon={<Repeat className="h-5 w-5" />} color="green" winner isMeasured={isMeasured} />
+        <PlanCard plan={plans.breadth} icon={<Users className="h-5 w-5" />} color="blue" winner={plans.breadth.costPerExpectedContract < plans.depth.costPerExpectedContract} isMeasured={isMeasured} />
+        <PlanCard plan={plans.depth} icon={<Repeat className="h-5 w-5" />} color="green" winner={plans.depth.costPerExpectedContract <= plans.breadth.costPerExpectedContract} isMeasured={isMeasured} />
       </div>
 
       {/* What Would Have To Be True */}
@@ -392,16 +392,13 @@ function PlanCard({ plan, icon, color, winner, isMeasured }: {
   winner?: boolean;
   isMeasured: boolean;
 }) {
-  const colorStyles = color === 'blue'
-    ? 'border-[var(--accent-blue)]/30 text-[var(--accent-blue)]'
-    : 'border-[var(--color-success)]/30 text-[var(--color-success)]';
   const winnerClass = winner ? 'ring-2 ring-[var(--color-success)]/50' : '';
   const touchesPerContact = plan.channels.sms + plan.channels.email + plan.channels.call;
   return (
     <GlassCard className={`${winnerClass}`}>
       <h3 className={`text-lg font-semibold flex items-center gap-2 mb-4 ${color === 'blue' ? 'text-[var(--accent-blue)]' : 'text-[var(--color-success)]'}`}>
         {icon} {plan.label}
-        {winner && <Badge className="ml-auto bg-[var(--color-success)]/10 text-[var(--color-success)] text-xs">Better $/contract</Badge>}
+        {winner && <Badge className="ml-auto bg-[var(--color-success)]/10 text-[var(--color-success)] text-xs">Lower $/contract</Badge>}
       </h3>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-2 text-sm">

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useMemo } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -7,7 +8,14 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target, Globe, Brain, MapPin } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, TrendingUp, Mail, Phone, CheckCircle, DollarSign, PhoneOff, Target, Globe, Brain, MapPin, Filter } from 'lucide-react';
 
 const CampaignGlobe = dynamic(() => import('@/components/analytics/CampaignGlobe'), {
   ssr: false,
@@ -23,11 +31,15 @@ const pct = (n: number) => `${(n ?? 0).toFixed(1)}%`;
 
 export default function AnalyticsPage() {
   const { data: session, isPending: authLoading } = useSession();
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('all');
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['analytics'],
+    queryKey: ['analytics', selectedCampaignId],
     queryFn: async () => {
-      const res = await fetch('/api/analytics');
+      const url = selectedCampaignId === 'all'
+        ? '/api/analytics'
+        : `/api/analytics?campaignId=${selectedCampaignId}`;
+      const res = await fetch(url);
       if (!res.ok) return null;
       return res.json();
     },
@@ -65,6 +77,21 @@ export default function AnalyticsPage() {
   const totals = stats?.totals || {};
   const perCampaign: any[] = stats?.perCampaign || [];
 
+  // Filtered campaign list for display (when a specific campaign is selected)
+  const filteredPerCampaign = useMemo(() => {
+    if (selectedCampaignId === 'all') return perCampaign;
+    return perCampaign.filter((c) => c.id === selectedCampaignId);
+  }, [selectedCampaignId, perCampaign]);
+
+  // Campaign options for the dropdown (use full list for selector)
+  const campaignOptions = useMemo(() => {
+    return perCampaign.map((c) => ({
+      id: c.id,
+      name: c.name,
+      testMode: c.testMode,
+    }));
+  }, [perCampaign]);
+
   const funnelStages = [
     { label: 'Sent', value: funnel.sent, icon: Mail, color: 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]' },
     { label: 'Delivered', value: funnel.delivered, icon: CheckCircle, color: 'bg-[var(--color-success)]/10 text-[var(--color-success)]' },
@@ -91,7 +118,30 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Analytics</h1>
           <p className="text-[var(--text-secondary)] mt-1">Conversion, cost, and margin across your campaigns</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-[var(--text-muted)]" />
+            <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+              <SelectTrigger className="w-[200px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]">
+                <SelectValue placeholder="All Campaigns" />
+              </SelectTrigger>
+              <SelectContent className="bg-[var(--bg-secondary)] border-[var(--border-subtle)]">
+                <SelectItem value="all" className="text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)]">
+                  All Campaigns
+                </SelectItem>
+                {campaignOptions.map((campaign) => (
+                  <SelectItem
+                    key={campaign.id}
+                    value={campaign.id}
+                    className="text-[var(--text-primary)] focus:bg-[var(--bg-tertiary)]"
+                  >
+                    {campaign.name}
+                    {campaign.testMode && ' (TEST)'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Link href="/analytics/advanced" className="px-4 py-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] text-sm flex items-center gap-2">
             <Brain className="h-4 w-4" />
             AI Campaign Review
@@ -185,7 +235,7 @@ export default function AnalyticsPage() {
           {/* Per-campaign breakdown */}
           <GlassCard>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Per-Campaign Breakdown</h3>
-            {perCampaign.length === 0 ? (
+            {filteredPerCampaign.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)] py-4">No campaigns yet.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -202,7 +252,7 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {perCampaign.map((c) => (
+                    {filteredPerCampaign.map((c) => (
                       <tr key={c.id} className="border-b border-[var(--border-subtle)] last:border-0">
                         <td className="py-2 pr-4 font-medium text-[var(--text-primary)]">
                           {c.name} {c.testMode && <Badge className="ml-1 text-[10px] bg-[var(--color-warning)]/10 text-[var(--color-warning)]">TEST</Badge>}

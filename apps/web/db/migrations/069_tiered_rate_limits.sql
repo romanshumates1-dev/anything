@@ -8,7 +8,7 @@
 -- RATE LIMITS BY TIER:
 --
 -- Free:
---   - Daily: 10 AI requests, 5 SMS, 25 emails
+--   - Daily: 5 AI requests, 5 SMS, 25 emails
 --   - Weekly: 50 AI requests, 25 SMS, 100 emails
 --   - Monthly: 50 AI requests (hard cap), 0 SMS, 25 emails
 --
@@ -41,7 +41,7 @@ BEGIN;
 -- Update Free tier with rate limits
 UPDATE public.subscription_plans
 SET limits = limits || '{
-  "daily_ai_requests": 10,
+  "daily_ai_requests": 5,
   "daily_sms": 5,
   "daily_emails": 25,
   "weekly_ai_requests": 50,

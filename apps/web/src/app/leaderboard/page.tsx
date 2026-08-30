@@ -142,7 +142,7 @@ function PodiumCard({
   const displayName = isCurrentUser ? 'You' : user.name;
 
   return (
-    <div className={`flex flex-col items-center transition-all duration-300 hover:scale-105 ${rank === 1 ? 'order-2' : rank === 2 ? 'order-1' : 'order-3'}`}>
+    <div className="flex flex-col items-center transition-all duration-300 hover:scale-105">
       <div className="relative mb-3">
         <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${c.color} flex items-center justify-center shadow-lg ${c.glowColor} shadow-xl ${isCurrentUser ? 'ring-2 ring-[var(--accent-blue)] ring-offset-2 ring-offset-[var(--bg-primary)]' : ''} ${rank === 1 ? 'animate-pulse' : ''}`}>
           <span className="text-white text-lg font-bold">{user.avatar}</span>

@@ -102,7 +102,7 @@ async function getPlanLimits(
     // Default free tier limits
     return {
       limits: {
-        daily_ai_requests: 10,
+        daily_ai_requests: 5,
         daily_sms: 5,
         daily_emails: 25,
         weekly_ai_requests: 50,

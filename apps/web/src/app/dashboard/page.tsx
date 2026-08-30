@@ -9,6 +9,7 @@ import { StatusDot } from '@/components/ui/StatusDot';
 import { ProfitChart } from '@/components/dashboard/ProfitChart';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { ActionItems } from '@/components/dashboard/ActionItems';
+import { OnboardingTutorial } from '@/components/onboarding';
 import {
   CurrencyDollarIcon,
   UserGroupIcon,
@@ -86,6 +87,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* First-time user onboarding tutorial */}
+      <OnboardingTutorial />
+
       {/* Welcome Header */}
       <div className="flex items-center justify-between">
         <div>
