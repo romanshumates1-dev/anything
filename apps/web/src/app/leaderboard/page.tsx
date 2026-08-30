@@ -5,7 +5,6 @@ import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -22,37 +21,76 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Users,
   DollarSign,
   Target,
   Zap,
   Star,
+  Info,
+  Flame,
+  Award,
 } from 'lucide-react';
 
 type TimePeriod = 'week' | 'month' | 'all';
 
-// Mock leaderboard data
+/**
+ * Mock leaderboard data for development.
+ *
+ * Future API endpoint: GET /api/leaderboard
+ * Query params:
+ *   - period: 'week' | 'month' | 'all' (default: 'month')
+ *   - limit: number (default: 20)
+ *   - offset: number (default: 0)
+ *
+ * Response: {
+ *   leaderboard: LeaderboardEntry[],
+ *   currentUser: { rank: number, entry: LeaderboardEntry },
+ *   totalUsers: number
+ * }
+ */
 const mockLeaderboard = [
-  { id: '1', name: 'Alex Johnson', avatar: 'AJ', deals: 24, revenue: 125000, responseRate: 42, points: 4850, trend: 'up' as const, streak: 15 },
-  { id: '2', name: 'Sarah Chen', avatar: 'SC', deals: 21, revenue: 98000, responseRate: 38, points: 4200, trend: 'up' as const, streak: 12 },
-  { id: '3', name: 'Mike Williams', avatar: 'MW', deals: 18, revenue: 87000, responseRate: 35, points: 3600, trend: 'same' as const, streak: 8 },
-  { id: '4', name: 'Emily Davis', avatar: 'ED', deals: 16, revenue: 76000, responseRate: 33, points: 3200, trend: 'down' as const, streak: 5 },
-  { id: '5', name: 'David Brown', avatar: 'DB', deals: 15, revenue: 72000, responseRate: 31, points: 3000, trend: 'up' as const, streak: 10 },
-  { id: '6', name: 'Lisa Anderson', avatar: 'LA', deals: 14, revenue: 68000, responseRate: 30, points: 2800, trend: 'same' as const, streak: 6 },
-  { id: '7', name: 'James Wilson', avatar: 'JW', deals: 13, revenue: 64000, responseRate: 28, points: 2600, trend: 'up' as const, streak: 4 },
-  { id: '8', name: 'current_user', avatar: 'YU', deals: 12, revenue: 58000, responseRate: 27, points: 2400, trend: 'up' as const, streak: 7, isCurrentUser: true },
-  { id: '9', name: 'Jennifer Martinez', avatar: 'JM', deals: 11, revenue: 52000, responseRate: 25, points: 2200, trend: 'down' as const, streak: 3 },
-  { id: '10', name: 'Robert Taylor', avatar: 'RT', deals: 10, revenue: 48000, responseRate: 24, points: 2000, trend: 'same' as const, streak: 2 },
-  { id: '11', name: 'Amanda Thomas', avatar: 'AT', deals: 9, revenue: 44000, responseRate: 22, points: 1800, trend: 'up' as const, streak: 5 },
-  { id: '12', name: 'Chris Jackson', avatar: 'CJ', deals: 8, revenue: 40000, responseRate: 20, points: 1600, trend: 'down' as const, streak: 1 },
-  { id: '13', name: 'Nicole White', avatar: 'NW', deals: 7, revenue: 35000, responseRate: 18, points: 1400, trend: 'same' as const, streak: 4 },
-  { id: '14', name: 'Kevin Harris', avatar: 'KH', deals: 6, revenue: 30000, responseRate: 16, points: 1200, trend: 'up' as const, streak: 2 },
-  { id: '15', name: 'Melissa Clark', avatar: 'MC', deals: 5, revenue: 25000, responseRate: 15, points: 1000, trend: 'down' as const, streak: 1 },
+  { id: '1', name: 'Alex Johnson', avatar: 'AJ', deals: 24, revenue: 125000, responseRate: 42, points: 4850, trend: 'up' as const, streak: 15, rankChange: 2 },
+  { id: '2', name: 'Sarah Chen', avatar: 'SC', deals: 21, revenue: 98000, responseRate: 38, points: 4200, trend: 'up' as const, streak: 12, rankChange: 1 },
+  { id: '3', name: 'Mike Williams', avatar: 'MW', deals: 18, revenue: 87000, responseRate: 35, points: 3600, trend: 'same' as const, streak: 8, rankChange: 0 },
+  { id: '4', name: 'Emily Davis', avatar: 'ED', deals: 16, revenue: 76000, responseRate: 33, points: 3200, trend: 'down' as const, streak: 5, rankChange: -2 },
+  { id: '5', name: 'David Brown', avatar: 'DB', deals: 15, revenue: 72000, responseRate: 31, points: 3000, trend: 'up' as const, streak: 10, rankChange: 3 },
+  { id: '6', name: 'Lisa Anderson', avatar: 'LA', deals: 14, revenue: 68000, responseRate: 30, points: 2800, trend: 'same' as const, streak: 6, rankChange: 0 },
+  { id: '7', name: 'James Wilson', avatar: 'JW', deals: 13, revenue: 64000, responseRate: 28, points: 2600, trend: 'up' as const, streak: 4, rankChange: 1 },
+  { id: '8', name: 'current_user', avatar: 'YU', deals: 12, revenue: 58000, responseRate: 27, points: 2400, trend: 'up' as const, streak: 7, isCurrentUser: true, rankChange: 2 },
+  { id: '9', name: 'Jennifer Martinez', avatar: 'JM', deals: 11, revenue: 52000, responseRate: 25, points: 2200, trend: 'down' as const, streak: 3, rankChange: -1 },
+  { id: '10', name: 'Robert Taylor', avatar: 'RT', deals: 10, revenue: 48000, responseRate: 24, points: 2000, trend: 'same' as const, streak: 2, rankChange: 0 },
+  { id: '11', name: 'Amanda Thomas', avatar: 'AT', deals: 9, revenue: 44000, responseRate: 22, points: 1800, trend: 'up' as const, streak: 5, rankChange: 2 },
+  { id: '12', name: 'Chris Jackson', avatar: 'CJ', deals: 8, revenue: 40000, responseRate: 20, points: 1600, trend: 'down' as const, streak: 1, rankChange: -3 },
+  { id: '13', name: 'Nicole White', avatar: 'NW', deals: 7, revenue: 35000, responseRate: 18, points: 1400, trend: 'same' as const, streak: 4, rankChange: 0 },
+  { id: '14', name: 'Kevin Harris', avatar: 'KH', deals: 6, revenue: 30000, responseRate: 16, points: 1200, trend: 'up' as const, streak: 2, rankChange: 1 },
+  { id: '15', name: 'Melissa Clark', avatar: 'MC', deals: 5, revenue: 25000, responseRate: 15, points: 1000, trend: 'down' as const, streak: 1, rankChange: -1 },
+  { id: '16', name: 'Brandon Lee', avatar: 'BL', deals: 4, revenue: 22000, responseRate: 14, points: 880, trend: 'up' as const, streak: 3, rankChange: 2 },
+  { id: '17', name: 'Rachel Green', avatar: 'RG', deals: 4, revenue: 20000, responseRate: 13, points: 800, trend: 'same' as const, streak: 2, rankChange: 0 },
+  { id: '18', name: 'Tyler Ross', avatar: 'TR', deals: 3, revenue: 18000, responseRate: 12, points: 680, trend: 'down' as const, streak: 1, rankChange: -2 },
+  { id: '19', name: 'Samantha Hill', avatar: 'SH', deals: 3, revenue: 15000, responseRate: 11, points: 550, trend: 'up' as const, streak: 2, rankChange: 1 },
+  { id: '20', name: 'Derek Stone', avatar: 'DS', deals: 2, revenue: 12000, responseRate: 10, points: 420, trend: 'same' as const, streak: 1, rankChange: 0 },
 ];
 
-const TrendIcon = ({ trend }: { trend: 'up' | 'down' | 'same' }) => {
-  if (trend === 'up') return <TrendingUp className="h-4 w-4 text-[var(--color-success)]" />;
-  if (trend === 'down') return <TrendingDown className="h-4 w-4 text-[var(--color-error)]" />;
+const TrendIcon = ({ trend, rankChange }: { trend: 'up' | 'down' | 'same'; rankChange?: number }) => {
+  if (trend === 'up') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[var(--color-success)] animate-pulse">
+        <TrendingUp className="h-4 w-4" />
+        {rankChange !== undefined && rankChange > 0 && (
+          <span className="text-xs font-mono">+{rankChange}</span>
+        )}
+      </span>
+    );
+  }
+  if (trend === 'down') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[var(--color-error)]">
+        <TrendingDown className="h-4 w-4" />
+        {rankChange !== undefined && rankChange < 0 && (
+          <span className="text-xs font-mono">{rankChange}</span>
+        )}
+      </span>
+    );
+  }
   return <Minus className="h-4 w-4 text-[var(--text-muted)]" />;
 };
 
@@ -70,6 +108,8 @@ function PodiumCard({
       color: 'from-yellow-400 to-amber-500',
       textColor: 'text-amber-400',
       bgColor: 'bg-amber-500/10',
+      borderColor: 'border-amber-400/30',
+      glowColor: 'shadow-amber-500/20',
       icon: Crown,
       label: '1st Place',
       height: 'h-32',
@@ -78,6 +118,8 @@ function PodiumCard({
       color: 'from-gray-300 to-gray-400',
       textColor: 'text-gray-300',
       bgColor: 'bg-gray-500/10',
+      borderColor: 'border-gray-400/30',
+      glowColor: 'shadow-gray-400/20',
       icon: Medal,
       label: '2nd Place',
       height: 'h-24',
@@ -86,6 +128,8 @@ function PodiumCard({
       color: 'from-amber-600 to-amber-700',
       textColor: 'text-amber-600',
       bgColor: 'bg-amber-700/10',
+      borderColor: 'border-amber-600/30',
+      glowColor: 'shadow-amber-600/20',
       icon: Medal,
       label: '3rd Place',
       height: 'h-20',
@@ -98,24 +142,45 @@ function PodiumCard({
   const displayName = isCurrentUser ? 'You' : user.name;
 
   return (
-    <div className={`flex flex-col items-center ${rank === 1 ? 'order-2' : rank === 2 ? 'order-1' : 'order-3'}`}>
+    <div className={`flex flex-col items-center transition-all duration-300 hover:scale-105 ${rank === 1 ? 'order-2' : rank === 2 ? 'order-1' : 'order-3'}`}>
       <div className="relative mb-3">
-        <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${c.color} flex items-center justify-center shadow-lg ${isCurrentUser ? 'ring-2 ring-[var(--accent-blue)] ring-offset-2 ring-offset-[var(--bg-primary)]' : ''}`}>
+        <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${c.color} flex items-center justify-center shadow-lg ${c.glowColor} shadow-xl ${isCurrentUser ? 'ring-2 ring-[var(--accent-blue)] ring-offset-2 ring-offset-[var(--bg-primary)]' : ''} ${rank === 1 ? 'animate-pulse' : ''}`}>
           <span className="text-white text-lg font-bold">{user.avatar}</span>
         </div>
         {rank === 1 && (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-            <Crown className="h-6 w-6 text-amber-400 drop-shadow-lg" />
+          <div className="absolute -top-4 left-1/2 -translate-x-1/2 animate-bounce">
+            <Crown className="h-7 w-7 text-amber-400 drop-shadow-lg" />
+          </div>
+        )}
+        {rank === 2 && (
+          <div className="absolute -top-2 -right-2">
+            <Award className="h-5 w-5 text-gray-300 drop-shadow" />
+          </div>
+        )}
+        {rank === 3 && (
+          <div className="absolute -top-2 -right-2">
+            <Award className="h-5 w-5 text-amber-600 drop-shadow" />
           </div>
         )}
       </div>
       <p className={`font-semibold ${isCurrentUser ? 'text-[var(--accent-blue)]' : 'text-[var(--text-primary)]'}`}>
         {displayName}
       </p>
-      <p className={`text-2xl font-bold font-mono ${c.textColor}`}>{user.points.toLocaleString()}</p>
+      <div className="flex items-center gap-1">
+        <p className={`text-2xl font-bold font-mono ${c.textColor}`}>{user.points.toLocaleString()}</p>
+        {user.trend !== 'same' && (
+          <TrendIcon trend={user.trend} rankChange={user.rankChange} />
+        )}
+      </div>
       <p className="text-xs text-[var(--text-muted)]">points</p>
-      <div className={`mt-3 ${c.height} w-20 rounded-t-lg ${c.bgColor} flex items-end justify-center pb-2`}>
-        <Icon className={`h-6 w-6 ${c.textColor}`} />
+      <div className="flex items-center gap-1 mt-1">
+        <span className="text-xs text-[var(--text-muted)]">{user.deals} deals</span>
+        <span className="text-[var(--text-muted)]">|</span>
+        <span className="text-xs text-[var(--color-success)]">${(user.revenue / 1000).toFixed(0)}k</span>
+      </div>
+      <div className={`mt-3 ${c.height} w-24 rounded-t-xl ${c.bgColor} border-t border-x ${c.borderColor} flex flex-col items-center justify-end pb-3 backdrop-blur-sm`}>
+        <Icon className={`h-6 w-6 ${c.textColor} mb-1`} />
+        <span className={`text-xs font-medium ${c.textColor}`}>{c.label}</span>
       </div>
     </div>
   );
@@ -156,13 +221,15 @@ export default function LeaderboardPage() {
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)] flex items-center gap-2">
             <Trophy className="h-6 w-6 text-amber-400" />
             Leaderboard
           </h1>
-          <p className="text-[var(--text-secondary)] mt-1">Top performers compete for glory</p>
+          <p className="text-[var(--text-secondary)] mt-1">
+            Top performers {period === 'week' ? 'this week' : period === 'month' ? 'this month' : 'of all time'}
+          </p>
         </div>
         <Select value={period} onValueChange={(v) => setPeriod(v as TimePeriod)}>
           <SelectTrigger className="w-[150px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
@@ -259,7 +326,7 @@ export default function LeaderboardPage() {
                             <span className={`font-mono font-bold ${isCurrentUser ? 'text-[var(--accent-blue)]' : 'text-[var(--text-secondary)]'}`}>
                               #{rank}
                             </span>
-                            <TrendIcon trend={user.trend} />
+                            <TrendIcon trend={user.trend} rankChange={user.rankChange} />
                           </div>
                         </td>
                         <td className="px-4 py-3">
