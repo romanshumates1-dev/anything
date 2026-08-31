@@ -7,6 +7,7 @@
  * Available to ALL users - this is a shared lead pool
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/auth';
 import { requireAdmin } from '@/app/api/utils/authz';
 import sql from '@/app/api/utils/sql';
@@ -14,6 +15,8 @@ import {
   SELLER_SOURCES,
   type PublicDataSource,
 } from '../public-sources/config';
+
+const rawSql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
 export async function GET(req: NextRequest) {
   const session = await requireSession();
@@ -117,9 +120,14 @@ export async function GET(req: NextRequest) {
 
     params.push(session.userId, limit, offset);
 
-    const leads = await sql.unsafe(query, params);
+    if (!rawSql) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
+    }
 
-    // Get total count
+    const leads = await rawSql(query, params);
+
+    // Get total count - remove last 3 params (userId, limit, offset)
+    const countParams = params.slice(0, -3);
     const countQuery = `
       SELECT COUNT(*) as total
       FROM public.public_lead_pool p
@@ -131,7 +139,7 @@ export async function GET(req: NextRequest) {
       ${whereClause}
     `;
 
-    const [{ total }] = await sql.unsafe(countQuery, params.slice(0, -3));
+    const [{ total }] = await rawSql(countQuery, countParams);
 
     // Get stats
     const [stats] = await sql`
