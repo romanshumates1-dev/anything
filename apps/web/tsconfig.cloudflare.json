@@ -1,0 +1,12 @@
+{
+  "//": "Cloudflare Workers entrypoint typecheck. custom-worker.ts imports the GENERATED .open-next/worker.js, so it is excluded from the app tsconfigs (which must typecheck WITHOUT a prior OpenNext build — e.g. fresh CI checkout). This config covers ONLY custom-worker.ts plus the generated worker types after a build. Run: yarn cf:typecheck (runs cf:build first).",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "custom-worker.ts"
+  ]
+}

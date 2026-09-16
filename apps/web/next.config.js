@@ -60,16 +60,24 @@ const nextConfig = {
     ];
   },
   // Standalone output is ONLY for the Docker runner image. On Vercel it is not
-  // recommended (Vercel builds its own output) and the monorepo-root
-  // outputFileTracingRoot can break serverless function tracing at deploy time,
-  // so gate both OFF when VERCEL=1 — Vercel then builds exactly as it did before
-  // this was added. Docker builds set DOCKER_BUILD=1 (see Dockerfile) to opt in.
-  ...(process.env.VERCEL
-    ? {}
-    : {
+  // recommended (Vercel builds its own output) and it is also wrong for
+  // Cloudflare Workers (OpenNext produces its own worker bundle; standalone
+  // tracing restructures server output and can break it at deploy time).
+  // Gate both OFF when VERCEL=1 or when an OpenNext build runs
+  // (OPEN_NEXT=1 is set automatically during `opennextjs-cloudflare build`;
+  // CLOUDFLARE=1 covers a manual `cf:*` build). Vercel then builds exactly as
+  // it did before this was added, and Docker (which sets neither) is
+  // byte-for-byte unaffected.
+  //
+  // NOTE: a plain `yarn build` with CLOUDFLARE=1 ALSO loses standalone output
+  // and will NOT run under Docker. That combination is user error, and it
+  // fails loudly (missing .next/standalone), not silently.
+  ...(!(process.env.VERCEL || process.env.OPEN_NEXT || process.env.CLOUDFLARE)
+    ? {
         output: 'standalone',
         outputFileTracingRoot: require('path').join(__dirname, '../../'),
-      }),
+      }
+    : {}),
   // Pin Turbopack's workspace root to THIS app. Without this, Next 16 infers the
   // monorepo root (d:\anything) and resolves `tailwindcss` from d:\anything\apps,
   // hitting the hoisted v3.4.x (pulled in by apps/mobile's NativeWind) instead of

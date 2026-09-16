@@ -10,6 +10,7 @@
  * A short in-memory cache avoids a DB round-trip on every AI call; setAiConfig
  * busts it immediately so the toggle takes effect on the next call.
  */
+import { isCloudflareWorkers } from '@/lib/websocket';
 import sql from '@/app/api/utils/sql';
 
 export type AiProvider = 'anthropic' | 'ollama' | 'bedrock';
@@ -48,9 +49,17 @@ function normalizeProvider(v: unknown): AiProvider | null {
 /** Env/default view (no DB) — used as the fallback and by the resolver. */
 function fromEnv(): AiConfig {
   const envProvider = normalizeProvider(process.env.AI_PROVIDER);
-  // Default to Ollama for cost savings - fallback chain handles unreachable Ollama
+  // Default to Ollama for cost savings on Node (local dev / Docker) — the
+  // fallback chain handles an unreachable Ollama.
+  //
+  // On Cloudflare Workers Ollama is UNREACHABLE BY CONSTRUCTION (no localhost
+  // TCP from workerd, no GPU box behind it), so defaulting to it there would
+  // burn one connection-fallback round-trip on EVERY first AI call of a cold
+  // isolate. Default to Anthropic on workerd instead; an explicit AI_PROVIDER
+  // (env or DB) still wins on every runtime.
+  const defaultProvider: AiProvider = isCloudflareWorkers() ? 'anthropic' : 'ollama';
   return {
-    provider: envProvider ?? 'ollama',
+    provider: envProvider ?? defaultProvider,
     ollamaBaseUrl: (process.env.OLLAMA_BASE_URL || DEFAULT_OLLAMA_BASE_URL).replace(/\/+$/, ''),
     ollamaModel: process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL,
     source: envProvider ? 'env' : 'default',
@@ -71,15 +80,22 @@ export async function getAiConfig(nowMs: number = Date.now()): Promise<AiConfig>
     const v = row?.value as Record<string, unknown> | undefined;
     const dbProvider = normalizeProvider(v?.provider);
     if (v && dbProvider) {
+      // On workerd an admin-stored 'ollama' default (localhost) is a trap:
+      // it can never dial out. Clamp it to Anthropic HERE (not in setAiConfig,
+      // so the stored value round-trips unchanged for Node runtimes) and mark
+      // source so the Settings UI can explain why the effective provider
+      // differs from the stored one.
+      const effectiveProvider: AiProvider =
+        isCloudflareWorkers() && dbProvider === 'ollama' ? 'anthropic' : dbProvider;
       cfg = {
-        provider: dbProvider,
+        provider: effectiveProvider,
         ollamaBaseUrl:
           (typeof v.ollamaBaseUrl === 'string' && v.ollamaBaseUrl.trim()
             ? v.ollamaBaseUrl.trim()
             : base.ollamaBaseUrl).replace(/\/+$/, ''),
         ollamaModel:
           typeof v.ollamaModel === 'string' && v.ollamaModel.trim() ? v.ollamaModel.trim() : base.ollamaModel,
-        source: 'db',
+        source: effectiveProvider === dbProvider ? 'db' : 'env',
       };
     }
   } catch {
