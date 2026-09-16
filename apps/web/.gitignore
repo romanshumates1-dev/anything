@@ -19,3 +19,13 @@ next-env.d.ts
 /e2e/.auth/
 /test-results/
 /playwright-report/
+
+# Cloudflare Workers / OpenNext
+/.open-next/
+/.wrangler/
+.dev.vars
+.dev.vars.*
+cloudflare-env.d.ts
+
+# Wrangler's local build cache
+/.wrangler/tmp/

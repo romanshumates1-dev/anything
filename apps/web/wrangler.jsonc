@@ -1,0 +1,43 @@
+{
+  // Cloudflare Workers configuration for the DealFlow AI web app.
+  //
+  // Deploy target: app.dealswiftautomation.com (Hybrid layout — the WordPress
+  // marketing site keeps the apex/www; only this exact subdomain is routed here).
+  // See "Cloudflare Workers deploy" in apps/web/DEPLOY.md for the full runbook.
+  //
+  // `main` points at OUR custom worker, not the OpenNext-generated one: the
+  // generated worker only exports `fetch`, and Cloudflare Cron Triggers need a
+  // `scheduled` handler. custom-worker.ts re-exports the generated fetch handler
+  // and adds the scheduled one.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dealswift-app",
+  "main": "./custom-worker.ts",
+  // Set to today's date when first deploying, per Cloudflare guidance.
+  "compatibility_date": "2026-09-16",
+  // nodejs_compat gives workerd the Node.js APIs Next.js server runtime needs.
+  // Deliberately NOT enabling enable_nodejs_tcp_sockets: SMTP (nodemailer) is
+  // not viable on Workers (port 25 is blocked) and email runs over the SES
+  // HTTPS API instead. See "Cloudflare Workers deploy / Known constraints"
+  // in apps/web/DEPLOY.md.
+  "compatibility_flags": ["nodejs_compat"],
+  // Static assets emitted by the OpenNext build. Requests to assets are free and
+  // unlimited on every Workers plan — this is what gives us unmetered bandwidth.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Replaces apps/web/vercel.json crons. Workers Free allows 5 cron triggers per
+  // ACCOUNT, so this stays at 3. Cron expressions are UTC.
+  //
+  // Keep in sync with routeForCron() in custom-worker.ts.
+  "triggers": {
+    "crons": [
+      "*/5 * * * *", // job queue drain (speed-to-lead SLA)
+      "*/15 * * * *", // pipeline orchestration + daily digests
+      "0 8 * * *" // end-of-day drain sweep
+    ]
+  }
+}

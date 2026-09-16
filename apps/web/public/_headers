@@ -1,0 +1,20 @@
+# Cloudflare Workers static-asset headers (OpenNext serves public/ + .next/static).
+# Immutable hashed build output can be cached for a year; these are served from
+# Cloudflare's edge and are free + unmetered on every plan.
+#
+# See https://opennext.js.org/cloudflare/howtos/static-assets-caching
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+/favicon.png
+  Cache-Control: public, max-age=86400
+
+/screenshots/*
+  Cache-Control: public, max-age=604800
+
+/geo/*
+  Cache-Control: public, max-age=604800

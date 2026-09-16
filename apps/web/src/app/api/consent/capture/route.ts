@@ -16,7 +16,10 @@ import { logEvent } from '@/app/api/utils/logger';
  * }
  */
 
-export const runtime = 'edge';
+// NOTE: `export const runtime = 'edge'` was removed here. The OpenNext Cloudflare
+// adapter does not support Next.js's Edge runtime — the whole app runs on the
+// Node.js runtime under workerd, which is what gives us full Node API access.
+// See https://opennext.js.org/cloudflare/get-started (step 9).
 
 export async function POST(request: Request) {
   try {

@@ -20,7 +20,16 @@
  * secret passed every existing check before this (BREAKAGE_TABLE #Phase0 env
  * finding); it's the one var whose absence corrupts every session silently
  * rather than crashing loudly.
+ *
+ * CLOUDFLARE WORKERS CAVEAT
+ * On Workers, a throw from register() happens during module evaluation, i.e.
+ * at Worker startup. That does not "fail fast" — it takes down EVERY route with
+ * an opaque 500, including /api/system/health, which is what you would use to
+ * diagnose it. So on workerd we log the same FATAL line and continue; the
+ * individual request surfaces the real error instead. Node (dev/Docker/CI)
+ * keeps the original throw-on-boot behaviour.
  */
+import { isCloudflareWorkers } from '@/lib/websocket';
 
 const HARD_REQUIRED = ['DATABASE_URL', 'BETTER_AUTH_SECRET'] as const;
 
@@ -43,7 +52,18 @@ export async function register() {
       `\n[boot] FATAL: missing required environment variable(s): ${missing.join(', ')}\n` +
         `[boot] The app cannot start without these. Set them in apps/web/.env (see .env.example) and retry.\n`
     );
-    // Cannot use process.exit() in Edge Runtime - throw instead
+
+    if (isCloudflareWorkers()) {
+      // Do NOT throw — see the CLOUDFLARE WORKERS CAVEAT above. A startup throw
+      // kills every route, including the health probe used to diagnose it.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[boot] Running on Cloudflare Workers — continuing instead of throwing so the\n` +
+          `[boot] health probe stays reachable. Set these via \`wrangler secret put\`.\n`
+      );
+      return;
+    }
+
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 

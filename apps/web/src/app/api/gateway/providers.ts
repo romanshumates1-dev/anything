@@ -8,6 +8,8 @@
  * the gateway router, which owns routing, queueing, failover, and observability.
  */
 
+import twilio from 'twilio';
+
 export type DeliveryStatus = 
   | 'queued'
   | 'dispatched'
@@ -51,9 +53,9 @@ export class TwilioAdapter implements ISMSProvider {
   ) {}
 
   private getClient() {
-    // Lazy-import to avoid circular deps; twilio SDK is already a dep
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const twilio = require('twilio');
+    // The twilio SDK is imported once at module scope (top of this file). It
+    // used to be a CJS `require()` right here, which the Cloudflare Workers
+    // runtime cannot execute — workerd is ESM-only and has no global `require`.
     return twilio(this.accountSid, this.authToken);
   }
 
