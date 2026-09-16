@@ -24,7 +24,10 @@ next-env.d.ts
 /.open-next/
 /.wrangler/
 .dev.vars
+# .dev.vars.* covers real local secret files (.dev.vars.prod etc). The
+# .example template is force-added (git add -f) so operators have the key list.
 .dev.vars.*
+!*.example
 cloudflare-env.d.ts
 
 # Wrangler's local build cache

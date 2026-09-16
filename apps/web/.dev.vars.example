@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Cloudflare Workers — LOCAL development secrets (copy to `.dev.vars`)
+#
+#   cp .dev.vars.example .dev.vars      # then fill in real values
+#
+# `.dev.vars` is gitignored (see .gitignore). It is read by:
+#   - `yarn cf:preview`  (opennextjs-cloudflare preview → local workerd runtime)
+#   - `wrangler dev`
+#
+# For the DEPLOYED worker these same names go up as Cloudflare secrets:
+#   wrangler secret bulk .dev.vars        # or `wrangler secret put NAME` per key
+#
+# LIMIT (Workers Free): 64 environment variables per Worker, 5 KB each.
+# The app's live apps/web/.env has 32 keys — comfortable headroom. Do NOT
+# paste the whole .env.example (136 keys) up; most are optional/mock defaults.
+#
+# NOTE: NEXT_PUBLIC_* values are inlined at BUILD time, not read at runtime.
+# They must be present in the build environment (see .github/workflows), not
+# just as Worker secrets.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Hard required (instrumentation.ts fails fast without these on Node) ──
+DATABASE_URL=
+BETTER_AUTH_SECRET=
+
+# ── Canonical app URL — the app lives on the SUBDOMAIN, not the apex ──
+# The apex (dealswiftautomation.com) stays on the WordPress marketing site.
+BETTER_AUTH_URL=https://app.dealswiftautomation.com
+
+# ── Access control (domain lock + RBAC) ──
+ALLOWED_EMAIL_DOMAINS=dealswiftautomation.com
+SEED_ADMIN_EMAILS=roman.shumate@dealswiftautomation.com
+MIN_ACCESS_ROLE=ADMIN
+
+# ── Cron / job runner auth ──
+# CRON_SECRET is what the Cloudflare Cron Trigger (see custom-worker.ts) sends
+# as `Authorization: Bearer <CRON_SECRET>` to /api/jobs/process and
+# /api/pipeline/cron. JOB_RUNNER_SECRET is the x-job-runner-secret alternative
+# used by scripts/jobs-dev.mjs and the Docker worker.
+CRON_SECRET=
+JOB_RUNNER_SECRET=
+
+# ── AI ──
+# Ollama CANNOT run on Workers (it needs localhost TCP and a GPU-class box).
+# Use a hosted provider: anthropic | bedrock. NOTE: this file intentionally
+# sets anthropic, NOT ollama — ai-settings.ts defaults to anthropic on
+# workerd, but an explicit value here documents the choice AND protects
+# against a localhost default leaking in from a copied .env.
+AI_PROVIDER=anthropic
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-6
+# Only if you front a self-hosted model through a public HTTPS tunnel:
+# OLLAMA_BASE_URL=https://ollama.dealswiftautomation.com
+# OLLAMA_MODEL=qwen2.5:7b
+# OLLAMA_API_KEY=
+
+# ── Email ──
+# SMTP is NOT viable on Workers (outbound port 25/587 is blocked at the
+# platform level). EMAIL_PROVIDER=ses on Workers routes to the SES HTTPS API
+# (SigV4-signed POST — see ses-sign.ts), NOT to SMTP. Do NOT set gmail/smtp/
+# gemini here: selectBestProvider() will refuse them on workerd and fall back
+# to mock (logged, never silently dropped).
+EMAIL_PROVIDER=ses
+EMAIL_FROM_ADDRESS=noreply@dealswiftautomation.com
+EMAIL_FROM_NAME=Deal Swift Automation
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=us-east-1
+AWS_SES_ENABLED=true
+# Optional overrides — default to the AWS_* values above when blank:
+# AWS_SES_REGION=
+# AWS_SES_ACCESS_KEY=
+# AWS_SES_SECRET_KEY=
+# AWS_SES_FROM_ADDRESS=
+
+# ── SMS (leave DISABLED until 10DLC / toll-free verification clears) ──
+AWS_SNS_SMS_ENABLED=false
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_MESSAGING_SERVICE_SID=
+TWILIO_NUMBER_TYPE=
+SMS_INBOUND_SECRET=
+# On the subdomain domain — update this, or Twilio status callbacks 404.
+PUBLIC_WEBHOOK_URL=https://app.dealswiftautomation.com/api/sms/inbound
+
+# ── Legal / compliance (required for CAN-SPAM footers and contracts) ──
+LEGAL_ENTITY_NAME=
+LEGAL_ENTITY_STATE=
+SUPPORT_EMAIL=
