@@ -12,6 +12,7 @@ package-lock.json
 
 # output
 out
+.open-next
 dist
 *.tgz
 

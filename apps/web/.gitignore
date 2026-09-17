@@ -3,7 +3,8 @@
 
 # Next.js
 /.next/
-/out/
+/out
+.open-next/
 next-env.d.ts
 
 # Environment

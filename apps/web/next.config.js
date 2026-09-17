@@ -6,7 +6,7 @@ const nextConfig = {
   // outputFileTracingRoot can break serverless function tracing at deploy time,
   // so gate both OFF when VERCEL=1 — Vercel then builds exactly as it did before
   // this was added. Docker builds set DOCKER_BUILD=1 (see Dockerfile) to opt in.
-  ...(process.env.VERCEL
+  ...(process.env.VERCEL || process.env.CLOUDFLARE === '1'
     ? {}
     : {
         output: 'standalone',
