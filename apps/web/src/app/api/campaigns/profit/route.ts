@@ -6,6 +6,7 @@
  */
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import { requireSession } from '@/app/api/utils/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,9 @@ const COSTS = {
 };
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession();
+  if (!session.ok) return session.response;
+
   try {
     if (!process.env.DATABASE_URL) {
       return Response.json({ error: 'DATABASE_URL not configured' }, { status: 500 });

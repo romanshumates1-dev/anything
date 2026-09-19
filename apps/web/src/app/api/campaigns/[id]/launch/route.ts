@@ -7,6 +7,8 @@ import { recordRun } from '../../../utils/execution-ledger';
 import { hasAcceptedMessagingAgreement } from '@/lib/legal-acceptance';
 import { getOrganization } from '@/lib/organization-context';
 import { timezonesForPhone } from '../../../utils/area-codes';
+import { checkLimit } from '@/app/api/services/tierLimits';
+import { isOutreachActive } from '@/app/api/utils/outreachVerification';
 
 /**
  * Optimal send time calculation for maximum response rates.
@@ -130,6 +132,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     );
   }
 
+  // Outreach Verification gate: campaigns can only launch if at least one
+  // outreach channel (SMS or Email) is verified and ACTIVE.
+  const [smsActive, emailActive] = await Promise.all([
+    isOutreachActive(organization.id, 'sms'),
+    isOutreachActive(organization.id, 'email'),
+  ]);
+
+  if (!smsActive && !emailActive) {
+    return Response.json(
+      {
+        error: 'outreach_not_active',
+        message:
+          'At least one outreach channel (SMS or Email) must be verified and active before launching a campaign. Go to Settings > Outreach to configure.',
+        smsActive,
+        emailActive,
+      },
+      { status: 403 }
+    );
+  }
+
   try {
     const { id } = await params;
     const campaignId = Number(id);
@@ -157,6 +179,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       WHERE cl.campaign_id = ${campaignId}
       AND cl.status = 'pending'
     `;
+
+    // Check SMS limits before launching
+    // Count how many members have phone numbers (will send SMS)
+    const membersWithPhone = members.filter((m: any) => m.phone);
+    const smsLimitCheck = await checkLimit(organization.id, 'sms', membersWithPhone.length);
+
+    if (!smsLimitCheck.allowed) {
+      return Response.json({
+        error: 'limit_exceeded',
+        message: smsLimitCheck.message,
+        upgradeReason: smsLimitCheck.upgradeReason,
+        current: smsLimitCheck.current,
+        limit: smsLimitCheck.limit,
+        requested: membersWithPhone.length,
+        remaining: smsLimitCheck.remaining,
+        isFreeTier: smsLimitCheck.isFreeTier,
+      }, { status: 402 }); // 402 Payment Required
+    }
 
     const text = campaign.message_template;
     // Scheduler throttling: respect the campaign's daily cap and per-minute rate.

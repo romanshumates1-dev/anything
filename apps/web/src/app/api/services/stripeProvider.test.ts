@@ -1,8 +1,77 @@
 /**
  * Phase P2 — Stripe provider tests.
  */
-import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import crypto from 'node:crypto';
+
+// Mock the Stripe SDK to avoid real API calls
+// The mock implements real HMAC verification to test the webhook signature flow
+vi.mock('stripe', () => {
+  const realCrypto = require('node:crypto');
+
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      checkout: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({
+            id: 'cs_test_123',
+            url: 'https://checkout.stripe.com/test-session',
+            payment_intent: 'pi_live_test_123',
+          }),
+        },
+      },
+      webhooks: {
+        constructEvent: vi.fn((body: string, sig: string, secret: string) => {
+          // Parse the signature header
+          const parts = sig.split(',').reduce((acc: Record<string, string>, part: string) => {
+            const [key, value] = part.split('=');
+            if (key && value) acc[key] = value;
+            return acc;
+          }, {});
+
+          const timestamp = parts.t;
+          const v1 = parts.v1;
+
+          if (!timestamp || !v1) {
+            throw new Error('Invalid signature format');
+          }
+
+          // Check timestamp is within 5 minutes
+          const ts = parseInt(timestamp, 10);
+          const now = Math.floor(Date.now() / 1000);
+          if (Math.abs(now - ts) > 300) {
+            throw new Error('Timestamp outside tolerance window');
+          }
+
+          // Verify HMAC signature
+          const expected = realCrypto
+            .createHmac('sha256', secret)
+            .update(`${timestamp}.${body}`)
+            .digest('hex');
+
+          if (v1 !== expected) {
+            throw new Error('Signature verification failed');
+          }
+
+          return JSON.parse(body);
+        }),
+      },
+      refunds: {
+        create: vi.fn().mockResolvedValue({
+          id: 're_test_123',
+          amount: 1000,
+          status: 'succeeded',
+        }),
+      },
+    })),
+  };
+});
+
+// Mock logger to avoid side effects
+vi.mock('@/app/api/utils/logger', () => ({
+  logEvent: vi.fn(),
+}));
+
 import { MockStripeProvider, LiveStripeProvider, resetStripeProvider, getStripeProvider } from './stripeProvider';
 
 const WEBHOOK_SECRET = 'whsec_test_secret_123';
@@ -66,14 +135,22 @@ describe('MockStripeProvider', () => {
 describe('LiveStripeProvider', () => {
   let provider: LiveStripeProvider;
   let originalSecret: string | undefined;
+  let originalSecretKey: string | undefined;
 
   beforeAll(() => {
     originalSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    originalSecretKey = process.env.STRIPE_SECRET_KEY;
     process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fake_key_for_tests';
   });
 
   afterAll(() => {
     process.env.STRIPE_WEBHOOK_SECRET = originalSecret;
+    if (originalSecretKey === undefined) {
+      delete process.env.STRIPE_SECRET_KEY;
+    } else {
+      process.env.STRIPE_SECRET_KEY = originalSecretKey;
+    }
   });
 
   beforeEach(() => {
@@ -128,6 +205,21 @@ describe('LiveStripeProvider', () => {
 });
 
 describe('getStripeProvider', () => {
+  let originalSecretKey: string | undefined;
+
+  beforeAll(() => {
+    originalSecretKey = process.env.STRIPE_SECRET_KEY;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fake_key_for_tests';
+  });
+
+  afterAll(() => {
+    if (originalSecretKey === undefined) {
+      delete process.env.STRIPE_SECRET_KEY;
+    } else {
+      process.env.STRIPE_SECRET_KEY = originalSecretKey;
+    }
+  });
+
   beforeEach(() => {
     resetStripeProvider();
   });

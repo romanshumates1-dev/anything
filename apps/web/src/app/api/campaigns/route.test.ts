@@ -26,6 +26,12 @@ vi.mock('../utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
 vi.mock('@/lib/organization-context', () => ({ getOrganization: (...a: any[]) => getOrganization(...a) }));
 
+const { checkLimit, recordMetricUsage } = vi.hoisted(() => ({
+  checkLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10, remaining: 10, percentUsed: 0, tier: 'free', isFreeTier: true })),
+  recordMetricUsage: vi.fn(async () => {}),
+}));
+vi.mock('@/app/api/services/tierLimits', () => ({ checkLimit, recordMetricUsage }));
+
 import { GET, POST } from './route';
 
 const jsonReq = (body: unknown) =>

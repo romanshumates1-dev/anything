@@ -41,7 +41,10 @@ import {
   Settings,
   Clock,
   TrendingUp,
+  MessageSquarePlus,
+  Lock,
 } from 'lucide-react';
+import SignupRestrictionsCard from '@/components/admin/SignupRestrictions';
 import { toast } from 'sonner';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -1182,6 +1185,9 @@ function SystemSettingsSection() {
         )}
       </GlassCard>
 
+      {/* Signup Restrictions */}
+      <SignupRestrictionsCard />
+
       {/* Quick Links */}
       <GlassCard padding="lg">
         <div className="flex items-center justify-between mb-6">
@@ -1193,6 +1199,7 @@ function SystemSettingsSection() {
 
         <div className="space-y-2">
           {[
+            { href: '/admin/feedback', icon: MessageSquarePlus, label: 'Feedback', desc: 'Manage user feedback and requests' },
             { href: '/admin/audit', icon: Clock, label: 'Audit Log', desc: 'View admin activity history' },
             { href: '/admin/compliance', icon: Shield, label: 'Compliance', desc: 'Suppression list and opt-outs' },
             { href: '/admin/reviews', icon: CheckCircle, label: 'Review Queue', desc: 'Pending message reviews' },

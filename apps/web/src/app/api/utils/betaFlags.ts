@@ -16,7 +16,7 @@
  */
 import sql from '@/app/api/utils/sql';
 
-export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo', 'emailOutbound', 'callQueue', 'resurrection', 'stalledConversation', 'buyerSmsNotify'] as const;
+export const BETA_FLAG_KEYS = ['speedToLead', 'voiceEscalation', 'localPresence', 'cadenceEngine', 'negotiationProfiles', 'boundedNegotiation', 'twilioDemo', 'emailOutbound', 'callQueue', 'resurrection', 'stalledConversation', 'buyerSmsNotify', 'campaignAutomation'] as const;
 export type BetaFlagKey = (typeof BETA_FLAG_KEYS)[number];
 export type BetaFlags = Record<BetaFlagKey, boolean>;
 
@@ -44,6 +44,10 @@ export const DEFAULT_BETA_FLAGS: BetaFlags = {
   stalledConversation: false,
   // Buyer SMS notifications - notify buyers via SMS (in addition to email)
   buyerSmsNotify: false,
+  // Campaign automation engine - "set and forget" automated outreach pipeline
+  // Enables: auto lead assignment, scheduled sending, AI response classification,
+  // automated follow-ups, and intelligent routing to negotiation/human review
+  campaignAutomation: false,
 };
 
 const SETTINGS_KEY = 'beta_flags';

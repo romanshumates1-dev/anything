@@ -57,3 +57,45 @@ export async function requireAdmin(): Promise<AdminCheck> {
 
   return { ok: true, userId: session.user.id, email: user.email };
 }
+
+/**
+ * Session check for authenticated routes (non-admin).
+ * Returns { ok: true, userId, email } on success, or { ok: false, response } for 401.
+ */
+export type SessionCheck =
+  | { ok: true; userId: string; email: string; role: string }
+  | { ok: false; response: Response };
+
+export async function requireSession(): Promise<SessionCheck> {
+  const headersList = await headers();
+
+  // LOCAL DEV BYPASS
+  const devSecret = process.env.LOCAL_DEV_SECRET;
+  if (
+    process.env.NODE_ENV === 'development' &&
+    devSecret &&
+    headersList.get('x-local-dev') === devSecret
+  ) {
+    return { ok: true, userId: 'local-dev', email: 'dev@localhost', role: 'MEMBER' };
+  }
+
+  const session = await auth.api.getSession({ headers: headersList });
+  if (!session) {
+    return { ok: false, response: Response.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const [user] = await sql`
+    SELECT email, role FROM "user" WHERE id = ${session.user.id} LIMIT 1
+  `;
+
+  if (!user) {
+    return { ok: false, response: Response.json({ error: 'User not found' }, { status: 401 }) };
+  }
+
+  return {
+    ok: true,
+    userId: session.user.id,
+    email: user.email,
+    role: user.role || 'MEMBER',
+  };
+}

@@ -26,13 +26,14 @@ vi.mock('@/app/api/utils/compliance', () => ({ registerOptOut }));
 vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 
 import { POST } from './route';
+import { NextRequest } from 'next/server';
 
 const SECRET = 'test-secret';
 const req = (body: unknown) =>
-  new Request(`http://t/api/email/inbound?s=${SECRET}`, {
+  new NextRequest(`http://t/api/email/inbound?s=${SECRET}`, {
     method: 'POST',
     body: JSON.stringify(body),
-  }) as any;
+  });
 
 const LEAD = { id: 42, ai_paused: false, organization_id: 'org_1' };
 const CONV = { id: 7, lead_id: 42 };
@@ -60,10 +61,10 @@ afterEach(() => {
 describe('security gate', () => {
   it('401s without the secret and touches nothing', async () => {
     const res = await POST(
-      new Request('http://t/api/email/inbound', {
+      new NextRequest('http://t/api/email/inbound', {
         method: 'POST',
         body: JSON.stringify({ from: 'a@b.com', text: 'hi' }),
-      }) as any
+      })
     );
     expect(res.status).toBe(401);
     expect(mockSql).not.toHaveBeenCalled();
@@ -171,7 +172,7 @@ describe('non-matching and degenerate input', () => {
 
   it('400s on a non-JSON body', async () => {
     const res = await POST(
-      new Request(`http://t/api/email/inbound?s=${SECRET}`, { method: 'POST', body: 'nope' }) as any
+      new NextRequest(`http://t/api/email/inbound?s=${SECRET}`, { method: 'POST', body: 'nope' })
     );
     expect(res.status).toBe(400);
   });

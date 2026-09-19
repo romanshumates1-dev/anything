@@ -10,6 +10,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
+import { encryptSensitive } from '@/app/api/utils/encryption';
 
 export type AIProviderType = 'platform' | 'byo' | 'ollama';
 
@@ -71,9 +72,9 @@ export async function POST(request: Request) {
     // Create/update provider
     const id = `ai_${crypto.randomUUID().replace(/-/g, '')}`;
     
-    // For byo providers, encrypt the API key
-    const apiKeyEncrypted = apiKey 
-      ? Buffer.from(apiKey).toString('base64') 
+    // For byo providers, encrypt the API key with AES-256-GCM
+    const apiKeyEncrypted = apiKey
+      ? encryptSensitive(apiKey)
       : null;
 
     await sql`

@@ -40,8 +40,10 @@ describe('owner-number collision', () => {
 
   it('returns contact_reply when phone is in campaign_contacts not owner', async () => {
     mockSql
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 5, campaign_id: 1, direction: 'outbound', updated_at: new Date() }]);
+      .mockResolvedValueOnce([])  // organization_members check
+      .mockResolvedValueOnce([])  // users check
+      .mockResolvedValueOnce([{ id: 5, campaign_id: 1, direction: 'outbound', updated_at: new Date() }])  // campaign_contacts
+      .mockResolvedValueOnce([]); // UPDATE statement
     const result = await processInboundSms({
       from: '+15551234567', to: '+15550000000',
       body: 'yes', organizationId: 'org-1',

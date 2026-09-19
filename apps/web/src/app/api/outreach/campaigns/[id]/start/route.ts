@@ -6,6 +6,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
 import { dispatchOpenings } from '@/app/api/utils/cadenceEngine';
+import { validateTransition } from '@/app/api/utils/campaignStateMachine';
 
 export async function POST(
   request: NextRequest,
@@ -32,9 +33,15 @@ export async function POST(
     }
     const campaign = campaignRows[0];
 
-    // Validate state transition
-    if (campaign.status !== 'DRAFT' && campaign.status !== 'SCHEDULED') {
-      return NextResponse.json({ error: `Cannot start campaign from status: ${campaign.status}` }, { status: 400 });
+    // Determine target state based on timing
+    const now = new Date();
+    const startDate = campaign.start_date ? new Date(campaign.start_date) : now;
+    const targetStatus = startDate > now ? 'SCHEDULED' : 'ACTIVE';
+
+    // Validate state transition using centralized state machine
+    const transition = validateTransition(campaign.status, targetStatus);
+    if (!transition.isValid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
     }
 
     // Validate contacts exist
@@ -45,12 +52,8 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot start campaign with zero contacts' }, { status: 400 });
     }
 
-    const now = new Date();
-    const startDate = campaign.start_date ? new Date(campaign.start_date) : now;
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + campaign.duration_days);
-
-    const newStatus = startDate > now ? 'SCHEDULED' : 'ACTIVE';
 
     // DNC-OFF COMPLIANCE AUDIT: Log the default DNC state at campaign launch
     await recordComplianceAction({
@@ -68,22 +71,22 @@ export async function POST(
 
     await sql`
       UPDATE outreach_campaigns
-      SET status = ${newStatus}, start_date = COALESCE(start_date, ${now}), end_date = ${endDate}, updated_at = now()
+      SET status = ${targetStatus}, start_date = COALESCE(start_date, ${now}), end_date = ${endDate}, updated_at = now()
       WHERE id = ${campaignId}
     `;
 
-    await logEvent('campaign_started', 'campaign', campaignId, { status: newStatus, startDate, endDate, dncScrubEnabled: campaign.dnc_scrub_enabled }, session.user.id);
+    await logEvent('campaign_started', 'campaign', campaignId, { status: targetStatus, startDate, endDate, dncScrubEnabled: campaign.dnc_scrub_enabled }, session.user.id);
 
     // INT-4: an ACTIVE campaign queues its OPENING sends (T+0), which start the
     // cadence ladder. Flag-gated inside dispatchOpenings — with cadenceEngine
     // OFF this returns {queued:0, reason:'flag_off'} and behaviour is exactly
     // the pre-INT-4 status flip.
     let cadence: { queued: number; reason?: string } = { queued: 0, reason: 'not_active' };
-    if (newStatus === 'ACTIVE') {
+    if (targetStatus === 'ACTIVE') {
       cadence = await dispatchOpenings(campaignId, organizationId);
     }
 
-    return NextResponse.json({ id: campaignId, status: newStatus, startDate, endDate, cadence });
+    return NextResponse.json({ id: campaignId, status: targetStatus, startDate, endDate, cadence });
   } catch (error: any) {
     console.error('POST /api/outreach/campaigns/[id]/start error', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

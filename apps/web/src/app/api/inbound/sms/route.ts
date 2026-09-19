@@ -203,11 +203,42 @@ export async function POST(req: NextRequest) {
       )
     `.catch(() => {});
 
+    // Check if there's an active negotiation session for this lead
+    // If so, queue automated processing
+    let negotiationQueued = false;
+    if (sentiment === 'price_inquiry' || sentiment === 'positive') {
+      try {
+        const [activeSession] = await sql`
+          SELECT id FROM negotiation_sessions
+          WHERE lead_id = ${lead.id}
+            AND status = 'active'
+          LIMIT 1
+        `;
+
+        if (activeSession) {
+          const { enqueueJob } = await import('@/app/api/utils/jobs');
+          await enqueueJob('process_negotiation', {
+            sessionId: activeSession.id,
+            leadId: lead.id,
+            organizationId: lead.organization_id,
+            inboundMessage: message,
+          }, {
+            dedupeKey: `negproc:${activeSession.id}:${Date.now()}`,
+          });
+          negotiationQueued = true;
+          console.log(`[INBOUND-SMS] Queued negotiation processing for session ${activeSession.id}`);
+        }
+      } catch (e) {
+        console.error('[INBOUND-SMS] Failed to queue negotiation processing:', e);
+      }
+    }
+
     return Response.json({
       received: true,
       leadId: lead.id,
       sentiment,
       newStatus,
+      negotiationQueued,
     });
   } catch (error: any) {
     console.error('[INBOUND-SMS] Error:', error);

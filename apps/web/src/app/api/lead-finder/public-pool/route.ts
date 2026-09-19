@@ -15,6 +15,8 @@ import {
   SELLER_SOURCES,
   type PublicDataSource,
 } from '../public-sources/config';
+import { createHash } from 'node:crypto';
+
 
 const rawSql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
@@ -362,7 +364,7 @@ async function generatePublicSourceLeads(
           tier: source.dataTier,
           generatedAt: new Date().toISOString(),
         },
-        dedupeHash: require('crypto').createHash('md5').update(dedupeHash).digest('hex'),
+        dedupeHash: createHash('md5').update(dedupeHash).digest('hex'),
       });
     }
   }

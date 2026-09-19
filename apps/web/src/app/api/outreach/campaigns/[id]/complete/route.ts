@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { validateTransition } from '@/app/api/utils/campaignStateMachine';
 
 /**
  * POST /api/outreach/campaigns/[id]/complete
@@ -37,8 +38,9 @@ export async function POST(
     }
     const campaign = campaignRows[0];
 
-    if (campaign.status === 'COMPLETED') {
-      return NextResponse.json({ error: 'Campaign is already completed' }, { status: 400 });
+    const transition = validateTransition(campaign.status, 'COMPLETED');
+    if (!transition.isValid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
     }
 
     // Cancel any pending jobs for this campaign

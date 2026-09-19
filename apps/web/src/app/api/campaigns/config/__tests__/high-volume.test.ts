@@ -65,8 +65,8 @@ describe('High-Volume Campaign Config', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Warmup Schedule', () => {
-    it('has 7-day warmup schedule', () => {
-      expect(HIGH_VOLUME_CONFIG.warmupSchedule.length).toBe(7);
+    it('has 8-day warmup schedule', () => {
+      expect(HIGH_VOLUME_CONFIG.warmupSchedule.length).toBe(8);
     });
 
     it('Day 1 target is 10,000', () => {
@@ -74,36 +74,41 @@ describe('High-Volume Campaign Config', () => {
       console.log(`✓ Day 1: ${getWarmupTarget(1).toLocaleString()}`);
     });
 
-    it('Day 2 target is 25,000', () => {
-      expect(getWarmupTarget(2)).toBe(25_000);
+    it('Day 2 target is 15,000', () => {
+      expect(getWarmupTarget(2)).toBe(15_000);
     });
 
-    it('Day 3 target is 50,000', () => {
-      expect(getWarmupTarget(3)).toBe(50_000);
+    it('Day 3 target is 22,000', () => {
+      expect(getWarmupTarget(3)).toBe(22_000);
     });
 
-    it('Day 4 target is 75,000', () => {
-      expect(getWarmupTarget(4)).toBe(75_000);
+    it('Day 4 target is 33,000', () => {
+      expect(getWarmupTarget(4)).toBe(33_000);
       console.log(`✓ Day 4: ${getWarmupTarget(4).toLocaleString()}`);
     });
 
-    it('Day 5 target is 100,000', () => {
-      expect(getWarmupTarget(5)).toBe(100_000);
+    it('Day 5 target is 50,000', () => {
+      expect(getWarmupTarget(5)).toBe(50_000);
     });
 
-    it('Day 6 target is 125,000', () => {
-      expect(getWarmupTarget(6)).toBe(125_000);
+    it('Day 6 target is 75,000', () => {
+      expect(getWarmupTarget(6)).toBe(75_000);
     });
 
-    it('Day 7 target is 150,000', () => {
-      expect(getWarmupTarget(7)).toBe(150_000);
+    it('Day 7 target is 110,000', () => {
+      expect(getWarmupTarget(7)).toBe(110_000);
       console.log(`✓ Day 7: ${getWarmupTarget(7).toLocaleString()}`);
     });
 
-    it('Day 8+ returns full daily target (150,000)', () => {
+    it('Day 8 target is 150,000', () => {
       expect(getWarmupTarget(8)).toBe(150_000);
+      console.log(`✓ Day 8: ${getWarmupTarget(8).toLocaleString()}`);
+    });
+
+    it('Day 9+ returns full daily target (150,000)', () => {
+      expect(getWarmupTarget(9)).toBe(150_000);
       expect(getWarmupTarget(30)).toBe(150_000);
-      console.log(`✓ Day 8+: ${getWarmupTarget(8).toLocaleString()}`);
+      console.log(`✓ Day 9+: ${getWarmupTarget(9).toLocaleString()}`);
     });
 
     it('Day 0 or negative returns 0', () => {
@@ -113,20 +118,20 @@ describe('High-Volume Campaign Config', () => {
   });
 
   describe('Warmup Status', () => {
-    it('Day 1-7 is in warmup', () => {
+    it('Day 1-8 is in warmup', () => {
       expect(isInWarmup(1)).toBe(true);
-      expect(isInWarmup(7)).toBe(true);
+      expect(isInWarmup(8)).toBe(true);
     });
 
-    it('Day 8+ is not in warmup', () => {
-      expect(isInWarmup(8)).toBe(false);
+    it('Day 9+ is not in warmup', () => {
+      expect(isInWarmup(9)).toBe(false);
       expect(isInWarmup(30)).toBe(false);
     });
 
     it('warmup progress is correct', () => {
-      expect(getWarmupProgress(1)).toBe(14); // 1/7 = 14%
-      expect(getWarmupProgress(4)).toBe(57); // 4/7 = 57%
-      expect(getWarmupProgress(7)).toBe(100); // 7/7 = 100%
+      expect(getWarmupProgress(1)).toBe(13); // 1/8 = 12.5% -> 13%
+      expect(getWarmupProgress(4)).toBe(50); // 4/8 = 50%
+      expect(getWarmupProgress(8)).toBe(100); // 8/8 = 100%
       expect(getWarmupProgress(10)).toBe(100);
       console.log(`✓ Day 4 progress: ${getWarmupProgress(4)}%`);
     });
@@ -291,8 +296,8 @@ describe('High-Volume Campaign Config', () => {
       expect(result1.canSend).toBe(false);
       expect(result1.reason).toContain('Daily target reached');
 
-      // Day 4 target is 75k
-      const result4 = calculatePacing(0, 0, 74000, 4); // Under day 4 limit
+      // Day 4 target is 33k
+      const result4 = calculatePacing(0, 0, 32000, 4); // Under day 4 limit
       expect(result4.canSend).toBe(true);
     });
 

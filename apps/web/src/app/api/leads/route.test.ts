@@ -29,6 +29,12 @@ vi.mock('../utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 const { recordStageTransition } = vi.hoisted(() => ({ recordStageTransition: vi.fn(async () => {}) }));
 vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition }));
 
+const { checkLimit, recordMetricUsage } = vi.hoisted(() => ({
+  checkLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10, remaining: 10, percentUsed: 0, tier: 'free', isFreeTier: true })),
+  recordMetricUsage: vi.fn(async () => {}),
+}));
+vi.mock('@/app/api/services/tierLimits', () => ({ checkLimit, recordMetricUsage }));
+
 import { POST } from './route';
 
 const req = (body: unknown) =>

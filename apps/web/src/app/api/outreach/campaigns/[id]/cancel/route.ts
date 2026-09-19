@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { validateTransition } from '@/app/api/utils/campaignStateMachine';
 
 export async function POST(
   request: NextRequest,
@@ -30,9 +31,9 @@ export async function POST(
     }
 
     const campaign = campaignRows[0];
-    const terminalStates = ['COMPLETED', 'CANCELLED'];
-    if (terminalStates.includes(campaign.status)) {
-      return NextResponse.json({ error: `Campaign is already in terminal state: ${campaign.status}` }, { status: 400 });
+    const transition = validateTransition(campaign.status, 'CANCELLED');
+    if (!transition.isValid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
     }
 
     await sql`

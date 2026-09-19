@@ -1,6 +1,9 @@
 /**
  * Subscription API endpoint
  * Handles plan subscriptions with credit-based billing
+ *
+ * IMPORTANT: Pricing is sourced from subscription_plans table (migration 067)
+ * Do NOT hardcode prices here - fetch from database.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
@@ -10,41 +13,71 @@ import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 import { sendEmailAuto } from '@/app/api/utils/emailProviders';
 
-const PLANS = {
-  starter: {
-    name: 'Starter',
-    price: 29,
-    originalPrice: 58,
-    aiCredits: 500,
-    leads: 1000,
-    sms: 500,
-    campaigns: 3,
-    users: 2,
-    features: ['ai_classification', 'email_campaigns', 'basic_crm'],
-  },
-  pro: {
-    name: 'Pro',
-    price: 79,
-    originalPrice: 158,
-    aiCredits: 2500,
-    leads: 10000,
-    sms: 5000,
-    campaigns: 10,
-    users: 5,
-    features: ['ai_classification', 'ai_negotiation', 'contract_generation', 'buyer_matching', 'email_campaigns', 'advanced_crm', 'priority_support'],
-  },
-  business: {
-    name: 'Business',
-    price: 199,
-    originalPrice: 398,
-    aiCredits: 10000,
-    leads: -1, // unlimited
-    sms: 25000,
-    campaigns: -1, // unlimited
-    users: 15,
-    features: ['ai_classification', 'ai_negotiation', 'contract_generation', 'buyer_matching', 'email_campaigns', 'advanced_crm', 'priority_support', 'api_access', 'phone_support', 'custom_integrations', 'team_collaboration'],
-  },
-};
+interface PlanConfig {
+  name: string;
+  price: number;
+  aiCredits: number;
+  leads: number;
+  sms: number;
+  campaigns: number;
+  users: number;
+  features: string[];
+}
+
+/**
+ * Fetch plan configuration from database (single source of truth)
+ */
+async function getPlanFromDB(tier: string): Promise<PlanConfig | null> {
+  const rows = await sql`
+    SELECT name, price_cents, limits
+    FROM subscription_plans
+    WHERE tier = ${tier}
+    LIMIT 1
+  `;
+
+  if (!rows[0]) return null;
+
+  const plan = rows[0] as any;
+  const limits = plan.limits;
+
+  return {
+    name: plan.name,
+    price: plan.price_cents / 100,
+    aiCredits: limits.monthly_ai_credits || 0,
+    leads: limits.monthly_lead_allowance || -1,
+    sms: limits.monthly_sms_allowance || 0,
+    campaigns: limits.campaigns || 1,
+    users: limits.seats || 1,
+    features: limits.features || [],
+  };
+}
+
+/**
+ * Fetch all available plans from database
+ */
+async function getAllPlansFromDB(): Promise<Record<string, PlanConfig>> {
+  const rows = await sql`
+    SELECT tier, name, price_cents, limits
+    FROM subscription_plans
+    WHERE tier IN ('free', 'starter', 'pro', 'business', 'scale')
+  `;
+
+  const plans: Record<string, PlanConfig> = {};
+  for (const row of rows as any[]) {
+    const limits = row.limits;
+    plans[row.tier] = {
+      name: row.name,
+      price: row.price_cents / 100,
+      aiCredits: limits.monthly_ai_credits || 0,
+      leads: limits.monthly_lead_allowance || -1,
+      sms: limits.monthly_sms_allowance || 0,
+      campaigns: limits.campaigns || 1,
+      users: limits.seats || 1,
+      features: limits.features || [],
+    };
+  }
+  return plans;
+}
 
 const CREDIT_PACKS = {
   '100': { credits: 100, price: 5 },
@@ -120,12 +153,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Handle new subscription
-  if (!planId || !PLANS[planId as keyof typeof PLANS]) {
+  // Handle new subscription - fetch plan from database
+  const plan = await getPlanFromDB(planId);
+  if (!planId || !plan) {
     return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
   }
-
-  const plan = PLANS[planId as keyof typeof PLANS];
 
   // Calculate final price (apply promo if valid)
   let finalPrice = plan.price;
@@ -393,26 +425,28 @@ export async function GET(req: NextRequest) {
       usage = counts;
     }
 
-    const planConfig = PLANS[org.subscription_tier as keyof typeof PLANS] || PLANS.starter;
+    // Fetch plan config from database (single source of truth)
+    const planConfig = await getPlanFromDB(org.subscription_tier || 'starter');
+    const allPlans = await getAllPlansFromDB();
 
     return NextResponse.json({
       subscription: {
         tier: org.subscription_tier || 'starter',
-        price: org.subscription_price || planConfig.price,
+        price: org.subscription_price || planConfig?.price || 0,
         trialEndsAt: org.trial_ends_at,
         isTrialing: org.trial_ends_at && new Date(org.trial_ends_at) > new Date(),
       },
       limits: {
         aiCredits: org.ai_credits || 0,
-        aiCreditsMax: planConfig.aiCredits,
-        leads: org.leads_limit || planConfig.leads,
-        sms: org.sms_limit || planConfig.sms,
-        campaigns: org.campaigns_limit || planConfig.campaigns,
-        users: org.users_limit || planConfig.users,
+        aiCreditsMax: planConfig?.aiCredits || 0,
+        leads: org.leads_limit || planConfig?.leads || -1,
+        sms: org.sms_limit || planConfig?.sms || 0,
+        campaigns: org.campaigns_limit || planConfig?.campaigns || 1,
+        users: org.users_limit || planConfig?.users || 1,
       },
-      features: org.features || planConfig.features,
+      features: org.features || planConfig?.features || [],
       usage,
-      plans: PLANS,
+      plans: allPlans,
       creditPacks: CREDIT_PACKS,
     });
   } catch (error: any) {

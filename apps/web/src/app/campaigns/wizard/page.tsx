@@ -15,6 +15,7 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LeadSourceSelector, type LeadSourceSelection } from '@/components/campaigns/LeadSourceSelector';
 import { LeadFinderModal } from '@/components/campaigns/LeadFinderModal';
+import { TemplateSelector } from '@/components/templates';
 import {
   AlertTriangle,
   Loader2,
@@ -45,6 +46,9 @@ import {
   Shield,
   Play,
   RefreshCw,
+  Wand2,
+  BookOpen,
+  PenLine,
 } from 'lucide-react';
 
 // ============================================================================
@@ -67,6 +71,8 @@ interface CampaignForm {
   selectedLeadIds?: number[];
 
   // Step 3 - Messages
+  templateSource: 'ai' | 'library' | 'custom' | null;
+  templateSourceId?: string;
   openingMessage: string;
   followUps: Array<{ body: string; delayHours: number }>;
   abVariantsEnabled: boolean;
@@ -98,6 +104,7 @@ const DEFAULT_FORM: CampaignForm = {
   contactSource: 'csv',
   consentMode: 'unverified',
   pastedContacts: '',
+  templateSource: null,
   openingMessage: '',
   followUps: [
     { body: '', delayHours: 24 },
@@ -530,6 +537,8 @@ function StepMessages({
   setForm: React.Dispatch<React.SetStateAction<CampaignForm>>;
   errors: Record<string, string>;
 }) {
+  const [showTemplateSelector, setShowTemplateSelector] = useState(!form.templateSource);
+
   const addFollowUp = () => {
     if (form.followUps.length < 5) {
       setForm((f) => ({ ...f, followUps: [...f.followUps, { body: '', delayHours: 24 }] }));
@@ -551,6 +560,47 @@ function StepMessages({
     setForm((f) => ({ ...f, openingMessage: DEFAULT_OPENER }));
   };
 
+  const handleTemplateSelected = (template: {
+    body: string;
+    subject?: string;
+    followUps: Array<{ body: string; delayHours: number }>;
+    variables: string[];
+    source: 'ai' | 'library' | 'custom';
+    sourceId?: string;
+  }) => {
+    setForm((f) => ({
+      ...f,
+      templateSource: template.source,
+      templateSourceId: template.sourceId,
+      openingMessage: template.body,
+      followUps: template.followUps.length > 0 ? template.followUps : f.followUps,
+    }));
+    setShowTemplateSelector(false);
+  };
+
+  // Determine template source info for display
+  const templateSourceInfo = form.templateSource
+    ? {
+        ai: { icon: Sparkles, label: 'AI Generated', color: 'var(--accent-purple)' },
+        library: { icon: BookOpen, label: 'From Library', color: 'var(--accent-blue)' },
+        custom: { icon: PenLine, label: 'Custom Template', color: 'var(--color-success)' },
+      }[form.templateSource]
+    : null;
+
+  // Show template selector if no source selected yet
+  if (showTemplateSelector && !form.openingMessage) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        <TemplateSelector
+          onTemplateSelected={handleTemplateSelected}
+          defaultChannel="sms"
+          initialBody={form.openingMessage}
+          initialFollowUps={form.followUps}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       <div className="text-center mb-8">
@@ -560,6 +610,62 @@ function StepMessages({
         <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Craft Your Messages</h2>
         <p className="text-[var(--text-secondary)]">Write compelling outreach that gets responses</p>
       </div>
+
+      {/* Template Source Indicator */}
+      {templateSourceInfo && (
+        <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-tertiary)]/50 border border-[var(--border-subtle)]">
+          <div className="flex items-center gap-3">
+            <div
+              className="p-2 rounded-lg"
+              style={{ backgroundColor: `${templateSourceInfo.color}15` }}
+            >
+              <templateSourceInfo.icon className="h-4 w-4" style={{ color: templateSourceInfo.color }} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{templateSourceInfo.label}</p>
+              <p className="text-xs text-[var(--text-muted)]">You can edit the template below</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setShowTemplateSelector(true);
+            }}
+            className="text-sm text-[var(--accent-blue)] hover:underline"
+          >
+            Change source
+          </button>
+        </div>
+      )}
+
+      {/* Quick Template Actions */}
+      {!form.openingMessage && (
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            onClick={() => setShowTemplateSelector(true)}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl bg-[var(--accent-purple)]/5 border border-[var(--accent-purple)]/20 hover:border-[var(--accent-purple)]/40 transition-colors"
+          >
+            <Sparkles className="h-5 w-5 text-[var(--accent-purple)]" />
+            <span className="text-sm text-[var(--text-secondary)]">AI Generate</span>
+          </button>
+          <button
+            onClick={() => {
+              setForm((f) => ({ ...f, templateSource: 'library' }));
+              setShowTemplateSelector(true);
+            }}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl bg-[var(--accent-blue)]/5 border border-[var(--accent-blue)]/20 hover:border-[var(--accent-blue)]/40 transition-colors"
+          >
+            <BookOpen className="h-5 w-5 text-[var(--accent-blue)]" />
+            <span className="text-sm text-[var(--text-secondary)]">From Library</span>
+          </button>
+          <button
+            onClick={applyDefaultOpener}
+            className="flex flex-col items-center gap-2 p-4 rounded-xl bg-[var(--color-success)]/5 border border-[var(--color-success)]/20 hover:border-[var(--color-success)]/40 transition-colors"
+          >
+            <Wand2 className="h-5 w-5 text-[var(--color-success)]" />
+            <span className="text-sm text-[var(--text-secondary)]">Use Default</span>
+          </button>
+        </div>
+      )}
 
       <GlassCard className="space-y-6">
         <FormField label="Opening Message" required error={errors.openingMessage}>
@@ -589,11 +695,11 @@ function StepMessages({
         {/* Merge fields help */}
         <div className="flex flex-wrap gap-2">
           <span className="text-xs text-[var(--text-muted)]">Available merge fields:</span>
-          {['{name}', '{address}', '{city}', '{state}'].map((field) => (
+          {['{{firstName}}', '{{propertyAddress}}', '{{city}}', '{{state}}'].map((field) => (
             <Badge
               key={field}
               variant="outline"
-              className="text-xs bg-[var(--bg-tertiary)] cursor-pointer hover:bg-[var(--accent-blue)]/10 hover:border-[var(--accent-blue)]/30 transition-colors"
+              className="text-xs bg-[var(--bg-tertiary)] cursor-pointer hover:bg-[var(--accent-blue)]/10 hover:border-[var(--accent-blue)]/30 transition-colors font-mono"
               onClick={() => setForm((f) => ({ ...f, openingMessage: f.openingMessage + ' ' + field }))}
             >
               {field}
@@ -648,7 +754,7 @@ function StepMessages({
                   rows={2}
                   value={fu.body}
                   onChange={(e) => updateFollowUp(index, 'body', e.target.value)}
-                  placeholder="Hey {name}, just following up on my message about {address}..."
+                  placeholder="Hey {{firstName}}, just following up on my message about {{propertyAddress}}..."
                   className="input-enhanced resize-none"
                 />
 

@@ -13,6 +13,9 @@
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { requireSession } from '@/app/api/utils/auth';
+import { getOrganization } from '@/lib/organization-context';
+import { checkRateLimit } from '@/app/api/services/rateLimiter';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +42,30 @@ interface AIRecommendation {
 }
 
 export async function GET(req: NextRequest) {
+  // SECURITY FIX: Require authentication - this endpoint calls AI which costs money
+  const session = await requireSession();
+  if (!session) {
+    return Response.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'Organization not found' }, { status: 403 });
+  }
+
+  // Rate limit AI requests to prevent abuse
+  const rateLimitResult = await checkRateLimit(
+    session.userId,
+    organization.id,
+    'ai_request'
+  );
+  if (!rateLimitResult.allowed) {
+    return Response.json({
+      error: rateLimitResult.message || 'Rate limit exceeded',
+      resetsAt: rateLimitResult.resetsAt,
+    }, { status: 429 });
+  }
+
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: 'DATABASE_URL not configured' }, { status: 500 });
   }

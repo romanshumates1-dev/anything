@@ -12,9 +12,13 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder', {
-  apiVersion: '2025-01-27.acacia' as any,
-});
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
+}
+
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2026-06-24.dahlia' })
+  : null;
 
 interface CreatePaymentRequest {
   dealId: string;
@@ -55,6 +59,13 @@ export async function POST(req: NextRequest) {
 
   if (amountCents < 100) {
     return Response.json({ error: 'Minimum payment is $1.00' }, { status: 400 });
+  }
+
+  if (!stripe) {
+    return Response.json({
+      error: 'Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.',
+      code: 'STRIPE_NOT_CONFIGURED',
+    }, { status: 503 });
   }
 
   try {
@@ -150,6 +161,12 @@ export async function GET(req: NextRequest) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
+  // SECURITY FIX: Scope payment lookups to the user's organization
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
+  }
+
   const url = new URL(req.url);
   const paymentId = url.searchParams.get('paymentId');
   const dealId = url.searchParams.get('dealId');
@@ -160,11 +177,12 @@ export async function GET(req: NextRequest) {
 
   try {
     let payment;
+    // SECURITY FIX: Always filter by organization_id to prevent cross-org access
     if (paymentId) {
-      [payment] = await sql`SELECT * FROM payments WHERE id = ${paymentId}`;
+      [payment] = await sql`SELECT * FROM payments WHERE id = ${paymentId} AND organization_id = ${organization.id}`;
     } else {
       [payment] = await sql`
-        SELECT * FROM payments WHERE deal_id = ${dealId}
+        SELECT * FROM payments WHERE deal_id = ${dealId} AND organization_id = ${organization.id}
         ORDER BY created_at DESC LIMIT 1
       `;
     }
@@ -174,7 +192,7 @@ export async function GET(req: NextRequest) {
     }
 
     // If Stripe payment, fetch latest status from Stripe
-    if (payment.stripe_payment_intent_id && payment.status === 'pending') {
+    if (stripe && payment.stripe_payment_intent_id && payment.status === 'pending') {
       try {
         const intent = await stripe.paymentIntents.retrieve(payment.stripe_payment_intent_id);
 

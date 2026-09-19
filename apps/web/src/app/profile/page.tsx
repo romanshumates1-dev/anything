@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Progress } from '@/components/ui/progress';
@@ -494,10 +495,12 @@ export default function ProfilePage() {
 
           <div className="pt-4 border-t border-[var(--border-subtle)] space-y-3">
             {profile?.subscription_tier !== 'enterprise' && (
-              <Button className="w-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] hover:opacity-90 transition-opacity text-white font-medium">
-                <ArrowUpRight className="h-4 w-4 mr-2" />
-                Upgrade Plan
-              </Button>
+              <Link href="/settings/billing">
+                <Button className="w-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] hover:opacity-90 transition-opacity text-white font-medium">
+                  <ArrowUpRight className="h-4 w-4 mr-2" />
+                  Upgrade Plan
+                </Button>
+              </Link>
             )}
             <p className="text-xs text-[var(--text-muted)] text-center">
               Next billing: December 1, 2026
@@ -546,10 +549,12 @@ export default function ProfilePage() {
             </div>
           )}
 
-          <Button variant="outline" className="w-full border-[var(--border-medium)] hover:bg-[var(--bg-tertiary)]">
-            <Sparkles className="h-4 w-4 mr-2" />
-            Buy More Credits
-          </Button>
+          <Link href="/settings/billing">
+            <Button variant="outline" className="w-full border-[var(--border-medium)] hover:bg-[var(--bg-tertiary)]">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Buy More Credits
+            </Button>
+          </Link>
         </GlassCard>
       </div>
 

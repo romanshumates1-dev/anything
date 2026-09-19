@@ -9,6 +9,18 @@
   --bg-tertiary: #334155;
   --bg-surface: #0F172A;
 
+  /* Brand Colors - Professional Real Estate Wholesaling */
+  --brand-primary: #1e40af;           /* Deep blue - trust, professionalism */
+  --brand-primary-light: #3b82f6;     /* Lighter blue for hover states */
+  --brand-primary-dark: #1e3a8a;      /* Darker blue for active states */
+  --brand-secondary: #f59e0b;         /* Gold/amber - money, success */
+  --brand-secondary-light: #fbbf24;   /* Lighter gold for hover */
+  --brand-secondary-dark: #d97706;    /* Darker gold for active */
+  --brand-accent: #10b981;            /* Green - growth, deals closed */
+  --brand-accent-light: #34d399;      /* Lighter green */
+  --brand-accent-dark: #059669;       /* Darker green */
+  --brand-surface: #1e293b;           /* Dark slate - modern dark theme */
+
   /* Accent Colors */
   --accent-blue: #3B82F6;
   --accent-blue-glow: rgba(59, 130, 246, 0.5);
@@ -72,9 +84,50 @@
   --color-gray-800: #1E293B;
   --color-gray-900: #0F172A;
 
-  /* Typography */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Typography - Professional Font Stack */
+  --font-sans: var(--font-inter, 'Inter'), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  /* Typography Scale - Desktop */
+  --text-display-size: clamp(2.5rem, 5vw, 4rem);
+  --text-display-line-height: 1.1;
+  --text-display-tracking: -0.025em;
+
+  --text-h1-size: clamp(2rem, 4vw, 3rem);
+  --text-h1-line-height: 1.15;
+  --text-h1-tracking: -0.02em;
+
+  --text-h2-size: clamp(1.5rem, 3vw, 2.25rem);
+  --text-h2-line-height: 1.2;
+  --text-h2-tracking: -0.015em;
+
+  --text-h3-size: clamp(1.25rem, 2.5vw, 1.75rem);
+  --text-h3-line-height: 1.25;
+  --text-h3-tracking: -0.01em;
+
+  --text-h4-size: clamp(1.125rem, 2vw, 1.375rem);
+  --text-h4-line-height: 1.3;
+  --text-h4-tracking: -0.005em;
+
+  --text-body-size: 1rem;
+  --text-body-line-height: 1.6;
+  --text-body-tracking: 0.01em;
+
+  --text-body-lg-size: 1.125rem;
+  --text-body-lg-line-height: 1.65;
+
+  --text-caption-size: 0.875rem;
+  --text-caption-line-height: 1.5;
+  --text-caption-tracking: 0.015em;
+
+  --text-small-size: 0.75rem;
+  --text-small-line-height: 1.4;
+  --text-small-tracking: 0.02em;
+
+  /* Stats / KPI Typography */
+  --text-stat-size: clamp(2rem, 4vw, 3.5rem);
+  --text-stat-line-height: 1;
+  --text-stat-tracking: -0.03em;
 
   /* Spacing (4px base) */
   --space-1: 0.25rem;
@@ -208,14 +261,130 @@
     --radius-md: calc(var(--radius) - 2px);
     --radius-lg: var(--radius);
     --radius-xl: calc(var(--radius) + 4px);
+
+    /* Brand Color Utilities for Tailwind */
+    --color-brand-primary: var(--brand-primary);
+    --color-brand-primary-light: var(--brand-primary-light);
+    --color-brand-primary-dark: var(--brand-primary-dark);
+    --color-brand-secondary: var(--brand-secondary);
+    --color-brand-secondary-light: var(--brand-secondary-light);
+    --color-brand-secondary-dark: var(--brand-secondary-dark);
+    --color-brand-accent: var(--brand-accent);
+    --color-brand-accent-light: var(--brand-accent-light);
+    --color-brand-accent-dark: var(--brand-accent-dark);
+    --color-brand-surface: var(--brand-surface);
 }
 
 @layer base {
     * {
         @apply border-border;
     }
+
+    html {
+        /* Improve text rendering */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        /* Prevent font size adjustment on orientation change */
+        -webkit-text-size-adjust: 100%;
+    }
+
     body {
         @apply bg-background text-foreground;
+        font-family: var(--font-sans);
+        font-size: var(--text-body-size);
+        line-height: var(--text-body-line-height);
+        letter-spacing: var(--text-body-tracking);
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    /* Semantic heading defaults */
+    h1 {
+        font-size: var(--text-h1-size);
+        font-weight: 700;
+        line-height: var(--text-h1-line-height);
+        letter-spacing: var(--text-h1-tracking);
+    }
+
+    h2 {
+        font-size: var(--text-h2-size);
+        font-weight: 700;
+        line-height: var(--text-h2-line-height);
+        letter-spacing: var(--text-h2-tracking);
+    }
+
+    h3 {
+        font-size: var(--text-h3-size);
+        font-weight: 600;
+        line-height: var(--text-h3-line-height);
+        letter-spacing: var(--text-h3-tracking);
+    }
+
+    h4 {
+        font-size: var(--text-h4-size);
+        font-weight: 600;
+        line-height: var(--text-h4-line-height);
+        letter-spacing: var(--text-h4-tracking);
+    }
+
+    h5, h6 {
+        font-size: var(--text-body-lg-size);
+        font-weight: 600;
+        line-height: 1.4;
+        letter-spacing: -0.005em;
+    }
+
+    /* Better paragraph defaults */
+    p {
+        line-height: var(--text-body-line-height);
+    }
+
+    /* Improve readability for long-form content */
+    article p,
+    .prose p {
+        line-height: 1.7;
+        margin-bottom: 1.25em;
+    }
+
+    /* Strong text - slightly heavier for emphasis */
+    strong, b {
+        font-weight: 600;
+    }
+
+    /* Small text */
+    small {
+        font-size: var(--text-small-size);
+        line-height: var(--text-small-line-height);
+    }
+
+    /* Code elements */
+    code, kbd, samp, pre {
+        font-family: var(--font-mono);
+        font-size: 0.9em;
+    }
+
+    /* Labels and captions */
+    label {
+        font-size: var(--text-caption-size);
+        font-weight: 500;
+        line-height: 1.4;
+    }
+
+    /* Table text - ensure tabular numbers */
+    td, th {
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Button text baseline */
+    button {
+        font-family: inherit;
+        font-weight: 500;
+    }
+
+    /* Input text */
+    input, textarea, select {
+        font-family: inherit;
+        font-size: var(--text-body-size);
     }
 }
 
@@ -292,6 +461,22 @@
   background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* Slide-up animation for notifications */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out forwards;
 }
 
 /* ========================================
@@ -500,6 +685,183 @@
 }
 
 /* ========================================
+   TYPOGRAPHY SCALE CLASSES
+   Professional, money-focused, easy to understand
+   ======================================== */
+
+/* Display - Hero headlines, big impact moments
+   Use for: Landing page hero, major announcements, success states */
+.text-display {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-size);
+  font-weight: 800;
+  line-height: var(--text-display-line-height);
+  letter-spacing: var(--text-display-tracking);
+  text-wrap: balance;
+}
+
+/* Heading H1 - Page titles, major section headers
+   Use for: Dashboard title, "Your Deals", main page headers */
+.text-h1 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h1-size);
+  font-weight: 700;
+  line-height: var(--text-h1-line-height);
+  letter-spacing: var(--text-h1-tracking);
+  text-wrap: balance;
+}
+
+/* Heading - General section headers (alias for h2)
+   Use for: Section headers, card titles, sidebar sections
+   Bold, confident, money-focused - gets attention */
+.text-heading {
+  font-family: var(--font-sans);
+  font-size: var(--text-h2-size);
+  font-weight: 700;
+  line-height: var(--text-h2-line-height);
+  letter-spacing: var(--text-h2-tracking);
+}
+
+/* Heading H2 - Section headers
+   Use for: Card titles, sidebar sections, major groupings */
+.text-h2 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h2-size);
+  font-weight: 700;
+  line-height: var(--text-h2-line-height);
+  letter-spacing: var(--text-h2-tracking);
+}
+
+/* Heading H3 - Subsection headers
+   Use for: Widget titles, list headers, modal titles */
+.text-h3 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h3-size);
+  font-weight: 600;
+  line-height: var(--text-h3-line-height);
+  letter-spacing: var(--text-h3-tracking);
+}
+
+/* Heading H4 - Minor headers
+   Use for: Table headers, small card titles, labels */
+.text-h4 {
+  font-family: var(--font-sans);
+  font-size: var(--text-h4-size);
+  font-weight: 600;
+  line-height: var(--text-h4-line-height);
+  letter-spacing: var(--text-h4-tracking);
+}
+
+/* Body - Standard readable text
+   Use for: Descriptions, paragraphs, explanations */
+.text-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  font-weight: 400;
+  line-height: var(--text-body-line-height);
+  letter-spacing: var(--text-body-tracking);
+}
+
+/* Body Large - Emphasized body text
+   Use for: Lead paragraphs, important descriptions */
+.text-body-lg {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-lg-size);
+  font-weight: 400;
+  line-height: var(--text-body-lg-line-height);
+  letter-spacing: var(--text-body-tracking);
+}
+
+/* Body with better paragraph spacing */
+.text-body-relaxed {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  font-weight: 400;
+  line-height: 1.75;
+  letter-spacing: 0.015em;
+}
+
+/* Caption - Supporting text
+   Use for: Timestamps, hints, secondary info, form help text */
+.text-caption {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption-size);
+  font-weight: 400;
+  line-height: var(--text-caption-line-height);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-secondary);
+}
+
+/* Small - Smallest readable text
+   Use for: Legal text, badges, fine print */
+.text-small {
+  font-family: var(--font-sans);
+  font-size: var(--text-small-size);
+  font-weight: 500;
+  line-height: var(--text-small-line-height);
+  letter-spacing: var(--text-small-tracking);
+  text-transform: uppercase;
+}
+
+/* Stat - Large numbers for KPIs
+   Use for: Dashboard metrics, earnings, deal counts
+   Bold and confident - shows the money */
+.text-stat {
+  font-family: var(--font-sans);
+  font-size: var(--text-stat-size);
+  font-weight: 800;
+  line-height: var(--text-stat-line-height);
+  letter-spacing: var(--text-stat-tracking);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stat label - Text below stats */
+.text-stat-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption-size);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* CTA Text - Action-oriented button/link text
+   Clear, urgent but professional */
+.text-cta {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+/* Label - Form labels, field names */
+.text-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption-size);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+/* Money - Currency display
+   Tabular nums for alignment, easy to scan */
+.text-money {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Code/mono text */
+.text-code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  letter-spacing: -0.01em;
+}
+
+/* ========================================
    TEXT STYLING UTILITIES
    ======================================== */
 
@@ -536,15 +898,15 @@
     0 0 40px rgba(139, 92, 246, 0.3);
 }
 
-/* Improved heading styles */
+/* Legacy heading styles - kept for backwards compatibility */
 .heading-display {
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.025em;
   line-height: 1.1;
 }
 
 .heading-section {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 1.2;
 }
@@ -555,20 +917,34 @@
   line-height: 1.3;
 }
 
-/* Body text with improved readability */
-.text-body {
-  line-height: 1.6;
-  letter-spacing: 0.01em;
-}
-
-.text-body-relaxed {
-  line-height: 1.75;
-  letter-spacing: 0.015em;
-}
-
-/* Muted text utility */
+/* Text utilities */
 .text-balance {
   text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+/* Truncation utilities */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.text-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ========================================
@@ -875,4 +1251,807 @@
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ========================================
+   RESPONSIVE TYPOGRAPHY
+   Mobile-first readability adjustments
+   ======================================== */
+
+@media (max-width: 640px) {
+  :root {
+    /* Slightly increase base body size on mobile for readability */
+    --text-body-size: 1rem;
+    --text-body-line-height: 1.7;
+
+    /* Ensure stats are still impactful but fit mobile screens */
+    --text-stat-size: clamp(1.75rem, 8vw, 2.5rem);
+
+    /* Caption slightly larger on mobile for touch targets */
+    --text-caption-size: 0.9375rem;
+    --text-caption-line-height: 1.6;
+  }
+
+  /* Increase tap target sizes for labels */
+  label {
+    font-size: 0.9375rem;
+    padding: 0.125rem 0;
+  }
+
+  /* Better paragraph spacing on mobile */
+  p {
+    line-height: 1.7;
+    margin-bottom: 1rem;
+  }
+
+  /* Ensure buttons have readable text */
+  button, .btn-base {
+    font-size: 0.9375rem;
+    min-height: 44px; /* iOS touch target minimum */
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    /* Even tighter tracking on very small screens */
+    --text-display-tracking: -0.02em;
+    --text-h1-tracking: -0.015em;
+  }
+
+  /* Prevent awkward orphans on small screens */
+  .text-display,
+  .text-h1,
+  .text-heading {
+    text-wrap: balance;
+    word-break: break-word;
+    hyphens: auto;
+  }
+}
+
+/* ========================================
+   ACCESSIBILITY - CONTRAST & READABILITY
+   ======================================== */
+
+/* Ensure minimum contrast for secondary text */
+@media (prefers-contrast: more) {
+  :root {
+    --text-secondary: #B4C1D4;
+    --text-muted: #8896AB;
+  }
+}
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* High contrast focus states for keyboard users */
+@media (prefers-contrast: more) {
+  .focus-ring:focus-visible {
+    box-shadow: 0 0 0 3px var(--bg-primary), 0 0 0 6px var(--accent-blue);
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 3px solid var(--accent-blue);
+    outline-offset: 2px;
+  }
+}
+
+/* ========================================
+   PROFESSIONAL UI/VFX POLISH
+   Sophisticated, trustworthy appearance for real estate investors
+   ======================================== */
+
+/* Hero gradient backgrounds */
+.gradient-hero {
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #1a2744 100%);
+}
+
+.gradient-hero-radial {
+  background:
+    radial-gradient(ellipse at top, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+    linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+}
+
+/* Card gradients - subtle and professional */
+.gradient-card {
+  background: linear-gradient(145deg, var(--bg-secondary) 0%, rgba(30, 41, 59, 0.8) 100%);
+}
+
+.gradient-card-gold {
+  background: linear-gradient(145deg, rgba(245, 158, 11, 0.1) 0%, rgba(30, 41, 59, 0.9) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+/* CTA gradients - gold/amber for money focus */
+.gradient-cta {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  color: white;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+}
+
+.gradient-cta:hover {
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Professional shadows with depth */
+.shadow-card {
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    0 4px 8px rgba(0, 0, 0, 0.08),
+    0 8px 16px rgba(0, 0, 0, 0.04);
+}
+
+.shadow-card-hover {
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.16),
+    0 8px 16px rgba(0, 0, 0, 0.12),
+    0 16px 32px rgba(0, 0, 0, 0.08);
+}
+
+.shadow-elevated {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.2),
+    0 10px 20px -5px rgba(0, 0, 0, 0.15),
+    0 20px 40px -10px rgba(0, 0, 0, 0.1);
+}
+
+/* Subtle glow for important elements */
+.shadow-glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 0 40px rgba(59, 130, 246, 0.1);
+}
+
+.shadow-glow-gold {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.1);
+}
+
+.shadow-glow-success {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.1);
+}
+
+/* Glass effects */
+.glass {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-dark {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Gradient borders for premium cards */
+.border-gradient {
+  position: relative;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+}
+
+.border-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.border-gradient-gold::before {
+  background: linear-gradient(135deg, #F59E0B, #FBBF24);
+}
+
+/* Number counter animation */
+@keyframes count-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-count-up {
+  animation: count-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Fade in on scroll - subtle */
+@keyframes fade-in-scroll {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-on-scroll {
+  animation: fade-in-scroll 0.5s ease-out forwards;
+}
+
+/* Smooth shine effect for stats */
+@keyframes shine {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.shine-effect {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+.shine-effect:hover {
+  animation: shine 1.5s ease-in-out;
+}
+
+/* Stat highlight treatment */
+.stat-highlight {
+  position: relative;
+  display: inline-block;
+}
+
+.stat-highlight::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+  border-radius: 2px;
+}
+
+/* Price tag styling */
+.price-tag {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.price-tag-highlight {
+  background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========================================
+   PRINT TYPOGRAPHY
+   ======================================== */
+
+@media print {
+  :root {
+    --text-body-size: 12pt;
+    --text-body-line-height: 1.5;
+  }
+
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    color: black;
+    background: white;
+  }
+
+  h1, h2, h3, h4, h5, h6,
+  .text-display, .text-h1, .text-h2, .text-h3, .text-h4, .text-heading {
+    color: black;
+    page-break-after: avoid;
+  }
+
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+}
+
+/* ========================================
+   PROFESSIONAL REAL ESTATE UTILITY CLASSES
+   For wholesalers who want to make money with automation
+   ======================================== */
+
+/* Card Professional - Styled card with gradient border
+   Use for: Deal cards, lead profiles, campaign stats */
+.card-professional {
+  position: relative;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  transition:
+    transform var(--transition-normal) var(--ease-out-expo),
+    box-shadow var(--transition-normal) var(--ease-out-expo);
+  overflow: hidden;
+}
+
+.card-professional::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary) 0%,
+    var(--brand-secondary) 50%,
+    var(--brand-accent) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.card-professional:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(30, 64, 175, 0.15),
+    0 0 60px rgba(245, 158, 11, 0.1);
+}
+
+/* Subtle gradient overlay for premium feel */
+.card-professional::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background: linear-gradient(
+    180deg,
+    rgba(30, 64, 175, 0.08) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Button CTA - High-visibility call-to-action button
+   Use for: "Close Deal", "Start Campaign", "Get Leads" */
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-8);
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.25;
+  color: white;
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary) 0%,
+    var(--brand-primary-light) 100%
+  );
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform var(--transition-normal) var(--ease-out-expo),
+    box-shadow var(--transition-normal) var(--ease-out-expo);
+  box-shadow:
+    0 4px 14px rgba(30, 64, 175, 0.4),
+    0 0 20px rgba(30, 64, 175, 0.2);
+}
+
+.btn-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    var(--brand-secondary) 0%,
+    var(--brand-secondary-light) 100%
+  );
+  opacity: 0;
+  transition: opacity var(--transition-normal) var(--ease-in-out-smooth);
+}
+
+.btn-cta:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow:
+    0 8px 25px rgba(30, 64, 175, 0.5),
+    0 0 40px rgba(245, 158, 11, 0.3);
+}
+
+.btn-cta:hover::before {
+  opacity: 1;
+}
+
+.btn-cta:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow:
+    0 2px 10px rgba(30, 64, 175, 0.4);
+}
+
+.btn-cta:focus-visible {
+  outline: none;
+  box-shadow:
+    0 4px 14px rgba(30, 64, 175, 0.4),
+    0 0 0 3px rgba(245, 158, 11, 0.5);
+}
+
+.btn-cta > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Secondary CTA - Gold/money variant */
+.btn-cta-gold {
+  background: linear-gradient(
+    135deg,
+    var(--brand-secondary-dark) 0%,
+    var(--brand-secondary) 50%,
+    var(--brand-secondary-light) 100%
+  );
+  box-shadow:
+    0 4px 14px rgba(245, 158, 11, 0.4),
+    0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+.btn-cta-gold::before {
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary) 0%,
+    var(--brand-primary-light) 100%
+  );
+}
+
+.btn-cta-gold:hover {
+  box-shadow:
+    0 8px 25px rgba(245, 158, 11, 0.5),
+    0 0 40px rgba(30, 64, 175, 0.3);
+}
+
+/* Success CTA - Deal closed variant */
+.btn-cta-success {
+  background: linear-gradient(
+    135deg,
+    var(--brand-accent-dark) 0%,
+    var(--brand-accent) 50%,
+    var(--brand-accent-light) 100%
+  );
+  box-shadow:
+    0 4px 14px rgba(16, 185, 129, 0.4),
+    0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.btn-cta-success:hover {
+  box-shadow:
+    0 8px 25px rgba(16, 185, 129, 0.5),
+    0 0 40px rgba(16, 185, 129, 0.3);
+}
+
+/* Stat Highlight - For displaying key metrics
+   Use for: Revenue, deals closed, ROI, conversion rates */
+.stat-highlight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-6);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    rgba(30, 64, 175, 0.1) 100%
+  );
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-highlight::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    var(--brand-primary) 0%,
+    var(--brand-accent) 100%
+  );
+}
+
+.stat-highlight-value {
+  font-family: var(--font-sans);
+  font-size: var(--text-stat-size);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-highlight-label {
+  font-size: var(--text-caption-size);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
+}
+
+/* Stat highlight color variants */
+.stat-highlight-money .stat-highlight-value {
+  background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-secondary-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-highlight-money::before {
+  background: linear-gradient(
+    180deg,
+    var(--brand-secondary) 0%,
+    var(--brand-secondary-light) 100%
+  );
+}
+
+.stat-highlight-success .stat-highlight-value {
+  color: var(--brand-accent);
+}
+
+.stat-highlight-success::before {
+  background: linear-gradient(
+    180deg,
+    var(--brand-accent) 0%,
+    var(--brand-accent-light) 100%
+  );
+}
+
+/* Price Tag - For showing pricing/money
+   Use for: Deal values, assignment fees, profit margins */
+.price-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.price-tag-currency {
+  font-size: 0.65em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  vertical-align: top;
+  position: relative;
+  top: 0.15em;
+}
+
+.price-tag-value {
+  font-size: inherit;
+  color: inherit;
+}
+
+.price-tag-cents {
+  font-size: 0.6em;
+  font-weight: 500;
+  color: var(--text-secondary);
+  vertical-align: top;
+  position: relative;
+  top: 0.1em;
+}
+
+/* Price tag size variants */
+.price-tag-sm {
+  font-size: 1rem;
+}
+
+.price-tag-md {
+  font-size: 1.5rem;
+}
+
+.price-tag-lg {
+  font-size: 2rem;
+}
+
+.price-tag-xl {
+  font-size: 3rem;
+}
+
+/* Price tag color variants */
+.price-tag-profit {
+  color: var(--brand-accent);
+}
+
+.price-tag-profit .price-tag-currency,
+.price-tag-profit .price-tag-cents {
+  color: var(--brand-accent-light);
+}
+
+.price-tag-gold {
+  background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-secondary-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.price-tag-gold .price-tag-currency,
+.price-tag-gold .price-tag-cents {
+  background: linear-gradient(135deg, var(--brand-secondary-light) 0%, var(--brand-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glowing price tag for emphasis */
+.price-tag-glow {
+  text-shadow:
+    0 0 20px rgba(245, 158, 11, 0.5),
+    0 0 40px rgba(245, 158, 11, 0.3);
+}
+
+/* ========================================
+   ADDITIONAL PROFESSIONAL UTILITIES
+   ======================================== */
+
+/* Trust badge - For showing credibility indicators */
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: rgba(30, 64, 175, 0.15);
+  border: 1px solid rgba(30, 64, 175, 0.3);
+  border-radius: var(--radius-xl);
+  font-size: var(--text-caption-size);
+  font-weight: 500;
+  color: var(--brand-primary-light);
+}
+
+/* Deal status indicator */
+.deal-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-small-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.deal-status-hot {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.deal-status-warm {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--brand-secondary-light);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.deal-status-closed {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--brand-accent-light);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.deal-status-pipeline {
+  background: rgba(30, 64, 175, 0.15);
+  color: var(--brand-primary-light);
+  border: 1px solid rgba(30, 64, 175, 0.3);
+}
+
+/* Progress bar for deal stages */
+.progress-professional {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-professional-bar {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--brand-primary) 0%,
+    var(--brand-secondary) 50%,
+    var(--brand-accent) 100%
+  );
+  border-radius: inherit;
+  transition: width var(--transition-slow) var(--ease-out-expo);
+  position: relative;
+}
+
+.progress-professional-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer 2s infinite;
+}
+
+/* ROI indicator */
+.roi-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.roi-indicator-positive {
+  color: var(--brand-accent);
+}
+
+.roi-indicator-negative {
+  color: var(--color-error);
+}
+
+/* Money gradient text */
+.text-money-gradient {
+  background: linear-gradient(
+    135deg,
+    var(--brand-secondary-dark) 0%,
+    var(--brand-secondary) 30%,
+    var(--brand-secondary-light) 60%,
+    var(--brand-secondary) 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Professional divider */
+.divider-professional {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--border-medium) 20%,
+    var(--border-medium) 80%,
+    transparent 100%
+  );
+  margin: var(--space-6) 0;
 }

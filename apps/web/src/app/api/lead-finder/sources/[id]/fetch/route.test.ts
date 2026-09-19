@@ -20,6 +20,11 @@ vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
 const { requireAdmin } = vi.hoisted(() => ({ requireAdmin: vi.fn() }));
 vi.mock('@/app/api/utils/authz', () => ({ requireAdmin }));
 
+const { getOrganization } = vi.hoisted(() => ({ getOrganization: vi.fn() }));
+vi.mock('@/lib/organization-context', () => ({
+  getOrganization: (...a: any[]) => getOrganization(...a),
+}));
+
 vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn(async () => {}) }));
 
 import { POST } from './route';
@@ -42,6 +47,7 @@ const SOURCE = {
   category: 'seller',
   jurisdiction: 'Louisville Metro, KY',
   distress_weight: 80,
+  organization_id: 'org_1',
 };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -49,6 +55,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.clearAllMocks();
   requireAdmin.mockResolvedValue({ ok: true, userId: 'admin-1' });
+  getOrganization.mockResolvedValue({ id: 'org_1' });
   mockSql.mockResolvedValue([]);
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
@@ -129,14 +136,13 @@ describe('dataset configuration', () => {
 
 describe('ingestion', () => {
   it('parses, scores and inserts fetched records', async () => {
-    mockSql.mockResolvedValueOnce([SOURCE]);
+    mockSql.mockResolvedValueOnce([SOURCE]); // SELECT source
     upstream([
       { owner_name: 'Jane Owner', property_address: '12 Oak St' },
       { owner_name: 'Bob Owner', property_address: '14 Oak St' },
     ]);
     mockSql
-      .mockResolvedValueOnce([{ id: 11 }]) // INSERT row 1
-      .mockResolvedValueOnce([{ id: 12 }]) // INSERT row 2
+      .mockResolvedValueOnce([{ id: 11 }, { id: 12 }]) // Batch INSERT via unnest
       .mockResolvedValueOnce([]); // UPDATE lead_sources
 
     const b = await (await POST(req(), ctx('1'))).json();
@@ -146,7 +152,7 @@ describe('ingestion', () => {
   });
 
   it('never persists contact data present in the upstream payload', async () => {
-    mockSql.mockResolvedValueOnce([SOURCE]);
+    mockSql.mockResolvedValueOnce([SOURCE]); // SELECT source
     upstream([
       { owner_name: 'Jane', property_address: '12 Oak St', phone: '5025550123', email: 'j@x.com' },
     ]);
@@ -159,11 +165,11 @@ describe('ingestion', () => {
   });
 
   it('counts DB-deduped rows as duplicates, not inserts', async () => {
-    mockSql.mockResolvedValueOnce([SOURCE]);
+    mockSql.mockResolvedValueOnce([SOURCE]); // SELECT source
     upstream([{ owner_name: 'Jane', property_address: '12 Oak St' }]);
     mockSql
-      .mockResolvedValueOnce([]) // INSERT ... ON CONFLICT DO NOTHING -> no row
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([]) // Batch INSERT ... ON CONFLICT DO NOTHING -> no rows returned
+      .mockResolvedValueOnce([]); // UPDATE lead_sources
 
     const b = await (await POST(req(), ctx('1'))).json();
     expect(b.inserted).toBe(0);
@@ -173,12 +179,11 @@ describe('ingestion', () => {
 
 describe('pagination', () => {
   it('returns nextOffset when the page came back full', async () => {
-    mockSql.mockResolvedValueOnce([SOURCE]);
+    mockSql.mockResolvedValueOnce([SOURCE]); // SELECT source
     upstream([{ property_address: '1 A St' }, { property_address: '2 B St' }]);
     mockSql
-      .mockResolvedValueOnce([{ id: 1 }])
-      .mockResolvedValueOnce([{ id: 2 }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ id: 1 }, { id: 2 }]) // Batch INSERT via unnest
+      .mockResolvedValueOnce([]); // UPDATE lead_sources
 
     const b = await (await POST(req({ limit: 2, offset: 10 }), ctx('1'))).json();
     expect(b.morePossible).toBe(true);
@@ -186,9 +191,9 @@ describe('pagination', () => {
   });
 
   it('reports no more when the page came back partial', async () => {
-    mockSql.mockResolvedValueOnce([SOURCE]);
+    mockSql.mockResolvedValueOnce([SOURCE]); // SELECT source
     upstream([{ property_address: '1 A St' }]);
-    mockSql.mockResolvedValueOnce([{ id: 1 }]).mockResolvedValueOnce([]);
+    mockSql.mockResolvedValueOnce([{ id: 1 }]).mockResolvedValueOnce([]); // Batch INSERT + UPDATE
 
     const b = await (await POST(req({ limit: 500 }), ctx('1'))).json();
     expect(b.morePossible).toBe(false);

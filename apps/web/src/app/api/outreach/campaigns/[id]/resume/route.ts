@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { validateTransition } from '@/app/api/utils/campaignStateMachine';
 
 export async function POST(
   request: NextRequest,
@@ -30,23 +31,24 @@ export async function POST(
     }
     const campaign = campaignRows[0];
 
-    if (campaign.status !== 'PAUSED') {
-      return NextResponse.json({ error: `Can only resume PAUSED campaigns (current: ${campaign.status})` }, { status: 400 });
-    }
-
+    // Determine target state based on campaign timing
     const now = new Date();
     const endDate = new Date(campaign.start_date || now);
     endDate.setDate(endDate.getDate() + campaign.duration_days);
+    const targetStatus = now >= endDate ? 'COMPLETED' : 'ACTIVE';
 
-    const newStatus = now >= endDate ? 'COMPLETED' : 'ACTIVE';
+    const transition = validateTransition(campaign.status, targetStatus);
+    if (!transition.isValid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
+    }
 
     await sql`
-      UPDATE outreach_campaigns SET status = ${newStatus}, updated_at = now() WHERE id = ${campaignId}
+      UPDATE outreach_campaigns SET status = ${targetStatus}, updated_at = now() WHERE id = ${campaignId}
     `;
 
-    await logEvent('campaign_resumed', 'campaign', campaignId, { status: newStatus }, session.user.id);
+    await logEvent('campaign_resumed', 'campaign', campaignId, { status: targetStatus }, session.user.id);
 
-    return NextResponse.json({ id: campaignId, status: newStatus });
+    return NextResponse.json({ id: campaignId, status: targetStatus });
   } catch (error: any) {
     console.error('POST /api/outreach/campaigns/[id]/resume error', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

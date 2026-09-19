@@ -40,6 +40,15 @@ vi.mock('@/lib/legal-acceptance', () => ({
   hasAcceptedCurrentLegal: vi.fn(async () => true),
 }));
 
+const { checkLimit, recordMetricUsage } = vi.hoisted(() => ({
+  checkLimit: vi.fn(async () => ({ allowed: true, current: 0, limit: 10000, remaining: 10000, percentUsed: 0, tier: 'free', isFreeTier: true })),
+  recordMetricUsage: vi.fn(async () => {}),
+}));
+vi.mock('@/app/api/services/tierLimits', () => ({ checkLimit, recordMetricUsage }));
+
+const { recordStageTransition } = vi.hoisted(() => ({ recordStageTransition: vi.fn(async () => {}) }));
+vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition }));
+
 import * as leads from '../../leads/route';
 import * as campaigns from '../../campaigns/route';
 import * as campaignLeads from '../../campaigns/[id]/leads/route';

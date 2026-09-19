@@ -49,73 +49,71 @@ export default function CrmPage() {
     URL.revokeObjectURL(a.href);
   };
 
-  if (authLoading) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  if (authLoading) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" /></div>;
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900">CRM</h1>
-            <p className="text-gray-500 mt-1">{contacts.length} contacts</p>
-          </div>
-          <Button variant="outline" onClick={exportCsv} disabled={!contacts.length}>
-            <Download className="h-4 w-4 mr-1" /> Export CSV
-          </Button>
-        </header>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3">
-          <Input placeholder="Search name or phone…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-            <option value="">All statuses</option>
-            {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-            <option value="">All campaigns</option>
-            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+    <div className="space-y-6 max-w-6xl">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">CRM</h1>
+          <p className="text-[var(--text-secondary)] mt-1">{contacts.length} contacts</p>
         </div>
+        <Button variant="outline" onClick={exportCsv} disabled={!contacts.length} className="border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">
+          <Download className="h-4 w-4 mr-1" /> Export CSV
+        </Button>
+      </header>
 
-        <Card className="border-none shadow-sm">
-          <CardContent className="p-0 overflow-x-auto">
-            {isLoading ? (
-              <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin opacity-30" /></div>
-            ) : contacts.length === 0 ? (
-              <div className="py-12 text-center text-gray-400">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>No contacts match these filters.</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b">
-                    <th className="py-2 px-4">Name</th>
-                    <th className="py-2 px-2">Phone</th>
-                    <th className="py-2 px-2">Status</th>
-                    <th className="py-2 px-2">Campaign</th>
-                    <th className="py-2 px-2 text-right">Follow-ups</th>
-                    <th className="py-2 px-4">Last activity</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contacts.map((c) => (
-                    <tr key={c.id} onClick={() => setSelected(c.id)} className="border-b last:border-0 hover:bg-gray-50 cursor-pointer">
-                      <td className="py-2 px-4 font-medium text-gray-900">{c.name}</td>
-                      <td className="py-2 px-2 text-gray-600">{c.phone}</td>
-                      <td className="py-2 px-2"><Badge variant="outline">{c.status}</Badge></td>
-                      <td className="py-2 px-2 text-gray-600">{c.campaignName || '—'}</td>
-                      <td className="py-2 px-2 text-right">{c.followUpsSent ?? 0}</td>
-                      <td className="py-2 px-4 text-gray-500">{fmt(c.lastMessageAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <Input placeholder="Search name or phone..." value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] px-3 text-sm text-[var(--text-primary)]">
+          <option value="">All statuses</option>
+          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="h-10 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] px-3 text-sm text-[var(--text-primary)]">
+          <option value="">All campaigns</option>
+          {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
       </div>
+
+      <Card className="glass-card">
+        <CardContent className="p-0 overflow-x-auto">
+          {isLoading ? (
+            <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-[var(--accent-blue)]" /></div>
+          ) : contacts.length === 0 ? (
+            <div className="py-12 text-center text-[var(--text-muted)]">
+              <Users className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p>No contacts match these filters.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-subtle)]">
+                  <th className="py-2 px-4">Name</th>
+                  <th className="py-2 px-2">Phone</th>
+                  <th className="py-2 px-2">Status</th>
+                  <th className="py-2 px-2">Campaign</th>
+                  <th className="py-2 px-2 text-right">Follow-ups</th>
+                  <th className="py-2 px-4">Last activity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contacts.map((c) => (
+                  <tr key={c.id} onClick={() => setSelected(c.id)} className="border-b border-[var(--border-subtle)] last:border-0 hover:bg-[var(--bg-tertiary)] cursor-pointer">
+                    <td className="py-2 px-4 font-medium text-[var(--text-primary)]">{c.name}</td>
+                    <td className="py-2 px-2 text-[var(--text-secondary)]">{c.phone}</td>
+                    <td className="py-2 px-2"><Badge variant="outline" className="border-[var(--border-subtle)] text-[var(--text-muted)]">{c.status}</Badge></td>
+                    <td className="py-2 px-2 text-[var(--text-secondary)]">{c.campaignName || '-'}</td>
+                    <td className="py-2 px-2 text-right text-[var(--text-primary)]">{c.followUpsSent ?? 0}</td>
+                    <td className="py-2 px-4 text-[var(--text-muted)]">{fmt(c.lastMessageAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
 
       {selected && (
         <ContactDrawer
@@ -158,51 +156,51 @@ function ContactDrawer({ id, onClose, onChanged }: { id: string; onClose: () => 
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/30" />
-      <div className="relative w-full max-w-md bg-white h-full shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
-          <h2 className="font-semibold text-lg">{c?.name || 'Contact'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+      <div className="absolute inset-0 bg-black/50" />
+      <div className="relative w-full max-w-md bg-[var(--bg-secondary)] h-full shadow-xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] p-4 flex items-center justify-between">
+          <h2 className="font-semibold text-lg text-[var(--text-primary)]">{c?.name || 'Contact'}</h2>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X className="h-5 w-5" /></button>
         </div>
         {isLoading || !c ? (
-          <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin opacity-30" /></div>
+          <div className="py-12 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-[var(--accent-blue)]" /></div>
         ) : (
           <div className="p-4 space-y-5">
             <div className="space-y-1 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Phone</span><span>{c.phone}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Status</span><Badge variant="outline">{c.status}</Badge></div>
-              <div className="flex justify-between"><span className="text-gray-500">Campaign</span><span>{c.campaignName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Follow-ups sent</span><span>{c.followUpsSent ?? 0}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Last reply</span><span>{fmt(c.lastReplyAt)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">Phone</span><span className="text-[var(--text-primary)]">{c.phone}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">Status</span><Badge variant="outline" className="border-[var(--border-subtle)] text-[var(--text-secondary)]">{c.status}</Badge></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">Campaign</span><span className="text-[var(--text-primary)]">{c.campaignName || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">Follow-ups sent</span><span className="text-[var(--text-primary)]">{c.followUpsSent ?? 0}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--text-muted)]">Last reply</span><span className="text-[var(--text-primary)]">{fmt(c.lastReplyAt)}</span></div>
             </div>
 
             {c.status !== 'OPTED_OUT' && (
-              <Button variant="outline" size="sm" onClick={optOut} disabled={optingOut} className="text-red-600 border-red-200">
-                <PhoneOff className="h-4 w-4 mr-1" /> {optingOut ? 'Opting out…' : 'Manual opt-out'}
+              <Button variant="outline" size="sm" onClick={optOut} disabled={optingOut} className="text-[var(--color-error)] border-[var(--color-error)]/30 hover:bg-[var(--color-error)]/10">
+                <PhoneOff className="h-4 w-4 mr-1" /> {optingOut ? 'Opting out...' : 'Manual opt-out'}
               </Button>
             )}
 
             {neg && (
               <div>
-                <h3 className="text-sm font-semibold mb-2">Negotiation ladder</h3>
-                <div className="text-sm space-y-1 rounded-md bg-gray-50 border p-3">
-                  <div className="flex justify-between"><span className="text-gray-500">Owner range</span><span>${neg.min_price?.toLocaleString()}–${neg.max_price?.toLocaleString()}</span></div>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Negotiation ladder</h3>
+                <div className="text-sm space-y-1 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] p-3">
+                  <div className="flex justify-between"><span className="text-[var(--text-muted)]">Owner range</span><span className="text-[var(--text-primary)]">${neg.min_price?.toLocaleString()}-${neg.max_price?.toLocaleString()}</span></div>
                   {[neg.tier1_price, neg.tier2_price, neg.tier3_price, neg.tier4_price].map((t: number, i: number) => (
-                    <div key={i} className="flex justify-between"><span className="text-gray-500">Tier {i + 1}{neg.current_tier === i + 1 ? ' (current)' : ''}</span><span>${t?.toLocaleString()}</span></div>
+                    <div key={i} className="flex justify-between"><span className="text-[var(--text-muted)]">Tier {i + 1}{neg.current_tier === i + 1 ? ' (current)' : ''}</span><span className="text-[var(--text-primary)]">${t?.toLocaleString()}</span></div>
                   ))}
                 </div>
               </div>
             )}
 
             <div>
-              <h3 className="text-sm font-semibold mb-2">Conversation ({convo.length})</h3>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Conversation ({convo.length})</h3>
               {convo.length === 0 ? (
-                <p className="text-sm text-gray-400">No messages yet.</p>
+                <p className="text-sm text-[var(--text-muted)]">No messages yet.</p>
               ) : (
                 <div className="space-y-2">
                   {convo.map((m: any, i: number) => (
-                    <div key={i} className={`rounded-lg p-2.5 text-sm max-w-[85%] ${m.role === 'assistant' ? 'bg-blue-50 ml-auto text-right' : 'bg-gray-100'}`}>
-                      <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">{m.role === 'assistant' ? 'AI' : 'Lead'}</div>
+                    <div key={i} className={`rounded-lg p-2.5 text-sm max-w-[85%] ${m.role === 'assistant' ? 'bg-[var(--accent-blue)]/10 ml-auto text-right text-[var(--text-primary)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'}`}>
+                      <div className="text-[10px] uppercase tracking-wide text-[var(--text-muted)] mb-0.5">{m.role === 'assistant' ? 'AI' : 'Lead'}</div>
                       {m.content}
                     </div>
                   ))}

@@ -2,6 +2,11 @@ import { neon, NeonQueryFunction } from '@neondatabase/serverless';
 
 type SqlQueryFunction = NeonQueryFunction<false, false> & {
   query: NeonQueryFunction<false, false>;
+  /**
+   * UNSAFE: Injects raw SQL without parameterization.
+   * Only use for dynamic column/table names, never for user input.
+   */
+  unsafe: (sql: string) => { __unsafeSql: string };
 };
 
 const NullishQueryFunction = (() => {
@@ -21,5 +26,11 @@ const sql = (
   process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : NullishQueryFunction
 ) as SqlQueryFunction;
 sql.query = sql;
+
+/**
+ * UNSAFE: Injects raw SQL without parameterization.
+ * Only use for dynamic column/table names, never for user input.
+ */
+sql.unsafe = (rawSql: string) => ({ __unsafeSql: rawSql });
 
 export default sql;

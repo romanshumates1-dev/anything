@@ -54,9 +54,11 @@ describe('sendMessage — universal gate on the fallback transmit path', () => {
     expect(mockConsent).not.toHaveBeenCalled(); // denied before any further work
   });
 
-  it('email sends do NOT pass the sms gate (spec covers sms/voice/rvm only)', async () => {
+  it('email sends pass dispatchGate for opt-out/suppression (CAN-SPAM compliance)', async () => {
     await sendMessage({ leadId: 1, channel: 'email', to: 'a@b.co', text: 'hi' });
-    expect(mockGate).not.toHaveBeenCalled();
+    expect(mockGate).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'a@b.co', channel: 'email' })
+    );
     expect(mockConsent).toHaveBeenCalledWith('a@b.co', 'email'); // legacy check remains
   });
 });

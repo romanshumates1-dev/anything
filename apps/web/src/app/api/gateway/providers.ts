@@ -72,7 +72,7 @@ export class TwilioAdapter implements ISMSProvider {
     const client = this.getClient();
     const toE164 = to.startsWith('+') ? to : `+${to}`;
 
-    const createParams: Record<string, string> = {
+    const createParams: NonNullable<Parameters<ReturnType<typeof twilio>['messages']['create']>[0]> = {
       body: text,
       to: toE164,
     };

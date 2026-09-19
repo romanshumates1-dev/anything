@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import { checkLimit, recordMetricUsage } from '@/app/api/services/tierLimits';
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({
@@ -29,6 +30,19 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Name and Type are required' }, { status: 400 });
     }
 
+    // Check tier limits before creating lead
+    const limitCheck = await checkLimit(organization.id, 'lead');
+    if (!limitCheck.allowed) {
+      return Response.json({
+        error: 'limit_exceeded',
+        message: limitCheck.message,
+        upgradeReason: limitCheck.upgradeReason,
+        current: limitCheck.current,
+        limit: limitCheck.limit,
+        isFreeTier: limitCheck.isFreeTier,
+      }, { status: 402 }); // 402 Payment Required
+    }
+
     if (!['seller', 'buyer'].includes(type)) {
       return Response.json({ error: 'Invalid lead type' }, { status: 400 });
     }
@@ -40,6 +54,9 @@ export async function POST(request: Request) {
     `;
 
     await logEvent('lead_created', 'lead', lead.id.toString(), { type, organization_id: organization.id }, session.user.id);
+
+    // Record usage for tier tracking
+    await recordMetricUsage(organization.id, 'lead');
 
     // Funnel analytics (P4): every new lead enters the funnel at NEW.
     // Best-effort — recordStageTransition never throws, so this can never

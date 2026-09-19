@@ -7,11 +7,21 @@
  * - Notary scheduling
  * - Progress tracking
  *
+ * SECURITY: This endpoint uses a portal access token for authentication.
+ * The token is generated when a closing is created and sent to the lead via email.
+ * This allows external parties (sellers/buyers) to access their closing portal
+ * without needing a full account.
+ *
  * No phone calls required - fully autonomous.
  */
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+
+// Rate limits for public closing portal actions
+const CLOSING_VIEW_LIMIT = 20; // 20 views per hour per IP
+const CLOSING_ACTION_LIMIT = 10; // 10 actions per hour per IP (document uploads, payment setup)
 
 interface ClosingStatus {
   leadId: string;
@@ -40,11 +50,39 @@ interface ClosingStatus {
 }
 
 export async function GET(req: NextRequest) {
+  // Rate limit to prevent enumeration attacks
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const rateCheck = await rateLimitByUser(clientIp, 'closing_view', CLOSING_VIEW_LIMIT);
+  if (!rateCheck.allowed) {
+    return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+  }
+
   const url = new URL(req.url);
   const leadId = url.searchParams.get('lead') || url.searchParams.get('leadId');
+  const accessToken = url.searchParams.get('token');
 
   if (!leadId) {
     return Response.json({ error: 'leadId required' }, { status: 400 });
+  }
+
+  // Verify portal access token if provided, otherwise require session
+  if (accessToken) {
+    const [validToken] = await sql`
+      SELECT 1 FROM closings
+      WHERE lead_id = ${leadId}
+        AND portal_access_token = ${accessToken}
+        AND (portal_token_expires_at IS NULL OR portal_token_expires_at > NOW())
+      LIMIT 1
+    `.catch(() => []);
+
+    if (!validToken) {
+      return Response.json({ error: 'Invalid or expired access token' }, { status: 401 });
+    }
+  } else {
+    // No token - require session auth
+    const { requireSession } = await import('@/app/api/utils/authz');
+    const session = await requireSession();
+    if (!session.ok) return session.response;
   }
 
   try {
@@ -189,17 +227,44 @@ interface ClosingUpdate {
 }
 
 export async function POST(req: NextRequest) {
-  let body: ClosingUpdate;
+  // Rate limit to prevent abuse on state-changing actions
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const rateCheck = await rateLimitByUser(clientIp, 'closing_action', CLOSING_ACTION_LIMIT);
+  if (!rateCheck.allowed) {
+    return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
+  }
+
+  let body: ClosingUpdate & { token?: string };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { leadId, action, data } = body;
+  const { leadId, action, data, token: accessToken } = body;
 
   if (!leadId || !action) {
     return Response.json({ error: 'leadId and action required' }, { status: 400 });
+  }
+
+  // Verify portal access token if provided, otherwise require session
+  if (accessToken) {
+    const [validToken] = await sql`
+      SELECT 1 FROM closings
+      WHERE lead_id = ${leadId}
+        AND portal_access_token = ${accessToken}
+        AND (portal_token_expires_at IS NULL OR portal_token_expires_at > NOW())
+      LIMIT 1
+    `.catch(() => []);
+
+    if (!validToken) {
+      return Response.json({ error: 'Invalid or expired access token' }, { status: 401 });
+    }
+  } else {
+    // No token - require session auth
+    const { requireSession } = await import('@/app/api/utils/authz');
+    const session = await requireSession();
+    if (!session.ok) return session.response;
   }
 
   try {

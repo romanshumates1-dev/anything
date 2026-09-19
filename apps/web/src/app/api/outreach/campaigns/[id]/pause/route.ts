@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
+import { validateTransition } from '@/app/api/utils/campaignStateMachine';
 
 export async function POST(
   request: NextRequest,
@@ -30,8 +31,9 @@ export async function POST(
     }
     const campaign = campaignRows[0];
 
-    if (campaign.status !== 'ACTIVE') {
-      return NextResponse.json({ error: `Can only pause ACTIVE campaigns (current: ${campaign.status})` }, { status: 400 });
+    const transition = validateTransition(campaign.status, 'PAUSED');
+    if (!transition.isValid) {
+      return NextResponse.json({ error: transition.error }, { status: 400 });
     }
 
     await sql`

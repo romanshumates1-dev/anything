@@ -45,12 +45,13 @@ beforeEach(() => {
 
 describe('sizing', () => {
   it('turns a 1-deal target into the seller/buyer requirement', async () => {
-    mockSql.mockResolvedValueOnce(inventory(20000, 500)); // must exceed 10,334 sellers
+    mockSql.mockResolvedValueOnce(inventory(30000, 500)); // must exceed 25,835 sellers (2% replyRate)
     const res = await POST(req({ targetDeals: 1 }));
     expect(res.status).toBe(200);
     const b = await res.json();
 
-    expect(b.required.sellers).toBe(10334);
+    // 0.90 * 0.02 * 0.32 * 0.28 * 0.12 * 0.20 = 3.87072e-5 -> 1/3.87072e-5 = 25834.3 -> ceil = 25835
+    expect(b.required.sellers).toBe(25835);
     expect(b.required.buyers).toBe(200);
     expect(b.model.source).toBe('default');
     expect(b.feasible).toBe(true);
@@ -60,7 +61,7 @@ describe('sizing', () => {
     mockSql.mockResolvedValueOnce(inventory(1000000, 5000));
     const b = await (await POST(req({ targetDeals: 4 }))).json();
     expect(b.required.buyers).toBe(800); // 200 × 4
-    expect(b.required.sellers).toBe(41336); // 10334 × 4
+    expect(b.required.sellers).toBe(103340); // 25835 × 4 = 103340
   });
 
   it('returns the stage walk-down so the total is inspectable', async () => {
@@ -77,10 +78,11 @@ describe('sizing', () => {
   });
 
   it('accepts per-stage overrides and reports source=override', async () => {
-    mockSql.mockResolvedValueOnce(inventory(10000, 500));
+    mockSql.mockResolvedValueOnce(inventory(20000, 500));
     const b = await (await POST(req({ targetDeals: 1, seller: { replyRate: 0.12 } }))).json();
     expect(b.model.source).toBe('override');
-    expect(b.required.sellers).toBeLessThan(5752);
+    // 0.90 * 0.12 * 0.32 * 0.28 * 0.12 * 0.20 = 2.32243e-4 -> ~4306 sellers
+    expect(b.required.sellers).toBeLessThan(5000);
   });
 });
 
@@ -90,14 +92,15 @@ describe('inventory reconciliation', () => {
     const b = await (await POST(req({ targetDeals: 1 }))).json();
 
     expect(b.feasible).toBe(false);
+    // With 2% replyRate: 25835 sellers needed
     expect(b.inventory.sellers).toEqual({
-      requested: 10334,
+      requested: 25835,
       available: 1200,
-      shortfall: 9134,
+      shortfall: 24635,
       feasible: false,
     });
     expect(b.inventory.buyers.shortfall).toBe(188); // 200 - 12
-    expect(b.warnings.join(' ')).toMatch(/Short 9134 seller leads/);
+    expect(b.warnings.join(' ')).toMatch(/Short 24635 seller leads/);
   });
 
   it('warns specifically that no buyers means no assignment', async () => {
@@ -107,7 +110,8 @@ describe('inventory reconciliation', () => {
   });
 
   it('is feasible only when BOTH sides are covered', async () => {
-    mockSql.mockResolvedValueOnce(inventory(20000, 5)); // sellers fine, buyers short
+    // Need 25,835 sellers (2% replyRate) and 200 buyers, provide enough sellers but not buyers
+    mockSql.mockResolvedValueOnce(inventory(30000, 5)); // sellers fine, buyers short
     const b = await (await POST(req({ targetDeals: 1 }))).json();
     expect(b.feasible).toBe(false);
     expect(b.inventory.sellers.feasible).toBe(true); // the short side is buyers alone

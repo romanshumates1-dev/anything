@@ -12,8 +12,11 @@ import {
   getOptimizationsByCategory,
   type OptimizationResearch,
 } from '@/app/api/utils/optimization-research';
+import { requireSession } from '@/app/api/utils/authz';
 
 export async function GET(request: Request) {
+  const session = await requireSession();
+  if (!session.ok) return session.response;
   const url = new URL(request.url);
   const category = url.searchParams.get('category');
   const status = url.searchParams.get('status');

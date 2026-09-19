@@ -184,8 +184,9 @@ describe('Negotiation Engine', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Offer Computation', () => {
-    it('DEFAULT_CONCESSION_CURVE is [0.4, 0.25, 0.15, 0.1]', () => {
-      expect(DEFAULT_CONCESSION_CURVE).toEqual([0.4, 0.25, 0.15, 0.1]);
+    it('DEFAULT_CONCESSION_CURVE is [0.25, 0.20, 0.15, 0.10]', () => {
+      // Updated curve: smaller initial concession preserves $2k-$4k per deal
+      expect(DEFAULT_CONCESSION_CURVE).toEqual([0.25, 0.20, 0.15, 0.10]);
     });
 
     describe('Seller Side (opens LOW, concedes UP)', () => {
@@ -201,7 +202,7 @@ describe('Negotiation Engine', () => {
         console.log(`✓ Seller round 0: $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
       });
 
-      it('round 1 concedes 40% of gap', () => {
+      it('round 1 concedes 25% of gap', () => {
         const state: OfferState = {
           side: 'seller',
           openerCents: 8_000_000,
@@ -210,23 +211,23 @@ describe('Negotiation Engine', () => {
           lastOfferCents: 8_000_000,
         };
         const result = computeNextOffer(state);
-        // Gap = $100k - $80k = $20k. 40% of $20k = $8k. New offer = $80k + $8k = $88k
-        expect(result).toEqual({ kind: 'offer', offerCents: 8_800_000 });
-        console.log(`✓ Seller round 1: gap=$20k, 40%=$8k → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
+        // Gap = $100k - $80k = $20k. 25% of $20k = $5k. New offer = $80k + $5k = $85k
+        expect(result).toEqual({ kind: 'offer', offerCents: 8_500_000 });
+        console.log(`✓ Seller round 1: gap=$20k, 25%=$5k → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
       });
 
-      it('round 2 concedes 25% of remaining gap', () => {
+      it('round 2 concedes 20% of remaining gap', () => {
         const state: OfferState = {
           side: 'seller',
           openerCents: 8_000_000,
           clampCents: 10_000_000,
           round: 2,
-          lastOfferCents: 8_800_000,
+          lastOfferCents: 8_500_000,
         };
         const result = computeNextOffer(state);
-        // Remaining gap = $100k - $88k = $12k. 25% of $12k = $3k. New offer = $88k + $3k = $91k
-        expect(result).toEqual({ kind: 'offer', offerCents: 9_100_000 });
-        console.log(`✓ Seller round 2: remaining gap=$12k, 25%=$3k → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
+        // Remaining gap = $100k - $85k = $15k. 20% of $15k = $3k. New offer = $85k + $3k = $88k
+        expect(result).toEqual({ kind: 'offer', offerCents: 8_800_000 });
+        console.log(`✓ Seller round 2: remaining gap=$15k, 20%=$3k → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
       });
 
       it('never exceeds ceiling', () => {
@@ -283,7 +284,7 @@ describe('Negotiation Engine', () => {
         console.log(`✓ Buyer round 0: $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
       });
 
-      it('round 1 concedes 40% of gap DOWN', () => {
+      it('round 1 concedes 25% of gap DOWN', () => {
         const state: OfferState = {
           side: 'buyer',
           openerCents: 12_000_000,
@@ -292,9 +293,9 @@ describe('Negotiation Engine', () => {
           lastOfferCents: 12_000_000,
         };
         const result = computeNextOffer(state);
-        // Gap = $120k - $105k = $15k. 40% of $15k = $6k. New offer = $120k - $6k = $114k
-        expect(result).toEqual({ kind: 'offer', offerCents: 11_400_000 });
-        console.log(`✓ Buyer round 1: gap=$15k, 40%=$6k down → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
+        // Gap = $120k - $105k = $15k. 25% of $15k = $3.75k. New offer = $120k - $3.75k = $116,250
+        expect(result).toEqual({ kind: 'offer', offerCents: 11_625_000 });
+        console.log(`✓ Buyer round 1: gap=$15k, 25%=$3.75k down → $${result.kind === 'offer' ? result.offerCents / 100 : 'walk'}`);
       });
 
       it('NEVER goes below floor (fee floor protection)', () => {

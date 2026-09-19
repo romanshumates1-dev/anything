@@ -5,6 +5,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport';
+import { resolveLeadIdByPhone } from '@/app/api/services/stageTransitionRecorder';
 
 export async function POST(
   request: NextRequest,
@@ -96,6 +97,24 @@ export async function POST(
     const countRow = await sql`
       SELECT COUNT(*)::int AS total FROM campaign_contacts WHERE campaign_id = ${campaignId}
     `;
+
+    // Populate seller_lead_id/buyer_lead_id based on campaign direction (best-effort, non-blocking)
+    // This enables funnel analytics without phone-based fallback lookups at scheduler time
+    const leadIdColumn = campaign.direction === 'SELLER' ? 'seller_lead_id' : 'buyer_lead_id';
+    for (const c of validContacts) {
+      try {
+        const leadId = await resolveLeadIdByPhone(c.phone);
+        if (leadId) {
+          await sql`
+            UPDATE campaign_contacts
+            SET ${sql(leadIdColumn)} = ${leadId}, updated_at = now()
+            WHERE campaign_id = ${campaignId} AND phone = ${c.phone}
+          `;
+        }
+      } catch {
+        // Best-effort: if lookup fails, funnel analytics will use phone-based fallback
+      }
+    }
 
     await logEvent('contacts_imported', 'campaign', campaignId, { count: inserted, failures: invalidRows.length }, session.user.id);
 

@@ -18,6 +18,7 @@
 
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
+import { requireAdmin } from '@/app/api/utils/authz';
 
 // Weighted realistic reply distribution for simulated sellers
 const REPLY_DISTRIBUTION: { reply: string; weight: number }[] = [
@@ -151,6 +152,10 @@ async function simulateConversation(
 }
 
 export async function POST(request: Request) {
+  // Simulator is admin-only to prevent abuse
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const startTime = Date.now();
 
   try {
@@ -220,7 +225,11 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Simulator info is admin-only
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   return Response.json({
     name: 'AI Seller Simulator',
     description: 'Stress-test the DealFlow AI pipeline with simulated conversations',

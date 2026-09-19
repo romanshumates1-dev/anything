@@ -59,6 +59,7 @@ describe('POST /api/lead-finder/create-campaign', () => {
   it('records a NEW stage transition for every handed-off lead', async () => {
     mockSql
       .mockResolvedValueOnce([SOURCED_LEAD]) // segment SELECT (explicit leadIds)
+      .mockResolvedValueOnce([]) // DNC check
       .mockResolvedValueOnce([{ id: 9 }]) // claim UPDATE sourced_leads
       .mockResolvedValueOnce([{ id: 500 }]) // INSERT leads RETURNING id
       .mockResolvedValueOnce([]); // UPDATE sourced_leads handed_off_lead_id
@@ -77,6 +78,7 @@ describe('POST /api/lead-finder/create-campaign', () => {
   it('does not call recordStageTransition when the claim loses the race (already handed off)', async () => {
     mockSql
       .mockResolvedValueOnce([SOURCED_LEAD]) // segment SELECT
+      .mockResolvedValueOnce([]) // DNC check
       .mockResolvedValueOnce([]); // claim UPDATE affected 0 rows (lost race)
 
     const res = await POST(req({ leadIds: [9] }));

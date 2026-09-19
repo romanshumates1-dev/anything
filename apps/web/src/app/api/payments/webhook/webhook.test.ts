@@ -11,10 +11,26 @@ vi.mock('@/app/api/utils/logger', () => ({
   logEvent: vi.fn(),
 }));
 
+vi.mock('@/app/api/utils/jobs', () => ({
+  enqueueJob: vi.fn(),
+}));
+
+// Mock stripeProvider to control signature verification behavior
+const mockVerifyWebhook = vi.fn(() => true);
+const mockParseWebhookEvent = vi.fn((body: string) => JSON.parse(body));
+
+vi.mock('@/app/api/services/stripeProvider', () => ({
+  getStripeProvider: vi.fn(() => ({
+    type: 'mock',
+    verifyWebhook: mockVerifyWebhook,
+    parseWebhookEvent: mockParseWebhookEvent,
+  })),
+  resetStripeProvider: vi.fn(),
+}));
+
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { POST } from './route';
-import { resetStripeProvider } from '@/app/api/services/stripeProvider';
 
 function createMockRequest(body: any, signature = 'any'): Request {
   return new Request('http://localhost:4000/api/payments/webhook', {
@@ -30,7 +46,9 @@ function createMockRequest(body: any, signature = 'any'): Request {
 describe('Payments Webhook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetStripeProvider();
+    // Reset mock behavior to defaults
+    mockVerifyWebhook.mockReturnValue(true);
+    mockParseWebhookEvent.mockImplementation((body: string) => JSON.parse(body));
   });
 
   it('processes payment_intent.succeeded and marks ledger paid', async () => {
@@ -57,9 +75,8 @@ describe('Payments Webhook', () => {
   });
 
   it('rejects tampered signature for live provider', async () => {
-    const originalProvider = process.env.STRIPE_PROVIDER;
-    process.env.STRIPE_PROVIDER = 'live';
-    resetStripeProvider();
+    // Configure mock to reject the signature
+    mockVerifyWebhook.mockReturnValue(false);
 
     const response = await POST(createMockRequest(
       { type: 'payment_intent.succeeded', id: 'evt_1', data: { object: { id: 'pi_1', amount: 1000, currency: 'usd', status: 'succeeded' } } },
@@ -69,9 +86,6 @@ describe('Payments Webhook', () => {
     expect(response.status).toBe(403);
     const data = await response.json();
     expect(data.error).toBe('Invalid signature');
-
-    process.env.STRIPE_PROVIDER = originalProvider;
-    resetStripeProvider();
   });
 
   it('returns 200 idempotent for duplicate events', async () => {

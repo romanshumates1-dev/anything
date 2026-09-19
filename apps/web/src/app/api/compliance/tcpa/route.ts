@@ -12,6 +12,8 @@ import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
+import { regionForPhone } from '@/app/api/utils/area-codes';
+
 
 interface TCPACheckRequest {
   phone: string;
@@ -51,8 +53,8 @@ const STATE_QUIET_HOURS: Record<string, { start: number; end: number }> = {
 const RESTRICTED_STATES = ['WY', 'SD', 'ND']; // Example: extra consent required
 
 function getStateFromPhone(phone: string): string {
-  // Use the comprehensive area-codes utility for accurate state detection
-  const { regionForPhone } = require('@/app/api/utils/area-codes');
+  // ESM import at module scope — a CJS `require()` here does not exist in the
+  // Cloudflare Workers runtime. See src/lib/websocket.ts for the same pattern.
   const geoPoint = regionForPhone(phone, true);
 
   if (geoPoint && geoPoint.region) {

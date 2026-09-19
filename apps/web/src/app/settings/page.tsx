@@ -42,9 +42,18 @@ import {
   EyeOff,
   Sparkles,
   RefreshCw,
+  GraduationCap,
+  RotateCcw,
+  CheckCircle2,
+  CreditCard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import EventLogPanel from '@/components/EventLogPanel';
+import {
+  restartOnboarding,
+  resetOnboardingChecklist,
+  getChecklistProgress,
+} from '@/components/onboarding';
 
 // ============================================================================
 // Types
@@ -217,6 +226,48 @@ export default function SettingsPage() {
         </div>
       </header>
 
+      {/* Billing & Credits Link */}
+      <Link
+        href="/settings/billing"
+        className="flex items-center justify-between p-5 rounded-xl bg-gradient-to-r from-[var(--color-success)]/5 to-[var(--accent-blue)]/5 border border-[var(--color-success)]/20 hover:border-[var(--color-success)]/40 transition-all group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 rounded-lg bg-[var(--color-success)]/10 group-hover:bg-[var(--color-success)]/20 transition-colors">
+            <CreditCard className="h-5 w-5 text-[var(--color-success)]" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Billing & Credits
+            </p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Manage your subscription, upgrade plans, and buy credits
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--color-success)] group-hover:translate-x-1 transition-all" />
+      </Link>
+
+      {/* Outreach Settings Link */}
+      <Link
+        href="/settings/outreach"
+        className="flex items-center justify-between p-5 rounded-xl bg-gradient-to-r from-[var(--accent-blue)]/5 to-[var(--color-success)]/5 border border-[var(--accent-blue)]/20 hover:border-[var(--accent-blue)]/40 transition-all group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 rounded-lg bg-[var(--accent-blue)]/10 group-hover:bg-[var(--accent-blue)]/20 transition-colors">
+            <Mail className="h-5 w-5 text-[var(--accent-blue)]" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Outreach Settings
+            </p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Configure email and SMS providers for campaigns
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--accent-blue)] group-hover:translate-x-1 transition-all" />
+      </Link>
+
       {/* Admin Link Banner */}
       {isAdmin && (
         <Link
@@ -263,6 +314,9 @@ export default function SettingsPage() {
         verifyPending={verifyPhoneMutation.isPending}
         deletePending={deletePhoneMutation.isPending}
       />
+
+      {/* Tutorial & Onboarding Section */}
+      <TutorialSection />
 
       {/* Activity Log Section */}
       <section>
@@ -923,6 +977,122 @@ function NotificationToggle({
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
     </div>
+  );
+}
+
+// ============================================================================
+// Tutorial & Onboarding Section
+// ============================================================================
+function TutorialSection() {
+  const [checklistProgress, setChecklistProgress] = useState({ completed: [] as string[], total: 6 });
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    setChecklistProgress(getChecklistProgress());
+    setIsLoaded(true);
+  }, []);
+
+  const handleRestartTutorial = () => {
+    restartOnboarding();
+  };
+
+  const handleResetChecklist = () => {
+    resetOnboardingChecklist();
+    setChecklistProgress({ completed: [], total: 6 });
+    toast.success('Onboarding checklist has been reset');
+  };
+
+  const progressPercent = isLoaded
+    ? (checklistProgress.completed.length / checklistProgress.total) * 100
+    : 0;
+
+  return (
+    <section>
+      <SectionHeader
+        icon={GraduationCap}
+        title="Tutorial & Onboarding"
+        description="Restart the tutorial or reset your onboarding progress"
+      />
+      <GlassCard variant="bordered" padding="lg">
+        {/* Progress Overview */}
+        <div className="p-4 rounded-lg bg-gradient-to-r from-[var(--accent-blue)]/5 to-[var(--accent-purple)]/5 border border-[var(--border-subtle)] mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-[var(--accent-blue)]" />
+              <span className="text-sm font-medium text-[var(--text-primary)]">Onboarding Progress</span>
+            </div>
+            <span className="text-sm text-[var(--text-secondary)]">
+              {isLoaded ? `${checklistProgress.completed.length}/${checklistProgress.total} complete` : 'Loading...'}
+            </span>
+          </div>
+          <div className="h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--color-success)] rounded-full transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {progressPercent === 100 && (
+            <p className="text-xs text-[var(--color-success)] mt-2 flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" />
+              All onboarding tasks completed!
+            </p>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="space-y-4">
+          {/* Restart Tutorial */}
+          <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-[var(--accent-blue)]/10">
+                <RotateCcw className="h-4 w-4 text-[var(--accent-blue)]" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Restart Tutorial</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  View the guided tour of DealFlow AI features again
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleRestartTutorial} className="gap-1">
+              <RefreshCw className="h-4 w-4" />
+              Restart
+            </Button>
+          </div>
+
+          {/* Reset Checklist */}
+          <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-tertiary)]">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-[var(--accent-purple)]/10">
+                <Sparkles className="h-4 w-4 text-[var(--accent-purple)]" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Reset Onboarding Checklist</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Mark all onboarding tasks as incomplete
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetChecklist}
+              className="gap-1"
+              disabled={checklistProgress.completed.length === 0}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset
+            </Button>
+          </div>
+        </div>
+
+        {/* Help text */}
+        <p className="text-xs text-[var(--text-muted)] mt-4 pt-4 border-t border-[var(--border-subtle)]">
+          The onboarding checklist appears on your dashboard until all tasks are complete.
+          You can restart the tutorial at any time to refresh your knowledge of DealFlow AI features.
+        </p>
+      </GlassCard>
+    </section>
   );
 }
 

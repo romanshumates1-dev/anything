@@ -168,7 +168,17 @@ export async function POST(request: Request) {
       return Response.json({ status: 'recorded_owner' });
     }
 
-    const [lead] = await sql`SELECT * FROM leads WHERE phone = ${from} LIMIT 1`;
+    // Cross-tenant safe lookup: find the lead via campaign_contacts which tracks
+    // which organization originally contacted this phone number. This ensures we
+    // route the inbound reply to the correct tenant's lead.
+    const [lead] = await sql`
+      SELECT l.* FROM leads l
+      INNER JOIN campaign_contacts cc ON cc.phone = l.phone AND cc.organization_id = l.organization_id
+      WHERE l.phone = ${from}
+        AND cc.status IN ('SENT', 'FOLLOWED_UP', 'REPLIED', 'ENGAGED')
+      ORDER BY cc.updated_at DESC
+      LIMIT 1
+    `;
     if (!lead) {
       await logEvent('sms_inbound_unmatched', 'sms', from, { text });
       return Response.json({ status: 'ignored', reason: 'no_matching_lead' });
@@ -195,13 +205,26 @@ export async function POST(request: Request) {
 
     // INT-4: cancel any pending cadence steps for this contact (reply halts follow-ups)
     const [campaignContact] = await sql`
-      SELECT id FROM campaign_contacts
-      WHERE phone = ${from} AND status IN ('SENT', 'FOLLOWED_UP')
+      SELECT id, campaign_id FROM campaign_contacts
+      WHERE phone = ${from}
+        AND organization_id = ${lead.organization_id}
+        AND status IN ('SENT', 'FOLLOWED_UP')
       ORDER BY updated_at DESC
       LIMIT 1
     `;
     if (campaignContact?.id) {
       await cancelCadence(campaignContact.id);
+
+      // Campaign Automation: Queue response classification and routing
+      // This enables the "set and forget" automation engine
+      const { isBetaFlagOn } = await import('../../utils/betaFlags');
+      if (await isBetaFlagOn('campaignAutomation')) {
+        await enqueueJob('campaign_handle_response', {
+          messageId: messageSid || `inbound_${Date.now()}`,
+          contactId: campaignContact.id,
+          responseText: text,
+        });
+      }
     }
 
     await logEvent('sms_inbound', 'conversation', conv.id.toString(), {

@@ -9,7 +9,13 @@ import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
+}
+
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 interface PaymentValidationBody {
   dealId: string;
@@ -74,6 +80,13 @@ export async function POST(req: NextRequest) {
 
       console.log(`[PAYMENT-VALIDATE] Deal ${dealId}: Wire transfer selected`);
     } else if (paymentMethodType === 'card' || paymentMethodType === 'ach') {
+      if (!stripe) {
+        return Response.json(
+          { error: 'Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.', code: 'STRIPE_NOT_CONFIGURED' },
+          { status: 503 }
+        );
+      }
+
       // Card or ACH via Stripe
       if (!paymentMethodId) {
         return Response.json(

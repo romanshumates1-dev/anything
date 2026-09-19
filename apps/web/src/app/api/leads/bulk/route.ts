@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '../../utils/logger';
 import { recordRun } from '../../utils/execution-ledger';
 import { recordStageTransitionsBulk } from '@/app/api/services/stageTransitionRecorder';
+import { checkLimit, recordMetricUsage } from '@/app/api/services/tierLimits';
 import {
   parseLeadsCsv,
   dedupeInBatch,
@@ -76,6 +77,26 @@ export async function POST(request: Request) {
     const dbDuplicates = unique.length - toInsert.length;
     const totalDuplicates = duplicates.length + dbDuplicates;
 
+    // 2.5. Check tier limits before importing
+    const limitCheck = await checkLimit(orgId, 'lead', toInsert.length);
+    if (!limitCheck.allowed) {
+      return Response.json({
+        error: 'limit_exceeded',
+        message: limitCheck.message,
+        upgradeReason: limitCheck.upgradeReason,
+        current: limitCheck.current,
+        limit: limitCheck.limit,
+        requested: toInsert.length,
+        remaining: limitCheck.remaining,
+        isFreeTier: limitCheck.isFreeTier,
+        // Provide info about what can still be imported
+        canImport: limitCheck.remaining,
+        totalRows,
+        duplicates: totalDuplicates,
+        wouldInsert: toInsert.length,
+      }, { status: 402 }); // 402 Payment Required
+    }
+
     // 3. Create the import record (processing).
     const [imp] = await sql`
       INSERT INTO imports (source, filename, total_rows, status, created_by)
@@ -133,6 +154,11 @@ export async function POST(request: Request) {
       { inserted, duplicates: totalDuplicates, failed: failures.length, totalRows },
       session.user.id
     );
+
+    // Record usage for tier tracking (bulk - record once for all leads)
+    if (inserted > 0) {
+      await recordMetricUsage(orgId, 'lead', inserted);
+    }
 
     await recordRun({
       task: 'csv_import',

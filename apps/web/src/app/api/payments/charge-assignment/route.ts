@@ -16,7 +16,13 @@ import {
 // [MEDIUM FIX] Import FEE_FLOOR_CENTS from single source of truth
 import { FEE_FLOOR_CENTS } from '@/app/api/utils/negotiationEngine';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
+}
+
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 interface ChargeAssignmentBody {
   dealId: string;
@@ -134,6 +140,13 @@ export async function POST(req: NextRequest) {
 
       // Note: For wire, we don't trigger PAID alert until admin confirms receipt
     } else if (paymentType === 'card' || paymentType === 'ach') {
+      if (!stripe) {
+        return Response.json(
+          { success: false, error: 'Stripe is not configured. Please set STRIPE_SECRET_KEY environment variable.', code: 'STRIPE_NOT_CONFIGURED' },
+          { status: 503 }
+        );
+      }
+
       if (!paymentMethodId) {
         return Response.json(
           { success: false, error: 'paymentMethodId required for card/ACH' },

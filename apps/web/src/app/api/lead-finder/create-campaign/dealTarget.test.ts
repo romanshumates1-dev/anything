@@ -73,9 +73,9 @@ describe('deal-target sizing drives the selection', () => {
     mockSql.mockResolvedValueOnce([]).mockResolvedValueOnce([]); // empty -> 400, fine
     await POST(req({ targetDeals: 1 }));
 
-    // Default funnels: 10,334 sellers and 200 buyers per assignment.
+    // Default funnels with 2% replyRate: 25,835 sellers and 200 buyers per assignment.
     const limits = mockSql.mock.calls.slice(0, 2).map((c: any) => c[c.length - 1]);
-    expect(limits).toEqual([10334, 200]);
+    expect(limits).toEqual([25835, 200]);
   });
 
   it('scales the requirement with the deal target', async () => {
@@ -83,11 +83,15 @@ describe('deal-target sizing drives the selection', () => {
     await POST(req({ targetDeals: 3 }));
     const limits = mockSql.mock.calls.slice(0, 2).map((c: any) => c[c.length - 1]);
     expect(limits[1]).toBe(600); // 200 buyers × 3
-    expect(limits[0]).toBeGreaterThan(30000);
+    expect(limits[0]).toBeGreaterThan(75000); // 25835 × 3 = 77505
   });
 
   it('selects BOTH sides — sellers to source, buyers to assign', async () => {
-    mockSql.mockResolvedValueOnce([row(1, 'seller')]).mockResolvedValueOnce([row(2, 'buyer')]);
+    mockSql
+      .mockResolvedValueOnce([row(1, 'seller')]) // seller SELECT
+      .mockResolvedValueOnce([row(2, 'buyer')]); // buyer SELECT
+    // DNC check is done once for all segment
+    mockSql.mockResolvedValueOnce([]); // DNC check
     queueHandoff(2);
 
     const b = await (await POST(req({ targetDeals: 1, ...UNIT }))).json();
@@ -100,25 +104,31 @@ describe('deal-target sizing drives the selection', () => {
 
 describe('under-sized campaigns fail LOUDLY, not silently', () => {
   it('warns at top level when sellers are short, and still hands off what exists', async () => {
-    // Ask for 1 deal (10,334 sellers) but only 1 row exists.
-    mockSql.mockResolvedValueOnce([row(1, 'seller')]).mockResolvedValueOnce([]);
+    // Ask for 1 deal (25,835 sellers with 2% replyRate) but only 1 row exists.
+    mockSql
+      .mockResolvedValueOnce([row(1, 'seller')]) // seller SELECT
+      .mockResolvedValueOnce([]); // buyer SELECT (empty)
+    mockSql.mockResolvedValueOnce([]); // DNC check
     queueHandoff(1);
 
     const b = await (await POST(req({ targetDeals: 1 }))).json();
     expect(b.created).toBe(1);
     expect(b.fullySized).toBe(false);
     expect(b.shortfall.sellers).toEqual({
-      requested: 10334,
+      requested: 25835,
       available: 1,
-      shortfall: 10333,
+      shortfall: 25834,
       feasible: false,
     });
-    expect(b.warnings.join(' ')).toMatch(/UNDER-SIZED.*1 of 10334 seller leads/);
-    expect(b.warnings.join(' ')).toMatch(/short 10333/i);
+    expect(b.warnings.join(' ')).toMatch(/UNDER-SIZED.*1 of 25835 seller leads/);
+    expect(b.warnings.join(' ')).toMatch(/short 25834/i);
   });
 
   it('warns specifically that no buyers means no assignment', async () => {
-    mockSql.mockResolvedValueOnce([row(1, 'seller')]).mockResolvedValueOnce([]);
+    mockSql
+      .mockResolvedValueOnce([row(1, 'seller')]) // seller SELECT
+      .mockResolvedValueOnce([]); // buyer SELECT (empty)
+    mockSql.mockResolvedValueOnce([]); // DNC check
     queueHandoff(1);
 
     const b = await (await POST(req({ targetDeals: 1, seller: UNIT.seller }))).json();
@@ -130,7 +140,7 @@ describe('under-sized campaigns fail LOUDLY, not silently', () => {
     const res = await POST(req({ targetDeals: 2 }));
     expect(res.status).toBe(400);
     const b = await res.json();
-    expect(b.required.sellers).toBe(20668); // 10334 × 2
+    expect(b.required.sellers).toBe(51670); // 25835 × 2
     expect(b.required.buyers).toBe(400);
     expect(b.hint).toMatch(/Source inventory/);
   });
@@ -138,7 +148,9 @@ describe('under-sized campaigns fail LOUDLY, not silently', () => {
 
 describe('mode precedence and back-compat', () => {
   it('explicit leadIds still win over targetDeals', async () => {
-    mockSql.mockResolvedValueOnce([row(7, 'seller')]);
+    mockSql
+      .mockResolvedValueOnce([row(7, 'seller')]) // segment SELECT by leadIds
+      .mockResolvedValueOnce([]); // DNC check
     queueHandoff(1);
 
     const b = await (await POST(req({ leadIds: [7], targetDeals: 5 }))).json();
@@ -149,7 +161,9 @@ describe('mode precedence and back-compat', () => {
   });
 
   it('filter mode is unchanged when no targetDeals is given', async () => {
-    mockSql.mockResolvedValueOnce([row(3, 'seller')]);
+    mockSql
+      .mockResolvedValueOnce([row(3, 'seller')]) // segment SELECT by filter
+      .mockResolvedValueOnce([]); // DNC check
     queueHandoff(1);
 
     const b = await (await POST(req({ filter: { county: 'Jefferson' } }))).json();
@@ -160,7 +174,9 @@ describe('mode precedence and back-compat', () => {
   });
 
   it('ignores a non-positive targetDeals and falls back to filter mode', async () => {
-    mockSql.mockResolvedValueOnce([row(4, 'seller')]);
+    mockSql
+      .mockResolvedValueOnce([row(4, 'seller')]) // segment SELECT by filter (since targetDeals=0)
+      .mockResolvedValueOnce([]); // DNC check
     queueHandoff(1);
 
     const b = await (await POST(req({ targetDeals: 0 }))).json();

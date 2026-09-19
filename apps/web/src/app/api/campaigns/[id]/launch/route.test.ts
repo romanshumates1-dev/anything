@@ -32,6 +32,11 @@ vi.mock('@/lib/legal-acceptance', () => ({
   hasAcceptedMessagingAgreement: (...a: any[]) => hasAcceptedMessagingAgreement(...a),
 }));
 
+const { isOutreachActive } = vi.hoisted(() => ({ isOutreachActive: vi.fn() }));
+vi.mock('../../../utils/outreachVerification', () => ({
+  isOutreachActive: (...a: any[]) => isOutreachActive(...a),
+}));
+
 import { POST } from './route';
 
 const req = () => new Request('http://t/api/campaigns/1/launch', { method: 'POST' });
@@ -41,6 +46,7 @@ beforeEach(() => {
   getSession.mockResolvedValue({ user: { id: 'u1' } });
   getOrganization.mockResolvedValue({ id: 'org-A', name: 'Org A', slug: 'org-a' });
   hasAcceptedMessagingAgreement.mockResolvedValue(true);
+  isOutreachActive.mockResolvedValue(true);
 });
 
 describe('POST /api/campaigns/[id]/launch', () => {

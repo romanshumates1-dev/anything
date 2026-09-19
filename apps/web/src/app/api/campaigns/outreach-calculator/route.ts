@@ -13,6 +13,7 @@
 
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
+import { requireSession } from '@/app/api/utils/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +74,9 @@ interface CalculatorInput {
 }
 
 export async function GET(req: NextRequest) {
+  const session = await requireSession();
+  if (!session.ok) return session.response;
+
   const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
   // Get actual system metrics if available
@@ -113,6 +117,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await requireSession();
+  if (!session.ok) return session.response;
+
   let input: CalculatorInput;
   try {
     input = await req.json();

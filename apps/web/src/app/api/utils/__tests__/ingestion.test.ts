@@ -98,8 +98,13 @@ describe('parseLeadsCsv', () => {
 
   it('parses 10k rows within the cap', () => {
     const rows = ['name,phone'];
-    for (let i = 0; i < MAX_IMPORT_ROWS; i++)
-      rows.push(`Lead ${i},+1555${String(i).padStart(7, '0')}`);
+    for (let i = 0; i < MAX_IMPORT_ROWS; i++) {
+      // Generate valid NANP phone numbers: area code 555, exchange 200-999
+      // Format: 555-2XX-XXXX where XX varies by i
+      const exchange = 200 + Math.floor(i / 10000) % 800; // 200-999
+      const subscriber = String(i % 10000).padStart(4, '0');
+      rows.push(`Lead ${i},+1555${exchange}${subscriber}`);
+    }
     const { valid, totalRows } = parseLeadsCsv(rows.join('\n'));
     expect(totalRows).toBe(MAX_IMPORT_ROWS);
     expect(valid).toHaveLength(MAX_IMPORT_ROWS);

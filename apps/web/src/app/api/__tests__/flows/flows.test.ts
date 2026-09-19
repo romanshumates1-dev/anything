@@ -35,11 +35,30 @@ vi.mock('@/lib/organization-context', () => ({
   getOrganization: (...args: any[]) => (getOrganization as any)(...args),
 }));
 
+// Mock tier limits to always allow (these are unit tests, not tier limit tests)
+vi.mock('@/app/api/services/tierLimits', () => ({
+  checkLimit: vi.fn(async () => ({
+    allowed: true,
+    current: 0,
+    limit: 1000,
+    remaining: 1000,
+    percentUsed: 0,
+    tier: 'free',
+    isFreeTier: true,
+  })),
+  recordMetricUsage: vi.fn(async () => {}),
+}));
+
 // Phase 3 messaging-compliance gate: this flow tests campaign activation for an
 // already-onboarded user, so the agreement is accepted.
 vi.mock('@/lib/legal-acceptance', () => ({
   hasAcceptedMessagingAgreement: vi.fn(async () => true),
   hasAcceptedCurrentLegal: vi.fn(async () => true),
+}));
+
+// Outreach verification gate: assume SMS/email channels are active for flow tests
+vi.mock('@/app/api/utils/outreachVerification', () => ({
+  isOutreachActive: vi.fn(async () => true),
 }));
 
 // ---- Import REAL handlers + utilities the registry binds to

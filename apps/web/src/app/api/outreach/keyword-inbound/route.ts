@@ -25,6 +25,8 @@ import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { suppressLeadAllChannels } from '@/app/api/services/leadSuppression';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
+import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
+import { validateTwilioSignature } from '@/app/api/utils/twilio-webhook';
 
 /** Keywords that trigger inbound enrollment. Case-insensitive. */
 const ENROLLMENT_KEYWORDS = ['offer', 'cash', 'sell', 'info', 'yes', 'start'];
@@ -50,23 +52,56 @@ function normalizeSource(raw: string | null | undefined): InboundSource {
 }
 
 export async function POST(request: Request) {
+  const twilioConfig = getTwilioConfig();
+  const ct = request.headers.get('content-type') ?? '';
+  const isTwilioWebhook = ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data');
+
   // Accept both JSON and form-encoded (Twilio sends form-encoded)
   let from = '';
   let body = '';
   let source: InboundSource = 'unknown';
 
-  const ct = request.headers.get('content-type') ?? '';
   if (ct.includes('application/json')) {
+    // JSON path (simulator/tests): require SMS_INBOUND_SECRET
+    const secret = process.env.SMS_INBOUND_SECRET;
+    const provided = request.headers.get('x-sms-secret');
+    if (!secret || provided !== secret) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const j = await request.json().catch(() => ({})) as any;
     from = j.From ?? j.from ?? '';
     body = j.Body ?? j.body ?? '';
     source = normalizeSource(j.source ?? j.Source);
-  } else {
+  } else if (isTwilioWebhook && twilioConfig) {
+    // Twilio webhook: validate signature
     const text = await request.text().catch(() => '');
     const params = new URLSearchParams(text);
+
+    const twilioSignature = request.headers.get('x-twilio-signature') || '';
+    const url = new URL(request.url);
+    const publicUrl = process.env.PUBLIC_WEBHOOK_URL;
+    const fullUrl = publicUrl || `${url.protocol}//${url.host}${url.pathname}`;
+
+    const formObj = Object.fromEntries(params.entries());
+    const valid = validateTwilioSignature({
+      url: fullUrl,
+      signature: twilioSignature,
+      authToken: twilioConfig.authToken,
+      params: formObj,
+    });
+
+    if (!valid) {
+      console.warn('[keyword-inbound] Twilio signature validation FAILED');
+      return Response.json({ error: 'Invalid signature' }, { status: 403 });
+    }
+
     from = params.get('From') ?? params.get('from') ?? '';
     body = params.get('Body') ?? params.get('body') ?? '';
     source = normalizeSource(params.get('source') ?? params.get('Source'));
+  } else {
+    // No valid auth method
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const phone = from.trim();

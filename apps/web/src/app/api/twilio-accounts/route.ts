@@ -11,10 +11,11 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
+import { encryptSensitive, decryptSensitive } from '@/app/api/utils/encryption';
 
-// Placeholder for encryption - in production, use proper encryption
-const encrypt = (value: string): string => Buffer.from(value).toString('base64');
-const decrypt = (encrypted: string): string => Buffer.from(encrypted).toString('utf8');
+// Use AES-256-GCM encryption for sensitive Twilio credentials
+const encrypt = encryptSensitive;
+const decrypt = decryptSensitive;
 
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });

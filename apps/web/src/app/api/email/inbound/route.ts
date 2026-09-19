@@ -19,7 +19,7 @@ const UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'stop', 'remove me', 'opt out'];
  */
 function stripQuotedText(text: string): string {
   const match = text.match(EMAIL_QUOTE_HEADER_REGEX);
-  if (match && match.index) {
+  if (match && match.index !== undefined) {
     return text.substring(0, match.index).trim();
   }
   return text.trim();

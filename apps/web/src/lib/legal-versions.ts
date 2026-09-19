@@ -13,8 +13,8 @@
 
 // Acceptance keys required at signup and gated app-wide on version bump.
 export const REQUIRED_ACCEPTANCE_VERSIONS = {
-  tos: '1.0.0',
-  privacy: '1.0.0',
+  tos: '1.1.0',
+  privacy: '1.1.0',
 } as const;
 
 // Separate one-time gate before a user can activate a campaign / send.

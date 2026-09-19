@@ -7,16 +7,25 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { ProfitChart } from '@/components/dashboard/ProfitChart';
-import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
-import { ActionItems } from '@/components/dashboard/ActionItems';
-import { OnboardingTutorial } from '@/components/onboarding';
+import { OnboardingTutorial, OnboardingChecklist } from '@/components/onboarding';
+import { QuestionnaireReminder } from '@/components/signup';
+import {
+  LeadFunnelVisualization,
+  CampaignProgressCard,
+  CreditBalanceCard,
+  RecentEngagementCard,
+  NextActionsCard,
+  QuickStatsBar,
+  WeeklyProgressSummary,
+  LiveActivityFeed,
+} from '@/components/dashboard';
 import {
   CurrencyDollarIcon,
   UserGroupIcon,
   ChatBubbleLeftRightIcon,
   DocumentCheckIcon,
 } from '@heroicons/react/24/outline';
-import { Loader2, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {
@@ -90,23 +99,46 @@ export default function DashboardPage() {
       {/* First-time user onboarding tutorial */}
       <OnboardingTutorial />
 
-      {/* Welcome Header */}
-      <div className="flex items-center justify-between">
+      {/* Questionnaire reminder - shows if not completed */}
+      <QuestionnaireReminder variant="banner" />
+
+      {/* Onboarding checklist - shows until complete, handles its own visibility */}
+      <OnboardingChecklist variant="card" />
+
+      {/* Welcome Header with Momentum Indicator */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">
             Welcome back, {session.user?.name || session.user?.email?.split('@')[0]}
           </h1>
-          <p className="text-[var(--text-secondary)] mt-1">
-            Your pipeline is looking strong today.
-          </p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-[var(--text-secondary)]">
+              Your pipeline is looking strong today.
+            </p>
+            {stats?.momentum > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--color-success)]/10 text-[var(--color-success)]">
+                <TrendingUp className="h-3 w-3" />
+                {stats.momentum}% momentum
+              </span>
+            )}
+          </div>
         </div>
-        <Link
-          href="/campaigns/wizard"
-          className="btn-gradient px-5 py-2.5 rounded-lg font-medium flex items-center gap-2"
-        >
-          Launch Campaign
-          <ArrowRight className="h-4 w-4" />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/lead-finder"
+            className="px-4 py-2.5 rounded-lg font-medium border border-[var(--border-medium)] hover:bg-[var(--bg-tertiary)] transition-colors flex items-center gap-2"
+          >
+            <Sparkles className="h-4 w-4 text-[var(--accent-purple)]" />
+            Find Leads
+          </Link>
+          <Link
+            href="/campaigns/wizard"
+            className="btn-gradient px-5 py-2.5 rounded-lg font-medium flex items-center gap-2"
+          >
+            Launch Campaign
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
 
       {/* KPI Grid */}
@@ -143,100 +175,80 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ProfitChart />
-        <ActivityFeed />
+      {/* Quick Stats Bar - Shows key numbers at a glance */}
+      <QuickStatsBar />
+
+      {/* Main Content Grid - Three column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column - Main content (7/12) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Lead Funnel Visualization - Core progress indicator */}
+          <LeadFunnelVisualization />
+
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ProfitChart />
+            <RecentEngagementCard />
+          </div>
+
+          {/* Weekly Progress - Momentum indicator */}
+          <WeeklyProgressSummary />
+        </div>
+
+        {/* Right Column - Actions & Status (5/12) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Active Campaigns with Progress Bars */}
+          <CampaignProgressCard />
+
+          {/* Credit Balance */}
+          <CreditBalanceCard />
+
+          {/* Next Actions - Priority tasks */}
+          <NextActionsCard />
+
+          {/* Live Activity Feed */}
+          <LiveActivityFeed />
+        </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Action Items */}
-        <ActionItems
-          items={[
-            {
-              id: '1',
-              type: 'response_needed',
-              title: 'Response from John Smith',
-              subtitle: '123 Main St - Interested in offer',
-              href: '/inbox?lead=1',
-              urgent: true,
-            },
-            {
-              id: '2',
-              type: 'contract_expiring',
-              title: 'Contract expires in 3 days',
-              subtitle: '456 Oak Ave - Smith/Johnson',
-              href: '/contracts?id=2',
-            },
-            {
-              id: '3',
-              type: 'follow_up',
-              title: 'Follow up with Sarah Davis',
-              subtitle: '789 Pine Rd - No response in 5 days',
-              href: '/crm?lead=3',
-            },
-          ]}
-        />
-
-        {/* Active Campaigns */}
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Active Campaigns</h3>
-          <div className="space-y-3">
-            {[
-              { name: 'Tax Delinquent Q3', progress: 75, sent: 1847 },
-              { name: 'Pre-Foreclosure', progress: 45, sent: 892 },
-              { name: 'Probate Leads', progress: 20, sent: 234 },
-            ].map((campaign) => (
-              <div key={campaign.name} className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-[var(--text-primary)]">{campaign.name}</span>
-                  <span className="text-xs text-[var(--text-muted)]">{campaign.sent} sent</span>
-                </div>
-                <div className="h-1.5 bg-[var(--bg-primary)] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] rounded-full transition-all"
-                    style={{ width: `${campaign.progress}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <Link
-            href="/campaigns"
-            className="block text-center text-sm text-[var(--accent-blue)] hover:underline mt-4"
+      {/* System Health - Collapsed at bottom */}
+      <details className="group">
+        <summary className="flex items-center gap-2 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
+          <StatusDot status={health?.status === 'healthy' ? 'success' : 'warning'} />
+          <span>
+            {health?.status === 'healthy' ? 'All systems operational' : 'Checking systems...'}
+          </span>
+          <svg
+            className="h-4 w-4 transition-transform group-open:rotate-180"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
           >
-            View all campaigns
-          </Link>
-        </GlassCard>
-
-        {/* System Health */}
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">System Health</h3>
-          <div className="space-y-3">
-            {[
-              { name: 'Database', status: 'success' as const },
-              { name: 'AI Engine', status: 'success' as const },
-              { name: 'SMS Gateway', status: 'success' as const },
-              { name: 'Job Queue', status: 'success' as const },
-            ].map((service) => (
-              <div key={service.name} className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-3">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+        <div className="mt-4">
+          <GlassCard>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">System Health</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { name: 'Database', status: 'success' as const },
+                { name: 'AI Engine', status: 'success' as const },
+                { name: 'SMS Gateway', status: 'success' as const },
+                { name: 'Job Queue', status: 'success' as const },
+              ].map((service) => (
+                <div key={service.name} className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-tertiary)]">
                   <StatusDot status={service.status} />
-                  <span className="text-sm text-[var(--text-primary)]">{service.name}</span>
+                  <div>
+                    <span className="text-sm text-[var(--text-primary)]">{service.name}</span>
+                    <p className="text-xs text-[var(--color-success)]">Operational</p>
+                  </div>
                 </div>
-                <span className="text-xs text-[var(--color-success)]">Operational</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-            <p className="text-sm text-[var(--color-success)] flex items-center gap-2">
-              <StatusDot status="success" />
-              {health?.status === 'healthy' ? 'All systems operational' : 'Checking systems...'}
-            </p>
-          </div>
-        </GlassCard>
-      </div>
+              ))}
+            </div>
+          </GlassCard>
+        </div>
+      </details>
     </div>
   );
 }

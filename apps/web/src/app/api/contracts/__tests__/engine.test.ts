@@ -293,7 +293,7 @@ describe('Contract Engine', () => {
       );
       expect(result.valid).toBe(false);
       expect(result.errors.some(e =>
-        e.includes('$5,000') && e.includes('MINIMUM') && e.includes('NON-NEGOTIABLE')
+        e.includes('$5,000') && e.includes('MINIMUM')
       )).toBe(true);
       console.log(`✓ $4,999 fee REJECTED: ${result.errors[0]}`);
     });
@@ -398,9 +398,10 @@ describe('Contract Engine', () => {
       console.log(`✓ Assignment contract with $10k fee generated`);
     });
 
-    it('THROWS when assignment fee < $5,000', () => {
+    it('THROWS when assignment fee below tiered minimum', () => {
       const lowFeeDeal: DealData = {
         ...baseDeal,
+        purchase_price: 80000, // Under $100K = $5K minimum tier
         assignee_name: 'Jane Buyer',
         assignee_address: '789 Buyer Lane, Austin, TX 78702',
         assignee_tier: 'VIP',
@@ -410,7 +411,7 @@ describe('Contract Engine', () => {
       };
 
       expect(() => generateContract(lowFeeDeal, 'ASSIGNMENT'))
-        .toThrow(/\$5,000.*NON-NEGOTIABLE/);
+        .toThrow(/\$5,000.*tiered pricing/);
       console.log(`✓ Assignment with $4,999 fee correctly REJECTED`);
     });
 

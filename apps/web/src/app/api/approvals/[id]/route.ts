@@ -103,7 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const [contact] = await sql`SELECT phone FROM campaign_contacts WHERE id = ${negotiationId} AND organization_id = ${org} LIMIT 1`;
       let leadId: string | null = null;
       if (contact?.phone) {
-        const [lead] = await sql`SELECT id FROM leads WHERE phone = ${contact.phone} LIMIT 1`;
+        const [lead] = await sql`SELECT id FROM leads WHERE phone = ${contact.phone} AND organization_id = ${org} LIMIT 1`;
         leadId = lead?.id ?? null;
       }
       await enqueueJob('ai_reply', { leadId, negotiationId, organizationId: org }, { dedupeKey: `neg_turn_${negotiationId}` });

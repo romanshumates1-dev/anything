@@ -8,8 +8,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'node:crypto';
 
 // Mock sql and logger
+const { mockSql } = vi.hoisted(() => {
+  const m: any = vi.fn();
+  m.transaction = vi.fn(async () => []);
+  return { mockSql: m };
+});
 vi.mock('@/app/api/utils/sql', () => ({
-  default: vi.fn(),
+  default: mockSql,
 }));
 
 vi.mock('@/app/api/utils/logger', () => ({
@@ -45,6 +50,9 @@ const ORIGINAL_ESIGN_PROVIDER = process.env.ESIGN_PROVIDER;
 describe('E-Sign Webhook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSql.mockReset();
+    mockSql.transaction.mockReset();
+    mockSql.transaction.mockResolvedValue([]);
     resetStripeProvider();
     resetEsignProvider();
   });

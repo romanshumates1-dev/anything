@@ -386,6 +386,27 @@ Title: ____________________________________
 ================================================================================
                               END OF AGREEMENT
 ================================================================================
+
+
+================================================================================
+                              PLATFORM DISCLAIMER
+================================================================================
+
+This contract template is provided by ${process.env.LEGAL_ENTITY_NAME || 'DealFlow AI'} for
+informational purposes only and is NOT legal advice. This template:
+
+  - May not comply with all requirements in your jurisdiction
+  - Should be reviewed and approved by a licensed attorney before use
+  - May require modifications for your specific transaction
+  - Does not guarantee enforceability or legal sufficiency
+
+${process.env.LEGAL_ENTITY_NAME || 'DealFlow AI'} is a software platform, not a real estate
+brokerage or law firm. We do not represent any party in transactions and
+make no warranties regarding this template.
+
+ALWAYS CONSULT A LICENSED ATTORNEY before entering into any real estate contract.
+
+================================================================================
 `.trim();
 }
 

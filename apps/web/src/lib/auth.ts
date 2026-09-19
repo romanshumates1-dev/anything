@@ -21,7 +21,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
-import ws from 'ws';
+import { resolveWebSocketConstructor } from '@/lib/websocket';
 
 import {
   ROLE_ADMIN,
@@ -29,9 +29,13 @@ import {
   isEmailDomainAllowed,
   isSeedAdminEmail,
 } from '@/app/api/utils/access-control';
+import { checkSignupAllowed } from '@/app/api/utils/signup-restrictions';
 import { isAccessDenied } from '@/lib/user-status';
 
-neonConfig.webSocketConstructor = ws;
+// Runtime-agnostic: global WebSocket on workerd / Node >= 22, `ws` on Node 20.
+// See src/lib/websocket.ts for why this is not a plain `import ws from 'ws'`
+// (that import is what blocked the Cloudflare Workers build).
+neonConfig.webSocketConstructor = resolveWebSocketConstructor() as never;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -127,6 +131,20 @@ export const auth = betterAuth({
         }
       }
 
+      // Runtime signup restriction check (admin-configurable via app_settings).
+      // Only applies to sign-up; sign-in uses the static domain allowlist above.
+      if (ctx.path === '/sign-up/email') {
+        const body = ctx.body as { email?: unknown } | undefined;
+        if (body && typeof body.email === 'string') {
+          const signupCheck = await checkSignupAllowed(body.email);
+          if (!signupCheck.allowed) {
+            throw new APIError('FORBIDDEN', {
+              message: signupCheck.message || 'Signups are currently restricted. Contact admin for access.',
+            });
+          }
+        }
+      }
+
       // better-auth's /sign-up/email schema requires `name`. Generated user apps
       // often collect only email+password, so backfill a name from the email
       // local-part to keep signup working without a visible name field.
@@ -153,9 +171,59 @@ export const auth = betterAuth({
               message: 'Access restricted: this platform is limited to authorized email domains.',
             });
           }
+          // Runtime signup restriction check (admin-configurable via app_settings)
+          const signupCheck = await checkSignupAllowed(user.email);
+          if (!signupCheck.allowed) {
+            throw new APIError('FORBIDDEN', {
+              message: signupCheck.message || 'Signups are currently restricted. Contact admin for access.',
+            });
+          }
           return {
             data: { ...user, role: isSeedAdminEmail(user.email) ? ROLE_ADMIN : ROLE_MEMBER },
           };
+        },
+        // Auto-create personal organization for new users so they have org
+        // context on first API call (prevents 403 from getOrganization null).
+        after: async (user) => {
+          try {
+            // Generate unique IDs
+            const orgId = `org_${crypto.randomUUID().replace(/-/g, '')}`;
+            const memberId = `om_${crypto.randomUUID().replace(/-/g, '')}`;
+            const subId = `sub_${crypto.randomUUID().replace(/-/g, '')}`;
+
+            // Derive org name and slug from email
+            const emailLocal = user.email.split('@')[0];
+            const orgName = `${user.name || emailLocal}'s Workspace`;
+            // Create slug: lowercase, alphanumeric/hyphens only, max 50 chars
+            const orgSlug = `${emailLocal.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${orgId.slice(-8)}`;
+
+            // Create organization
+            await pool.query(
+              `INSERT INTO organizations (id, name, slug, created_at)
+               VALUES ($1, $2, $3, NOW())`,
+              [orgId, orgName, orgSlug]
+            );
+
+            // Add user as OWNER
+            await pool.query(
+              `INSERT INTO organization_members (id, user_id, organization_id, role, created_at)
+               VALUES ($1, $2, $3, 'OWNER', NOW())`,
+              [memberId, user.id, orgId]
+            );
+
+            // Create free tier subscription (14-day trial)
+            await pool.query(
+              `INSERT INTO organization_subscriptions (id, organization_id, plan_id, status, trial_ends_at, created_at)
+               VALUES ($1, $2, 'plan_free', 'trial', NOW() + INTERVAL '14 days', NOW())`,
+              [subId, orgId]
+            );
+
+            console.log(`[Auth] Auto-created org ${orgId} for new user ${user.id}`);
+          } catch (err) {
+            // Log but don't fail user creation - org can be created later via
+            // POST /api/organizations if this fails (e.g., slug collision)
+            console.error('[Auth] Failed to auto-create org for user:', user.id, err);
+          }
         },
       },
     },

@@ -15,12 +15,12 @@ import {
 describe('sizeCampaign — seller sizing', () => {
   it('lands on the ~10k-per-deal working figure with default rates', () => {
     const r = sizeCampaign({ targetDeals: 1 });
-    // 0.90 * 0.05 * 0.32 * 0.28 * 0.12 * 0.20 = 9.6768e-5
-    //   1 / 9.6768e-5 = 10333.9...  ->  ceil = 10334
-    // (10333 contacts yields 0.99991 deals — the ceil is load-bearing.)
-    expect(r.sellerConversion).toBeCloseTo(0.000096768, 12);
-    expect(r.sellersPerDeal).toBe(10334);
-    expect(r.sellersNeeded).toBe(10334);
+    // 0.90 * 0.02 * 0.32 * 0.28 * 0.12 * 0.20 = 3.87072e-5
+    //   1 / 3.87072e-5 = 25833.3...  ->  ceil = 25834
+    // (Conservative 2% replyRate for mixed lead quality — see planner.ts defaults.)
+    expect(r.sellerConversion).toBeCloseTo(0.0000387072, 12);
+    expect(r.sellersPerDeal).toBe(25835);
+    expect(r.sellersNeeded).toBe(25835);
   });
 
   it('lands on exactly 200 buyers per deal — inside the 100-300 working range', () => {
@@ -47,9 +47,9 @@ describe('sizeCampaign — seller sizing', () => {
   });
 
   it('honours per-stage overrides', () => {
-    // Exactly double the default replyRate (0.05 -> 0.10) so the expected
+    // Exactly double the default replyRate (0.02 -> 0.04) so the expected
     // halving is arithmetic, not approximate.
-    const better = sizeCampaign({ targetDeals: 1, seller: { replyRate: 0.1 } });
+    const better = sizeCampaign({ targetDeals: 1, seller: { replyRate: 0.04 } });
     const base = sizeCampaign({ targetDeals: 1 });
     expect(better.sellersNeeded).toBeCloseTo(base.sellersNeeded / 2, -1);
   });

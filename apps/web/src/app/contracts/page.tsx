@@ -10,13 +10,14 @@ import { Loader2, FileText, Shield, ShieldCheck, Clock, Calendar, DollarSign, Al
 import InspectionClockChip from '@/components/contracts/InspectionClockChip';
 import ContractTimeline from '@/components/contracts/ContractTimeline';
 import PaymentChip from '@/components/contracts/PaymentChip';
+import { ContractDisclaimer } from '@/components/compliance';
 
 const statusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; bg: string; label: string }> = {
-  PENDING_SIGNATURE: { dot: 'warning', bg: 'bg-amber-50 text-amber-700 border-amber-200', label: 'Pending Signature' },
-  SIGNED: { dot: 'info', bg: 'bg-blue-50 text-blue-700 border-blue-200', label: 'Signed' },
-  DRAFT: { dot: 'neutral', bg: 'bg-gray-50 text-gray-600 border-gray-200', label: 'Draft' },
-  EXPIRED: { dot: 'error', bg: 'bg-red-50 text-red-700 border-red-200', label: 'Expired' },
-  CLOSED: { dot: 'success', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Closed' },
+  PENDING_SIGNATURE: { dot: 'warning', bg: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/30', label: 'Pending Signature' },
+  SIGNED: { dot: 'info', bg: 'bg-[var(--color-info)]/10 text-[var(--color-info)] border-[var(--color-info)]/30', label: 'Signed' },
+  DRAFT: { dot: 'neutral', bg: 'bg-[var(--text-muted)]/10 text-[var(--text-muted)] border-[var(--text-muted)]/30', label: 'Draft' },
+  EXPIRED: { dot: 'error', bg: 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/30', label: 'Expired' },
+  CLOSED: { dot: 'success', bg: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30', label: 'Closed' },
 };
 
 interface ContractData {
@@ -99,10 +100,10 @@ function CloseCountdownBadge({ closingDate, status }: { closingDate: string | un
   const { urgency, label } = getCloseDateInfo(closingDate);
 
   const urgencyStyles = {
-    normal: 'bg-gray-50 text-gray-600 border-gray-200',
-    approaching: 'bg-amber-50 text-amber-700 border-amber-200',
-    imminent: 'bg-red-50 text-red-700 border-red-200',
-    past: 'bg-red-100 text-red-800 border-red-300',
+    normal: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border-subtle)]',
+    approaching: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/30',
+    imminent: 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/30',
+    past: 'bg-[var(--color-error)]/20 text-[var(--color-error)] border-[var(--color-error)]/40',
   };
 
   return (
@@ -119,11 +120,11 @@ function FundsHoldIndicator({ contract }: { contract: ContractData }) {
 
   if (isClosed) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200">
-        <Unlock className="h-4 w-4 text-emerald-600" />
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-success)]/10 border border-[var(--color-success)]/30">
+        <Unlock className="h-4 w-4 text-[var(--color-success)]" />
         <div>
-          <span className="text-sm font-medium text-emerald-700">Funds Released</span>
-          <p className="text-xs text-emerald-600">Transaction complete</p>
+          <span className="text-sm font-medium text-[var(--color-success)]">Funds Released</span>
+          <p className="text-xs text-[var(--color-success)]/80">Transaction complete</p>
         </div>
       </div>
     );
@@ -131,26 +132,26 @@ function FundsHoldIndicator({ contract }: { contract: ContractData }) {
 
   if (binding) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
-        <ShieldCheck className="h-4 w-4 text-blue-600" />
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-info)]/10 border border-[var(--color-info)]/30">
+        <ShieldCheck className="h-4 w-4 text-[var(--color-info)]" />
         <div>
-          <span className="text-sm font-medium text-blue-700">Legally Binding</span>
-          <p className="text-xs text-blue-600">Funds protected until close</p>
+          <span className="text-sm font-medium text-[var(--color-info)]">Legally Binding</span>
+          <p className="text-xs text-[var(--color-info)]/80">Funds protected until close</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="group relative flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 cursor-help">
-      <Lock className="h-4 w-4 text-amber-600" />
+    <div className="group relative flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--color-warning)]/10 border border-[var(--color-warning)]/30 cursor-help">
+      <Lock className="h-4 w-4 text-[var(--color-warning)]" />
       <div>
-        <span className="text-sm font-medium text-amber-700">Funds On Hold</span>
-        <p className="text-xs text-amber-600">Pending full execution</p>
+        <span className="text-sm font-medium text-[var(--color-warning)]">Funds On Hold</span>
+        <p className="text-xs text-[var(--color-warning)]/80">Pending full execution</p>
       </div>
-      <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-10">
+      <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-64 p-2 bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-secondary)] text-xs rounded-lg shadow-lg z-10">
         Funds are held until the contract is fully executed by all parties. This protects against clawbacks and ensures secure transactions.
-        <div className="absolute bottom-0 left-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+        <div className="absolute bottom-0 left-4 transform translate-y-1/2 rotate-45 w-2 h-2 bg-[var(--bg-primary)] border-r border-b border-[var(--border-subtle)]"></div>
       </div>
     </div>
   );
@@ -172,25 +173,25 @@ function ContractStatusSection({ contract }: { contract: ContractData }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-3">
       <div className="space-y-1">
-        <span className="text-xs text-gray-500 uppercase tracking-wide">Created</span>
-        <p className="text-sm font-medium text-gray-900">{formatDate(contract.created_at)}</p>
+        <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide">Created</span>
+        <p className="text-sm font-medium text-[var(--text-primary)]">{formatDate(contract.created_at)}</p>
       </div>
       <div className="space-y-1">
-        <span className="text-xs text-gray-500 uppercase tracking-wide">Signed</span>
-        <p className="text-sm font-medium text-gray-900">{formatDate(contract.signed_at)}</p>
+        <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide">Signed</span>
+        <p className="text-sm font-medium text-[var(--text-primary)]">{formatDate(contract.signed_at)}</p>
       </div>
       <div className="space-y-1">
-        <span className="text-xs text-gray-500 uppercase tracking-wide">Assigned</span>
-        <p className="text-sm font-medium text-gray-900">{formatDate(contract.assigned_at)}</p>
+        <span className="text-xs text-[var(--text-muted)] uppercase tracking-wide">Assigned</span>
+        <p className="text-sm font-medium text-[var(--text-primary)]">{formatDate(contract.assigned_at)}</p>
       </div>
       <div className="space-y-1">
         <span className={`text-xs uppercase tracking-wide ${
-          urgency === 'past' ? 'text-red-600' : urgency === 'imminent' ? 'text-red-500' : urgency === 'approaching' ? 'text-amber-500' : 'text-gray-500'
+          urgency === 'past' ? 'text-[var(--color-error)]' : urgency === 'imminent' ? 'text-[var(--color-error)]/90' : urgency === 'approaching' ? 'text-[var(--color-warning)]' : 'text-[var(--text-muted)]'
         }`}>
           Close Date
         </span>
         <p className={`text-sm font-medium ${
-          urgency === 'past' ? 'text-red-700' : urgency === 'imminent' ? 'text-red-600' : 'text-gray-900'
+          urgency === 'past' ? 'text-[var(--color-error)]' : urgency === 'imminent' ? 'text-[var(--color-error)]/90' : 'text-[var(--text-primary)]'
         }`}>
           {formatDate(closingDate)}
         </p>
@@ -231,17 +232,17 @@ function ContractLifecycleTimeline({ contract }: { contract: ContractData }) {
             <div key={stage.key} className="flex flex-col items-center relative z-10">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 transition-all ${
                 isPast
-                  ? 'bg-gray-100 border-gray-200 text-gray-400'
+                  ? 'bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-muted)]'
                   : isComplete
-                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                    ? 'bg-[var(--color-success)] border-[var(--color-success)] text-white'
                     : isCurrent
-                      ? 'bg-blue-500 border-blue-500 text-white ring-4 ring-blue-100'
-                      : 'bg-white border-gray-200 text-gray-400'
+                      ? 'bg-[var(--accent-blue)] border-[var(--accent-blue)] text-white ring-4 ring-[var(--accent-blue)]/20'
+                      : 'bg-[var(--bg-secondary)] border-[var(--border-subtle)] text-[var(--text-muted)]'
               }`}>
                 <Icon className="h-4 w-4" />
               </div>
               <span className={`mt-1.5 text-xs font-medium ${
-                isPast ? 'text-gray-400' : isCurrent ? 'text-blue-600' : isComplete ? 'text-emerald-600' : 'text-gray-400'
+                isPast ? 'text-[var(--text-muted)]' : isCurrent ? 'text-[var(--accent-blue)]' : isComplete ? 'text-[var(--color-success)]' : 'text-[var(--text-muted)]'
               }`}>
                 {stage.label}
               </span>
@@ -250,9 +251,9 @@ function ContractLifecycleTimeline({ contract }: { contract: ContractData }) {
         })}
       </div>
       {/* Progress line */}
-      <div className="absolute top-4 left-4 right-4 h-0.5 bg-gray-200 -z-0">
+      <div className="absolute top-4 left-4 right-4 h-0.5 bg-[var(--bg-tertiary)] -z-0">
         <div
-          className="h-full bg-emerald-500 transition-all duration-500"
+          className="h-full bg-[var(--color-success)] transition-all duration-500"
           style={{ width: `${(currentIndex / (stages.length - 1)) * 100}%` }}
         />
       </div>
@@ -312,6 +313,9 @@ export default function ContractsPage() {
         <p className="text-[var(--text-secondary)] mt-1">Manage and track contracts</p>
       </div>
 
+      {/* Contract Template Disclaimer */}
+      <ContractDisclaimer variant="inline" />
+
       {isLoading ? (
         <div className="py-12 flex justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-[var(--accent-blue)]" />
@@ -341,13 +345,13 @@ export default function ContractsPage() {
               <GlassCard key={contract.id} className={`relative overflow-hidden ${cardBorderClass}`}>
                 {/* Urgency banner for overdue/imminent */}
                 {urgency === 'past' && (
-                  <div className="absolute top-0 left-0 right-0 bg-red-500 text-white text-xs font-medium py-1 px-3 flex items-center gap-1.5">
+                  <div className="absolute top-0 left-0 right-0 bg-[var(--color-error)] text-white text-xs font-medium py-1 px-3 flex items-center gap-1.5">
                     <AlertTriangle className="h-3 w-3" />
                     Past close date - Action required
                   </div>
                 )}
                 {urgency === 'imminent' && contract.status !== 'CLOSED' && (
-                  <div className="absolute top-0 left-0 right-0 bg-amber-500 text-white text-xs font-medium py-1 px-3 flex items-center gap-1.5">
+                  <div className="absolute top-0 left-0 right-0 bg-[var(--color-warning)] text-white text-xs font-medium py-1 px-3 flex items-center gap-1.5">
                     <Clock className="h-3 w-3" />
                     Closing soon - Prepare for settlement
                   </div>
@@ -362,7 +366,7 @@ export default function ContractsPage() {
                           Contract #{contract.id.slice(-8).toUpperCase()}
                         </h3>
                         {binding && (
-                          <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300">
+                          <Badge className="bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30">
                             <ShieldCheck className="h-3 w-3 mr-1" />
                             Legally Binding
                           </Badge>
@@ -374,7 +378,7 @@ export default function ContractsPage() {
                           <span className="text-xs font-medium">{status.label}</span>
                         </div>
                         <CloseCountdownBadge closingDate={closingDate} status={contract.status} />
-                        <span className="text-xs text-gray-500 px-2 py-1 bg-gray-50 rounded-full border border-gray-200">
+                        <span className="text-xs text-[var(--text-muted)] px-2 py-1 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-subtle)]">
                           {contract.direction}
                         </span>
                       </div>
@@ -385,7 +389,7 @@ export default function ContractsPage() {
                       <div className="text-right">
                         {contract.contract_price_cents && (
                           <div className="mb-1">
-                            <span className="text-xs text-gray-500 block">Contract Value</span>
+                            <span className="text-xs text-[var(--text-muted)] block">Contract Value</span>
                             <span className="text-xl font-bold text-[var(--text-primary)]">
                               {formatCurrency(contract.contract_price_cents)}
                             </span>
@@ -393,8 +397,8 @@ export default function ContractsPage() {
                         )}
                         {contract.assignment_fee_cents && (
                           <div className="flex items-center gap-1 justify-end">
-                            <DollarSign className="h-3 w-3 text-emerald-500" />
-                            <span className="text-sm font-semibold text-emerald-600">
+                            <DollarSign className="h-3 w-3 text-[var(--color-success)]" />
+                            <span className="text-sm font-semibold text-[var(--color-success)]">
                               {formatCurrency(contract.assignment_fee_cents)} fee
                             </span>
                           </div>
@@ -404,12 +408,12 @@ export default function ContractsPage() {
                   </div>
 
                   {/* Lifecycle Timeline */}
-                  <div className="mb-4 p-3 bg-gray-50/50 rounded-lg border border-gray-100">
+                  <div className="mb-4 p-3 bg-[var(--bg-tertiary)]/50 rounded-lg border border-[var(--border-subtle)]">
                     <ContractLifecycleTimeline contract={contract} />
                   </div>
 
                   {/* Contract Status Dates */}
-                  <div className="border-t border-b border-gray-100 mb-4">
+                  <div className="border-t border-b border-[var(--border-subtle)] mb-4">
                     <ContractStatusSection contract={contract} />
                   </div>
 
@@ -425,15 +429,15 @@ export default function ContractsPage() {
 
                   {/* Payment Section */}
                   {contract.payment && (
-                    <div className="pt-3 border-t border-gray-100">
-                      <h4 className="text-sm font-medium text-gray-500 mb-2">Payment Status</h4>
+                    <div className="pt-3 border-t border-[var(--border-subtle)]">
+                      <h4 className="text-sm font-medium text-[var(--text-muted)] mb-2">Payment Status</h4>
                       <PaymentChip payment={contract.payment} onRefund={handleRefund} />
                     </div>
                   )}
 
                   {/* E-Sign Timeline */}
                   {contract.esign_status && contract.esign_status !== 'pending' && (
-                    <div className="pt-3 border-t border-gray-100">
+                    <div className="pt-3 border-t border-[var(--border-subtle)]">
                       <ContractTimeline
                         events={contract.esign_events || []}
                         currentStatus={contract.esign_status}

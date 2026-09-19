@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { MetricValue } from '@/components/ui/MetricValue';
@@ -54,84 +54,77 @@ import {
   ArrowRight,
   RefreshCw,
   FileText,
+  AlertTriangle,
+  Undo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-// Mock data - in production this would come from API
-const mockBalanceData = {
-  available: 1284500, // cents
-  pending: 458000,
-  onHold: 125000,
-  totalEarnings: 3256800,
-  minimumPayout: 10000, // $100 minimum
-  processingFee: 0, // Free transfers
-  estimatedArrivalDays: 2,
-  bankAccount: {
-    last4: '4567',
-    bankName: 'Chase Bank',
-    type: 'checking',
-    verified: true,
-    addedAt: '2026-05-15T10:00:00Z',
-  },
+// Types for API responses
+interface EarningData {
+  id: string;
+  contract_id: string | null;
+  amount_cents: number;
+  status: 'PENDING' | 'AVAILABLE' | 'WITHDRAWN' | 'REFUNDED';
+  description: string | null;
+  available_at: string;
+  deal_closed_at: string;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  withdrawal_id: string | null;
+  created_at: string;
+  contract_metadata?: {
+    property_address?: string;
+  } | null;
+}
+
+interface WithdrawalData {
+  id: string;
+  amount_cents: number;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  payout_method: string;
+  payout_reference: string | null;
+  requested_at: string;
+  processing_started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  failure_reason: string | null;
+  estimated_arrival_at: string | null;
+}
+
+interface BalanceSummary {
+  pending: number;
+  available: number;
+  withdrawn: number;
+  refunded: number;
+  total_earned: number;
+}
+
+interface BankAccount {
+  id: string;
+  bank_name: string;
+  account_type: string;
+  last_four: string;
+  verified: boolean;
+  verified_at: string | null;
+}
+
+type PayoutStatus = 'all' | 'COMPLETED' | 'PENDING' | 'FAILED';
+type EarningFilter = 'all' | 'PENDING' | 'AVAILABLE' | 'WITHDRAWN' | 'REFUNDED';
+
+const withdrawalStatusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; label: string; bg: string }> = {
+  COMPLETED: { dot: 'success', label: 'Completed', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  PENDING: { dot: 'warning', label: 'Pending', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  PROCESSING: { dot: 'info', label: 'Processing', bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  FAILED: { dot: 'error', label: 'Failed', bg: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  CANCELLED: { dot: 'neutral', label: 'Cancelled', bg: 'bg-gray-500/10 text-gray-400 border-gray-500/20' },
 };
 
-const mockPayoutHistory = [
-  {
-    id: 'pyo_1',
-    amount: 234500,
-    status: 'completed',
-    requestedAt: '2026-08-25T14:30:00Z',
-    completedAt: '2026-08-27T09:15:00Z',
-    method: 'bank_transfer',
-    reference: 'TRF-2026082701',
-  },
-  {
-    id: 'pyo_2',
-    amount: 156000,
-    status: 'pending',
-    requestedAt: '2026-08-28T10:00:00Z',
-    completedAt: null,
-    method: 'bank_transfer',
-    reference: 'TRF-2026082801',
-    estimatedArrival: '2026-08-30T17:00:00Z',
-  },
-  {
-    id: 'pyo_3',
-    amount: 89000,
-    status: 'completed',
-    requestedAt: '2026-08-15T16:45:00Z',
-    completedAt: '2026-08-17T11:30:00Z',
-    method: 'bank_transfer',
-    reference: 'TRF-2026081701',
-  },
-  {
-    id: 'pyo_4',
-    amount: 45000,
-    status: 'failed',
-    requestedAt: '2026-08-10T09:20:00Z',
-    completedAt: null,
-    method: 'bank_transfer',
-    reference: 'TRF-2026081001',
-    failureReason: 'Invalid account details',
-  },
-  {
-    id: 'pyo_5',
-    amount: 312000,
-    status: 'completed',
-    requestedAt: '2026-08-01T12:00:00Z',
-    completedAt: '2026-08-03T14:20:00Z',
-    method: 'bank_transfer',
-    reference: 'TRF-2026080301',
-  },
-];
-
-type PayoutStatus = 'all' | 'completed' | 'pending' | 'failed';
-
-const statusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; label: string; bg: string }> = {
-  completed: { dot: 'success', label: 'Completed', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  pending: { dot: 'warning', label: 'Processing', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-  failed: { dot: 'error', label: 'Failed', bg: 'bg-red-500/10 text-red-400 border-red-500/20' },
+const earningStatusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; label: string; bg: string }> = {
+  PENDING: { dot: 'warning', label: 'In Escrow', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+  AVAILABLE: { dot: 'success', label: 'Available', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  WITHDRAWN: { dot: 'info', label: 'Withdrawn', bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  REFUNDED: { dot: 'error', label: 'Refunded', bg: 'bg-red-500/10 text-red-400 border-red-500/20' },
 };
 
 function formatCurrency(cents: number): string {
@@ -163,10 +156,18 @@ function getRelativeTime(dateStr: string): string {
   const diffMs = date.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
+  if (diffDays < 0) return formatDate(dateStr, false);
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Tomorrow';
-  if (diffDays > 1 && diffDays <= 7) return `In ${diffDays} days`;
+  if (diffDays <= 7) return `In ${diffDays} days`;
   return formatDate(dateStr, false);
+}
+
+function getDaysUntilAvailable(availableAt: string): number {
+  const date = new Date(availableAt);
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 }
 
 // Skeleton components for loading states
@@ -375,82 +376,111 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   );
 }
 
+// Escrow countdown for pending earnings
+function EscrowCountdown({ availableAt }: { availableAt: string }) {
+  const daysLeft = getDaysUntilAvailable(availableAt);
+
+  if (daysLeft <= 0) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-amber-400">
+      <Lock className="h-3 w-3" />
+      {daysLeft} day{daysLeft !== 1 ? 's' : ''} left
+    </span>
+  );
+}
+
 export default function PayoutsPage() {
   const { data: session, isPending: authLoading } = useSession();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<PayoutStatus>('all');
-  const [isRequestingPayout, setIsRequestingPayout] = useState(false);
+  const [withdrawalStatusFilter, setWithdrawalStatusFilter] = useState<PayoutStatus>('all');
+  const [earningFilter, setEarningFilter] = useState<EarningFilter>('all');
   const [payoutMode, setPayoutMode] = useState<'full' | 'custom'>('full');
   const [customAmount, setCustomAmount] = useState('');
+  const [activeTab, setActiveTab] = useState<'earnings' | 'withdrawals'>('earnings');
 
-  // In production, replace with actual API call
-  const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useQuery({
-    queryKey: ['payout-balance'],
+  // Fetch earnings and balance data
+  const { data: earningsData, isLoading: earningsLoading, refetch: refetchEarnings } = useQuery({
+    queryKey: ['earnings'],
     queryFn: async () => {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return mockBalanceData;
+      const res = await fetch('/api/earnings');
+      if (!res.ok) throw new Error('Failed to fetch earnings');
+      return res.json() as Promise<{
+        earnings: EarningData[];
+        summary: BalanceSummary;
+        bankAccount: BankAccount | null;
+        minimumPayout: number;
+      }>;
     },
     enabled: !!session,
   });
 
-  const { data: payoutHistory, isLoading: historyLoading } = useQuery({
-    queryKey: ['payout-history', statusFilter],
+  // Fetch withdrawals
+  const { data: withdrawalsData, isLoading: withdrawalsLoading } = useQuery({
+    queryKey: ['withdrawals'],
     queryFn: async () => {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      if (statusFilter === 'all') {
-        return mockPayoutHistory;
+      const res = await fetch('/api/withdrawals');
+      if (!res.ok) throw new Error('Failed to fetch withdrawals');
+      return res.json() as Promise<{ withdrawals: WithdrawalData[] }>;
+    },
+    enabled: !!session,
+  });
+
+  // Request withdrawal mutation
+  const withdrawMutation = useMutation({
+    mutationFn: async (amountCents: number) => {
+      const res = await fetch('/api/withdrawals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amountCents }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to request withdrawal');
       }
-      return mockPayoutHistory.filter((p) => p.status === statusFilter);
+      return res.json();
     },
-    enabled: !!session,
-  });
-
-  const handleRequestPayout = async () => {
-    if (!balanceData) return;
-
-    const amountCents = payoutMode === 'full'
-      ? balanceData.available
-      : Math.round(parseFloat(customAmount || '0') * 100);
-
-    if (amountCents < balanceData.minimumPayout) {
-      toast.error(`Minimum payout amount is ${formatCurrency(balanceData.minimumPayout)}`);
-      return;
-    }
-
-    if (amountCents > balanceData.available) {
-      toast.error('Amount exceeds available balance');
-      return;
-    }
-
-    setIsRequestingPayout(true);
-    try {
-      // In production, call actual API
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-
+    onSuccess: (data) => {
       toast.success(
         <div className="flex flex-col gap-1">
           <span className="font-medium">Payout requested successfully</span>
           <span className="text-sm text-[var(--text-secondary)]">
-            {formatCurrency(amountCents)} will arrive in 2-3 business days
+            {formatCurrency(data.amountCents)} will arrive in 2-3 business days
           </span>
         </div>,
         { duration: 5000 }
       );
-
-      // Reset form
       setPayoutMode('full');
       setCustomAmount('');
+      queryClient.invalidateQueries({ queryKey: ['earnings'] });
+      queryClient.invalidateQueries({ queryKey: ['withdrawals'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
 
-      // Refetch data
-      queryClient.invalidateQueries({ queryKey: ['payout-balance'] });
-      queryClient.invalidateQueries({ queryKey: ['payout-history'] });
-    } catch {
-      toast.error('Failed to request payout. Please try again.');
-    } finally {
-      setIsRequestingPayout(false);
+  const handleRequestPayout = () => {
+    const summary = earningsData?.summary;
+    if (!summary) return;
+
+    const amountCents = payoutMode === 'full'
+      ? summary.available
+      : Math.round(parseFloat(customAmount || '0') * 100);
+
+    const minimumPayout = earningsData?.minimumPayout || 10000;
+
+    if (amountCents < minimumPayout) {
+      toast.error(`Minimum payout amount is ${formatCurrency(minimumPayout)}`);
+      return;
     }
+
+    if (amountCents > summary.available) {
+      toast.error('Amount exceeds available balance');
+      return;
+    }
+
+    withdrawMutation.mutate(amountCents);
   };
 
   if (authLoading) {
@@ -468,28 +498,51 @@ export default function PayoutsPage() {
     redirect('/account/signin');
   }
 
-  const canRequestPayout = balanceData && balanceData.available >= balanceData.minimumPayout;
-  const effectiveAmount = payoutMode === 'full'
-    ? (balanceData?.available || 0)
-    : Math.round(parseFloat(customAmount || '0') * 100);
-  const isValidAmount = effectiveAmount >= (balanceData?.minimumPayout || 0) && effectiveAmount <= (balanceData?.available || 0);
+  const summary = earningsData?.summary || {
+    pending: 0,
+    available: 0,
+    withdrawn: 0,
+    refunded: 0,
+    total_earned: 0,
+  };
 
-  const pendingPayout = payoutHistory?.find(p => p.status === 'pending');
+  const minimumPayout = earningsData?.minimumPayout || 10000;
+  const canRequestPayout = summary.available >= minimumPayout;
+  const effectiveAmount = payoutMode === 'full'
+    ? summary.available
+    : Math.round(parseFloat(customAmount || '0') * 100);
+  const isValidAmount = effectiveAmount >= minimumPayout && effectiveAmount <= summary.available;
+
+  // Filter earnings based on selection
+  const filteredEarnings = earningsData?.earnings?.filter(
+    (e) => earningFilter === 'all' || e.status === earningFilter
+  ) || [];
+
+  // Filter withdrawals based on selection
+  const filteredWithdrawals = withdrawalsData?.withdrawals?.filter(
+    (w) => withdrawalStatusFilter === 'all' || w.status === withdrawalStatusFilter
+  ) || [];
+
+  const pendingWithdrawal = withdrawalsData?.withdrawals?.find(
+    (w) => w.status === 'PENDING' || w.status === 'PROCESSING'
+  );
+
+  const bankAccount = earningsData?.bankAccount;
 
   return (
     <div className="space-y-8 max-w-5xl pb-8">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Payouts</h1>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Payouts & Earnings</h1>
           <p className="text-[var(--text-secondary)] mt-1">
-            Manage your earnings and request withdrawals
+            Track your deal earnings and request withdrawals
           </p>
         </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => refetchBalance()}
+          onClick={() => refetchEarnings()}
           className="gap-2 self-start"
         >
           <RefreshCw className="h-4 w-4" />
@@ -499,39 +552,47 @@ export default function PayoutsPage() {
 
       {/* Hero Balance Card */}
       <HeroBalanceCard
-        amount={balanceData?.available || 0}
-        isLoading={balanceLoading}
+        amount={summary.available}
+        isLoading={earningsLoading}
       />
 
       {/* Secondary Balance Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <BalanceCard
-          title="Pending"
-          amount={balanceData?.pending || 0}
-          icon={Clock}
-          variant="warning"
-          description="Contracts in progress"
-          isLoading={balanceLoading}
-        />
-        <BalanceCard
-          title="On Hold"
-          amount={balanceData?.onHold || 0}
+          title="In Escrow"
+          amount={summary.pending}
           icon={Lock}
-          variant="muted"
-          description="Awaiting legal binding"
-          isLoading={balanceLoading}
+          variant="warning"
+          description="Inspection period hold"
+          isLoading={earningsLoading}
         />
         <BalanceCard
-          title="Total Earnings"
-          amount={balanceData?.totalEarnings || 0}
+          title="Withdrawn"
+          amount={summary.withdrawn}
+          icon={ArrowDownToLine}
+          variant="muted"
+          description="Paid out to bank"
+          isLoading={earningsLoading}
+        />
+        <BalanceCard
+          title="Refunded"
+          amount={summary.refunded}
+          icon={Undo2}
+          variant="muted"
+          description="Deals that fell through"
+          isLoading={earningsLoading}
+        />
+        <BalanceCard
+          title="Total Earned"
+          amount={summary.total_earned}
           icon={TrendingUp}
           description="Lifetime earnings"
-          isLoading={balanceLoading}
+          isLoading={earningsLoading}
         />
       </div>
 
       {/* Active Pending Payout Alert */}
-      {pendingPayout && (
+      {pendingWithdrawal && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
           <div className="flex items-start gap-3">
             <div className="p-2 rounded-lg bg-amber-500/20">
@@ -541,15 +602,15 @@ export default function PayoutsPage() {
               <div className="flex items-center gap-2 mb-1">
                 <h4 className="text-sm font-semibold text-amber-400">Payout in Progress</h4>
                 <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
-                  {formatCurrency(pendingPayout.amount)}
+                  {formatCurrency(pendingWithdrawal.amount_cents)}
                 </Badge>
               </div>
               <p className="text-sm text-[var(--text-secondary)]">
-                Reference: <span className="font-mono">{pendingPayout.reference}</span>
+                Reference: <span className="font-mono">{pendingWithdrawal.payout_reference || '-'}</span>
               </p>
               <PendingPayoutProgress
-                requestedAt={pendingPayout.requestedAt}
-                estimatedArrival={(pendingPayout as typeof pendingPayout & { estimatedArrival?: string }).estimatedArrival}
+                requestedAt={pendingWithdrawal.requested_at}
+                estimatedArrival={pendingWithdrawal.estimated_arrival_at || undefined}
               />
             </div>
           </div>
@@ -592,7 +653,7 @@ export default function PayoutsPage() {
                 <span className="font-medium text-[var(--text-primary)]">Full Amount</span>
               </div>
               <p className="text-2xl font-bold font-mono text-[var(--text-primary)]">
-                {formatCurrency(balanceData?.available || 0)}
+                {formatCurrency(summary.available)}
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-1">Withdraw your entire available balance</p>
             </button>
@@ -623,7 +684,7 @@ export default function PayoutsPage() {
                     onChange={(e) => setCustomAmount(e.target.value)}
                     className="pl-7 text-xl font-bold font-mono bg-[var(--bg-tertiary)] border-[var(--border-subtle)]"
                     min={0}
-                    max={(balanceData?.available || 0) / 100}
+                    max={summary.available / 100}
                     step="0.01"
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -641,7 +702,7 @@ export default function PayoutsPage() {
           <div className="flex flex-wrap items-center gap-4 mb-6 text-sm">
             <div className="flex items-center gap-2 text-[var(--text-muted)]">
               <Info className="h-4 w-4" />
-              <span>Min: {balanceData ? formatCurrency(balanceData.minimumPayout) : '-'}</span>
+              <span>Min: {formatCurrency(minimumPayout)}</span>
             </div>
             <div className="flex items-center gap-2 text-[var(--text-muted)]">
               <Clock className="h-4 w-4" />
@@ -656,10 +717,10 @@ export default function PayoutsPage() {
           {/* Submit Button */}
           <Button
             onClick={handleRequestPayout}
-            disabled={!canRequestPayout || isRequestingPayout || (payoutMode === 'custom' && !isValidAmount)}
+            disabled={!canRequestPayout || withdrawMutation.isPending || (payoutMode === 'custom' && !isValidAmount) || !!pendingWithdrawal}
             className="btn-gradient w-full sm:w-auto px-8 py-3 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed text-base"
           >
-            {isRequestingPayout ? (
+            {withdrawMutation.isPending ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin mr-2" />
                 Processing...
@@ -674,11 +735,29 @@ export default function PayoutsPage() {
           </Button>
 
           {/* Warnings */}
-          {!canRequestPayout && balanceData && (
+          {pendingWithdrawal && (
             <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
               <p className="text-sm text-amber-400 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                Your available balance is below the minimum payout threshold of {formatCurrency(balanceData.minimumPayout)}
+                You have a pending withdrawal. Please wait for it to complete before requesting another.
+              </p>
+            </div>
+          )}
+
+          {!canRequestPayout && !pendingWithdrawal && (
+            <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-sm text-amber-400 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                Your available balance is below the minimum payout threshold of {formatCurrency(minimumPayout)}
+              </p>
+            </div>
+          )}
+
+          {!bankAccount && (
+            <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+              <p className="text-sm text-red-400 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                No bank account connected. Add a bank account to enable withdrawals.
               </p>
             </div>
           )}
@@ -696,18 +775,18 @@ export default function PayoutsPage() {
               <h3 className="text-base font-semibold text-[var(--text-primary)]">
                 Connected Bank Account
               </h3>
-              {balanceData?.bankAccount ? (
+              {bankAccount ? (
                 <div className="flex flex-wrap items-center gap-3 mt-1">
                   <span className="text-sm text-[var(--text-secondary)]">
-                    {balanceData.bankAccount.bankName}
+                    {bankAccount.bank_name}
                   </span>
                   <span className="text-sm font-mono text-[var(--text-muted)]">
-                    ****{balanceData.bankAccount.last4}
+                    ****{bankAccount.last_four}
                   </span>
                   <Badge className="bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border-subtle)] text-xs capitalize">
-                    {balanceData.bankAccount.type}
+                    {bankAccount.account_type}
                   </Badge>
-                  {balanceData.bankAccount.verified && (
+                  {bankAccount.verified && (
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                       <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
                       <span className="text-xs font-medium text-emerald-400">Verified</span>
@@ -721,159 +800,344 @@ export default function PayoutsPage() {
           </div>
           <Button variant="outline" size="sm" className="gap-2 self-start sm:self-center">
             <CreditCard className="h-4 w-4" />
-            Update
+            {bankAccount ? 'Update' : 'Add Account'}
             <ExternalLink className="h-3 w-3" />
           </Button>
         </div>
       </GlassCard>
 
-      {/* Payout History */}
-      <GlassCard variant="bordered" padding="none">
-        <div className="p-4 sm:p-6 border-b border-[var(--border-subtle)]">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <FileText className="h-5 w-5 text-[var(--text-muted)]" />
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Payout History</h2>
-            </div>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as PayoutStatus)}>
-              <SelectTrigger className="w-full sm:w-[160px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Payouts</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="pending">Processing</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      {/* Tab Switcher */}
+      <div className="flex gap-2 border-b border-[var(--border-subtle)]">
+        <button
+          onClick={() => setActiveTab('earnings')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'earnings'
+              ? 'border-[var(--accent-blue)] text-[var(--accent-blue)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+          )}
+        >
+          Earnings History
+        </button>
+        <button
+          onClick={() => setActiveTab('withdrawals')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'withdrawals'
+              ? 'border-[var(--accent-blue)] text-[var(--accent-blue)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+          )}
+        >
+          Withdrawal History
+        </button>
+      </div>
 
-        {historyLoading ? (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
-                  <TableHead className="text-[var(--text-secondary)]">Reference</TableHead>
-                  <TableHead className="text-[var(--text-secondary)]">Amount</TableHead>
-                  <TableHead className="text-[var(--text-secondary)]">Status</TableHead>
-                  <TableHead className="text-[var(--text-secondary)]">Requested</TableHead>
-                  <TableHead className="text-[var(--text-secondary)]">Completed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <TableRowSkeleton key={i} />
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : !payoutHistory || payoutHistory.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mb-4">
-              <Wallet className="h-8 w-8 text-[var(--text-muted)]" />
+      {/* Earnings History */}
+      {activeTab === 'earnings' && (
+        <GlassCard variant="bordered" padding="none">
+          <div className="p-4 sm:p-6 border-b border-[var(--border-subtle)]">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Wallet className="h-5 w-5 text-[var(--text-muted)]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Earnings from Deals</h2>
+              </div>
+              <Select value={earningFilter} onValueChange={(v) => setEarningFilter(v as EarningFilter)}>
+                <SelectTrigger className="w-full sm:w-[160px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Earnings</SelectItem>
+                  <SelectItem value="PENDING">In Escrow</SelectItem>
+                  <SelectItem value="AVAILABLE">Available</SelectItem>
+                  <SelectItem value="WITHDRAWN">Withdrawn</SelectItem>
+                  <SelectItem value="REFUNDED">Refunded</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">No payouts found</h3>
-            <p className="text-sm text-[var(--text-muted)] max-w-sm mx-auto">
-              {statusFilter !== 'all'
-                ? 'Try changing the filter to see more results'
-                : 'Your payout history will appear here once you request your first withdrawal'}
-            </p>
-            {statusFilter !== 'all' && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-4"
-                onClick={() => setStatusFilter('all')}
-              >
-                Clear filter
-              </Button>
-            )}
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
-                  <TableHead className="text-[var(--text-secondary)] font-medium">Reference</TableHead>
-                  <TableHead className="text-[var(--text-secondary)] font-medium">Amount</TableHead>
-                  <TableHead className="text-[var(--text-secondary)] font-medium">Status</TableHead>
-                  <TableHead className="text-[var(--text-secondary)] font-medium">Requested</TableHead>
-                  <TableHead className="text-[var(--text-secondary)] font-medium">Completed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {payoutHistory.map((payout) => {
-                  const status = statusConfig[payout.status];
-                  const StatusIcon =
-                    payout.status === 'completed'
-                      ? CheckCircle2
-                      : payout.status === 'pending'
-                        ? Clock
-                        : XCircle;
 
-                  return (
-                    <TableRow
-                      key={payout.id}
-                      className="border-[var(--border-subtle)] hover:bg-[var(--bg-tertiary)]/50 transition-colors"
-                    >
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-[var(--text-primary)]">
-                            {payout.reference}
+          {earningsLoading ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
+                    <TableHead className="text-[var(--text-secondary)]">Description</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Amount</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Status</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Deal Closed</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Available</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <TableRowSkeleton key={i} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : filteredEarnings.length === 0 ? (
+            <div className="py-16 text-center">
+              <div className="mx-auto w-16 h-16 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mb-4">
+                <Wallet className="h-8 w-8 text-[var(--text-muted)]" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">No earnings found</h3>
+              <p className="text-sm text-[var(--text-muted)] max-w-sm mx-auto">
+                {earningFilter !== 'all'
+                  ? 'Try changing the filter to see more results'
+                  : 'Your earnings will appear here when deals close'}
+              </p>
+              {earningFilter !== 'all' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setEarningFilter('all')}
+                >
+                  Clear filter
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Description</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Amount</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Status</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Deal Closed</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Available</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEarnings.map((earning) => {
+                    const status = earningStatusConfig[earning.status] || earningStatusConfig.PENDING;
+                    const StatusIcon =
+                      earning.status === 'AVAILABLE'
+                        ? CheckCircle2
+                        : earning.status === 'PENDING'
+                          ? Lock
+                          : earning.status === 'WITHDRAWN'
+                            ? ArrowDownToLine
+                            : XCircle;
+
+                    return (
+                      <TableRow
+                        key={earning.id}
+                        className="border-[var(--border-subtle)] hover:bg-[var(--bg-tertiary)]/50 transition-colors"
+                      >
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm text-[var(--text-primary)]">
+                              {earning.description || 'Deal assignment fee'}
+                            </span>
+                            {earning.contract_metadata?.property_address && (
+                              <span className="text-xs text-[var(--text-muted)]">
+                                {earning.contract_metadata.property_address}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold font-mono text-[var(--text-primary)]">
+                            {formatCurrency(earning.amount_cents)}
                           </span>
-                          <CopyButton text={payout.reference} label="Reference" />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-semibold font-mono text-[var(--text-primary)]">
-                          {formatCurrency(payout.amount)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge className={cn('border transition-all', status.bg)}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {status.label}
-                          </Badge>
-                          {payout.status === 'failed' && payout.failureReason && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <AlertCircle className="h-4 w-4 text-red-400" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{payout.failureReason}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge className={cn('border transition-all w-fit', status.bg)}>
+                              <StatusIcon className="h-3 w-3 mr-1" />
+                              {status.label}
+                            </Badge>
+                            {earning.status === 'PENDING' && (
+                              <EscrowCountdown availableAt={earning.available_at} />
+                            )}
+                            {earning.status === 'REFUNDED' && earning.refund_reason && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <span className="text-xs text-red-400 flex items-center gap-1">
+                                      <AlertCircle className="h-3 w-3" />
+                                      View reason
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{earning.refund_reason}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-[var(--text-secondary)]">
+                          {formatDate(earning.deal_closed_at)}
+                        </TableCell>
+                        <TableCell className="text-sm text-[var(--text-secondary)]">
+                          {earning.status === 'PENDING'
+                            ? getRelativeTime(earning.available_at)
+                            : formatDate(earning.available_at, false)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
+      {/* Withdrawal History */}
+      {activeTab === 'withdrawals' && (
+        <GlassCard variant="bordered" padding="none">
+          <div className="p-4 sm:p-6 border-b border-[var(--border-subtle)]">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <FileText className="h-5 w-5 text-[var(--text-muted)]" />
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">Withdrawal History</h2>
+              </div>
+              <Select value={withdrawalStatusFilter} onValueChange={(v) => setWithdrawalStatusFilter(v as PayoutStatus)}>
+                <SelectTrigger className="w-full sm:w-[160px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Withdrawals</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="FAILED">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {withdrawalsLoading ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
+                    <TableHead className="text-[var(--text-secondary)]">Reference</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Amount</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Status</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Requested</TableHead>
+                    <TableHead className="text-[var(--text-secondary)]">Completed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <TableRowSkeleton key={i} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : filteredWithdrawals.length === 0 ? (
+            <div className="py-16 text-center">
+              <div className="mx-auto w-16 h-16 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mb-4">
+                <ArrowDownToLine className="h-8 w-8 text-[var(--text-muted)]" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">No withdrawals found</h3>
+              <p className="text-sm text-[var(--text-muted)] max-w-sm mx-auto">
+                {withdrawalStatusFilter !== 'all'
+                  ? 'Try changing the filter to see more results'
+                  : 'Your withdrawal history will appear here once you request your first payout'}
+              </p>
+              {withdrawalStatusFilter !== 'all' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => setWithdrawalStatusFilter('all')}
+                >
+                  Clear filter
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-[var(--border-subtle)] hover:bg-transparent">
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Reference</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Amount</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Status</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Requested</TableHead>
+                    <TableHead className="text-[var(--text-secondary)] font-medium">Completed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredWithdrawals.map((withdrawal) => {
+                    const status = withdrawalStatusConfig[withdrawal.status] || withdrawalStatusConfig.PENDING;
+                    const StatusIcon =
+                      withdrawal.status === 'COMPLETED'
+                        ? CheckCircle2
+                        : withdrawal.status === 'PENDING' || withdrawal.status === 'PROCESSING'
+                          ? Clock
+                          : XCircle;
+
+                    return (
+                      <TableRow
+                        key={withdrawal.id}
+                        className="border-[var(--border-subtle)] hover:bg-[var(--bg-tertiary)]/50 transition-colors"
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm text-[var(--text-primary)]">
+                              {withdrawal.payout_reference || withdrawal.id.slice(0, 12)}
+                            </span>
+                            {withdrawal.payout_reference && (
+                              <CopyButton text={withdrawal.payout_reference} label="Reference" />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold font-mono text-[var(--text-primary)]">
+                            {formatCurrency(withdrawal.amount_cents)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge className={cn('border transition-all', status.bg)}>
+                              <StatusIcon className="h-3 w-3 mr-1" />
+                              {status.label}
+                            </Badge>
+                            {withdrawal.status === 'FAILED' && withdrawal.failure_reason && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <AlertCircle className="h-4 w-4 text-red-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{withdrawal.failure_reason}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-[var(--text-secondary)]">
+                          {formatDate(withdrawal.requested_at)}
+                        </TableCell>
+                        <TableCell className="text-sm text-[var(--text-secondary)]">
+                          {withdrawal.completed_at ? (
+                            formatDate(withdrawal.completed_at)
+                          ) : (withdrawal.status === 'PENDING' || withdrawal.status === 'PROCESSING') ? (
+                            <span className="text-amber-400 text-xs">
+                              Est. {withdrawal.estimated_arrival_at
+                                ? getRelativeTime(withdrawal.estimated_arrival_at)
+                                : '2-3 days'}
+                            </span>
+                          ) : (
+                            '-'
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-[var(--text-secondary)]">
-                        {formatDate(payout.requestedAt)}
-                      </TableCell>
-                      <TableCell className="text-sm text-[var(--text-secondary)]">
-                        {payout.completedAt ? (
-                          formatDate(payout.completedAt)
-                        ) : payout.status === 'pending' ? (
-                          <span className="text-amber-400 text-xs">
-                            Est. {(payout as typeof payout & { estimatedArrival?: string }).estimatedArrival
-                              ? getRelativeTime((payout as typeof payout & { estimatedArrival?: string }).estimatedArrival!)
-                              : '2-3 days'}
-                          </span>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </GlassCard>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </GlassCard>
+      )}
 
       {/* Trust & Security Section */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -882,9 +1146,9 @@ export default function PayoutsPage() {
             <ShieldCheck className="h-5 w-5 text-[var(--accent-blue)]" />
           </div>
           <div>
-            <h4 className="text-sm font-medium text-[var(--text-primary)]">Bank-Level Security</h4>
+            <h4 className="text-sm font-medium text-[var(--text-primary)]">Escrow Protection</h4>
             <p className="text-xs text-[var(--text-muted)] mt-1">
-              256-bit SSL encryption for all transfers
+              Funds held until inspection period ends
             </p>
           </div>
         </div>
@@ -894,9 +1158,9 @@ export default function PayoutsPage() {
             <CheckCircle2 className="h-5 w-5 text-emerald-400" />
           </div>
           <div>
-            <h4 className="text-sm font-medium text-[var(--text-primary)]">No Hidden Fees</h4>
+            <h4 className="text-sm font-medium text-[var(--text-primary)]">Refund Safe</h4>
             <p className="text-xs text-[var(--text-muted)] mt-1">
-              Zero fees on all bank transfers
+              Deal refunds handled automatically
             </p>
           </div>
         </div>

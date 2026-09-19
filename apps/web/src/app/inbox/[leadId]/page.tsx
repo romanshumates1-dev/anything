@@ -68,70 +68,69 @@ export default function InboxThreadPage({ params }: { params: Promise<{ leadId: 
   if (authLoading || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6">
-      <div className="max-w-4xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <Link href="/inbox" className="text-sm text-gray-500 flex items-center gap-1">
-            <ArrowLeft className="h-4 w-4" /> Back to Inbox
-          </Link>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={toggleAi}>
-              {aiPaused ? <><Play className="h-4 w-4 mr-1" /> Resume AI</> : <><Pause className="h-4 w-4 mr-1" /> Pause AI</>}
-            </Button>
-          </div>
-        </div>
-
-        {/* Phase A.4: bounded AI negotiation panel (renders only when the flag is on) */}
-        <NegotiationPanel leadId={leadId} />
-
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            {messages?.length === 0 && (
-              <Alert>
-                <AlertDescription>No messages yet. Start the conversation.</AlertDescription>
-              </Alert>
-            )}
-
-            {messages?.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[70%] rounded-lg p-3 ${msg.direction === 'outbound' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant={msg.direction === 'outbound' ? 'secondary' : 'outline'} className="text-xs">
-                      {msg.direction === 'outbound' ? <><Bot className="h-3 w-3 mr-1" /> Sent</> : <><User className="h-3 w-3 mr-1" /> Received</>}
-                    </Badge>
-                    {msg.status === 'BLOCKED_TEST_MODE' && (
-                      <Badge variant="destructive" className="text-xs">
-                        <AlertTriangle className="h-3 w-3 mr-1" /> Blocked
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm">{msg.text || '(no content)'}</p>
-                  <p className="text-xs opacity-70 mt-1">
-                    {new Date(msg.created_at).toLocaleString()} · To: {msg.to_phone}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
+    <div className="space-y-4 max-w-4xl">
+      <div className="flex items-center justify-between">
+        <Link href="/inbox" className="text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] flex items-center gap-1">
+          <ArrowLeft className="h-4 w-4" /> Back to Inbox
+        </Link>
         <div className="flex gap-2">
-          <Input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type a message..."
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && message.trim() && sendMutation.mutate(message)}
-          />
-          <Button onClick={() => message.trim() && sendMutation.mutate(message)} disabled={sendMutation.isPending}>
-            <Send className="h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={toggleAi} className="border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">
+            {aiPaused ? <><Play className="h-4 w-4 mr-1" /> Resume AI</> : <><Pause className="h-4 w-4 mr-1" /> Pause AI</>}
           </Button>
         </div>
+      </div>
+
+      {/* Phase A.4: bounded AI negotiation panel (renders only when the flag is on) */}
+      <NegotiationPanel leadId={leadId} />
+
+      <Card className="glass-card">
+        <CardContent className="p-4 space-y-3">
+          {messages?.length === 0 && (
+            <Alert className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
+              <AlertDescription className="text-[var(--text-secondary)]">No messages yet. Start the conversation.</AlertDescription>
+            </Alert>
+          )}
+
+          {messages?.map((msg) => (
+            <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[70%] rounded-lg p-3 ${msg.direction === 'outbound' ? 'bg-[var(--accent-blue)] text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant={msg.direction === 'outbound' ? 'secondary' : 'outline'} className="text-xs">
+                    {msg.direction === 'outbound' ? <><Bot className="h-3 w-3 mr-1" /> Sent</> : <><User className="h-3 w-3 mr-1" /> Received</>}
+                  </Badge>
+                  {msg.status === 'BLOCKED_TEST_MODE' && (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertTriangle className="h-3 w-3 mr-1" /> Blocked
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm">{msg.text || '(no content)'}</p>
+                <p className="text-xs opacity-70 mt-1">
+                  {new Date(msg.created_at).toLocaleString()} - To: {msg.to_phone}
+                </p>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <div className="flex gap-2">
+        <Input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Type a message..."
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && message.trim() && sendMutation.mutate(message)}
+          className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+        />
+        <Button onClick={() => message.trim() && sendMutation.mutate(message)} disabled={sendMutation.isPending} className="btn-gradient">
+          <Send className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );

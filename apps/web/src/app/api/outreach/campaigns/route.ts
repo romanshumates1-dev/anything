@@ -5,6 +5,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { logEvent } from '@/app/api/utils/logger';
 import { parseContactList, dedupeContacts } from '@/app/api/utils/contactImport';
+import { resolveLeadIdByPhone } from '@/app/api/services/stageTransitionRecorder';
 import crypto from 'crypto';
 
 // --- Campaign creation ---
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
       ...(testMode && selectedTestPhones.length > 0 ? selectedTestPhones.map(phoneId => 
         sql`UPDATE test_phone_numbers SET organization_id = ${organizationId} WHERE id = ${phoneId}`
       ) : []),
+      // Note: lead_id population happens after transaction via resolveLeadIdByPhone
       ...validContacts.flatMap((c) => {
         const contactId = crypto.randomUUID();
         return [
@@ -146,6 +148,24 @@ export async function POST(request: NextRequest) {
         ];
       }),
     ]);
+
+    // Populate seller_lead_id/buyer_lead_id based on campaign direction (best-effort, non-blocking)
+    // This enables funnel analytics without phone-based fallback lookups at scheduler time
+    const leadIdColumn = direction === 'SELLER' ? 'seller_lead_id' : 'buyer_lead_id';
+    for (const c of validContacts) {
+      try {
+        const leadId = await resolveLeadIdByPhone(c.phone);
+        if (leadId) {
+          await sql`
+            UPDATE campaign_contacts
+            SET ${sql(leadIdColumn)} = ${leadId}, updated_at = now()
+            WHERE campaign_id = ${campaignId} AND phone = ${c.phone}
+          `;
+        }
+      } catch {
+        // Best-effort: if lookup fails, funnel analytics will use phone-based fallback
+      }
+    }
 
     await logEvent('campaign_created', 'campaign', campaignId, { name, direction, contactsCount: validContacts.length }, session.user.id);
 
