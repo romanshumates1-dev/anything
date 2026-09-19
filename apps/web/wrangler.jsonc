@@ -1,9 +1,12 @@
 {
   // Cloudflare Workers configuration for the DealFlow AI web app.
   //
-  // Deploy target: app.dealswiftautomation.com (Hybrid layout — the WordPress
-  // marketing site keeps the apex/www; only this exact subdomain is routed here).
-  // See "Cloudflare Workers deploy" in apps/web/DEPLOY.md for the full runbook.
+  // Deploy target: STAGED on *.workers.dev first, then cut over to the apex
+  // (dealswiftautomation.com) + www (www 301s to apex — csrfProtection.ts
+  // compares hosts). When the apex route is added below, it REPLACES the DNS
+  // records serving WordPress — that is the cutover moment. Until then, no
+  // "routes" entry keeps the deploy on workers.dev and the live site untouched.
+  // See "Cloudflare Workers deploy" in apps/web/DEPLOY.md for the runbook.
   //
   // `main` points at OUR custom worker, not the OpenNext-generated one: the
   // generated worker only exports `fetch`, and Cloudflare Cron Triggers need a

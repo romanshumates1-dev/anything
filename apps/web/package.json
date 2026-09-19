@@ -17,7 +17,7 @@
 		"cf:deploy": "yarn cf:gate && opennextjs-cloudflare deploy",
 		"cf:dry-run": "yarn cf:gate",
 		"cf:secrets": "node --env-file=.env scripts/check-secrets-in-bundle.mjs",
-		"cf:size": "node scripts/check-worker-size.mjs",
+		"cf:size": "node scripts/check-worker-size.mjs 10485760",
 		"cf:gate": "yarn cf:build && yarn cf:size && node --env-file=.env scripts/check-secrets-in-bundle.mjs .wrangler/dry-run-out",
 		"cf:typecheck": "yarn cf:build && tsc -p tsconfig.cloudflare.json --noEmit",
 		"cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"

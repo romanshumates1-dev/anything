@@ -23,9 +23,11 @@
 DATABASE_URL=
 BETTER_AUTH_SECRET=
 
-# ── Canonical app URL — the app lives on the SUBDOMAIN, not the apex ──
-# The apex (dealswiftautomation.com) stays on the WordPress marketing site.
-BETTER_AUTH_URL=https://app.dealswiftautomation.com
+# ── Canonical app URL — the app serves the APEX and www (301 to apex) ──
+# The WordPress site is being retired; Workers serves the apex directly.
+# www must 301-redirect to the apex (Cloudflare Redirect Rule) —
+# csrfProtection.ts compares hosts, so www POSTs would otherwise be rejected.
+BETTER_AUTH_URL=https://dealswiftautomation.com
 
 # ── Access control (domain lock + RBAC) ──
 ALLOWED_EMAIL_DOMAINS=dealswiftautomation.com
@@ -80,8 +82,8 @@ TWILIO_AUTH_TOKEN=
 TWILIO_MESSAGING_SERVICE_SID=
 TWILIO_NUMBER_TYPE=
 SMS_INBOUND_SECRET=
-# On the subdomain domain — update this, or Twilio status callbacks 404.
-PUBLIC_WEBHOOK_URL=https://app.dealswiftautomation.com/api/sms/inbound
+# Apex domain — update this, or Twilio status callbacks 404.
+PUBLIC_WEBHOOK_URL=https://dealswiftautomation.com/api/sms/inbound
 
 # ── Legal / compliance (required for CAN-SPAM footers and contracts) ──
 LEGAL_ENTITY_NAME=

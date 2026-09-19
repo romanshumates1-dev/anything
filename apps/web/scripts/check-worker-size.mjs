@@ -32,8 +32,12 @@ import { gzipSync } from 'zlib';
 import { join, relative } from 'path';
 
 // 3 MiB — the Workers Free script limit, measured after compression.
-const LIMIT_BYTES = Number(process.env.WORKER_SIZE_LIMIT_BYTES ?? 3 * 1024 * 1024);
-const PLAN_LABEL = process.env.WORKER_SIZE_LIMIT_BYTES ? 'configured limit' : 'Workers Free';
+// Override by plan: WORKER_SIZE_LIMIT_BYTES env var, or the first CLI argument
+// (the argument form exists because `VAR=x cmd` syntax is not portable to the
+// cmd shell npm uses on Windows).
+const CONFIGURED = Number(process.argv[2] || process.env.WORKER_SIZE_LIMIT_BYTES || 0);
+const LIMIT_BYTES = CONFIGURED || 3 * 1024 * 1024;
+const PLAN_LABEL = CONFIGURED ? 'configured limit' : 'Workers Free';
 
 const CWD = process.cwd();
 // Inside .wrangler/ so it is already gitignored and never confused with output.

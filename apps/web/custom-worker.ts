@@ -28,7 +28,7 @@ import { default as handler } from './.open-next/worker.js';
  * handlers. These routes never read the origin (they are secret-gated, not
  * session-gated), but a real host keeps any origin-derived logic sane.
  */
-const INTERNAL_ORIGIN = 'https://app.dealswiftautomation.com';
+const INTERNAL_ORIGIN = 'https://dealswiftautomation.com';
 
 type CronRoute = {
   path: string;
