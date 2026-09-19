@@ -279,11 +279,11 @@ export async function sendEmailWithProvider(
       transport = createSESTransport();
       fromAddress = fromAddress || process.env.AWS_SES_FROM_ADDRESS || process.env.SMTP_USER;
       break;
-    case 'ses-http':
-      // Handled by the HTTPS early-return above — reaching here means the
-      // guard was bypassed (impossible through sendEmailAuto). Fail loudly
-      // rather than silently downgrading to SMTP on Workers.
-      return { success: false, error: `'ses-http' requires the SES HTTPS path (Cloudflare Workers)` };
+    // Deliberately no `case 'ses-http'`: the early return above handles it, and
+    // TypeScript proves `provider` can no longer be 'ses-http' at this point,
+    // which made the former case unreachable (TS2678). Anything that still
+    // slipped through is caught by `default` below, which fails loudly rather
+    // than silently downgrading to SMTP on Workers.
     case 'gemini':
       transport = createGeminiTransport();
       fromAddress = fromAddress || process.env.GEMINI_SMTP_USER;

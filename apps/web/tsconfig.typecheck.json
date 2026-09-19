@@ -6,6 +6,11 @@
   },
   "exclude": [
     "node_modules",
+    // See tsconfig.json — this list REPLACES the base config's `exclude`
+    // (extends does not merge arrays), so these two must be repeated here or
+    // this gate walks the duplicated trees and never finishes.
+    "**/node_modules",
+    ".open-next/**",
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/__tests__/**",

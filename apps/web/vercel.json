@@ -4,6 +4,10 @@
     {
       "path": "/api/jobs/process",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/pipeline/cron",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
