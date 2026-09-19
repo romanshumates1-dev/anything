@@ -40,10 +40,17 @@ const LIMIT_BYTES = CONFIGURED || 3 * 1024 * 1024;
 const PLAN_LABEL = CONFIGURED ? 'configured limit' : 'Workers Free';
 
 const CWD = process.cwd();
+// This script must run with the Cloudflare app dir as cwd (wrangler refuses to
+// run from a workspace root). When invoked from the repo root
+// (node apps/web/scripts/...), transparently re-root to apps/web.
+if (!existsSync(join(CWD, 'wrangler.jsonc')) && existsSync(join(CWD, 'apps', 'web', 'wrangler.jsonc'))) {
+  process.chdir(join(CWD, 'apps', 'web'));
+}
+const APP_DIR = process.cwd();
 // Inside .wrangler/ so it is already gitignored and never confused with output.
-const OUTDIR = join(CWD, '.wrangler', 'dry-run-out');
+const OUTDIR = join(APP_DIR, '.wrangler', 'dry-run-out');
 
-const WRANGLER_BIN = join(CWD, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+const WRANGLER_BIN = join(APP_DIR, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
 function collectFiles(dir) {
   const out = [];
@@ -56,7 +63,7 @@ function collectFiles(dir) {
 }
 
 if (!existsSync(WRANGLER_BIN)) {
-  console.error(`[check-worker-size] wrangler not found at ${relative(CWD, WRANGLER_BIN)} — run \`yarn install\`.`);
+  console.error(`[check-worker-size] wrangler not found at ${relative(APP_DIR, WRANGLER_BIN)} — run \`yarn install\`.`);
   process.exit(1);
 }
 
@@ -66,7 +73,7 @@ console.log('[check-worker-size] running `wrangler deploy --dry-run` to emit the
 let wranglerOut = '';
 try {
   wranglerOut = execFileSync(process.execPath, [WRANGLER_BIN, 'deploy', '--dry-run', '--outdir', OUTDIR], {
-    cwd: CWD,
+    cwd: APP_DIR,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN ?? 'dry-run' },
@@ -96,7 +103,7 @@ const reported = /gzip:\s*([\d.]+)\s*KiB/i.exec(wranglerOut);
 const reportedBytes = reported ? Math.round(Number(reported[1]) * 1024) : null;
 
 if (!existsSync(OUTDIR)) {
-  console.error(`[check-worker-size] wrangler produced no output at ${relative(CWD, OUTDIR)}.`);
+  console.error(`[check-worker-size] wrangler produced no output at ${relative(APP_DIR, OUTDIR)}.`);
   process.exit(1);
 }
 
@@ -116,7 +123,7 @@ for (const file of files) {
   const gz = gzipSync(raw, { level: 9 }).length;
   totalRaw += raw.length;
   totalGzip += gz;
-  console.log(`  ${(gz / 1048576).toFixed(2).padStart(7)} MB gzip  ${(raw.length / 1048576).toFixed(2).padStart(7)} MB raw   ${relative(CWD, file)}`);
+  console.log(`  ${(gz / 1048576).toFixed(2).padStart(7)} MB gzip  ${(raw.length / 1048576).toFixed(2).padStart(7)} MB raw   ${relative(APP_DIR, file)}`);
 }
 
 // Prefer wrangler's number; fall back to our own measurement if its output
