@@ -20,9 +20,15 @@
 -- ============================================================================
 
 -- First, drop the old constraint and add the new one with more tiers
+-- NOTE (2026-09-16, Cloudflare deploy): 'scale' is in this list because 067
+-- inserts plan_scale and 069 updates WHERE tier='scale'. An earlier revision
+-- omitted it, which broke migrate.mjs on a DB that already had the scale row
+-- (check-constraint violation on ADD CONSTRAINT). Keep the list a SUPERSET of
+-- every tier any migration inserts: free/starter/pro/professional/business/
+-- scale/enterprise.
 ALTER TABLE public.subscription_plans DROP CONSTRAINT IF EXISTS subscription_plans_tier_check;
 ALTER TABLE public.subscription_plans ADD CONSTRAINT subscription_plans_tier_check
-  CHECK (tier IN ('free', 'starter', 'pro', 'professional', 'business', 'enterprise'));
+  CHECK (tier IN ('free', 'starter', 'pro', 'professional', 'business', 'scale', 'enterprise'));
 
 -- Update existing plans with new ChatGPT-style pricing
 UPDATE public.subscription_plans SET

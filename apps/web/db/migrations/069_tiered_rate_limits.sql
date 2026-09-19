@@ -154,8 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_org_period
   WHERE organization_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_active
-  ON public.rate_limit_buckets(user_id, period_end)
-  WHERE period_end > now();
+  ON public.rate_limit_buckets(user_id, period_end);
 
 -- Create rate limit events log for analytics and debugging
 CREATE TABLE IF NOT EXISTS public.rate_limit_events (
