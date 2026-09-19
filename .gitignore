@@ -30,6 +30,17 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.test.local
 .env.production.local
 .env.local
+.env.local
+# Any other dot-env (e.g. .env.smtp) — keep real config out of git.
+# Intentional exceptions, tracked on purpose: .env.example, *.example, *.template
+.env.*
+!.env.example
+!*.example
+!*.template
+
+# vitest cache (regenerated on every run; results.json was previously tracked)
+.vitest/
+
 
 # caches
 .eslintcache
