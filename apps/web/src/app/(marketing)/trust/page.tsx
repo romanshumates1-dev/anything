@@ -1,6 +1,7 @@
-// TEMPLATE — requires attorney review before launch
+// TEMPLATE - requires attorney review before launch
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Shield, Clock, Lock, FileText, AlertTriangle, CheckCircle } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Compliance Center",
@@ -12,127 +13,192 @@ export const metadata: Metadata = {
   },
 };
 
+const legalDocuments = [
+  { href: "/legal/terms", title: "Terms of Service", desc: "Platform terms and user obligations" },
+  { href: "/legal/privacy", title: "Privacy Policy", desc: "How we collect and use data" },
+  { href: "/legal/acceptable-use", title: "Acceptable Use Policy", desc: "Messaging and content guidelines" },
+  { href: "/legal/sms-terms", title: "SMS Terms", desc: "Program-specific messaging terms" },
+  { href: "/legal/refunds", title: "Refund Policy", desc: "Billing and refund terms" },
+  { href: "/legal/cookies", title: "Cookie Policy", desc: "Website cookie usage" },
+];
+
 export default function TrustPage() {
   return (
-    <div className="py-20">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Compliance Center
-          </h1>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-            Our commitment to responsible messaging and transparent data practices.
-          </p>
-        </div>
-
-        <div className="prose prose-gray max-w-none space-y-12">
-          {/* Consent Requirements */}
-          <section>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Consent Requirements</h2>
-            <p className="text-gray-600">
-              DealFlow AI complies with the Telephone Consumer Protection Act (TCPA) and requires that 
-              all contacts have given prior express written consent before receiving SMS messages. 
-              This means:
+    <div className="bg-[#0F172A]">
+      <div className="py-20 sm:py-28">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          {/* Hero */}
+          <div className="text-center mb-16">
+            <span className="text-sm font-medium text-[#3B82F6] uppercase tracking-wider">Trust Center</span>
+            <h1 className="mt-4 text-4xl sm:text-5xl font-bold text-white mb-4">
+              Compliance Center
+            </h1>
+            <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+              Our commitment to responsible messaging and transparent data practices.
             </p>
-            <ul className="mt-4 text-gray-600">
-              <li><strong>No purchased lists:</strong> You may only message contacts who have explicitly opted in.</li>
-              <li><strong>Opt-in documentation:</strong> Maintain records of how each contact gave consent.</li>
-              <li><strong>Clear disclosure:</strong> Consent language must clearly disclose message frequency and purpose.</li>
-            </ul>
-          </section>
+          </div>
 
-          {/* STOP/HELP Handling */}
-          <section>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">STOP/HELP Handling</h2>
-            <p className="text-gray-600">
-              Every SMS campaign includes automatic opt-out mechanisms:
-            </p>
-            <ul className="mt-4 text-gray-600">
-              <li>
-                <strong>STOP keyword:</strong> Any contact can reply "STOP" to immediately unsubscribe. 
-                This adds them to our global suppression list, preventing all future messages.
-              </li>
-              <li>
-                <strong>HELP keyword:</strong> Reply "HELP" for information about the program, including 
-                how to opt out and contact support.
-              </li>
-              <li>
-                <strong>Confirmation:</strong> STOP replies trigger an automated confirmation that 
-                opt-out was processed.
-              </li>
-            </ul>
-          </section>
+          {/* Content */}
+          <div className="space-y-12">
+            {/* Consent Requirements */}
+            <section className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-[#3B82F6]/10 flex items-center justify-center">
+                  <Shield className="h-6 w-6 text-[#3B82F6]" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">Consent Requirements</h2>
+              </div>
+              <p className="text-slate-400 mb-6 leading-relaxed">
+                DealFlow AI complies with the Telephone Consumer Protection Act (TCPA) and requires that
+                all contacts have given prior express written consent before receiving SMS messages.
+                This means:
+              </p>
+              <ul className="space-y-4">
+                {[
+                  { label: "No purchased lists", desc: "You may only message contacts who have explicitly opted in." },
+                  { label: "Opt-in documentation", desc: "Maintain records of how each contact gave consent." },
+                  { label: "Clear disclosure", desc: "Consent language must clearly disclose message frequency and purpose." },
+                ].map((item) => (
+                  <li key={item.label} className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-medium text-white">{item.label}:</span>{" "}
+                      <span className="text-slate-400">{item.desc}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-          {/* Quiet Hours */}
-          <section>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Quiet Hours Enforcement</h2>
-            <p className="text-gray-600">
-              To respect recipient preferences and comply with best practices, messages are only sent 
-              during permitted hours:
-            </p>
-            <ul className="mt-4 text-gray-600">
-              <li><strong>8:00 AM to 9:00 PM</strong> in the recipient's local timezone</li>
-              <li>Messages scheduled outside these hours are automatically deferred</li>
-              <li>Timezones are determined by phone number area code (DST-safe)</li>
-            </ul>
-          </section>
+            {/* STOP/HELP Handling */}
+            <section className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                  <AlertTriangle className="h-6 w-6 text-amber-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">STOP/HELP Handling</h2>
+              </div>
+              <p className="text-slate-400 mb-6 leading-relaxed">
+                Every SMS campaign includes automatic opt-out mechanisms:
+              </p>
+              <ul className="space-y-4">
+                {[
+                  {
+                    label: "STOP keyword",
+                    desc: "Any contact can reply \"STOP\" to immediately unsubscribe. This adds them to our global suppression list, preventing all future messages.",
+                  },
+                  {
+                    label: "HELP keyword",
+                    desc: "Reply \"HELP\" for information about the program, including how to opt out and contact support.",
+                  },
+                  {
+                    label: "Confirmation",
+                    desc: "STOP replies trigger an automated confirmation that opt-out was processed.",
+                  },
+                ].map((item) => (
+                  <li key={item.label} className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-medium text-white">{item.label}:</span>{" "}
+                      <span className="text-slate-400">{item.desc}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-          {/* Data Handling */}
-          <section>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Data Handling</h2>
-            <p className="text-gray-600">
-              We take data protection seriously:
-            </p>
-            <ul className="mt-4 text-gray-600">
-              <li>
-                <strong>Subprocessors:</strong> Twilio (SMS), Stripe (Payments), Neon (Database), 
-                Anthropic (AI). All providers meet SOC 2 compliance standards.
-              </li>
-              <li>
-                <strong>Encryption:</strong> All data in transit uses TLS 1.3. Sensitive data at rest 
-                is encrypted in our database.
-              </li>
-              <li>
-                <strong>Retention:</strong> Contact data is retained until account deletion. 
-                Message logs are retained for compliance purposes.
-              </li>
-              <li>
-                <strong>Deletion:</strong> Users may request account deletion and data removal 
-                through our privacy portal.
-              </li>
-            </ul>
-          </section>
+            {/* Quiet Hours */}
+            <section className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-[#8B5CF6]/10 flex items-center justify-center">
+                  <Clock className="h-6 w-6 text-[#8B5CF6]" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">Quiet Hours Enforcement</h2>
+              </div>
+              <p className="text-slate-400 mb-6 leading-relaxed">
+                To respect recipient preferences and comply with best practices, messages are only sent
+                during permitted hours:
+              </p>
+              <ul className="space-y-4">
+                {[
+                  { label: "Time window", desc: "8:00 AM to 9:00 PM in the recipient's local timezone" },
+                  { label: "Automatic deferral", desc: "Messages scheduled outside these hours are automatically deferred" },
+                  { label: "Timezone detection", desc: "Timezones are determined by phone number area code (DST-safe)" },
+                ].map((item) => (
+                  <li key={item.label} className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-medium text-white">{item.label}:</span>{" "}
+                      <span className="text-slate-400">{item.desc}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-          {/* Legal Links */}
-          <section className="bg-gray-50 rounded-2xl p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Legal Documents</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              <Link href="/legal/terms" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">Terms of Service</h3>
-                <p className="text-sm text-gray-600 mt-1">Platform terms and user obligations</p>
-              </Link>
-              <Link href="/legal/privacy" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">Privacy Policy</h3>
-                <p className="text-sm text-gray-600 mt-1">How we collect and use data</p>
-              </Link>
-              <Link href="/legal/acceptable-use" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">Acceptable Use Policy</h3>
-                <p className="text-sm text-gray-600 mt-1">Messaging and content guidelines</p>
-              </Link>
-              <Link href="/legal/sms-terms" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">SMS Terms</h3>
-                <p className="text-sm text-gray-600 mt-1">Program-specific messaging terms</p>
-              </Link>
-              <Link href="/legal/refunds" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">Refund Policy</h3>
-                <p className="text-sm text-gray-600 mt-1">Billing and refund terms</p>
-              </Link>
-              <Link href="/legal/cookies" className="block p-4 rounded-lg border bg-white hover:border-blue-300 transition-colors">
-                <h3 className="font-semibold text-gray-900">Cookie Policy</h3>
-                <p className="text-sm text-gray-600 mt-1">Website cookie usage</p>
-              </Link>
-            </div>
-          </section>
+            {/* Data Handling */}
+            <section className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-8">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                  <Lock className="h-6 w-6 text-emerald-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">Data Handling</h2>
+              </div>
+              <p className="text-slate-400 mb-6 leading-relaxed">
+                We take data protection seriously:
+              </p>
+              <ul className="space-y-4">
+                {[
+                  {
+                    label: "Subprocessors",
+                    desc: "Twilio (SMS), Stripe (Payments), Neon (Database), Anthropic (AI). All providers meet SOC 2 compliance standards.",
+                  },
+                  {
+                    label: "Encryption",
+                    desc: "All data in transit uses TLS 1.3. Sensitive data at rest is encrypted in our database.",
+                  },
+                  {
+                    label: "Retention",
+                    desc: "Contact data is retained until account deletion. Message logs are retained for compliance purposes.",
+                  },
+                  {
+                    label: "Deletion",
+                    desc: "Users may request account deletion and data removal through our privacy portal.",
+                  },
+                ].map((item) => (
+                  <li key={item.label} className="flex items-start gap-3">
+                    <CheckCircle className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-medium text-white">{item.label}:</span>{" "}
+                      <span className="text-slate-400">{item.desc}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Legal Documents */}
+            <section>
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-slate-500/10 flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-slate-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-white">Legal Documents</h2>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {legalDocuments.map((doc) => (
+                  <Link
+                    key={doc.href}
+                    href={doc.href}
+                    className="block rounded-xl border border-white/10 bg-[#1E293B]/30 p-5 hover:border-[#3B82F6]/50 hover:bg-[#1E293B]/50 transition-all"
+                  >
+                    <h3 className="font-semibold text-white mb-1">{doc.title}</h3>
+                    <p className="text-sm text-slate-500">{doc.desc}</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     </div>

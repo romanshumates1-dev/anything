@@ -20,25 +20,25 @@ const DEFAULT_COMPETITORS = ['PropStream', 'REsimpli', 'BatchLeads'];
 
 const DEFAULT_FEATURES: CompetitorFeature[] = [
   {
-    feature: 'AI-Powered Outreach',
+    feature: 'AI Sends Messages For You',
     dealflow: true,
     competitors: { PropStream: false, REsimpli: '$99/mo add-on', BatchLeads: '$89/mo add-on' },
-    tooltip: 'Automated AI that writes and sends personalized messages',
+    tooltip: 'AI writes and sends personalized texts and emails automatically',
   },
   {
-    feature: 'AI Negotiation Assistant',
+    feature: 'AI Handles Price Negotiations',
     dealflow: true,
     competitors: { PropStream: false, REsimpli: false, BatchLeads: false },
-    tooltip: 'AI handles seller conversations and objections',
+    tooltip: 'AI talks with property owners and negotiates prices for you',
   },
   {
-    feature: 'Automatic Buyer Matching',
+    feature: 'Finds Buyers for Your Deals',
     dealflow: true,
     competitors: { PropStream: false, REsimpli: false, BatchLeads: false },
-    tooltip: 'Instantly match deals to your buyer list',
+    tooltip: 'Automatically match your deals with interested investors',
   },
   {
-    feature: 'Contract Generation',
+    feature: 'Generates Contracts Automatically',
     dealflow: true,
     competitors: { PropStream: false, REsimpli: true, BatchLeads: false },
   },
@@ -53,7 +53,7 @@ const DEFAULT_FEATURES: CompetitorFeature[] = [
     competitors: { PropStream: false, REsimpli: true, BatchLeads: 'Per-use $' },
   },
   {
-    feature: 'Lead Finder',
+    feature: 'Find Property Owner Contact Info',
     dealflow: true,
     competitors: { PropStream: true, REsimpli: false, BatchLeads: true },
   },

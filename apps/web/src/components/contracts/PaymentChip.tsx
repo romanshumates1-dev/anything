@@ -30,11 +30,11 @@ interface PaymentChipProps {
 }
 
 const STATUS_STYLES: Record<string, { label: string; color: string }> = {
-  created: { label: 'Pending', color: 'bg-gray-50 text-gray-600 border-gray-200' },
-  sent: { label: 'Payment Sent', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  paid: { label: 'Paid', color: 'bg-green-50 text-green-700 border-green-200' },
-  failed: { label: 'Failed', color: 'bg-red-50 text-red-700 border-red-200' },
-  refunded: { label: 'Refunded', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  created: { label: 'Pending', color: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--border-subtle)]' },
+  sent: { label: 'Payment Sent', color: 'bg-[var(--color-info)]/10 text-[var(--color-info)] border-[var(--color-info)]/30' },
+  paid: { label: 'Paid', color: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30' },
+  failed: { label: 'Failed', color: 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/30' },
+  refunded: { label: 'Refunded', color: 'bg-[var(--accent-purple)]/10 text-[var(--accent-purple)] border-[var(--accent-purple)]/30' },
 };
 
 export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: PaymentChipProps) {
@@ -79,7 +79,7 @@ export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: Payment
           href={payment.paymentLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+          className="inline-flex items-center gap-1 text-xs text-[var(--accent-blue)] hover:text-[var(--accent-blue)]/80"
         >
           <ExternalLink className="h-3 w-3" />
           Pay
@@ -90,7 +90,7 @@ export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: Payment
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 text-xs text-gray-500 hover:text-red-600"
+          className="h-6 text-xs text-[var(--text-muted)] hover:text-[var(--color-error)]"
           onClick={handleRefund}
           disabled={refunding}
         >
@@ -107,7 +107,7 @@ export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: Payment
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 text-xs text-gray-500 hover:text-green-600"
+          className="h-6 text-xs text-[var(--text-muted)] hover:text-[var(--color-success)]"
           onClick={handleMarkAsPaid}
           disabled={markingAsPaid}
         >
@@ -121,13 +121,13 @@ export default function PaymentChip({ payment, onRefund, onMarkAsPaid }: Payment
       )}
 
       {payment.paid_at && (
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-[var(--text-muted)]">
           Paid {new Date(payment.paid_at).toLocaleDateString()}
         </span>
       )}
 
       {payment.reason && payment.status === 'refunded' && (
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-[var(--text-muted)]">
           Reason: {payment.reason}
         </span>
       )}

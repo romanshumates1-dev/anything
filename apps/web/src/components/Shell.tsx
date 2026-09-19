@@ -7,18 +7,23 @@ import { useQuery } from "@tanstack/react-query";
 import { useSession, signOut } from "@/lib/auth-client";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User } from "lucide-react";
+import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus } from "lucide-react";
 import DemoModeBanner from "@/components/DemoModeBanner";
+import SupportChat from "@/components/SupportChat";
+import { FeedbackButton } from "@/components/feedback";
+import { UsageMeterSidebar, FreePlanBadge, CreditBalanceInline } from "@/components/billing";
+import type { UsageResponse } from "@/app/api/usage/route";
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/actions', label: 'Actions', icon: Zap, badge: 'actions' },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
   { href: '/lead-finder', label: 'Lead Finder', icon: Search },
   { href: '/leads', label: 'Contacts', icon: Users },
   { href: '/inbox', label: 'Inbox', icon: MessageSquare },
   { href: '/contracts', label: 'Contracts', icon: FileText },
   { href: '/payouts', label: 'Payouts', icon: Wallet },
-  { href: '/approvals', label: 'Approvals', icon: CheckCircle, badge: true },
+  { href: '/approvals', label: 'Approvals', icon: CheckCircle, badge: 'approvals' },
   { type: 'separator' as const },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/analytics/advanced', label: 'CRM Analytics', icon: TrendingUp },
@@ -27,6 +32,7 @@ const navItems = [
   { type: 'separator' as const },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/achievements', label: 'Achievements', icon: Award },
+  { href: '/feedback', label: 'Feedback', icon: MessageSquarePlus },
   { type: 'separator' as const },
   { href: '/system-health', label: 'System Health', icon: Activity },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -66,17 +72,21 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
-  // Fetch subscription info for user menu
-  const { data: subscription } = useQuery({
-    queryKey: ["user-subscription"],
+  // Fetch usage and subscription info
+  const { data: usageData } = useQuery<UsageResponse>({
+    queryKey: ["usage"],
     queryFn: async () => {
-      const res = await fetch("/api/subscriptions");
+      const res = await fetch("/api/usage");
       if (!res.ok) return null;
       return res.json();
     },
+    staleTime: 60_000,
     retry: 0,
     enabled: !!session,
   });
+
+  // Alias for backward compatibility
+  const subscription = usageData?.subscription;
 
   const { data: health } = useQuery({
     queryKey: ["system-health"],
@@ -97,6 +107,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     retry: 0,
+    enabled: !!session,
+  });
+
+  const { data: actionQueue } = useQuery({
+    queryKey: ["action-queue-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/actions?limit=1&include_status=true");
+      if (!res.ok) return { total: 0, pipelineStatus: null };
+      return res.json();
+    },
+    retry: 0,
+    staleTime: 30_000,
     enabled: !!session,
   });
 
@@ -169,9 +191,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className={`h-5 w-5 ${isAdminItem && !isActive ? 'text-[var(--accent-purple)]/70' : ''}`} />
                 <span>{item.label}</span>
-                {item.badge && approvals?.count > 0 && (
+                {item.badge === 'approvals' && approvals?.count > 0 && (
                   <Badge className="ml-auto bg-[var(--color-error)] text-white text-xs px-1.5 py-0.5">
                     {approvals.count}
+                  </Badge>
+                )}
+                {item.badge === 'actions' && actionQueue?.total > 0 && (
+                  <Badge className="ml-auto bg-[var(--accent-blue)] text-white text-xs px-1.5 py-0.5">
+                    {actionQueue.total}
                   </Badge>
                 )}
               </Link>
@@ -180,16 +207,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Usage Meter */}
-        <div className="px-4 py-3 border-t border-[var(--border-subtle)]">
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className="text-[var(--text-muted)]">SMS Usage</span>
-            <span className="text-[var(--text-secondary)]">75%</span>
-          </div>
-          <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
-            <div className="h-full w-3/4 bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] rounded-full" />
-          </div>
-          <p className="text-xs text-[var(--text-muted)] mt-2">Pro Plan</p>
-        </div>
+        <UsageMeterSidebar />
 
         {/* User Menu */}
         <div className="p-3 border-t border-[var(--border-subtle)] relative" ref={userMenuRef}>
@@ -251,15 +269,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs text-[var(--text-muted)]">Subscription</span>
                   <Badge className="text-xs bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]">
-                    {subscription?.plan_name || subscription?.tier || 'Free'}
+                    {subscription?.planName || subscription?.tier || 'Free'}
                   </Badge>
                 </div>
-                {subscription?.limits?.credits !== undefined && (
+                {subscription?.limits?.ai_request_allowance !== undefined && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-[var(--text-muted)]">Credits</span>
+                    <span className="text-xs text-[var(--text-muted)]">AI Credits</span>
                     <span className="text-xs font-medium text-[var(--text-secondary)]">
                       <CreditCard className="h-3 w-3 inline mr-1" />
-                      {subscription.limits.credits.toLocaleString()}
+                      {subscription.limits.ai_request_allowance.toLocaleString()}
                     </span>
                   </div>
                 )}
@@ -321,8 +339,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <span className="text-sm text-[var(--text-secondary)]">
               {health?.status === 'healthy' ? 'All systems operational' : 'System degraded'}
             </span>
+            {/* Free Plan badge */}
+            {usageData?.isFreeTier && <FreePlanBadge className="ml-2" />}
           </div>
           <div className="flex items-center gap-4">
+            <CreditBalanceInline />
             <Link
               href="/campaigns/wizard"
               className="btn-gradient px-4 py-2 rounded-lg text-sm font-medium"
@@ -339,6 +360,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* Support Chat Widget */}
+      <SupportChat />
+
+      {/* Feedback Button */}
+      <FeedbackButton />
     </div>
   );
 }

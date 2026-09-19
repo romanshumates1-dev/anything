@@ -23,7 +23,7 @@ export default function DemoModeBanner() {
   return (
     <div
       data-testid="demo-mode-banner"
-      className="w-full bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+      className="w-full bg-[var(--color-warning)]/10 border-b border-[var(--color-warning)]/20 px-4 py-2 text-center text-sm font-medium text-[var(--color-warning)]"
       role="status"
     >
       DEMO MODE — messages deliver only to your verified numbers. There is no cheap A2P bypass;

@@ -20,10 +20,10 @@ interface ContractTimelineProps {
 }
 
 const EVENT_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  sent: { label: 'Sent for Signature', icon: '📤', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  viewed: { label: 'Viewed by Signer', icon: '👁️', color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
-  signed: { label: 'Signed', icon: '✍️', color: 'text-green-600 bg-green-50 border-green-200' },
-  countersigned: { label: 'Countersigned', icon: '🤝', color: 'text-purple-600 bg-purple-50 border-purple-200' },
+  sent: { label: 'Sent for Signature', icon: '📤', color: 'text-[var(--color-info)] bg-[var(--color-info)]/10 border-[var(--color-info)]/30' },
+  viewed: { label: 'Viewed by Signer', icon: '👁️', color: 'text-[var(--color-warning)] bg-[var(--color-warning)]/10 border-[var(--color-warning)]/30' },
+  signed: { label: 'Signed', icon: '✍️', color: 'text-[var(--color-success)] bg-[var(--color-success)]/10 border-[var(--color-success)]/30' },
+  countersigned: { label: 'Countersigned', icon: '🤝', color: 'text-[var(--accent-purple)] bg-[var(--accent-purple)]/10 border-[var(--accent-purple)]/30' },
 };
 
 const STATUS_ORDER = ['pending', 'sent', 'viewed', 'signed', 'countersigned'];
@@ -33,10 +33,10 @@ export default function ContractTimeline({ events, currentStatus }: ContractTime
 
   return (
     <div className="space-y-2">
-      <h4 className="text-sm font-medium text-gray-500 mb-3">Signing Timeline</h4>
+      <h4 className="text-sm font-medium text-[var(--text-muted)] mb-3">Signing Timeline</h4>
       <div className="relative">
         {/* Vertical line */}
-        <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
+        <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-[var(--bg-tertiary)]" />
 
         {STATUS_ORDER.filter(s => s !== 'pending').map((status, idx) => {
           const event = events.find(e => e.event_type === status);
@@ -49,27 +49,27 @@ export default function ContractTimeline({ events, currentStatus }: ContractTime
               {/* Dot */}
               <div className={`relative z-10 mt-1 w-3 h-3 rounded-full border-2 ${
                 isActive
-                  ? 'bg-blue-500 border-blue-500 ring-2 ring-blue-200'
+                  ? 'bg-[var(--accent-blue)] border-[var(--accent-blue)] ring-2 ring-[var(--accent-blue)]/20'
                   : isReached
-                    ? 'bg-green-500 border-green-500'
-                    : 'bg-white border-gray-300'
+                    ? 'bg-[var(--color-success)] border-[var(--color-success)]'
+                    : 'bg-[var(--bg-secondary)] border-[var(--border-subtle)]'
               }`} />
 
               {/* Content */}
               <div className={`flex-1 min-w-0 ${!isReached ? 'opacity-40' : ''}`}>
                 <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
-                  isActive ? info.color : isReached ? 'bg-gray-50 border-gray-200 text-gray-700' : 'bg-gray-50 border-gray-100 text-gray-400'
+                  isActive ? info.color : isReached ? 'bg-[var(--bg-tertiary)] border-[var(--border-subtle)] text-[var(--text-secondary)]' : 'bg-[var(--bg-tertiary)]/50 border-[var(--border-subtle)]/50 text-[var(--text-muted)]'
                 }`}>
                   <span>{info.icon}</span>
                   <span>{info.label}</span>
                 </div>
                 {event && (
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
                     {new Date(event.created_at).toLocaleString()}
                   </p>
                 )}
                 {!event && isReached && (
-                  <p className="mt-1 text-xs text-gray-400 italic">Event recorded</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)] italic">Event recorded</p>
                 )}
               </div>
             </div>

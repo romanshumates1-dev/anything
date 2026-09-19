@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
-// Fetched server-side (same query helper GET /api/reviews uses — see
+// Fetched server-side (same query helper GET /api/reviews uses - see
 // queries.ts) so the schema.org markup below is present in the initial,
 // crawlable HTML rather than only appearing after a client-side fetch.
 async function getInitialReviews() {
@@ -27,33 +27,35 @@ export default async function ReviewsPage() {
   const initial = await getInitialReviews();
 
   // schema.org AggregateRating rendered server-side so it's present in the
-  // initial HTML (crawlable) — and ONLY when the data behind it is real:
+  // initial HTML (crawlable) - and ONLY when the data behind it is real:
   // never emitted while demo/sample data is what's actually on the page
   // (hasDemoData), and never with zero real reviews.
   const showStructuredData = initial && !initial.hasDemoData && initial.aggregate.count > 0;
 
   return (
-    <div className="py-20">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        {showStructuredData && (
-          <script
-            type="application/ld+json"
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
-                "@context": "https://schema.org",
-                "@type": "Product",
-                name: "DealFlow AI",
-                aggregateRating: {
-                  "@type": "AggregateRating",
-                  ratingValue: initial!.aggregate.average,
-                  reviewCount: initial!.aggregate.count,
-                },
-              }),
-            }}
-          />
-        )}
-        <ReviewsContent initialData={initial} />
+    <div className="bg-[#0F172A]">
+      <div className="py-20 sm:py-28">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          {showStructuredData && (
+            <script
+              type="application/ld+json"
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{
+                __html: JSON.stringify({
+                  "@context": "https://schema.org",
+                  "@type": "Product",
+                  name: "DealFlow AI",
+                  aggregateRating: {
+                    "@type": "AggregateRating",
+                    ratingValue: initial!.aggregate.average,
+                    reviewCount: initial!.aggregate.count,
+                  },
+                }),
+              }}
+            />
+          )}
+          <ReviewsContent initialData={initial} />
+        </div>
       </div>
     </div>
   );

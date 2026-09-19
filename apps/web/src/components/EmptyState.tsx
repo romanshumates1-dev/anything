@@ -36,16 +36,16 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-      <div className="rounded-full bg-gray-100 p-4 mb-4">
-        <Icon className="h-8 w-8 text-gray-400" />
+      <div className="rounded-full bg-[var(--bg-tertiary)] p-4 mb-4">
+        <Icon className="h-8 w-8 text-[var(--text-muted)]" />
       </div>
-      <h3 className="text-lg font-medium text-gray-900 mb-2">{title}</h3>
-      <p className="text-sm text-gray-500 max-w-md mb-6">{description}</p>
+      <h3 className="text-lg font-medium text-[var(--text-primary)] mb-2">{title}</h3>
+      <p className="text-sm text-[var(--text-muted)] max-w-md mb-6">{description}</p>
       <div className="flex flex-col sm:flex-row gap-3">
         {primaryAction && (
           <Link
             href={primaryAction.href}
-            className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 transition-colors min-h-[48px]"
+            className="btn-gradient inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold text-white transition-colors min-h-[48px]"
           >
             {primaryAction.label}
           </Link>
@@ -53,7 +53,7 @@ export function EmptyState({
         {secondaryAction && (
           <Link
             href={secondaryAction.href}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors min-h-[48px]"
+            className="inline-flex items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-6 py-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] transition-colors min-h-[48px]"
           >
             {secondaryAction.label}
           </Link>

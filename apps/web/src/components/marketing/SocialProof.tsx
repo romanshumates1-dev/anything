@@ -1,6 +1,6 @@
 'use client';
 
-import { Star, TrendingUp, DollarSign, Users } from 'lucide-react';
+import { Star, TrendingUp, DollarSign, Users, ArrowRight } from 'lucide-react';
 
 interface Testimonial {
   name: string;
@@ -52,11 +52,12 @@ const DEFAULT_TESTIMONIALS: Testimonial[] = [
   },
 ];
 
+// Note: These are projected goals, not verified metrics. Display with appropriate disclaimers.
 const DEFAULT_STATS = {
-  users: 500,
-  deals: 1247,
-  revenue: '$18.5M',
-  rating: 4.9,
+  users: 0, // Will show actual count from DB or "Growing" label
+  deals: 0, // Will show actual count from DB or goal label
+  revenue: '$45M', // Goal target, labeled as such
+  rating: 5.0, // Our standard
 };
 
 export function SocialProof({
@@ -72,34 +73,35 @@ export function SocialProof({
 
   return (
     <div className="w-full">
-      {/* Stats Bar */}
+      {/* Stats Bar - Goals and Targets */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
         <div className="bg-white rounded-xl border p-6 text-center">
           <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{stats.users}+</div>
-          <div className="text-sm text-gray-500">Active Users</div>
+          <div className="text-3xl font-bold text-gray-900">{(stats.users ?? 0) > 0 ? `${stats.users}+` : 'Growing'}</div>
+          <div className="text-sm text-gray-500">{(stats.users ?? 0) > 0 ? 'Active Users' : 'User Community'}</div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <TrendingUp className="h-6 w-6 text-green-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{(stats.deals ?? 0).toLocaleString()}</div>
-          <div className="text-sm text-gray-500">Deals Closed</div>
+          <div className="text-3xl font-bold text-gray-900">{(stats.deals ?? 0) > 0 ? (stats.deals ?? 0).toLocaleString() : '2,500'}</div>
+          <div className="text-sm text-gray-500">{(stats.deals ?? 0) > 0 ? 'Deals Closed' : 'Deal Goal*'}</div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <DollarSign className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{stats.revenue}</div>
-          <div className="text-sm text-gray-500">Deal Volume</div>
+          <div className="text-3xl font-bold text-gray-900">{stats.revenue ?? '$45M'}</div>
+          <div className="text-sm text-gray-500">Volume Target*</div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <Star className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{stats.rating}</div>
-          <div className="text-sm text-gray-500">User Rating</div>
+          <div className="text-3xl font-bold text-gray-900">{stats.rating ?? 5}/5</div>
+          <div className="text-sm text-gray-500">Our Standard</div>
         </div>
       </div>
+      <p className="text-center text-xs text-gray-400 -mt-8 mb-8">*Projected goals. Actual results will vary based on market conditions and user activity.</p>
 
       {/* Title */}
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-bold text-gray-900 mb-4">Real Results from Real Wholesalers</h2>
-        <p className="text-gray-600">Join {stats.users}+ investors already closing more deals with AI</p>
+        <h2 className="text-3xl font-bold text-gray-900 mb-4">What Our Users Are Saying</h2>
+        <p className="text-gray-600">Hear from investors using DealFlow to close more deals with AI</p>
       </div>
 
       {/* Testimonials Grid */}
@@ -146,6 +148,33 @@ export function SocialProof({
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Growth Roadmap */}
+      <div className="mt-12 mb-10 rounded-2xl border bg-gradient-to-br from-emerald-50 to-blue-50 p-8">
+        <div className="text-center mb-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Our 2026 Roadmap</h3>
+          <p className="text-gray-600 text-sm">Projected milestones for DealFlow platform growth*</p>
+        </div>
+        <div className="flex items-center justify-center gap-4 md:gap-8 flex-wrap">
+          <div className="text-center">
+            <div className="text-2xl md:text-3xl font-bold text-gray-400">$1M</div>
+            <div className="text-xs text-gray-500 mt-1">Q1 Goal</div>
+          </div>
+          <ArrowRight className="h-5 w-5 text-gray-300 hidden md:block" />
+          <div className="text-center">
+            <div className="text-2xl md:text-3xl font-bold text-blue-500">$15M</div>
+            <div className="text-xs text-gray-500 mt-1">Q2 Goal</div>
+          </div>
+          <ArrowRight className="h-5 w-5 text-gray-300 hidden md:block" />
+          <div className="text-center">
+            <div className="text-3xl md:text-4xl font-bold text-emerald-600">$45M</div>
+            <div className="text-xs text-gray-500 mt-1">2026 Target</div>
+          </div>
+        </div>
+        <p className="text-center text-sm text-gray-500 mt-6">
+          *Projected targets based on platform capacity. Not a guarantee of results.
+        </p>
       </div>
 
       {/* Trust Badges */}

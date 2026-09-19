@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { CheckCircle } from 'lucide-react';
 
 export function ContactForm() {
   const [formData, setFormData] = useState({
@@ -41,14 +42,12 @@ export function ContactForm() {
 
   if (submitResult?.success) {
     return (
-      <div className="text-center py-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
-          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
+      <div className="text-center py-12">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/10 mb-6">
+          <CheckCircle className="w-8 h-8 text-emerald-400" />
         </div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Message sent!</h3>
-        <p className="text-gray-600">Thank you for reaching out. We'll respond within 1 business day.</p>
+        <h3 className="text-xl font-semibold text-white mb-2">Message sent!</h3>
+        <p className="text-slate-400">Thank you for reaching out. We'll respond within 1 business day.</p>
       </div>
     );
   }
@@ -57,70 +56,72 @@ export function ContactForm() {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Name *</label>
           <input
             type="text"
             required
             maxLength={100}
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
             placeholder="Your name"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Email *</label>
           <input
             type="email"
             required
             value={formData.email}
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
             placeholder="you@company.com"
           />
         </div>
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+        <label className="block text-sm font-medium text-slate-300 mb-2">Company</label>
         <input
           type="text"
           value={formData.company}
           onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
           placeholder="Your company (optional)"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+        <label className="block text-sm font-medium text-slate-300 mb-2">Subject *</label>
         <input
           type="text"
           required
           maxLength={200}
           value={formData.subject}
           onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors"
           placeholder="What can we help with?"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Message *</label>
+        <label className="block text-sm font-medium text-slate-300 mb-2">Message *</label>
         <textarea
           required
           maxLength={5000}
           rows={6}
           value={formData.message}
           onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-slate-500 outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-colors resize-none"
           placeholder="Your message..."
         />
       </div>
       {submitResult?.error && (
-        <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{submitResult.error}</div>
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {submitResult.error}
+        </div>
       )}
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-lg bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6] px-4 py-3 text-base font-semibold text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25"
       >
         {isSubmitting ? 'Sending...' : 'Send Message'}
       </button>

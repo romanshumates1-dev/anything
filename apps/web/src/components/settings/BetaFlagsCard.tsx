@@ -72,38 +72,38 @@ export default function BetaFlagsCard() {
   const keys = data?.keys ?? Object.keys(FLAG_META);
 
   return (
-    <Card className="border-none shadow-sm">
+    <Card className="border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-[var(--text-primary)]">
           <FlaskConical className="h-5 w-5" /> Beta Integrations
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Alert>
-          <AlertTitle>Manual testing: flip a flag → act → watch the Event Log</AlertTitle>
-          <AlertDescription className="text-xs">
+        <Alert className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)]">
+          <AlertTitle className="text-[var(--text-primary)]">Manual testing: flip a flag, act, watch the Event Log</AlertTitle>
+          <AlertDescription className="text-xs text-[var(--text-muted)]">
             Flags persist server-side and take effect live (no restart). A flag that is OFF produces
             zero events from its integration.
           </AlertDescription>
         </Alert>
 
         {isLoading ? (
-          <div className="py-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin opacity-30" /></div>
+          <div className="py-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-[var(--accent-blue)]" /></div>
         ) : (
           <div className="space-y-3">
             {keys.map((k) => {
               const meta = FLAG_META[k] ?? { label: k, blurb: '' };
               const on = flags[k] === true;
               return (
-                <div key={k} className="flex items-start justify-between gap-4 border rounded-lg p-3">
+                <div key={k} className="flex items-start justify-between gap-4 border border-[var(--border-subtle)] rounded-lg p-3 bg-[var(--bg-tertiary)]">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{meta.label}</span>
-                      <Badge variant="outline" className="text-[10px]">BETA</Badge>
-                      {on && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">ON</Badge>}
+                      <span className="font-medium text-[var(--text-primary)]">{meta.label}</span>
+                      <Badge variant="outline" className="text-[10px] border-[var(--border-subtle)] text-[var(--text-muted)]">BETA</Badge>
+                      {on && <Badge className="bg-[var(--color-success)]/10 text-[var(--color-success)] text-[10px]">ON</Badge>}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{meta.blurb}</p>
-                    {meta.danger && <p className="text-xs text-amber-700 mt-1">⚠ {meta.danger}</p>}
+                    <p className="text-xs text-[var(--text-muted)] mt-1">{meta.blurb}</p>
+                    {meta.danger && <p className="text-xs text-[var(--color-warning)] mt-1">Warning: {meta.danger}</p>}
                   </div>
                   <Switch
                     checked={on}

@@ -9,11 +9,11 @@
 import { clockState } from '@/app/api/utils/inspectionClockCore';
 
 const STYLES: Record<string, string> = {
-  green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  amber: 'bg-amber-50 text-amber-700 border-amber-200',
-  red: 'bg-red-50 text-red-700 border-red-200',
-  expired: 'bg-gray-100 text-gray-500 border-gray-200',
-  assigned: 'bg-blue-50 text-blue-700 border-blue-200',
+  green: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30',
+  amber: 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/30',
+  red: 'bg-[var(--color-error)]/10 text-[var(--color-error)] border-[var(--color-error)]/30',
+  expired: 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] border-[var(--border-subtle)]',
+  assigned: 'bg-[var(--color-info)]/10 text-[var(--color-info)] border-[var(--color-info)]/30',
 };
 
 export default function InspectionClockChip({
