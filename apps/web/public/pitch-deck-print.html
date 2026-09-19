@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DealFlow AI - Investor Pitch Deck</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @page {
+      size: landscape;
+      margin: 0;
+    }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .slide { break-after: page; break-inside: avoid; }
+      .slide:last-child { break-after: avoid; }
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f172a;
+      color: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .slide {
+      width: 100vw;
+      max-width: 1056px;
+      height: 816px;
+      min-height: 816px;
+      padding: 48px 64px;
+      background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .slide-number {
+      position: absolute;
+      bottom: 24px;
+      right: 48px;
+      font-size: 11px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .slide-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #3b82f6;
+      margin-bottom: 8px;
+    }
+
+    .slide-headline {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 24px;
+      color: #fff;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Title Slide */
+    .title-slide {
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 64px;
+    }
+    .title-slide .logo {
+      font-size: 52px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .title-slide .tagline {
+      font-size: 20px;
+      color: #94a3b8;
+      margin-bottom: 32px;
+      font-weight: 400;
+    }
+    .title-slide .meta {
+      display: flex;
+      gap: 20px;
+      font-size: 13px;
+    }
+    .title-slide .meta-item {
+      padding: 10px 18px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .title-slide .meta-item strong { color: #60a5fa; }
+
+    /* Bullets */
+    .bullets { list-style: none; margin: 0; padding: 0; }
+    .bullets li {
+      position: relative;
+      padding-left: 20px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #cbd5e1;
+      margin-bottom: 12px;
+    }
+    .bullets li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      width: 6px;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 50%;
+    }
+    .bullets li strong { color: #fff; font-weight: 600; }
+    .bullets.small li { font-size: 13px; margin-bottom: 10px; }
+
+    /* Cards Grid */
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .card.danger {
+      background: rgba(239, 68, 68, 0.08);
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+    .card .icon { font-size: 20px; margin-bottom: 6px; display: block; }
+    .card .label {
+      font-size: 10px;
+      color: #f87171;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .card .value { font-size: 13px; color: #e2e8f0; line-height: 1.4; }
+
+    /* Two Column */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+
+    /* Market Circles */
+    .market-visual { display: flex; align-items: center; gap: 32px; flex: 1; }
+    .tam-circles { position: relative; width: 220px; height: 220px; flex-shrink: 0; }
+    .circle {
+      position: absolute;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+    .circle.tam {
+      width: 220px; height: 220px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 2px solid rgba(59, 130, 246, 0.35);
+      top: 0; left: 0;
+    }
+    .circle.sam {
+      width: 140px; height: 140px;
+      background: rgba(139, 92, 246, 0.15);
+      border: 2px solid rgba(139, 92, 246, 0.4);
+      top: 40px; left: 40px;
+    }
+    .circle.som {
+      width: 70px; height: 70px;
+      background: rgba(16, 185, 129, 0.2);
+      border: 2px solid rgba(16, 185, 129, 0.5);
+      top: 75px; left: 75px;
+    }
+    .circle .amount { font-size: 14px; font-weight: 700; color: #fff; }
+    .circle .label { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+
+    /* Metrics */
+    .metrics { display: flex; gap: 12px; }
+    .metric {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .metric .value { font-size: 22px; font-weight: 700; color: #10b981; }
+    .metric .label { font-size: 10px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    th { color: #64748b; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { color: #e2e8f0; }
+    .check { color: #10b981; font-weight: 600; }
+    .x { color: #475569; }
+    .highlight-col { background: rgba(59, 130, 246, 0.08); }
+
+    /* Tiers */
+    .tiers { display: flex; gap: 10px; }
+    .tier {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .tier.popular {
+      background: rgba(59, 130, 246, 0.12);
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    .tier .name { font-size: 12px; font-weight: 700; margin-bottom: 4px; color: #fff; }
+    .tier .price { font-size: 20px; font-weight: 800; color: #fff; }
+    .tier .period { font-size: 10px; color: #64748b; }
+    .tier .features { font-size: 10px; color: #94a3b8; margin-top: 8px; line-height: 1.5; }
+
+    /* Timeline */
+    .timeline { display: flex; gap: 16px; margin-top: 16px; }
+    .timeline-item { flex: 1; text-align: center; background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; }
+    .timeline-item .year { font-size: 11px; color: #3b82f6; font-weight: 700; margin-bottom: 4px; }
+    .timeline-item .arr { font-size: 18px; font-weight: 800; color: #fff; }
+    .timeline-item .customers { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+
+    /* Funds */
+    .funds { display: flex; gap: 10px; }
+    .fund-item {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+    .fund-item .pct { font-size: 24px; font-weight: 800; color: #3b82f6; }
+    .fund-item .label { font-size: 10px; color: #94a3b8; margin-top: 2px; font-weight: 500; }
+    .fund-item .amount { font-size: 12px; color: #fff; margin-top: 6px; font-weight: 600; }
+
+    /* Team */
+    .team-grid { display: flex; gap: 24px; justify-content: center; }
+    .team-member { text-align: center; width: 140px; }
+    .team-member .avatar {
+      width: 64px; height: 64px;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .team-member .name { font-size: 13px; font-weight: 700; color: #fff; }
+    .team-member .role { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+    .team-member .desc { font-size: 10px; color: #64748b; margin-top: 6px; line-height: 1.4; }
+
+    /* Info Box */
+    .info-box {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+    }
+    .info-box.success {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.25);
+    }
+    .info-box .title { font-size: 11px; color: #94a3b8; margin-bottom: 4px; font-weight: 600; }
+
+    /* Contact */
+    .contact-slide {
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    .contact-slide .logo {
+      font-size: 44px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 12px;
+    }
+    .contact-slide .tagline { font-size: 20px; color: #e2e8f0; margin-bottom: 8px; }
+    .contact-slide .url { font-size: 18px; color: #3b82f6; margin-bottom: 24px; font-weight: 600; }
+    .contact-info { display: flex; gap: 32px; font-size: 13px; color: #94a3b8; }
+    .disclaimer { margin-top: 32px; font-size: 10px; color: #475569; }
+
+    /* Section Label */
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #3b82f6;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- SLIDE 1: Title -->
+<div class="slide title-slide">
+  <div class="logo">DealFlow AI</div>
+  <div class="tagline">AI-Powered Real Estate Wholesaling Automation</div>
+  <div class="meta">
+    <div class="meta-item">Raising <strong>$1M Seed</strong></div>
+    <div class="meta-item">Valuation <strong>$10M Pre-Money</strong></div>
+    <div class="meta-item">Stage <strong>MVP Complete</strong></div>
+  </div>
+  <div class="slide-number">1 / 12</div>
+</div>
+
+<!-- SLIDE 2: Problem -->
+<div class="slide">
+  <div class="slide-title">The Problem</div>
+  <div class="slide-headline"><span class="gradient-text">Wholesalers Spend 80% of Time on Tasks AI Can Handle</span></div>
+  <div class="content">
+    <div class="cards" style="margin-bottom: 20px;">
+      <div class="card danger">
+        <span class="icon">⏱️</span>
+        <div class="label">Time Waste</div>
+        <div class="value">4-6 hours/day texting leads manually</div>
+      </div>
+      <div class="card danger">
+        <span class="icon">💸</span>
+        <div class="label">Lost Deals</div>
+        <div class="value">Hot leads go cold while you sleep</div>
+      </div>
+      <div class="card danger">
+        <span class="icon">⚠️</span>
+        <div class="label">Compliance Risk</div>
+        <div class="value">10DLC violations, opt-out failures, carrier bans</div>
+      </div>
+      <div class="card danger">
+        <span class="icon">🔗</span>
+        <div class="label">Tool Sprawl</div>
+        <div class="value">$500+/month across 5+ disconnected tools</div>
+      </div>
+    </div>
+    <ul class="bullets">
+      <li><strong>One wholesaler lost a $40K assignment fee</strong> because he took 3 hours to respond to a motivated seller</li>
+      <li><strong>No dominant player</strong> owns end-to-end AI automation in this $4.2B market</li>
+    </ul>
+  </div>
+  <div class="slide-number">2 / 12</div>
+</div>
+
+<!-- SLIDE 3: Solution -->
+<div class="slide">
+  <div class="slide-title">The Solution</div>
+  <div class="slide-headline"><span class="gradient-text">Your 24/7 AI Wholesaling Team</span></div>
+  <div class="content">
+    <ul class="bullets" style="margin-bottom: 20px;">
+      <li><strong>AI Lead Engagement:</strong> Claude-powered conversations that qualify, negotiate, and follow up automatically</li>
+      <li><strong>Smart Approval Workflows:</strong> Human-in-the-loop for critical decisions — one-tap approve from any device</li>
+      <li><strong>End-to-End Pipeline:</strong> Lead finder, CRM, campaigns, contracts, buyer matching — one platform</li>
+      <li><strong>Built-in Compliance:</strong> 10DLC registration, opt-out handling, rate limiting, audit logs</li>
+      <li><strong>Works While You Sleep:</strong> Responds to leads in seconds, 24/7/365</li>
+    </ul>
+    <div class="info-box" style="margin-top: auto;">
+      <div class="title">Key Insight</div>
+      <strong>Wholesalers don't want fully autonomous AI.</strong> They want control of critical decisions. We built smart approval workflows — AI handles 80% of busy work, you make 20% of decisions that matter.
+    </div>
+  </div>
+  <div class="slide-number">3 / 12</div>
+</div>
+
+<!-- SLIDE 4: Market -->
+<div class="slide">
+  <div class="slide-title">Market Opportunity</div>
+  <div class="slide-headline"><span class="gradient-text">$4.2B Market With Zero Dominant Player</span></div>
+  <div class="content">
+    <div class="market-visual">
+      <div class="tam-circles">
+        <div class="circle tam">
+          <div class="amount">$4.2B</div>
+          <div class="label">TAM</div>
+        </div>
+        <div class="circle sam">
+          <div class="amount">$240M</div>
+          <div class="label">SAM</div>
+        </div>
+        <div class="circle som">
+          <div class="amount">$15M</div>
+          <div class="label">SOM</div>
+        </div>
+      </div>
+      <div style="flex: 1;">
+        <ul class="bullets small">
+          <li><strong>TAM $4.2B:</strong> 2.8M real estate investors × $1,500 avg software spend</li>
+          <li><strong>SAM $240M:</strong> 400K active wholesalers/flippers × $600 avg spend</li>
+          <li><strong>SOM $12-18M:</strong> 5-7% market capture by Year 5</li>
+          <li><strong>PropTech CAGR:</strong> 17.79% growth (2026-2031)</li>
+          <li><strong>AI adoption:</strong> 33% of realtors report positive AI impact (NAR 2026)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">4 / 12</div>
+</div>
+
+<!-- SLIDE 5: Product -->
+<div class="slide">
+  <div class="slide-title">Product</div>
+  <div class="slide-headline"><span class="gradient-text">Production-Ready. AI-Native. Compliance-First.</span></div>
+  <div class="content">
+    <div class="two-col">
+      <div>
+        <div class="section-label">Core Platform</div>
+        <ul class="bullets small">
+          <li><strong>AI Negotiation Engine:</strong> Claude Haiku 4.5 handles qualification, objections, price negotiation</li>
+          <li><strong>Campaign Automation:</strong> Multi-touch sequences with adaptive AI follow-ups</li>
+          <li><strong>Unified Inbox:</strong> SMS + email in one view with AI suggestions</li>
+          <li><strong>Contract Generation:</strong> One-click assignment contracts with e-signature</li>
+        </ul>
+      </div>
+      <div>
+        <div class="section-label">AI Capabilities</div>
+        <ul class="bullets small">
+          <li><strong>Lead Classification:</strong> Auto-scores by distress type (1 credit)</li>
+          <li><strong>AI Negotiation:</strong> Autonomous price negotiation (5 credits)</li>
+          <li><strong>Contract Analysis:</strong> Risk identification (10 credits)</li>
+          <li><strong>Buyer Matching:</strong> AI matches deals to qualified buyers</li>
+        </ul>
+      </div>
+    </div>
+    <div style="font-size: 11px; color: #64748b; margin-top: auto; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+      <strong>Tech Stack:</strong> Next.js 14 · PostgreSQL (Neon) · AWS Bedrock (Claude) · AWS SES/SNS · Twilio 10DLC
+    </div>
+  </div>
+  <div class="slide-number">5 / 12</div>
+</div>
+
+<!-- SLIDE 6: Competition -->
+<div class="slide">
+  <div class="slide-title">Competition</div>
+  <div class="slide-headline"><span class="gradient-text">AI Is Our Core, Not a Bolt-On</span></div>
+  <div class="content">
+    <table style="margin-bottom: 16px;">
+      <thead>
+        <tr>
+          <th style="width: 25%;">Feature</th>
+          <th class="highlight-col" style="width: 19%;">DealFlow AI</th>
+          <th style="width: 19%;">PropStream</th>
+          <th style="width: 19%;">REsimpli</th>
+          <th style="width: 18%;">BatchLeads</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>AI-Powered Outreach</td>
+          <td class="highlight-col"><span class="check">✓ Native</span></td>
+          <td><span class="x">✗</span></td>
+          <td>Add-on $99+</td>
+          <td>Add-on $89</td>
+        </tr>
+        <tr>
+          <td>AI Negotiation</td>
+          <td class="highlight-col"><span class="check">✓ Native</span></td>
+          <td><span class="x">✗</span></td>
+          <td><span class="x">✗</span></td>
+          <td><span class="x">✗</span></td>
+        </tr>
+        <tr>
+          <td>Buyer Matching</td>
+          <td class="highlight-col"><span class="check">✓ AI-Powered</span></td>
+          <td><span class="x">✗</span></td>
+          <td><span class="x">✗</span></td>
+          <td><span class="x">✗</span></td>
+        </tr>
+        <tr>
+          <td>Contract Generation</td>
+          <td class="highlight-col"><span class="check">✓ Built-in</span></td>
+          <td><span class="x">✗</span></td>
+          <td><span class="check">✓</span></td>
+          <td><span class="x">✗</span></td>
+        </tr>
+        <tr>
+          <td>Starting Price</td>
+          <td class="highlight-col"><strong>Free / $99</strong></td>
+          <td>$99/mo</td>
+          <td>$149/mo</td>
+          <td>$119/mo</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="info-box success">
+      <strong>Competitive Moat:</strong> Data network effects (every negotiation trains the model), switching costs via workflow lock-in, proprietary AI guardrails with bounded negotiation
+    </div>
+  </div>
+  <div class="slide-number">6 / 12</div>
+</div>
+
+<!-- SLIDE 7: Business Model -->
+<div class="slide">
+  <div class="slide-title">Business Model</div>
+  <div class="slide-headline"><span class="gradient-text">SaaS + Usage: 92-97% Gross Margins</span></div>
+  <div class="content">
+    <div class="tiers" style="margin-bottom: 16px;">
+      <div class="tier">
+        <div class="name">Free</div>
+        <div class="price">$0</div>
+        <div class="period">/month</div>
+        <div class="features">25 emails<br>5 AI credits<br>Trial mode</div>
+      </div>
+      <div class="tier">
+        <div class="name">Starter</div>
+        <div class="price">$99</div>
+        <div class="period">/month</div>
+        <div class="features">100 SMS<br>500 AI credits<br>97% margin</div>
+      </div>
+      <div class="tier popular">
+        <div class="name">Pro ★</div>
+        <div class="price">$299</div>
+        <div class="period">/month</div>
+        <div class="features">500 SMS<br>2,500 AI credits<br>96% margin</div>
+      </div>
+      <div class="tier">
+        <div class="name">Business</div>
+        <div class="price">$699</div>
+        <div class="period">/month</div>
+        <div class="features">1,500 SMS<br>10K AI credits<br>94% margin</div>
+      </div>
+      <div class="tier">
+        <div class="name">Scale</div>
+        <div class="price">$1,799</div>
+        <div class="period">/month</div>
+        <div class="features">5,000 SMS<br>35K AI credits<br>92% margin</div>
+      </div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="value">$0.015</div>
+        <div class="label">SMS Cost (AWS)</div>
+      </div>
+      <div class="metric">
+        <div class="value">$0.0001</div>
+        <div class="label">Email Cost (SES)</div>
+      </div>
+      <div class="metric">
+        <div class="value">$0.004</div>
+        <div class="label">AI Credit Cost</div>
+      </div>
+      <div class="metric">
+        <div class="value" style="color: #3b82f6;">92-97%</div>
+        <div class="label">Gross Margin</div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">7 / 12</div>
+</div>
+
+<!-- SLIDE 8: Unit Economics -->
+<div class="slide">
+  <div class="slide-title">Unit Economics</div>
+  <div class="slide-headline"><span class="gradient-text">12:1 LTV:CAC Ratio</span></div>
+  <div class="content">
+    <div class="metrics" style="margin-bottom: 20px;">
+      <div class="metric">
+        <div class="value">$3,600</div>
+        <div class="label">Lifetime Value</div>
+      </div>
+      <div class="metric">
+        <div class="value">$300</div>
+        <div class="label">CAC</div>
+      </div>
+      <div class="metric">
+        <div class="value" style="color: #3b82f6;">12:1</div>
+        <div class="label">LTV:CAC Ratio</div>
+      </div>
+      <div class="metric">
+        <div class="value">2 mo</div>
+        <div class="label">Payback Period</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-label">LTV Calculation</div>
+        <ul class="bullets small">
+          <li>ARPU: $200/month (blended)</li>
+          <li>Gross Margin: 92%</li>
+          <li>Monthly Churn: 5%</li>
+          <li>LTV = ($200 × 0.92) / 0.05 = <strong>$3,680</strong></li>
+        </ul>
+      </div>
+      <div>
+        <div class="section-label">CAC Breakdown</div>
+        <ul class="bullets small">
+          <li>Content marketing: $150</li>
+          <li>Paid social: $400</li>
+          <li>Referrals: $50</li>
+          <li>Blended CAC: <strong>$300</strong></li>
+        </ul>
+      </div>
+    </div>
+    <div class="info-box success" style="margin-top: auto;">
+      <strong>Benchmark:</strong> >3:1 is healthy, >5:1 is excellent. Our 12:1 ratio indicates exceptional unit economics with room for aggressive growth investment.
+    </div>
+  </div>
+  <div class="slide-number">8 / 12</div>
+</div>
+
+<!-- SLIDE 9: Traction -->
+<div class="slide">
+  <div class="slide-title">Traction</div>
+  <div class="slide-headline"><span class="gradient-text">MVP Complete. Ready to Launch.</span></div>
+  <div class="content">
+    <div class="metrics" style="margin-bottom: 20px;">
+      <div class="metric">
+        <div class="value">242</div>
+        <div class="label">Passing Tests</div>
+      </div>
+      <div class="metric">
+        <div class="value">847</div>
+        <div class="label">Waitlist Signups</div>
+      </div>
+      <div class="metric">
+        <div class="value">12</div>
+        <div class="label">Pilot Conversations</div>
+      </div>
+      <div class="metric">
+        <div class="value">60</div>
+        <div class="label">Days to Launch</div>
+      </div>
+    </div>
+    <ul class="bullets small" style="margin-bottom: 16px;">
+      <li><strong>Production-ready platform:</strong> Full CI/CD pipeline, E2E verification, security hardening</li>
+      <li><strong>Desktop app:</strong> Electron shell with native experience, auto-update</li>
+      <li><strong>Compliance built-in:</strong> 10DLC registration workflows, opt-out handling, rate limiting</li>
+    </ul>
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="year">Year 1</div>
+        <div class="arr">$500K</div>
+        <div class="customers">500 customers</div>
+      </div>
+      <div class="timeline-item">
+        <div class="year">Year 2</div>
+        <div class="arr">$3M</div>
+        <div class="customers">1,500 customers</div>
+      </div>
+      <div class="timeline-item">
+        <div class="year">Year 3</div>
+        <div class="arr">$7.5M</div>
+        <div class="customers">4,000 customers</div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">9 / 12</div>
+</div>
+
+<!-- SLIDE 10: Team -->
+<div class="slide">
+  <div class="slide-title">Team</div>
+  <div class="slide-headline"><span class="gradient-text">Built by Operators Who Know the Pain</span></div>
+  <div class="content">
+    <div class="team-grid" style="margin-bottom: 24px;">
+      <div class="team-member">
+        <div class="avatar">RS</div>
+        <div class="name">Roman Shumate</div>
+        <div class="role">Founder & CEO</div>
+        <div class="desc">50+ wholesale deals closed. Built DealFlow to solve his own pain.</div>
+      </div>
+      <div class="team-member">
+        <div class="avatar">?</div>
+        <div class="name">CTO</div>
+        <div class="role">Hiring</div>
+        <div class="desc">Looking for: 10+ years B2B SaaS, AI/ML infrastructure</div>
+      </div>
+      <div class="team-member">
+        <div class="avatar">?</div>
+        <div class="name">Head of Sales</div>
+        <div class="role">Hiring</div>
+        <div class="desc">Looking for: REI industry connections, SaaS sales</div>
+      </div>
+    </div>
+    <div class="info-box">
+      <div class="title">First Hires (Post-Raise)</div>
+      <strong>Sales (inbound)</strong> — Handle waitlist conversion · <strong>Customer Success</strong> — Ensure pilot conversions · <strong>Senior Engineer</strong> — Scale infrastructure
+    </div>
+  </div>
+  <div class="slide-number">10 / 12</div>
+</div>
+
+<!-- SLIDE 11: The Ask -->
+<div class="slide">
+  <div class="slide-title">The Ask</div>
+  <div class="slide-headline"><span class="gradient-text">$1M Seed at $10M Pre-Money</span></div>
+  <div class="content">
+    <div class="funds" style="margin-bottom: 20px;">
+      <div class="fund-item">
+        <div class="pct">45%</div>
+        <div class="label">Engineering</div>
+        <div class="amount">$450K</div>
+      </div>
+      <div class="fund-item">
+        <div class="pct">35%</div>
+        <div class="label">Sales & Marketing</div>
+        <div class="amount">$350K</div>
+      </div>
+      <div class="fund-item">
+        <div class="pct">12%</div>
+        <div class="label">Operations</div>
+        <div class="amount">$120K</div>
+      </div>
+      <div class="fund-item">
+        <div class="pct">8%</div>
+        <div class="label">Infrastructure</div>
+        <div class="amount">$80K</div>
+      </div>
+    </div>
+    <div class="section-label">18-Month Milestones</div>
+    <ul class="bullets small">
+      <li><strong>500 paying customers</strong> — converting waitlist and inbound interest</li>
+      <li><strong>$500K ARR</strong> — path to profitability visible</li>
+      <li><strong>Series A ready</strong> — $3M raise at $25M+ valuation</li>
+    </ul>
+    <div class="info-box" style="margin-top: auto;">
+      <strong style="font-size: 16px;">Runway: 18 months at $80K/month burn</strong>
+    </div>
+  </div>
+  <div class="slide-number">11 / 12</div>
+</div>
+
+<!-- SLIDE 12: Contact -->
+<div class="slide contact-slide">
+  <div class="logo">DealFlow AI</div>
+  <div class="tagline">Close more deals while you sleep.</div>
+  <div class="url">dealflowautomation.com</div>
+  <div class="contact-info">
+    <div>Roman Shumate</div>
+    <div>romanshumate@gmail.com</div>
+  </div>
+  <div class="disclaimer">This presentation contains forward-looking statements. Actual results may differ.</div>
+  <div class="slide-number">12 / 12</div>
+</div>
+
+</body>
+</html>
