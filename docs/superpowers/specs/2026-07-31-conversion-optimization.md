@@ -11,6 +11,7 @@
 **The MVP surfaces high-EV leads. This layer converts them.**
 
 Focus areas:
+
 1. Offer framing that increases acceptance
 2. Negotiation quality that moves deals forward
 3. Speed-to-response that captures time-sensitive opportunities
@@ -23,6 +24,7 @@ Focus areas:
 ## 1. Enhanced Offer Framing Agent
 
 ### Current State (MVP)
+
 - Valuation agent calculates `offerMin` and `offerMax`
 - Decision agent says "send_email" with EV priority
 - No guidance on HOW to present the offer
@@ -83,27 +85,29 @@ export class OfferFramingAgent implements Agent<OfferFramingOutput> {
     const valuation = await getValuation(input.leadId);
     const score = await getLeadScore(input.leadId);
     const lead = await getLead(input.leadId);
-    
+
     const promptInput = {
       arv: valuation.arv,
       repairs: valuation.repairs,
       offerMin: valuation.offer_min,
       offerMax: valuation.offer_max,
       leadScore: score.composite_score,
-      distressSignals: lead.metadata?.signals || []
+      distressSignals: lead.metadata?.signals || [],
     };
-    
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `${OFFER_FRAMING_PROMPT}\n\nInput:\n${JSON.stringify(promptInput, null, 2)}`
-      }]
+      messages: [
+        {
+          role: 'user',
+          content: `${OFFER_FRAMING_PROMPT}\n\nInput:\n${JSON.stringify(promptInput, null, 2)}`,
+        },
+      ],
     });
-    
+
     const output = JSON.parse(response.content[0].text);
-    
+
     // Persist for follow-up reference
     await sql`
       INSERT INTO offer_strategies (
@@ -115,7 +119,7 @@ export class OfferFramingAgent implements Agent<OfferFramingOutput> {
         ${output.fallbackOffer}, now()
       )
     `;
-    
+
     return { result: output, confidence: 0.8 };
   }
 }
@@ -126,6 +130,7 @@ export class OfferFramingAgent implements Agent<OfferFramingOutput> {
 ## 2. Negotiation Response Agent
 
 ### Current State
+
 - No negotiation logic in MVP
 - Manual handling of all responses
 
@@ -179,6 +184,7 @@ Rules:
 ## 3. Probability Refinement System
 
 ### Current State
+
 - Static formula: `pClose = (leadScore × 0.5) + (arvConfidence × 0.5)`
 - No learning from actual outcomes
 
@@ -205,8 +211,8 @@ CREATE INDEX idx_deal_outcomes_date ON deal_outcomes(outcome_date);
 
 ```sql
 -- Compare predicted vs actual close rates by score bucket
-SELECT 
-  CASE 
+SELECT
+  CASE
     WHEN predicted_p_close < 0.3 THEN 'low'
     WHEN predicted_p_close < 0.6 THEN 'medium'
     ELSE 'high'
@@ -240,7 +246,7 @@ pClose = (compositeScore × 0.6) + (arvConfidence × 0.4)  // Trust scoring more
 
 ```sql
 -- Top 20 deals by expected value, ready for action
-SELECT 
+SELECT
   l.id as lead_id,
   l.name,
   l.phone,
@@ -261,12 +267,12 @@ FROM leads l
 JOIN lead_scores ls ON ls.lead_id = l.id
 JOIN property_valuations pv ON pv.lead_id = l.id
 JOIN deal_probabilities dp ON dp.lead_id = l.id
-LEFT JOIN lead_actions la ON la.lead_id = l.id 
+LEFT JOIN lead_actions la ON la.lead_id = l.id
   AND la.status = 'pending'
 WHERE l.organization_id = $1
   AND la.action IS NOT NULL
   AND la.action != 'reject'
-ORDER BY 
+ORDER BY
   dp.expected_value DESC,
   hours_waiting DESC
 LIMIT 20;
@@ -319,10 +325,10 @@ export async function GET(request: Request) {
     LIMIT 20
   `;
 
-  return NextResponse.json({ 
+  return NextResponse.json({
     deals: topDeals,
     generatedAt: new Date().toISOString(),
-    totalEV: topDeals.reduce((sum, d) => sum + Number(d.ev_dollars), 0)
+    totalEV: topDeals.reduce((sum, d) => sum + Number(d.ev_dollars), 0),
   });
 }
 ```
@@ -345,7 +351,7 @@ CREATE TABLE speed_alerts (
   acknowledged_at timestamptz
 );
 
-CREATE INDEX idx_speed_alerts_pending ON speed_alerts(priority DESC) 
+CREATE INDEX idx_speed_alerts_pending ON speed_alerts(priority DESC)
   WHERE acknowledged_at IS NULL;
 ```
 
@@ -353,16 +359,17 @@ CREATE INDEX idx_speed_alerts_pending ON speed_alerts(priority DESC)
 
 ```typescript
 // After processing a lead, if EV > threshold:
-if (expectedValue > 500000) {  // $5,000+ EV
+if (expectedValue > 500000) {
+  // $5,000+ EV
   await sql`
     INSERT INTO speed_alerts (lead_id, alert_type, priority)
     VALUES (${leadId}, 'new_high_ev', ${expectedValue})
   `;
-  
+
   // Optional: Send Slack/email notification
   await notifyTeam({
-    message: `🚨 High-EV lead ready: ${leadName} ($${expectedValue/100} EV)`,
-    url: `/optimization/dashboard?lead=${leadId}`
+    message: `🚨 High-EV lead ready: ${leadName} ($${expectedValue / 100} EV)`,
+    url: `/optimization/dashboard?lead=${leadId}`,
   });
 }
 ```
@@ -405,9 +412,9 @@ Close or move on
 async function queueFollowUpSequence(leadId: number, initialOfferDate: Date) {
   const touches = [
     { day: 2, type: 'follow_up', message: 'Quick check-in on our offer...' },
-    { day: 5, type: 'final_check', message: 'Last call before we move on...' }
+    { day: 5, type: 'final_check', message: 'Last call before we move on...' },
   ];
-  
+
   for (const touch of touches) {
     await sql`
       INSERT INTO follow_up_sequences (
@@ -431,24 +438,24 @@ async function queueFollowUpSequence(leadId: number, initialOfferDate: Date) {
 
 ```sql
 -- Conversion funnel (last 30 days)
-SELECT 
+SELECT
   COUNT(*) FILTER (WHERE la.action = 'send_email') as offers_sent,
   COUNT(*) FILTER (WHERE le.event_type = 'replied') as responses_received,
   COUNT(*) FILTER (WHERE le.event_type = 'qualified') as qualified_deals,
   COUNT(*) FILTER (WHERE le.event_type = 'signed') as contracts_signed,
   COUNT(*) FILTER (WHERE le.event_type = 'closed') as deals_closed,
-  
+
   -- Conversion rates
-  COUNT(*) FILTER (WHERE le.event_type = 'replied')::float / 
+  COUNT(*) FILTER (WHERE le.event_type = 'replied')::float /
     NULLIF(COUNT(*) FILTER (WHERE la.action = 'send_email'), 0) as response_rate,
-  
-  COUNT(*) FILTER (WHERE le.event_type = 'signed')::float / 
+
+  COUNT(*) FILTER (WHERE le.event_type = 'signed')::float /
     NULLIF(COUNT(*) FILTER (WHERE le.event_type = 'qualified'), 0) as close_rate,
-  
+
   -- Average time metrics
-  AVG(EXTRACT(EPOCH FROM (le.created_at - la.created_at)) / 3600) 
+  AVG(EXTRACT(EPOCH FROM (le.created_at - la.created_at)) / 3600)
     FILTER (WHERE le.event_type = 'replied') as avg_hours_to_response
-    
+
 FROM lead_actions la
 LEFT JOIN lead_events le ON le.lead_id = la.lead_id
 WHERE la.created_at > now() - interval '30 days'
@@ -460,21 +467,25 @@ WHERE la.created_at > now() - interval '30 days'
 ## Implementation Priority
 
 ### Phase 1: Foundation (Week 1)
+
 1. Add `deal_outcomes` table
 2. Implement daily queue endpoint (`/api/optimization/daily-queue`)
 3. Create manual outcome tracking (when deals close, log them)
 
 ### Phase 2: Enhanced Agents (Week 2)
+
 4. Build `OfferFramingAgent`
 5. Build `NegotiationResponseAgent`
 6. Update orchestrator to use new agents
 
 ### Phase 3: Learning Loop (Week 3)
+
 7. Implement weekly calibration query
 8. Adjust probability weights based on actual close rates
 9. Dashboard showing predicted vs actual
 
 ### Phase 4: Speed & Follow-Up (Week 4)
+
 10. Speed alerts for high-EV leads
 11. Follow-up sequence tracking
 12. Conversion metrics dashboard

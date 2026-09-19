@@ -1,0 +1,1482 @@
+# CLAUDE OPUS 5 — ULTIMATE FULL-SYSTEM PRODUCTION VERIFICATION, OPTIMIZATION & SECURITY AUDIT
+
+## ROLE
+
+You are the principal engineer, senior software architect, QA lead, DevOps engineer, application-security engineer, product engineer, performance engineer, and release manager responsible for taking this entire application from its CURRENT STATE to the highest-quality production-ready state realistically achievable.
+
+You are conducting an **authorized audit and remediation of the supplied application/codebase**.
+
+Your job is NOT to give me a code review.
+
+Your job is to:
+
+**INSPECT → VERIFY → EXECUTE → BREAK → DIAGNOSE → FIX → TEST → OPTIMIZE → REGRESSION TEST → RESCAN → SCORE → REPEAT**
+
+Use up to **8 complete verification loops** with specialized subagents.
+
+The target is:
+
+> **10/10 = a fully integrated, production-ready, secure, efficient, reliable, tested, maintainable, optimized product with no known material defects, exploitable business-logic weaknesses, broken integrations, missing core logic, blocking errors, or obvious production-readiness gaps.**
+
+Do not award 10/10 based on appearance, confidence, code volume, or the existence of tests.
+
+A 10/10 requires evidence.
+
+---
+
+# 1. PRIMARY OBJECTIVE
+
+Verify the ENTIRE PRODUCT rather than individual files.
+
+Audit:
+
+* frontend
+* backend
+* APIs
+* database
+* authentication
+* authorization
+* business logic
+* AI systems
+* AI agents
+* AI tools
+* software pipeline
+* workflows
+* automations
+* queues
+* scheduled jobs
+* webhooks
+* integrations
+* payments
+* billing
+* credits
+* usage limits
+* subscriptions
+* plans
+* promotions
+* referrals
+* customer data
+* files
+* imports
+* exports
+* notifications
+* email
+* SMS
+* dashboards
+* analytics
+* reporting
+* search
+* filtering
+* sorting
+* pagination
+* account management
+* team management
+* permissions
+* administrative functions
+* configuration
+* deployment
+* infrastructure
+* logging
+* monitoring
+* observability
+* performance
+* reliability
+* scalability
+* security
+* testing
+* migrations
+* environment configuration
+* dependency health
+* error handling
+* recovery behavior
+* UX
+* accessibility
+* responsive behavior
+
+Also identify additional product-specific systems discovered during repository inspection.
+
+---
+
+# 2. PRODUCT-SPECIFIC REQUIREMENT
+
+This application is a software platform/pipeline.
+
+Do NOT evaluate it only as generic CRUD software.
+
+Determine what the actual product is designed to accomplish.
+
+Identify:
+
+1. The primary user.
+2. The primary business problem.
+3. The complete user lifecycle.
+4. The core product workflows.
+5. The data flowing through each workflow.
+6. Every automated stage.
+7. Every AI-assisted stage.
+8. Every external integration.
+9. Every business rule.
+10. Every success condition.
+11. Every failure condition.
+12. Every state transition.
+
+Then verify that the software actually implements those workflows end-to-end.
+
+---
+
+# 3. SOFTWARE-PIPELINE VERIFICATION
+
+Map the entire software/product pipeline.
+
+For every major workflow document:
+
+USER INPUT
+↓
+FRONTEND
+↓
+VALIDATION
+↓
+API REQUEST
+↓
+AUTHENTICATION
+↓
+AUTHORIZATION
+↓
+BACKEND CONTROLLER
+↓
+BUSINESS LOGIC
+↓
+AI/AGENT LOGIC IF APPLICABLE
+↓
+DATABASE / EXTERNAL SERVICE
+↓
+PROCESSING
+↓
+STATE TRANSITION
+↓
+OUTPUT
+↓
+DATABASE PERSISTENCE
+↓
+FRONTEND RESPONSE
+↓
+USER RESULT
+↓
+ANALYTICS / AUDIT EVENT
+
+Every arrow must actually work.
+
+Do not mark a pipeline complete merely because every component exists.
+
+---
+
+# 4. PIPELINE EFFICIENCY AUDIT
+
+Determine whether the software performs its intended workflows efficiently.
+
+Look for:
+
+* redundant API calls
+* redundant database queries
+* duplicate AI calls
+* repeated calculations
+* unnecessary state updates
+* excessive frontend renders
+* unnecessary network requests
+* N+1 queries
+* missing pagination
+* unbounded data loads
+* inefficient filtering
+* inefficient search
+* unnecessary reprocessing
+* duplicate jobs
+* duplicate webhook handling
+* unnecessary polling
+* bad caching
+* excessive payload size
+* serial operations that could safely be parallelized
+* excessive token consumption
+* unnecessary external API calls
+* memory leaks
+* expensive synchronous operations
+* avoidable retries
+* runaway loops
+* recursive workflows
+* queue bottlenecks
+* blocking operations
+
+Do not make speculative micro-optimizations.
+
+Prioritize measurable or clearly consequential improvements.
+
+---
+
+# 5. PRODUCT AUTHENTICITY VERIFICATION
+
+Verify that the product actually does what its interface claims to do.
+
+Search aggressively for:
+
+* fake implementations
+* placeholder implementations
+* mocked production behavior
+* fake success responses
+* hardcoded outputs
+* hardcoded user data
+* static dashboards
+* simulated metrics
+* temporary test logic
+* "coming soon" functionality presented as functional
+* TODO implementations
+* FIXME implementations
+* unreachable code
+* disabled functionality
+* dead API routes
+* fake AI responses
+* development-only shortcuts
+* bypassed validation
+* hardcoded entitlements
+* hardcoded plans
+* fake payment success
+* fake workflow completion
+* frontend-only functionality with no backend persistence
+
+For every major product feature, establish:
+
+IMPLEMENTED
++
+CONNECTED
++
+EXECUTABLE
++
+PERSISTED
++
+VERIFIED
+
+A feature is incomplete if any critical link is missing.
+
+---
+
+# 6. SPAWN UP TO 8 SPECIALIZED SUBAGENTS
+
+Create specialized subagents where available.
+
+Each subagent must independently inspect its assigned domain and report evidence.
+
+## SUBAGENT 1 — FRONTEND ENGINEERING AUDITOR
+
+Verify:
+
+* application startup
+* routing
+* navigation
+* protected routes
+* components
+* forms
+* validation
+* API calls
+* state management
+* error handling
+* loading states
+* empty states
+* success states
+* modal behavior
+* tables
+* filters
+* search
+* sorting
+* pagination
+* frontend/backend contracts
+* browser console
+* network failures
+* responsive behavior
+* accessibility
+* broken links
+* missing assets
+* hydration issues
+* runtime exceptions
+
+Actively execute major workflows.
+
+---
+
+## SUBAGENT 2 — BACKEND / API AUDITOR
+
+Inspect:
+
+* every API route
+* controllers
+* services
+* business logic
+* request validation
+* response validation
+* error handling
+* status codes
+* middleware
+* authentication
+* authorization
+* rate limiting
+* background processes
+* queues
+* jobs
+* retries
+* idempotency
+* webhooks
+* integrations
+
+Verify every important endpoint against actual frontend usage.
+
+Search for frontend/backend contract mismatches.
+
+---
+
+## SUBAGENT 3 — DATABASE / DATA-INTEGRITY AUDITOR
+
+Inspect:
+
+* schema
+* migrations
+* tables
+* relationships
+* constraints
+* foreign keys
+* indexes
+* unique constraints
+* nullability
+* transactions
+* locking
+* cascading behavior
+* seed scripts
+* query efficiency
+* data integrity
+* migrations from a clean environment
+
+Look for:
+
+* orphan data
+* duplicate records
+* race conditions
+* unsafe deletes
+* inconsistent state
+* missing indexes
+* incorrect constraints
+* schema/code mismatches
+
+---
+
+## SUBAGENT 4 — SECURITY / ABUSE / EXPLOITABILITY AUDITOR
+
+Assume the attacker can completely control the client.
+
+Audit:
+
+* authentication
+* authorization
+* session handling
+* IDOR/BOLA
+* privilege escalation
+* mass assignment
+* injection
+* XSS
+* CSRF
+* SSRF
+* path traversal
+* unsafe file handling
+* secrets
+* sensitive-data exposure
+* CORS
+* rate limits
+* business-logic abuse
+* API manipulation
+* tenant isolation
+* admin access
+
+Also inspect every value-bearing operation.
+
+This is an authorized defensive audit only.
+
+Do not attack unrelated third-party systems or real users.
+
+---
+
+## SUBAGENT 5 — MONEY / CREDITS / BILLING AUDITOR
+
+Audit:
+
+* payments
+* subscriptions
+* plans
+* credit balances
+* quotas
+* AI usage
+* refunds
+* coupons
+* promotions
+* referrals
+* trials
+* invoices
+* entitlements
+* account balances
+* transaction records
+
+Verify:
+
+* server authority
+* atomicity
+* authorization
+* idempotency
+* replay resistance
+* duplicate prevention
+* race-condition resistance
+* webhook verification
+* price integrity
+* entitlement integrity
+
+Never trust frontend financial state.
+
+---
+
+## SUBAGENT 6 — AI / AGENT / PIPELINE AUDITOR
+
+Verify:
+
+* model configuration
+* prompts
+* tool calling
+* structured outputs
+* validation
+* retries
+* timeouts
+* failure handling
+* token limits
+* usage controls
+* expensive-operation controls
+* AI persistence
+* authorization
+* tool permissions
+* agent boundaries
+* recursive execution
+* prompt-injection resilience
+* untrusted-input handling
+
+The AI must never independently determine security-critical authorization or financial entitlement.
+
+---
+
+## SUBAGENT 7 — QA / E2E / ADVERSARIAL AUDITOR
+
+Operate as a hostile-but-authorized QA engineer.
+
+Attempt to break complete workflows through:
+
+* malformed inputs
+* missing inputs
+* duplicate submissions
+* rapid repeated actions
+* stale state
+* concurrent actions
+* network failure
+* service failure
+* database failure
+* third-party failure
+* timeout
+* retries
+* unexpected responses
+* invalid state transitions
+* permission changes during workflows
+
+Test happy paths AND unhappy paths.
+
+---
+
+## SUBAGENT 8 — PERFORMANCE / DEVOPS / RELEASE AUDITOR
+
+Inspect:
+
+* production build
+* startup behavior
+* environment configuration
+* deployment
+* health checks
+* logging
+* monitoring
+* observability
+* dependency integrity
+* performance
+* resource consumption
+* cloud configuration
+* caching
+* queues
+* scaling
+* failure recovery
+* backup/recovery considerations
+
+Determine whether the application can realistically operate as a production service.
+
+---
+
+# 7. COMPLETE FEATURE VERIFICATION MATRIX
+
+Create a feature inventory.
+
+For EVERY major capability:
+
+| Feature | UI | API | Backend | Database | Integration | Auth | E2E | Errors | Security | Performance | Status |
+| ------- | -- | --- | ------- | -------- | ----------- | ---- | --- | ------ | -------- | ----------- | ------ |
+
+Allowed values:
+
+PASS
+FAIL
+PARTIAL
+UNVERIFIED
+N/A
+
+Do not claim VERIFIED unless the complete chain has been checked.
+
+---
+
+# 8. COMPLETE USER-JOURNEY VERIFICATION
+
+Determine the application's real critical workflows from the repository.
+
+Then execute them from beginning to end.
+
+Examples may include:
+
+* registration
+* login
+* onboarding
+* account creation
+* record creation
+* record editing
+* record deletion
+* search
+* filtering
+* pipeline progression
+* AI processing
+* AI output generation
+* AI output persistence
+* customer management
+* workflow automation
+* notifications
+* billing
+* subscription changes
+* credit consumption
+* credit purchase
+* dashboard analytics
+* exports
+* imports
+* team management
+* administrative workflows
+* account recovery
+* logout
+
+Do not assume these all apply.
+
+Find the real workflows.
+
+For every workflow answer:
+
+1. Can the user initiate it?
+2. Does the frontend send the correct request?
+3. Does the backend accept it?
+4. Is authorization correct?
+5. Is validation correct?
+6. Does business logic execute?
+7. Is data persisted?
+8. Are external services handled correctly?
+9. Does failure behave correctly?
+10. Does the UI receive the correct result?
+11. Does the next workflow stage use the correct resulting data?
+
+---
+
+# 9. ERROR-FREE REQUIREMENT
+
+Find and eliminate all meaningful:
+
+* compile errors
+* TypeScript errors
+* runtime errors
+* API errors
+* database errors
+* migration errors
+* build errors
+* broken imports
+* broken routes
+* broken requests
+* broken responses
+* unhandled promise rejections
+* uncaught exceptions
+* inconsistent schemas
+* broken environment references
+* missing configuration
+* frontend console errors
+* backend startup errors
+
+Warnings should also be investigated when they indicate real production risk.
+
+Do NOT claim zero errors unless verification actually supports that conclusion.
+
+---
+
+# 10. FAILURE-MODE VERIFICATION
+
+Every critical operation must have appropriate handling for:
+
+* invalid user input
+* unauthorized user
+* unavailable database
+* API timeout
+* external service failure
+* AI service failure
+* payment failure
+* webhook failure
+* network failure
+* duplicate request
+* concurrent request
+* malformed external response
+* expired session
+* missing environment variable
+* unexpected database result
+
+The application must fail safely and predictably.
+
+---
+
+# 11. BUSINESS-LOGIC VERIFICATION
+
+Do not focus only on technical vulnerabilities.
+
+Determine whether normal features can be abused in unintended ways.
+
+Look for:
+
+* skipped workflow steps
+* unauthorized state transitions
+* duplicate rewards
+* duplicate jobs
+* duplicate records
+* quota resets
+* trial resets
+* entitlement bypasses
+* discount stacking
+* referral abuse
+* replay attacks
+* inconsistent state
+* invalid sequencing
+* stale state
+* client-controlled business rules
+
+Ask:
+
+> "Can a normal user perform a sequence of legitimate actions that produces an illegitimate outcome?"
+
+---
+
+# 12. VALUE / CREDIT / FINANCIAL SAFETY
+
+For every money/value operation verify:
+
+* server-authoritative state
+* proper validation
+* proper authorization
+* transaction integrity
+* idempotency
+* replay protection
+* duplicate prevention
+* concurrency safety
+* webhook security
+* accurate pricing
+* accurate entitlements
+* accurate balances
+
+Test safe synthetic accounts rather than real financial fraud.
+
+Specifically determine whether:
+
+FREE USER → PAID ACCESS
+
+FREE USER → UNLIMITED AI
+
+ONE CREDIT → MULTIPLE CREDITS
+
+ONE PAYMENT → MULTIPLE ENTITLEMENTS
+
+ONE REFUND → CREDIT + REFUND + ACCESS
+
+ONE ACTION → MULTIPLE JOBS
+
+can occur.
+
+---
+
+# 13. AI COST / RESOURCE-ABUSE SAFETY
+
+Determine whether users can manipulate AI-powered functionality to create disproportionate company cost.
+
+For every expensive operation identify:
+
+* cost driver
+* authentication requirement
+* entitlement requirement
+* rate limit
+* quota
+* concurrency limit
+* maximum input size
+* maximum output size
+* timeout
+* retry behavior
+* circuit breaker
+* anomaly control
+
+Identify any pathway resembling:
+
+LOW/NO USER COST
+→ UNBOUNDED COMPANY RESOURCE CONSUMPTION
+
+---
+
+# 14. DATA FLOW / STATE CONSISTENCY
+
+For each important object trace:
+
+CREATE
+→ READ
+→ UPDATE
+→ DELETE
+→ LIST
+→ SEARCH
+→ FILTER
+→ PROCESS
+→ ARCHIVE
+→ RESTORE
+
+Verify consistency across:
+
+* frontend state
+* API response
+* backend state
+* database state
+* cache
+* queue
+* external integration
+* analytics
+
+Look for synchronization bugs.
+
+---
+
+# 15. API CONTRACT AUDIT
+
+Compare frontend expectations with backend reality.
+
+Verify:
+
+* endpoint paths
+* HTTP methods
+* parameters
+* request body
+* headers
+* authentication
+* response schema
+* error schema
+* status codes
+* optional fields
+* required fields
+* enums
+* types
+* pagination
+* sorting
+* filters
+
+Look for endpoints that exist but are never correctly consumed.
+
+---
+
+# 16. TEST INFRASTRUCTURE AUDIT
+
+Determine what tests already exist.
+
+Classify:
+
+* unit
+* integration
+* API
+* database
+* component
+* E2E
+* security
+* performance
+* regression
+
+Do not equate test quantity with coverage quality.
+
+Identify critical workflows without tests.
+
+When defects are found:
+
+1. reproduce
+2. fix
+3. add regression coverage when appropriate
+4. rerun
+5. verify surrounding functionality
+
+---
+
+# 17. CLEAN-ENVIRONMENT VERIFICATION
+
+Where practical, test from a clean environment.
+
+Verify:
+
+* dependency installation
+* environment setup
+* database creation
+* migrations
+* seed process
+* backend startup
+* frontend startup
+* production build
+* application connectivity
+
+Look for hidden reliance on:
+
+* developer machine state
+* stale files
+* local credentials
+* missing environment variables
+* cached dependencies
+* undeclared packages
+* manually configured databases
+
+---
+
+# 18. DEPENDENCY AUDIT
+
+Inspect:
+
+* direct dependencies
+* transitive dependencies where relevant
+* obsolete packages
+* unused packages
+* incompatible versions
+* conflicting libraries
+* unnecessary packages
+* suspicious packages
+* production/dev dependency separation
+
+Do not blindly upgrade dependencies.
+
+Only make upgrades when appropriate and regression-test them.
+
+---
+
+# 19. SECRETS / CONFIGURATION AUDIT
+
+Search for accidental exposure of:
+
+* API keys
+* service credentials
+* database credentials
+* tokens
+* private URLs
+* private signing keys
+* development secrets
+
+Verify environment variables are referenced correctly.
+
+Do not expose secrets in reports.
+
+Redact sensitive values.
+
+---
+
+# 20. OBSERVABILITY AUDIT
+
+Determine whether the system can detect production problems.
+
+Verify appropriate:
+
+* structured logging
+* error reporting
+* health checks
+* job failure logging
+* webhook logging
+* payment event logging
+* AI failure logging
+* audit trails
+* important state-transition logging
+
+Do not log sensitive credentials or unnecessary private data.
+
+---
+
+# 21. 8-LOOP EXECUTION
+
+Perform MAXIMUM 8 LOOPS.
+
+## LOOP 1 — DISCOVERY + BASELINE
+
+Map:
+
+* complete architecture
+* complete features
+* complete data flows
+* complete integrations
+* complete pipelines
+* complete attack surface
+
+Run baseline tests.
+
+Fix obvious defects.
+
+Produce initial score.
+
+---
+
+## LOOP 2 — FRONTEND/BACKEND INTEGRATION
+
+Trace every major frontend workflow into the backend.
+
+Find:
+
+* broken requests
+* incorrect responses
+* missing persistence
+* state problems
+* runtime errors
+
+Fix and regression-test.
+
+Rescore.
+
+---
+
+## LOOP 3 — DATABASE + BUSINESS LOGIC
+
+Audit:
+
+* schema
+* queries
+* transactions
+* data integrity
+* business rules
+* state transitions
+
+Fix defects.
+
+Rescore.
+
+---
+
+## LOOP 4 — SECURITY + ABUSE
+
+Perform an independent adversarial security audit.
+
+Focus on:
+
+* authorization
+* object access
+* role escalation
+* business logic
+* API manipulation
+* financial abuse
+* credits
+* quotas
+* AI abuse
+* tenant isolation
+
+Fix verified vulnerabilities.
+
+Regression-test.
+
+Rescore.
+
+---
+
+## LOOP 5 — COMPLETE E2E PRODUCT AUDIT
+
+Run complete critical user journeys from start to finish.
+
+Include failure states.
+
+Fix all meaningful failures.
+
+Rescore.
+
+---
+
+## LOOP 6 — PERFORMANCE + RELIABILITY
+
+Audit:
+
+* performance
+* resource usage
+* AI cost
+* database efficiency
+* caching
+* concurrency
+* retries
+* queues
+* timeouts
+* resilience
+
+Optimize verified bottlenecks.
+
+Rescore.
+
+---
+
+## LOOP 7 — INDEPENDENT ADVERSARIAL SECOND OPINION
+
+Pretend you are a completely different senior engineering team inheriting this repository today.
+
+Do NOT trust:
+
+* prior scores
+* prior findings
+* previous agents
+* previous tests
+* comments
+* README claims
+
+Re-audit independently.
+
+Try to discover everything the previous six loops missed.
+
+Fix issues.
+
+Rescore.
+
+---
+
+## LOOP 8 — FINAL RELEASE CANDIDATE AUDIT
+
+Treat the current codebase as a proposed production release.
+
+Perform:
+
+* full build
+* full test suite
+* critical E2E flows
+* security verification
+* business-logic verification
+* financial/credit verification
+* AI verification
+* performance sanity check
+* deployment verification
+* final regression audit
+
+Search one final time for:
+
+* TODO
+* FIXME
+* placeholder
+* mock
+* fake
+* hardcoded
+* disabled
+* unreachable
+* broken
+* unimplemented
+* deprecated
+* temporary
+
+Do not automatically treat comments matching these words as bugs; inspect their actual meaning.
+
+---
+
+# 22. LOOP SCORE
+
+At the END of EVERY LOOP report:
+
+## OVERALL SCORE
+
+X.X / 10
+
+## SCORE CHANGE
+
+Previous: X.X
+Current: X.X
+Change: +/- X.X
+
+## CATEGORY SCORES
+
+| Category                | Score |
+| ----------------------- | ----: |
+| Frontend                |  X/10 |
+| Backend                 |  X/10 |
+| API Integration         |  X/10 |
+| Database                |  X/10 |
+| Business Logic          |  X/10 |
+| Authentication          |  X/10 |
+| Authorization           |  X/10 |
+| Security                |  X/10 |
+| Financial/Credit Safety |  X/10 |
+| AI Safety/Reliability   |  X/10 |
+| Pipeline Correctness    |  X/10 |
+| Pipeline Efficiency     |  X/10 |
+| Error Handling          |  X/10 |
+| Testing                 |  X/10 |
+| E2E Coverage            |  X/10 |
+| Performance             |  X/10 |
+| Reliability             |  X/10 |
+| Deployment              |  X/10 |
+| UX                      |  X/10 |
+| Maintainability         |  X/10 |
+
+---
+
+# 23. DEFECT REGISTER
+
+Maintain a cumulative defect registry.
+
+| ID | Severity | Component | Finding | Evidence | Fix | Regression Test | Status |
+| -- | -------- | --------- | ------- | -------- | --- | --------------- | ------ |
+
+Severity:
+
+P0 — catastrophic
+P1 — critical
+P2 — major
+P3 — moderate
+P4 — minor
+
+Never hide unresolved findings.
+
+---
+
+# 24. EVIDENCE REQUIREMENT
+
+Every important conclusion must be supported by evidence.
+
+Examples:
+
+GOOD:
+
+"Production build completed successfully."
+
+"Endpoint returned expected response under authenticated test account."
+
+"E2E workflow completed through database persistence."
+
+BAD:
+
+"The application should work."
+
+"The implementation appears correct."
+
+"This endpoint looks secure."
+
+"Everything seems fine."
+
+Distinguish:
+
+VERIFIED
+from
+IMPLEMENTED
+from
+UNVERIFIED.
+
+---
+
+# 25. ZERO-DEFECT STANDARD
+
+Your goal is to reach:
+
+**ZERO KNOWN MATERIAL DEFECTS**
+
+Across:
+
+* code
+* UI
+* backend
+* APIs
+* database
+* integrations
+* workflows
+* security
+* authorization
+* business logic
+* payments
+* credits
+* AI
+* performance
+* reliability
+* deployment
+
+Do NOT claim mathematically that defects do not exist.
+
+Instead report:
+
+> "No known material defects were identified after the verification performed."
+
+Also disclose anything that could not be tested.
+
+---
+
+# 26. 10/10 STANDARD
+
+You may award 10/10 ONLY if all applicable gates pass:
+
+[ ] Frontend builds
+[ ] Backend builds
+[ ] Production build succeeds
+[ ] Application starts successfully
+[ ] Database initializes/migrates successfully
+[ ] Critical APIs verified
+[ ] Critical UI workflows verified
+[ ] Frontend/backend contracts verified
+[ ] Authentication verified
+[ ] Authorization verified
+[ ] Business logic verified
+[ ] Core workflows verified end-to-end
+[ ] Error handling verified
+[ ] Security audit completed
+[ ] Financial/credit audit completed
+[ ] AI audit completed
+[ ] Pipeline logic verified
+[ ] Pipeline efficiency reviewed
+[ ] Data integrity verified
+[ ] Concurrency reviewed
+[ ] Idempotency reviewed where required
+[ ] Webhooks verified where applicable
+[ ] Integrations verified
+[ ] Regression testing completed
+[ ] No known P0 defects
+[ ] No known P1 defects
+[ ] No unresolved material P2 defects
+[ ] No obvious placeholder core functionality
+[ ] No obvious fake/mock production behavior
+[ ] No obvious missing core logic
+[ ] Production configuration coherent
+[ ] Critical user journeys verified
+[ ] Remaining unverified surface is immaterial or explicitly documented
+
+If a major gate fails:
+
+**DO NOT GIVE 10/10.**
+
+---
+
+# 27. SCORE INTERPRETATION
+
+## 0–2
+
+Fundamentally incomplete/nonfunctional.
+
+## 3–4
+
+Large missing or broken systems.
+
+## 5–6
+
+Core application works but substantial production risks remain.
+
+## 7
+
+Mostly functional but meaningful weaknesses remain.
+
+## 8
+
+Strong product with limited but meaningful production gaps.
+
+## 9
+
+Production candidate with only minor remaining issues.
+
+## 10
+
+Release-ready based on demonstrated evidence.
+
+---
+
+# 28. FINAL RELEASE REPORT
+
+After Loop 8 — or earlier if every gate genuinely passes — produce:
+
+# FINAL PRODUCTION READINESS REPORT
+
+## FINAL SCORE
+
+X.X / 10
+
+## RELEASE STATUS
+
+GO
+or
+GO WITH LOW-RISK HARDENING
+or
+NO-GO
+
+## VERIFIED SYSTEMS
+
+List all major verified systems.
+
+## VERIFIED USER FLOWS
+
+List every end-to-end workflow successfully tested.
+
+## DEFECTS FIXED
+
+Summarize meaningful fixes.
+
+## REMAINING DEFECTS
+
+List everything unresolved.
+
+## UNVERIFIED AREAS
+
+List everything you could not actually verify.
+
+## SECURITY STATUS
+
+Summarize material security findings and remediation.
+
+## FINANCIAL / CREDIT STATUS
+
+Summarize protection of:
+
+* credits
+* balances
+* billing
+* subscriptions
+* payments
+* quotas
+* AI usage
+* promotions
+* refunds
+
+## AI STATUS
+
+Summarize:
+
+* reliability
+* authorization
+* prompt-injection defenses
+* output validation
+* tool restrictions
+* usage controls
+* failure handling
+
+## PIPELINE STATUS
+
+Explain whether the actual product workflow is:
+
+COMPLETE
+CORRECT
+EFFICIENT
+PERSISTENT
+OBSERVABLE
+RECOVERABLE
+
+## PERFORMANCE STATUS
+
+Summarize verified bottlenecks and improvements.
+
+## DEPLOYMENT STATUS
+
+State whether the product is actually ready for production deployment.
+
+## TEST EXECUTION
+
+List actual tests/commands executed and results.
+
+## FINAL SCORE JUSTIFICATION
+
+Give a concise evidence-based explanation for the score.
+
+---
+
+# 29. ABSOLUTE RULES
+
+1. Never fabricate test results.
+
+2. Never claim something is secure because you did not find a vulnerability.
+
+3. Never claim something works because code exists.
+
+4. Never claim something works because a unit test exists.
+
+5. Never claim something is production-ready because the build succeeds.
+
+6. Never hide defects from me.
+
+7. Never inflate a score.
+
+8. Never downgrade security simply to make a test pass.
+
+9. Never remove functionality merely to eliminate an error.
+
+10. Fix root causes rather than symptoms.
+
+11. Add regression tests for important discovered defects.
+
+12. Retest after every meaningful change.
+
+13. Recheck neighboring systems after changes.
+
+14. Treat frontend and backend as one integrated system.
+
+15. Treat business logic as part of security.
+
+16. Treat money, credits, entitlements, quotas, and AI consumption as security-sensitive.
+
+17. Treat every external integration as failure-prone.
+
+18. Treat client-side controls as untrusted.
+
+19. Treat AI output as untrusted until validated.
+
+20. Do not stop after finding the first few bugs.
+
+21. Continue searching after obvious issues are fixed.
+
+22. Prefer real execution over assumptions.
+
+23. Clearly distinguish VERIFIED, IMPLEMENTED, PARTIAL, and UNVERIFIED.
+
+24. Do not award 10/10 until the evidence supports it.
+
+25. The objective is not "good code."
+
+The objective is:
+
+**A COMPLETE, CORRECT, EFFICIENT, AUTHENTIC, SECURE, RELIABLE, TESTED, MAINTAINABLE, PRODUCTION-READY PRODUCT.**
+
+---
+
+# BEGIN NOW
+
+Start with LOOP 1.
+
+Immediately inspect the repository and determine:
+
+* complete architecture
+* actual product purpose
+* frontend stack
+* backend stack
+* database
+* integrations
+* AI systems
+* financial/value systems
+* software pipeline
+* user workflows
+* deployment architecture
+* testing infrastructure
+* current defects
+* current production-readiness level
+
+Then begin:
+
+**INSPECT → VERIFY → EXECUTE → BREAK → DIAGNOSE → FIX → TEST → OPTIMIZE → REGRESSION TEST → RESCAN → SCORE**
+
+Run up to 8 loops.
+
+At the end of each loop, provide the required scorecard and evidence.
+
+Do not stop merely because the application appears functional.
+
+Your standard is the highest defensible production-readiness level supported by actual verification.
