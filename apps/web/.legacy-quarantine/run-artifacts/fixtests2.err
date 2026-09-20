@@ -1,0 +1,103 @@
+[1m[43m DEPRECATED [49m[22m [33m'basic' reporter is deprecated and will be removed in Vitest v3.
+Remove 'basic' from 'reporters' option. To match 'basic' reporter 100%, use configuration:
+{
+  "test": {
+    "reporters": [
+      [
+        "default",
+        {
+          "summary": false
+        }
+      ]
+    ]
+  }
+}[39m
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mNegative Balance Prevention[2m > [22m[2mprevents deduction of negative amounts
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: negative values not allowed
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mNegative Balance Prevention[2m > [22m[2mprevents deduction of non-integer amounts
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: must be an integer, got 10.5
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mNegative Balance Prevention[2m > [22m[2mprevents deduction of Infinity
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: not a finite number
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mNegative Balance Prevention[2m > [22m[2mprevents deduction of NaN
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: not a finite number
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mUnauthorized Credit Modification Prevention[2m > [22m[2maddCredits validates amount is positive integer
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: negative values not allowed
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mUnauthorized Credit Modification Prevention[2m > [22m[2maddCredits validates amount is finite
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: not a finite number
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mUnauthorized Credit Modification Prevention[2m > [22m[2maddCredits validates amount is an integer
+[22m[39m[CREDITS] Validation failed: Invalid credit amount: must be an integer, got 10.5
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mIdempotency Protection[2m > [22m[2mhandles idempotency key collision on insert gracefully
+[22m[39m[CREDITS] Failed to deduct credits: Error: duplicate key value
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\security\credits.test.ts:309:30
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m {
+  code: [32m'23505'[39m
+}
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mInteger Overflow Protection[2m > [22m[2mrejects amounts exceeding MAX_CREDITS constant
+[22m[39m[CREDITS] Validation failed: Credit amount 2000000001 exceeds maximum allowed (2000000000)
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mInteger Overflow Protection[2m > [22m[2mrejects amounts exceeding MAX_CREDITS constant
+[22m[39m[CREDITS] Failed to get balance: TypeError: (intermediate value) is not iterable
+    at getBalance [90m(D:\anything\apps\web\[39msrc\app\api\utils\credits.ts:75:22[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at Module.deductCredits [90m(D:\anything\apps\web\[39msrc\app\api\utils\credits.ts:378:25[90m)[39m
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\security\credits.test.ts:371:22
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mInteger Overflow Protection[2m > [22m[2mprevents balance from exceeding MAX_CREDITS on add
+[22m[39m[CREDITS] Failed to get balance: TypeError: (intermediate value) is not iterable
+    at getBalance [90m(D:\anything\apps\web\[39msrc\app\api\utils\credits.ts:75:22[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at Module.addCredits [90m(D:\anything\apps\web\[39msrc\app\api\utils\credits.ts:642:30[90m)[39m
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\security\credits.test.ts:392:7
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mInteger Overflow Protection[2m > [22m[2mprevents balance from exceeding MAX_CREDITS on add
+[22m[39m[CREDITS] Would exceed max balance: [33m0[39m + [33m200[39m
+[CREDITS] Failed to add credits: Error: Operation would exceed maximum credit balance (current: 0, adding: 200, max: 2000000000)
+    at Module.addCredits [90m(D:\anything\apps\web\[39msrc\app\api\utils\credits.ts:644:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\security\credits.test.ts:392:7
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+
+[90mstderr[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mEdge Cases[2m > [22m[2mhandles database errors gracefully
+[22m[39m[CREDITS] Failed to get balance: Error: Database connection failed
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\security\credits.test.ts:472:38
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+[90mstderr[2m | src/app/api/__tests__/accessGate.test.ts[2m > [22m[2mdeny-only design[2m > [22m[2mDB failure → passthrough, never a crash or accidental allow-list bypass
+[22m[39m[middleware] session lookup failed Error: db down
+    at [90mD:\anything\apps\web\[39msrc\app\api\__tests__\accessGate.test.ts:126:31
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///D:/anything/apps/web/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+

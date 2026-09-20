@@ -1,0 +1,35 @@
+[1m[43m DEPRECATED [49m[22m [33m'basic' reporter is deprecated and will be removed in Vitest v3.
+Remove 'basic' from 'reporters' option. To match 'basic' reporter 100%, use configuration:
+{
+  "test": {
+    "reporters": [
+      [
+        "default",
+        {
+          "summary": false
+        }
+      ]
+    ]
+  }
+}[39m
+[90mstderr[2m | src/app/api/utils/dbRetry.test.ts[2m > [22m[2mrunWithDbRetry[2m > [22m[2mretries once on a transient error and succeeds
+[22m[39m[dbRetry] transient DB error (attempt 1/2), retrying in 150ms: Connection terminated unexpectedly
+
+[90mstderr[2m | src/app/api/utils/dbRetry.test.ts[2m > [22m[2mrunWithDbRetry[2m > [22m[2mgives up after the bounded attempts and rethrows the transient error
+[22m[39m[dbRetry] transient DB error (attempt 1/3), retrying in 150ms: ECONNRESET
+
+[90mstderr[2m | src/app/api/utils/dbRetry.test.ts[2m > [22m[2mrunWithDbRetry[2m > [22m[2mgives up after the bounded attempts and rethrows the transient error
+[22m[39m[dbRetry] transient DB error (attempt 2/3), retrying in 300ms: ECONNRESET
+
+[90mstderr[2m | src/app/api/payments/webhook/webhook.test.ts[2m > [22m[2mPayments Webhook[2m > [22m[2mrejects tampered signature for live provider
+[22m[39m[payments/webhook] Invalid signature
+
+[90mstderr[2m | src/app/api/payments/webhook/webhook.test.ts[2m > [22m[2mPayments Webhook[2m > [22m[2mholds payment on amount mismatch
+[22m[39m[payments/webhook] AMOUNT MISMATCH: PI pi_2: Stripe 100000 vs ledger 50000
+
+[90mstderr[2m | src/app/api/payments/webhook/webhook.test.ts[2m > [22m[2mPayments Webhook[2m > [22m[2mreturns 404 for unknown payment intent
+[22m[39m[payments/webhook] No ledger entry for PI pi_unknown
+
+[90mstderr[2m | src/app/api/payments/webhook/webhook.test.ts[2m > [22m[2mPayments Webhook[2m > [22m[2mallows mock webhook in production only with explicit ALLOW_MOCK_PAYMENT_WEBHOOKS=1
+[22m[39m[payments/webhook] No ledger entry for PI pi_9
+

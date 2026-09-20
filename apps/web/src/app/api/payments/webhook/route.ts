@@ -24,6 +24,25 @@ export async function POST(request: Request) {
     const signature = request.headers.get('stripe-signature') || '';
     const providerType = (process.env.STRIPE_PROVIDER || 'mock') as StripeProviderType;
 
+    // SECURITY (production hardening): the mock provider accepts ANY signature
+    // (documented in stripeProvider.ts). A publicly reachable webhook running
+    // in mock mode would let anyone forge payment_intent.succeeded events and
+    // flip a ledger entry to 'paid'. Fail closed in production unless the
+    // operator has explicitly opted in — same NODE_ENV boundary as the
+    // mock-checkout pages (BREAKAGE_TABLE #34). The mock checkout simulation
+    // does NOT go through this route (mock-checkout/complete updates the
+    // ledger directly), so this guard breaks no legitimate flow.
+    if (
+      providerType === 'mock' &&
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_MOCK_PAYMENT_WEBHOOKS !== '1'
+    ) {
+      return new Response(JSON.stringify({ error: 'Payment provider not configured' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     const provider = getStripeProvider({ type: providerType });
 
     // Verify webhook signature

@@ -29,6 +29,7 @@ import {
   isEmailDomainAllowed,
   isSeedAdminEmail,
 } from '@/app/api/utils/access-control';
+import { runWithDbRetry } from '@/app/api/utils/dbRetry';
 import { checkSignupAllowed } from '@/app/api/utils/signup-restrictions';
 import { isAccessDenied } from '@/lib/user-status';
 
@@ -40,6 +41,20 @@ neonConfig.webSocketConstructor = resolveWebSocketConstructor() as never;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+// RANDOM SIGN-OUT FIX: better-auth's internal session reads (getSession →
+// session table) and the databaseHooks below all flow through pool.query.
+// A transient Neon connection error there surfaces as a 401, which the
+// client renders as a random sign-out. Wrap (not replace) the query method
+// with the same bounded transient-error retry used by utils/sql.ts.
+// NOTE: this does NOT change pool configuration (connectionString, etc.) —
+// the load-bearing pool setup above is untouched.
+const boundPoolQuery = pool.query.bind(pool) as unknown as (
+  ...args: unknown[]
+) => Promise<unknown>;
+(pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = (
+  ...args: unknown[]
+) => runWithDbRetry(() => boundPoolQuery(...args));
 
 // Origins we accept auth requests from. Include every URL the app may be
 // served under so better-auth's CSRF check doesn't reject legitimate requests

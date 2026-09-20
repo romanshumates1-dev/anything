@@ -1,0 +1,1555 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mD:/anything/apps/web[39m
+
+ [32m✓[39m src/app/api/utils/dbRetry.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 643[2mms[22m[39m
+   [33m[2m✓[22m[39m runWithDbRetry[2m > [22mgives up after the bounded attempts and rethrows the transient error [33m 472[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/rateLimit.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 654[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dispatchGate.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 113[2mms[22m[39m
+[90mstdout[2m | src/app/api/utils/__tests__/earningsEscrow.test.ts[2m > [22m[2mearningsEscrow[2m > [22m[2mreleaseEarning[2m > [22m[2mmoves PENDING earning to AVAILABLE when available_at has passed
+[22m[39m[releaseEarning] Released earning earn_1
+
+[90mstdout[2m | src/app/api/utils/__tests__/earningsEscrow.test.ts[2m > [22m[2mearningsEscrow[2m > [22m[2mreleaseEarning[2m > [22m[2mdoes not release if available_at is in the future
+[22m[39m[releaseEarning] Earning earn_1 not yet available (2026-09-21T20:23:23.102Z)
+
+[90mstdout[2m | src/app/api/utils/__tests__/earningsEscrow.test.ts[2m > [22m[2mearningsEscrow[2m > [22m[2mreleaseEarning[2m > [22m[2mdoes not release if earning is not PENDING
+[22m[39m[releaseEarning] Earning earn_1 is AVAILABLE, not PENDING
+
+[90mstdout[2m | src/app/api/utils/__tests__/earningsEscrow.test.ts[2m > [22m[2mearningsEscrow[2m > [22m[2mreleaseEarning[2m > [22m[2mreturns false if earning not found
+[22m[39m[releaseEarning] Earning earn_nonexistent not found
+
+ [32m✓[39m src/app/api/utils/__tests__/earningsEscrow.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 104[2mms[22m[39m
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould route message to primary provider on success
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'c6ed43a3-4383-41f9-9f8f-7a9152838334'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_c6ed43a3'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould failover to secondary when primary fails
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'bac05f96-a29b-4d21-be7b-1b1c0e17757a'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould failover to secondary when primary fails
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'bac05f96-a29b-4d21-be7b-1b1c0e17757a'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_bac05f96'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould not lose messages during failover
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'dc315e6b-4d7c-43be-aff3-df0e2df7c569'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+[DealFlow LOG] message_dispatch_failed_gateway on message:2 {
+  messageUuid: [32m'e858610e-67d0-4544-b1da-f581f5e31b8f'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+[DealFlow LOG] message_dispatch_failed_gateway on message:3 {
+  messageUuid: [32m'e6fae706-c3e8-475f-bb4d-1ce15959cf96'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould not lose messages during failover
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'dc315e6b-4d7c-43be-aff3-df0e2df7c569'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_dc315e6b'[39m
+}
+[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'e858610e-67d0-4544-b1da-f581f5e31b8f'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_e858610e'[39m
+}
+[DealFlow LOG] message_dispatched_gateway on message:3 {
+  messageUuid: [32m'e6fae706-c3e8-475f-bb4d-1ce15959cf96'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_e6fae706'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould not duplicate messages on failover
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'98cac67c-4a05-4d59-ab8d-cc42058b1cfe'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould not duplicate messages on failover
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'98cac67c-4a05-4d59-ab8d-cc42058b1cfe'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_98cac67c'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould return failed status when all providers exhausted
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'6ac7c8ca-c8cf-4da5-8ce3-a1d9739b693a'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould return failed status when all providers exhausted
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'6ac7c8ca-c8cf-4da5-8ce3-a1d9739b693a'[39m,
+  provider: [32m'secondary'[39m,
+  error: [32m'secondary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Failover on Provider Outage[2m > [22m[2mshould return failed status when all providers exhausted
+[22m[39m[DealFlow LOG] message_dispatch_failed_all_providers on message:1 {
+  messageUuid: [32m'6ac7c8ca-c8cf-4da5-8ce3-a1d9739b693a'[39m,
+  to: [32m'+15551234567'[39m,
+  error: [32m'secondary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from CLOSED to OPEN on repeated failures
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'8906d953-0303-4c3b-b450-c7d335466dc4'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from CLOSED to OPEN on repeated failures
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'8906d953-0303-4c3b-b450-c7d335466dc4'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_8906d953'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from CLOSED to OPEN on repeated failures
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:2 {
+  messageUuid: [32m'd6c277a2-d750-46dc-b100-b2a82da4c8a9'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from CLOSED to OPEN on repeated failures
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'd6c277a2-d750-46dc-b100-b2a82da4c8a9'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_d6c277a2'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from OPEN to HALF_OPEN after delay
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'3a9a8d34-8490-4cc1-bbfb-443d58e3251e'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from OPEN to HALF_OPEN after delay
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'3a9a8d34-8490-4cc1-bbfb-443d58e3251e'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_3a9a8d34'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from OPEN to HALF_OPEN after delay
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:2 {
+  messageUuid: [32m'2057e795-c496-4a3b-95a7-ff1446d67c4a'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from OPEN to HALF_OPEN after delay
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'2057e795-c496-4a3b-95a7-ff1446d67c4a'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_2057e795'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould transition from OPEN to HALF_OPEN after delay
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:3 {
+  messageUuid: [32m'1d7baae0-8711-4808-9e97-31bc548d8076'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_1d7baae0'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'ba95d939-3c37-4641-b01d-a143a300c564'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'ba95d939-3c37-4641-b01d-a143a300c564'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_ba95d939'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:2 {
+  messageUuid: [32m'3252668b-1838-42bf-a843-4ff658855b1e'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'3252668b-1838-42bf-a843-4ff658855b1e'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_3252668b'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:3 {
+  messageUuid: [32m'448d8312-3ee5-41cc-8450-4d32e3095a3d'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Circuit Breaker State Machine[2m > [22m[2mshould return to OPEN if HALF_OPEN probe fails
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:3 {
+  messageUuid: [32m'448d8312-3ee5-41cc-8450-4d32e3095a3d'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_448d8312'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould route subsequent messages from same thread to same provider
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'487fee9d-6c52-422d-b208-0edbec7a08d0'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_487fee9d'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould route subsequent messages from same thread to same provider
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'd17f882f-2466-4870-8bc9-ca82247b40c8'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould route subsequent messages from same thread to same provider
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'd17f882f-2466-4870-8bc9-ca82247b40c8'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_d17f882f'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould use primary for different thread
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'0c75a6bb-8b81-400a-a38d-859b2d4949e1'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould use primary for different thread
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'0c75a6bb-8b81-400a-a38d-859b2d4949e1'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_0c75a6bb'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Sticky Thread Routing[2m > [22m[2mshould use primary for different thread
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'407bd5f5-262e-4c25-a8b2-c453accd170c'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_407bd5f5'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Compliance Gates[2m > [22m[2msuppresses an opted-out number and never reaches the provider
+[22m[39m[DealFlow LOG] message_suppressed_gateway on message:1 {
+  messageUuid: [32m'a7aa82d3-0442-4c51-85a0-d9eabe2ecede'[39m,
+  to: [32m'+15551234567'[39m,
+  reason: [32m'opted_out'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Compliance Gates[2m > [22m[2msends when consent is present (proves the gate is not a blanket block)
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'e4a95602-5ca7-4084-8e0a-42fe6ece54d4'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_e4a95602'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Idempotency[2m > [22m[2mshould not duplicate messages on retry with same UUID
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'189a0b71-26ab-4ab4-ad9b-0d770e6bbe68'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_189a0b71'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Idempotency[2m > [22m[2mshould not duplicate messages on retry with same UUID
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'5a053b7b-9bd4-4483-ba80-3bc0577c489d'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_5a053b7b'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'1782de19-c343-4e31-83f5-337af4500fc6'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_1782de19'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:2 {
+  messageUuid: [32m'89cc69dc-76ed-4f06-82f3-df0c1bcf555b'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_89cc69dc'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:3 {
+  messageUuid: [32m'4781afc2-309f-4cd4-a4a4-6ec0cd41f655'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_4781afc2'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:4 {
+  messageUuid: [32m'1b722830-2da9-4d9f-a934-5bd0bad4071f'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_1b722830'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:5 {
+  messageUuid: [32m'a0b68a42-a035-4659-bce7-f14e360321d6'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_a0b68a42'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:6 {
+  messageUuid: [32m'40d0ecb3-36e9-4eb3-9d18-2ee1b4b3649a'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:6 {
+  messageUuid: [32m'40d0ecb3-36e9-4eb3-9d18-2ee1b4b3649a'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_40d0ecb3'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:7 {
+  messageUuid: [32m'921a77c1-a236-4c97-9d9f-049a4dc8e6db'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'primary simulated failure'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:7 {
+  messageUuid: [32m'921a77c1-a236-4c97-9d9f-049a4dc8e6db'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_921a77c1'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:8 {
+  messageUuid: [32m'3790b71a-9a69-430f-a1c8-7efef9e2b14b'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_3790b71a'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:9 {
+  messageUuid: [32m'e9010da6-54cf-4d3c-b137-987c40656055'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_e9010da6'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Chaos Test[2m > [22m[2mshould complete campaign when primary provider fails mid-campaign
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:10 {
+  messageUuid: [32m'6fecba63-9e12-4445-a4a4-1a65bd25ae87'[39m,
+  provider: [32m'secondary'[39m,
+  providerId: [32m'secondary_6fecba63'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Test-Mode Hard-Abort[2m > [22m[2mblocks non-test numbers in test-mode campaign
+[22m[39m[DealFlow LOG] message_dispatch_failed_gateway on message:1 {
+  messageUuid: [32m'f04a2d24-7ab3-404a-8e59-50ab56c68434'[39m,
+  provider: [32m'primary'[39m,
+  error: [32m'[vitest] No "recordUsage" export is defined on the "@/app/api/services/usageTracker" mock. Did you forget to return it from "vi.mock"?\n'[39m +
+    [32m'If you need to partially mock a module, you can use "importOriginal" helper inside:\n'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mSMS Gateway[2m > [22m[2mGATE 1: Test-Mode Hard-Abort[2m > [22m[2mblocks non-test numbers in test-mode campaign
+[22m[39m[DealFlow LOG] message_dispatch_failed_all_providers on message:1 {
+  messageUuid: [32m'f04a2d24-7ab3-404a-8e59-50ab56c68434'[39m,
+  to: [32m'+15551234567'[39m,
+  error: [32m'[vitest] No "recordUsage" export is defined on the "@/app/api/services/usageTracker" mock. Did you forget to return it from "vi.mock"?\n'[39m +
+    [32m'If you need to partially mock a module, you can use "importOriginal" helper inside:\n'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mP2.0-W: universal dispatchGate wiring at the transmit hop[2m > [22m[2mcalls the gate with the recipient + channel BEFORE any provider dispatch
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'682b96f3-3623-4cab-ac03-f556db1e73e2'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_682b96f3'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mP2.0-W: universal dispatchGate wiring at the transmit hop[2m > [22m[2ma gate DENIAL means the provider is never touched and the code surfaces
+[22m[39m[DealFlow LOG] message_suppressed_gateway on message:1 {
+  messageUuid: [32m'90038097-1cb9-44a7-9fae-8f0ffd68b1fd'[39m,
+  to: [32m'+15025550101'[39m,
+  reason: [32m'QUIET_HOURS'[39m,
+  detail: [32m'Outside 8am-9pm lead-local'[39m,
+  retryAt: [32m'2026-07-17T14:00:00.000Z'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mP2.0-W: universal dispatchGate wiring at the transmit hop[2m > [22m[2mDNC denial suppresses even when the legacy checkConsent would allow
+[22m[39m[DealFlow LOG] message_suppressed_gateway on message:1 {
+  messageUuid: [32m'438f999e-f460-47fe-b4e8-cc766fd93c7f'[39m,
+  to: [32m'+15025550101'[39m,
+  reason: [32m'DNC'[39m,
+  detail: [32m'opted out'[39m,
+  retryAt: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mP2.0-W: universal dispatchGate wiring at the transmit hop[2m > [22m[2mtransactional flows through to the gate request (OTP path)
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:0 {
+  messageUuid: [32m'd0a70dba-aee5-49d9-aae2-6e34ad69c030'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_d0a70dba'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mP2.0-W: universal dispatchGate wiring at the transmit hop[2m > [22m[2mPhase A: NUMERIC_GUARD denial → zero provider sends + numeric_guard_blocked event + escalation row
+[22m[39m[DealFlow LOG] numeric_guard_blocked on message:7 {
+  messageUuid: [32m'ad046c5f-d29b-4428-879f-2716e3539690'[39m,
+  to: [32m'+15025550101'[39m,
+  reason: [32m'NUMERIC_GUARD'[39m,
+  detail: [32m'NUMERIC GUARD BLOCKED: amount $98,500 ≠ computed offer $87,500'[39m,
+  retryAt: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mflag ON: the picked pool number rides to the provider as from
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'e57184c1-fb99-42b8-87b9-fd8540adbdf2'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_e57184c1'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mflag OFF: pool never consulted, default sender
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'43f6852c-f084-46a3-a33c-4fa11c581c55'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_43f6852c'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mtransactional (OTP): pool never consulted even with the flag ON
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:0 {
+  messageUuid: [32m'b40ac895-af46-46bc-bd42-17e42daef198'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_b40ac895'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mpool CAPPED (numbers exist, none eligible): send held, provider untouched, retryAt after reset
+[22m[39m[DealFlow LOG] local_presence_exhausted on message:1 {
+  messageUuid: [32m'cb1adb23-e9bd-435f-a8d7-7338cd5b844c'[39m,
+  to: [32m'+15025559999'[39m,
+  retryAt: [32m'2026-09-21T00:00:30.000Z'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mpool EMPTY (unconfigured): falls back to the default sender and still sends
+[22m[39m[DealFlow LOG] local_presence_unconfigured on message:1 {
+  messageUuid: [32m'4ff0832e-a659-42ed-856c-7ef0cd3a7821'[39m,
+  to: [32m'+15025559999'[39m,
+  detail: [32m'localPresence flag is ON but the number pool has no active numbers'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2mpool EMPTY (unconfigured): falls back to the default sender and still sends
+[22m[39m[DealFlow LOG] message_dispatched_gateway on message:1 {
+  messageUuid: [32m'4ff0832e-a659-42ed-856c-7ef0cd3a7821'[39m,
+  provider: [32m'primary'[39m,
+  providerId: [32m'primary_4ff0832e'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/sms-gateway.test.ts[2m > [22m[2mINT-3: local-presence from-number wiring[2m > [22m[2ma gate-denied send never burns a pool slot
+[22m[39m[DealFlow LOG] message_suppressed_gateway on message:1 {
+  messageUuid: [32m'9b0d10fb-0098-44e5-9c25-1b594dcd2a06'[39m,
+  to: [32m'+15025559999'[39m,
+  reason: [32m'DNC'[39m,
+  detail: [32m'opted out'[39m,
+  retryAt: [90mundefined[39m
+}
+
+ [32m✓[39m src/app/api/gateway/sms-gateway.test.ts [2m([22m[2m31 tests[22m[2m)[22m[33m 380[2mms[22m[39m
+ [32m✓[39m src/app/api/withdrawals/__tests__/withdrawals.test.ts [2m([22m[2m32 tests[22m[2m)[22m[33m 306[2mms[22m[39m
+[90mstdout[2m | src/app/api/utils/__tests__/demoAllowlist.test.ts[2m > [22m[2mSDK boundary: a skipped demo send touches ZERO Twilio client calls[2m > [22m[2mgateway send with a DEMO_NOT_VERIFIED gate never calls the provider SDK
+[22m[39m[DealFlow LOG] message_suppressed_gateway on message:1 {
+  messageUuid: [32m'ebe90d11-1201-41c9-a8b8-f5d2d998961a'[39m,
+  to: [32m'+15025550123'[39m,
+  reason: [32m'DEMO_NOT_VERIFIED'[39m,
+  detail: [32m'SKIPPED: demo mode, recipient not verified'[39m,
+  retryAt: [90mundefined[39m
+}
+
+ [32m✓[39m src/app/api/utils/__tests__/demoAllowlist.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 411[2mms[22m[39m
+   [33m[2m✓[22m[39m SDK boundary: a skipped demo send touches ZERO Twilio client calls[2m > [22mgateway send with a DEMO_NOT_VERIFIED gate never calls the provider SDK [33m 367[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/luxuryColdGate.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 246[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/call-queue/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 112[2mms[22m[39m
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mQuiet Hours[2m > [22m[2mblocks SMS at 8:30pm Florida time (FL strict)
+[22m[39m✓ FL 8:30pm blocked: FL law: sending not allowed before 8:00 AM or after 8:00 PM recipient local time
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mQuiet Hours[2m > [22m[2mallows SMS at 8:30pm Texas time (federal 9pm)
+[22m[39m✓ TX 8:30pm allowed (federal 9pm cutoff)
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mQuiet Hours[2m > [22m[2mblocks SMS at 7:30am (before 8am)
+[22m[39m✓ 7:30am blocked (before 8am)
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mQuiet Hours[2m > [22m[2memail always allowed (no quiet hours)
+[22m[39m✓ Email at 11:30pm allowed
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mFull Gate Check[2m > [22m[2mpasses allowed message during business hours
+[22m[39m✓ Message allowed during business hours, state=TX
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mFull Gate Check[2m > [22m[2mblocks message during quiet hours
+[22m[39m✓ Message blocked at 10pm
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mFull Gate Check[2m > [22m[2madds disclosures to message
+[22m[39m✓ Disclosures added: SMS opt-out disclosure, Real estate investor disclosure, Message frequency disclosure, Business name identifier
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mFull Gate Check[2m > [22m[2mskips quiet hours for transactional
+[22m[39m✓ Transactional message allowed late night
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mFull Gate Check[2m > [22m[2mincludes FL warnings
+[22m[39m✓ FL warnings included: 3 warnings
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mRequired Disclosures[2m > [22m[2mreturns SMS disclosures for first message
+[22m[39m✓ SMS first message disclosures: 6 items
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mEmail Footer Generation[2m > [22m[2mgenerates compliant email footer
+[22m[39m✓ Email footer includes required elements
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mEmail Footer Generation[2m > [22m[2mincludes CA "Do Not Sell" for California
+[22m[39m✓ CA CCPA "Do Not Sell" included
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mEmail Footer Generation[2m > [22m[2mincludes FL cooling off notice
+[22m[39m✓ FL notice included
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mEmail Footer Generation[2m > [22m[2mincludes distressed property notice
+[22m[39m✓ Distressed property HUD notice included
+
+[90mstdout[2m | src/app/api/compliance/__tests__/messaging-gate.test.ts[2m > [22m[2mMessaging Gate (Compliance)[2m > [22m[2mCompliant SMS Generation[2m > [22m[2madds STOP disclosure to first message
+[22m[39m✓ STOP disclosure added to SMS
+
+ [32m✓[39m src/app/api/compliance/__tests__/messaging-gate.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 131[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/emailProviders.workerd.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/error-hardening.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/compliance.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m src/lib/legal.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mLead Ingestion[2m > [22m[2mshould auto-assign leads to matching campaigns
+[22m[39m
+[Lead Ingestion] Auto-assignment:
+   Lead region: TX, Campaign regions: TX
+   Lead tier: WARM, Target tiers: HOT, WARM
+   Match: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mLead Ingestion[2m > [22m[2mshould respect regional targeting
+[22m[39m
+[Lead Ingestion] Regional targeting:
+   TX Lead detected: TX
+   FL Lead detected: FL
+   Campaign regions: TX
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mLead Ingestion[2m > [22m[2mshould score leads correctly
+[22m[39m
+[Lead Ingestion] Lead scoring:
+   HOT signals -> Score: 75, Tier: HOT
+   WARM signals -> Score: 55, Tier: WARM
+   COOL signals -> Score: 20, Tier: COLD
+   COLD signals -> Score: 0, Tier: COLD
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mOutreach[2m > [22m[2mshould schedule messages within time windows
+[22m[39m
+[Outreach] Time window scheduling:
+   2:00pm CT: ALLOWED
+   10:00pm CT: BLOCKED
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mOutreach[2m > [22m[2mshould deduct credits on send
+[22m[39m
+[Outreach] Credit deduction:
+   Before: 100/1000 SMS used
+   Sending: 10 messages
+   After: 110/1000 SMS used
+   Within limit: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mOutreach[2m > [22m[2mshould block send if insufficient credits
+[22m[39m
+[Outreach] Insufficient credits block:
+   Current: 995/1000 SMS used
+   Attempting: 10 messages
+   Would exceed: 1005 > 1000
+   Blocked: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mOutreach[2m > [22m[2mshould respect tier limits
+[22m[39m
+[Outreach] Tier limits:
+   Free tier SMS limit: 50
+   Pro tier SMS limit: 5000
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mResponse Handling[2m > [22m[2mshould classify responses with AI
+[22m[39m
+[Response Handling] AI classification:
+   "Yes, I might be interested. What are you..." -> INTERESTED
+   "No thanks, not selling...." -> NOT_INTERESTED
+   "I would consider $180,000..." -> COUNTER_OFFER ($180000)
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mResponse Handling[2m > [22m[2mshould route interested leads to negotiation
+[22m[39m
+[Response Handling] Negotiation routing:
+   Intent: INTERESTED
+   Route to negotiation: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mResponse Handling[2m > [22m[2mshould handle opt-outs correctly
+[22m[39m
+[Response Handling] Opt-out detection:
+   "STOP" -> Opt-out: YES
+   "Unsubscribe me please" -> Opt-out: YES
+   "Remove me from your list" -> Opt-out: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mNegotiation[2m > [22m[2mshould auto-accept offers within bounds
+[22m[39m
+[Negotiation] Auto-accept within bounds:
+   Contract price: $150,000
+   Auto-accept threshold: $160,000
+   Buyer offer: $165,000
+   Fee if accepted: $15,000
+   Above fee floor: YES
+   Auto-accept: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mNegotiation[2m > [22m[2mshould generate counter-offers
+[22m[39m
+[Negotiation] Counter-offer generation:
+   Contract price: $150,000
+   Opening ask: $170,000
+   Floor (contract + $5k fee): $155,000
+   Round 0 (opener): $170,000
+   Round 1 (counter): $166,250
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mNegotiation[2m > [22m[2mshould escalate high-value deals
+[22m[39m
+[Negotiation] High-value escalation:
+   Deal value: $500,000
+   Auto-approve max: $100,000
+   Requires human review: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mNegotiation[2m > [22m[2mshould walk away when fee floor would be breached
+[22m[39m
+[Negotiation] Fee floor protection:
+   Contract price: $150,000
+   Lowball offer: $152,000
+   Fee if accepted: $2,000
+   Fee floor: $5,000
+   Acceptable: NO
+   Walk away: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mContracts[2m > [22m[2mshould generate contract on deal acceptance
+[22m[39m
+[Contracts] Contract generation:
+   State detected: TX
+   Template: purchase-agreement-tx
+   Has state-specific: true
+   Validation passed: true
+   Errors: 0
+   Warnings: None
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mContracts[2m > [22m[2mshould track signing status
+[22m[39m
+[Contracts] Signing status tracking:
+   Status flow: GENERATED -> PENDING_REVIEW -> SENT -> VIEWED -> SIGNED -> CLOSED
+   Current: SENT (step 3/6)
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mContracts[2m > [22m[2mshould enforce minimum assignment fee
+[22m[39m
+[Contracts] Assignment fee enforcement:
+   Minimum fee: $5,000
+   $10k fee: valid=true
+   $4k fee: valid=false
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mPayouts[2m > [22m[2mshould create pending earning on close
+[22m[39m
+[Payouts] Pending earning creation:
+   Contract closed: 2026-09-01
+   Amount: $10,000
+   Hold period: 14 days
+   Available at: 2026-09-15
+   Status: PENDING
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mPayouts[2m > [22m[2mshould release after hold period
+[22m[39m
+[Payouts] Hold period release:
+   Current date: 2026-09-20
+   Available at: 2026-09-15
+   Days past availability: 5
+   Can release: YES
+   New status: AVAILABLE
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mPayouts[2m > [22m[2mshould not release before hold period
+[22m[39m
+[Payouts] Hold period enforcement:
+   Current date: 2026-09-10
+   Available at: 2026-09-15
+   Days until availability: 5
+   Can release: NO
+   Status: PENDING
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mError Cases[2m > [22m[2mshould reject insufficient credits
+[22m[39m
+[Error Cases] Insufficient credits:
+   AI credits: 1000/1000
+   Can use AI: NO
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mError Cases[2m > [22m[2mshould reject invalid regions
+[22m[39m
+[Error Cases] Invalid regions:
+   "123 Main St" -> null
+   "123 Main St, Unknown, ZZ 99999" -> null
+   "(empty)" -> null
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mError Cases[2m > [22m[2mshould reject negotiation bounds exceeded
+[22m[39m
+[Error Cases] Negotiation bounds:
+   Contract price: $150,000
+   Floor (contract + $5k): $155,000
+   Low opener: $154,000
+   Is below floor: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mError Cases[2m > [22m[2mshould handle verification not active
+[22m[39m
+[Error Cases] Verification access:
+   Free tier has AI: NO
+   Pro tier has AI: YES
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 1: Score seller and verify HOT tier
+[22m[39m
+[Scenario 1] SELLER SCORING:
+   Signals: Pre-foreclosure, Tax delinquent 3yr, Vacant, 65% equity
+   Score: 75
+   Tier: HOT
+   Action: Immediate outreach, priority follow-up
+   Matched: Pre-foreclosure/NOD (+30), Tax delinquent 3+ years (+25), High equity 65% (+10), Vacant property (+10)
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 2: Verify campaign qualification (HOT = immediate outreach)
+[22m[39m
+[Scenario 1] CAMPAIGN QUALIFICATION:
+   Tier: HOT -> Immediate outreach, priority follow-up
+   Quiet Hours Check: ALLOWED
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 3: Generate compliant SMS with disclosures
+[22m[39m
+[Scenario 1] COMPLIANT SMS:
+   DealSwift Investments: Hi John, interested in selling 123 Foreclosure Ave?
+
+Reply STOP to unsubscrib...
+   Contains STOP: true
+   Contains Business Name: true
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 4: Negotiate and validate inspection period
+[22m[39m
+[Scenario 1] NEGOTIATION:
+   Seller requested: 5 days inspection
+   System clamped to: 7 days (min 7)
+   Negotiated: true
+   Closing days: 21
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 5: Detect state and generate regional contract
+[22m[39m
+[Scenario 1] CONTRACT GENERATION:
+   Detected State: TX
+   Template: purchase-agreement-tx
+   Has State-Specific: true
+   Required Disclosures: 3 items
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 1: Hot Seller Lead Full Pipeline[2m > [22m[2mStep 6: Validate deal data for contract
+[22m[39m
+[Scenario 1] CONTRACT VALIDATION:
+   Valid: true
+   Errors: 0
+   Warnings: None
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 2: Buyer Matching & Assignment[2m > [22m[2mStep 1: Score VIP buyer
+[22m[39m
+[Scenario 2] VIP BUYER SCORING:
+   Score: 100
+   Tier: VIP
+   Priority: First look, 2hr exclusive
+   Earnest Range: $500-$2500
+   Signals: 6 matched
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 2: Buyer Matching & Assignment[2m > [22m[2mStep 2: Score UNVERIFIED buyer
+[22m[39m
+[Scenario 2] NEW BUYER SCORING:
+   Score: 0
+   Tier: UNVERIFIED
+   Priority: Require POF first
+   Earnest Range: $3500-$5000
+   Requires POF: true
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 2: Buyer Matching & Assignment[2m > [22m[2mStep 3: Calculate earnest money by tier and deal value
+[22m[39m
+[Scenario 2] EARNEST MONEY CALCULATION (Deal: $150000):
+   VIP Buyer: $1875
+   UNVERIFIED Buyer: $5000
+   Ratio: UNVERIFIED pays 2.7x more
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 2: Buyer Matching & Assignment[2m > [22m[2mStep 4: Validate $5,000 assignment fee floor
+[22m[39m
+[Scenario 2] FEE FLOOR VALIDATION:
+   $5,000 fee: valid=true, walk=false
+   $4,999 fee: valid=false, walk=true
+   FEE_FLOOR_CENTS: 500000 (= $5000)
+   MINIMUM_ASSIGNMENT_FEE: $5000
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 2: Buyer Matching & Assignment[2m > [22m[2mStep 5: Validate contract variables against negotiation
+[22m[39m
+[Scenario 2] CONTRACT VARIABLES VALIDATION:
+   Valid contract: true
+   $4k fee contract: false
+   Error: Assignment fee $4,000 is below the MINIMUM of $5,000 (NON-NE...
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 3: Buyer Negotiation Engine[2m > [22m[2mStep 1: Create buyer offer state with fee floor
+[22m[39m
+[Scenario 3] BUYER OFFER STATE:
+   Contract Price: $150,000
+   Opening Ask: $170,000
+   Floor (contract + $5k): $155,000
+   Fee if at floor: $5,000
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 3: Buyer Negotiation Engine[2m > [22m[2mStep 2: Simulate negotiation rounds
+[22m[39m
+[Scenario 3] NEGOTIATION ROUNDS:
+   Opening: $170,000
+   Floor: $155,000
+   Round 0: $170,000 (fee: $20,000)
+   Round 1: $166,250 (fee: $16,250)
+   Round 2: $164,000 (fee: $14,000)
+   Round 3: $162,650 (fee: $12,650)
+   Round 4: $161,885 (fee: $11,885)
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 3: Buyer Negotiation Engine[2m > [22m[2mStep 3: Validate buyer counter-offer against fee floor
+[22m[39m
+[Scenario 3] COUNTER-OFFER VALIDATION:
+   $152k counter: acceptable=false, fee=$2,000, walk=true
+   $160k counter: acceptable=true, fee=$10,000
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 4: Campaign Operations[2m > [22m[2mStep 1: Verify warmup schedule
+[22m[39m
+[Scenario 4] WARMUP SCHEDULE:
+   AWS Credit ID: 10064436819
+   Day 1: 10,000 emails
+   Day 2: 15,000 emails
+   Day 3: 22,000 emails
+   Day 4: 33,000 emails
+   Day 5: 50,000 emails
+   Day 6: 75,000 emails
+   Day 7: 110,000 emails
+   Day 8: 150,000 emails
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 4: Campaign Operations[2m > [22m[2mStep 2: Quality gate checks
+[22m[39m
+[Scenario 4] QUALITY GATES:
+   Good Campaign: passed=true
+   Bad Campaign: passed=false, violations=3
+     - Bounce rate 7.00% exceeds max 5%
+     - Complaint rate 0.200% exceeds max 0.1%
+     - Unsubscribe rate 2.50% exceeds max 2%
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 4: Campaign Operations[2m > [22m[2mStep 3: Pacing enforcement
+[22m[39m
+[Scenario 4] PACING ENFORCEMENT:
+   At daily limit: canSend=false, reason=Daily target reached (150000/150000)
+   Warmup Day 2 (at 10k/15k): canSend=true, sendCount=104
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 5: Regional Compliance[2m > [22m[2mStep 1: Florida quiet hours (8pm cutoff)
+[22m[39m
+[Scenario 5] FLORIDA QUIET HOURS:
+   8:00pm: BLOCKED
+   8:30pm: BLOCKED
+   Note: FL uses 8pm cutoff (stricter than federal 9pm)
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 5: Regional Compliance[2m > [22m[2mStep 2: Texas quiet hours (federal 9pm)
+[22m[39m
+[Scenario 5] TEXAS QUIET HOURS:
+   8:30pm: ALLOWED
+   9:30pm: BLOCKED
+   Note: TX uses federal 9pm cutoff
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFull Pipeline Scenarios[2m > [22m[2mScenario 5: Regional Compliance[2m > [22m[2mStep 3: State detection from addresses
+[22m[39m
+[Scenario 5] STATE DETECTION:
+   "123 Main St, Austin, TX 78701..." -> TX
+   "456 Ocean Dr, Miami, FL 33139..." -> FL
+   "789 Hollywood Blvd, Los Angele..." -> CA
+   "321 Broadway, New York, NY 100..." -> NY
+
+[90mstdout[2m | src/app/api/__tests__/pipeline-integration.test.ts[2m > [22m[2mPIPELINE INTEGRATION TESTS[2m > [22m[2mFinal Verification: Critical System Values[2m > [22m[2mVerify all NON-NEGOTIABLE values
+[22m[39m
+[CRITICAL VALUES] SYSTEM CONSTANTS:
+   FEE_FLOOR_CENTS: 500000 (= $5000)
+   MINIMUM_ASSIGNMENT_FEE: $5000
+   MIN_INSPECTION_DAYS: 7
+   MAX_INSPECTION_DAYS: 21
+   AWS_CREDIT_ID: 10064436819
+   DAILY_TARGET: 150,000
+   BOUNCE_LIMIT: 5%
+   COMPLAINT_LIMIT: 0.1%
+
+ [32m✓[39m src/app/api/__tests__/pipeline-integration.test.ts [2m([22m[2m45 tests[22m[2m)[22m[32m 159[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/step-out-engine.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 89[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/send/route.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 102[2mms[22m[39m
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mConfiguration Constants[2m > [22m[2mMINIMUM_ASSIGNMENT_FEE is $5,000 (NON-NEGOTIABLE)
+[22m[39m✓ MINIMUM_ASSIGNMENT_FEE = $5000
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mState Detection[2m > [22m[2mdetects TX from "123 Main St, Austin, TX 78701"
+[22m[39m✓ "Austin, TX 78701" → TX
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mState Detection[2m > [22m[2mdetects CA from "789 Hollywood Blvd, Los Angeles, CA 90028"
+[22m[39m✓ "Los Angeles, CA 90028" → CA
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mTemplate Loading[2m > [22m[2mTX has state-specific template
+[22m[39m✓ TX template: purchase-agreement-tx
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mRequired Disclosures[2m > [22m[2mCA disclosures include natural hazard
+[22m[39m✓ CA hazard disclosures: 9 items
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mRequired Disclosures[2m > [22m[2mpre-1978 properties require lead paint disclosure
+[22m[39m✓ Pre-1978 lead paint disclosure included
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mState Requirements Validation[2m > [22m[2mFL requires county for tax disclosure
+[22m[39m✓ FL county requirement enforced
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mState Requirements Validation[2m > [22m[2mwarns on pre-1978 CA property
+[22m[39m✓ Pre-1978 warning generated
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mState Requirements Validation[2m > [22m[2mfails with inspection days < 7
+[22m[39m✓ Inspection < 7 days rejected
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Variables Validation[2m > [22m[2mFAILS when assignment fee < $5,000 (FEE FLOOR)
+[22m[39m✓ $4,999 fee REJECTED: Assignment fee $4,999 is below the MINIMUM of $5,000 (NON-NEGOTIABLE)
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Variables Validation[2m > [22m[2mpasses when assignment fee exactly $5,000
+[22m[39m✓ $5,000 fee accepted
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Generation[2m > [22m[2mgenerates purchase agreement
+[22m[39m✓ Purchase agreement generated: CONTRACT-1789935832683-5D0LL5
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Generation[2m > [22m[2mincludes regional addendum for TX
+[22m[39m✓ TX regional addendum included
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Generation[2m > [22m[2mgenerates assignment contract with valid fee
+[22m[39m✓ Assignment contract with $10k fee generated
+
+[90mstdout[2m | src/app/api/contracts/__tests__/engine.test.ts[2m > [22m[2mContract Engine[2m > [22m[2mContract Generation[2m > [22m[2mTHROWS when assignment fee below tiered minimum
+[22m[39m✓ Assignment with $4,999 fee correctly REJECTED
+
+ [32m✓[39m src/app/api/contracts/__tests__/engine.test.ts [2m([22m[2m46 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mFee Floor Enforcement ($5,000 HARD MINIMUM)[2m > [22m[2mFEE_FLOOR_CENTS equals 500,000 (= $5,000)
+[22m[39m✓ FEE_FLOOR_CENTS = 500000 cents = $5000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mFee Floor Enforcement ($5,000 HARD MINIMUM)[2m > [22m[2mvalidateFeeFloor rejects $4,999 (below floor)
+[22m[39m✓ $4,999 fee rejected: valid=false, walk=true
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mFee Floor Enforcement ($5,000 HARD MINIMUM)[2m > [22m[2mvalidateFeeFloor accepts exactly $5,000
+[22m[39m✓ $5,000 fee accepted: valid=true, walk=false
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mFee Floor Enforcement ($5,000 HARD MINIMUM)[2m > [22m[2mvalidateFeeFloor accepts $10,000 (above floor)
+[22m[39m✓ $10,000 fee accepted: valid=true, walk=false
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mFee Floor Enforcement ($5,000 HARD MINIMUM)[2m > [22m[2mcalculateBuyerFloor adds $5,000 to contract price
+[22m[39m✓ Contract $100,000 → Buyer floor $105000 (includes $5k fee)
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mTerm Limits Configuration[2m > [22m[2mTERM_LIMITS has correct inspection days range
+[22m[39m✓ Inspection: min=7, max=21, default=14
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mTerm Limits Configuration[2m > [22m[2mTERM_LIMITS has correct attorney mod days range
+[22m[39m✓ Attorney mod: min=3, max=10, default=5
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mTerm Limits Configuration[2m > [22m[2mTERM_LIMITS has correct closing days range
+[22m[39m✓ Closing: min=7, max=45, default=21
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mTerm Limits Configuration[2m > [22m[2mTERM_LIMITS has correct earnest money range
+[22m[39m✓ Earnest: min=$500, max=$5000, default=$1000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mInspection Days Negotiation[2m > [22m[2mclamps seller request of 5 days up to minimum 7
+[22m[39m✓ Seller requested 5 days → clamped to 7, negotiated=true
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mInspection Days Negotiation[2m > [22m[2mclamps seller request of 30 days down to maximum 21
+[22m[39m✓ Seller requested 30 days → clamped to 21, negotiated=true
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mInspection Days Negotiation[2m > [22m[2maccepts seller request of 10 days (within range)
+[22m[39m✓ Seller requested 10 days → accepted as 10, negotiated=false
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mInspection Days Negotiation[2m > [22m[2muses buyer preference when no seller request
+[22m[39m✓ Buyer preference 18 days → 18, negotiated=false
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mInspection Days Negotiation[2m > [22m[2mreturns default 14 when no preferences
+[22m[39m✓ No preferences → default 14 days
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mDefault Terms[2m > [22m[2mreturns all default values
+[22m[39m✓ Default terms: {"inspectionDays":14,"attorneyModDays":5,"closingDays":21,"earnestMoneyDollars":1000}
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mSeller Side (opens LOW, concedes UP)[2m > [22m[2mround 0 returns opener
+[22m[39m✓ Seller round 0: $80000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mSeller Side (opens LOW, concedes UP)[2m > [22m[2mround 1 concedes 25% of gap
+[22m[39m✓ Seller round 1: gap=$20k, 25%=$5k → $85000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mSeller Side (opens LOW, concedes UP)[2m > [22m[2mround 2 concedes 20% of remaining gap
+[22m[39m✓ Seller round 2: remaining gap=$15k, 20%=$3k → $88000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mSeller Side (opens LOW, concedes UP)[2m > [22m[2mwalks away after curve exhausted
+[22m[39m✓ Seller walks away after round 5 (curve exhausted)
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mBuyer Side (opens HIGH, concedes DOWN to floor)[2m > [22m[2mround 0 returns opener
+[22m[39m✓ Buyer round 0: $120000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mBuyer Side (opens HIGH, concedes DOWN to floor)[2m > [22m[2mround 1 concedes 25% of gap DOWN
+[22m[39m✓ Buyer round 1: gap=$15k, 25%=$3.75k down → $116250
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mBuyer Side (opens HIGH, concedes DOWN to floor)[2m > [22m[2mNEVER goes below floor (fee floor protection)
+[22m[39m✓ Buyer never below floor: offer=$105750, floor=$105,000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Computation[2m > [22m[2mBuyer Side (opens HIGH, concedes DOWN to floor)[2m > [22m[2mwalks away if opener < floor (invalid geometry)
+[22m[39m✓ Buyer walks away if opener below floor
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mBuyer Offer State Creation[2m > [22m[2mcreates state with correct floor calculation
+[22m[39m✓ Buyer state: opener=$120000, floor=$105000
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mBuyer Offer State Creation[2m > [22m[2mthrows if opener below fee floor
+[22m[39m✓ Throws error when opener below fee floor
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mBuyer Counter Validation[2m > [22m[2mrejects counter that would result in < $5k fee
+[22m[39m✓ Counter $104k rejected: fee=$4000, walk=true
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mBuyer Counter Validation[2m > [22m[2maccepts counter that results in >= $5k fee
+[22m[39m✓ Counter $108k accepted: fee=$8000, acceptable=true
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Formatting[2m > [22m[2mformatOffer converts cents to dollar string
+[22m[39m✓ formatOffer: 8,750,000 cents → $87,500
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mOffer Formatting[2m > [22m[2minjectOffer substitutes slot
+[22m[39m✓ injectOffer: "Our offer is {OFFER}" → "Our offer is $87,500"
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mDollar Amount Extraction[2m > [22m[2mextracts standard dollar amounts
+[22m[39m✓ "$87,500" → 8,750,000 cents
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mDollar Amount Extraction[2m > [22m[2mextracts k notation
+[22m[39m✓ "87.5k" → 8,750,000 cents
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mNumeric Guard[2m > [22m[2mpasses when amount matches computed offer
+[22m[39m✓ "$87,500" matches computed offer → ok
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mNumeric Guard[2m > [22m[2mfails when amount differs from computed offer
+[22m[39m✓ "$90,000" differs from computed $87,500 → blocked
+
+[90mstdout[2m | src/app/api/utils/__tests__/negotiationEngine.test.ts[2m > [22m[2mNegotiation Engine[2m > [22m[2mNumeric Guard[2m > [22m[2mfails when spelled amounts detected
+[22m[39m✓ Spelled "eighty seven thousand" → blocked
+
+ [32m✓[39m src/app/api/utils/__tests__/negotiationEngine.test.ts [2m([22m[2m59 tests[22m[2m)[22m[32m 80[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/generate/route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 73[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/accessGate.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ingestion.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 66[2mms[22m[39m
+ [32m✓[39m src/app/api/email/inbound/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/flows/flows.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 79[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/mailExport.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/inspectionClock.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/verify/__tests__/outreachVerification.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m src/app/api/email/ses-events/route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dropzone-parser.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCore Configuration[2m > [22m[2mAWS Credit ID is 10064436819
+[22m[39m✓ AWS Credit ID: 10064436819
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCore Configuration[2m > [22m[2mdaily target is 150,000
+[22m[39m✓ Daily target: 150,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCore Configuration[2m > [22m[2mmax daily cap is 250,000
+[22m[39m✓ Max daily cap: 250,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCore Configuration[2m > [22m[2mestimated cost per 150k is ~$14
+[22m[39m✓ Cost per 150k: $14
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Schedule[2m > [22m[2mDay 1 target is 10,000
+[22m[39m✓ Day 1: 10,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Schedule[2m > [22m[2mDay 4 target is 33,000
+[22m[39m✓ Day 4: 33,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Schedule[2m > [22m[2mDay 7 target is 110,000
+[22m[39m✓ Day 7: 110,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Schedule[2m > [22m[2mDay 8 target is 150,000
+[22m[39m✓ Day 8: 150,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Schedule[2m > [22m[2mDay 9+ returns full daily target (150,000)
+[22m[39m✓ Day 9+: 150,000
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mWarmup Status[2m > [22m[2mwarmup progress is correct
+[22m[39m✓ Day 4 progress: 50%
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mQuality Gate Checks[2m > [22m[2mpasses with good metrics
+[22m[39m✓ Good metrics pass: bounce=2.00%, complaints=0.050%
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mQuality Gate Checks[2m > [22m[2mfails with bounce rate > 5%
+[22m[39m✓ 6% bounce rate fails: Bounce rate 6.00% exceeds max 5%
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mQuality Gate Checks[2m > [22m[2mfails with complaint rate > 0.1%
+[22m[39m✓ 0.2% complaint rate fails
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mQuality Gate Checks[2m > [22m[2mfails with unsubscribe rate > 2%
+[22m[39m✓ 3% unsub rate fails
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mQuality Gate Checks[2m > [22m[2maccumulates multiple violations
+[22m[39m✓ Multiple violations detected: 3 issues
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mPacing Calculator[2m > [22m[2mallows sending when under all limits
+[22m[39m✓ Under limits: can send 54 emails
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mPacing Calculator[2m > [22m[2mblocks when daily target reached
+[22m[39m✓ Daily limit reached: Daily target reached (150000/150000)
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mPacing Calculator[2m > [22m[2msend count respects remaining daily
+[22m[39m✓ Send count respects all limits: 104
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCost Estimation[2m > [22m[2m150k emails = $14
+[22m[39m✓ 150k emails = $14
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCost Estimation[2m > [22m[2m300k emails = $28
+[22m[39m✓ 300k emails = $28
+
+[90mstdout[2m | src/app/api/campaigns/config/__tests__/high-volume.test.ts[2m > [22m[2mHigh-Volume Campaign Config[2m > [22m[2mCost Estimation[2m > [22m[2mmonthly cost at full volume = ~$420
+[22m[39m✓ Monthly cost at 150k/day: $420
+
+ [32m✓[39m src/app/api/campaigns/config/__tests__/high-volume.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 90[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/sources/[id]/fetch/route.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/validate/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2mpre-foreclosure adds +30 points
+[22m[39m✓ Pre-foreclosure: score=30, tier=COOL
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2mtax delinquent 2+ years adds +25 points
+[22m[39m✓ Tax delinquent 2yr: score=25
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2mtax delinquent 1 year adds +25 points (threshold is 1+)
+[22m[39m✓ Tax delinquent 1yr: score=25
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2mequity at 50% adds 0 points (threshold is >50)
+[22m[39m✓ Equity 50%: score=0 (not above threshold)
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mCombined Signals[2m > [22m[2mpre-foreclosure + tax delinquent = 55 (WARM tier)
+[22m[39m✓ Pre-foreclosure + Tax delinquent: score=55, tier=WARM
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mCombined Signals[2m > [22m[2mpre-foreclosure + tax + code violations = 70 (HOT tier)
+[22m[39m✓ Pre-foreclosure + Tax + Code: score=70, tier=HOT
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mSeller Scoring[2m > [22m[2mScore Capping[2m > [22m[2mcaps score at 100 even with all signals
+[22m[39m✓ All signals (raw=150) → capped score=100
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2mcash purchases adds +30 points
+[22m[39m✓ Cash buyer: score=30, tier=UNVERIFIED
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mIndividual Signal Weights[2m > [22m[2m1 purchase in 12mo adds 0 points (threshold is 2)
+[22m[39m✓ 1 purchase: score=0 (below threshold)
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mVIP Tier Achievement[2m > [22m[2mcash + multiple purchases + POF + closed = 95 (VIP)
+[22m[39m✓ Full VIP profile: score=95, tier=VIP
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mTier Thresholds[2m > [22m[2mscore 60-79 = VERIFIED tier
+[22m[39m✓ VERIFIED tier: score=70
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mTier Thresholds[2m > [22m[2mscore 40-59 = PROSPECT tier
+[22m[39m✓ PROSPECT tier: score=45
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mTier Thresholds[2m > [22m[2mscore < 40 = UNVERIFIED tier
+[22m[39m✓ UNVERIFIED tier: score=30
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mTier Thresholds[2m > [22m[2mno signals = 0 points (UNVERIFIED)
+[22m[39m✓ No signals: score=0, tier=UNVERIFIED
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mEarnest Money Ranges[2m > [22m[2mVIP tier: $500-$2500
+[22m[39m✓ VIP earnest: $500-$2500
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mEarnest Money Ranges[2m > [22m[2mVERIFIED tier: $1000-$2500
+[22m[39m✓ VERIFIED earnest: $1000-$2500
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mEarnest Money Ranges[2m > [22m[2mPROSPECT tier: $2000-$4000
+[22m[39m✓ PROSPECT earnest: $2000-$4000
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mEarnest Money Ranges[2m > [22m[2mUNVERIFIED tier: $3500-$5000
+[22m[39m✓ UNVERIFIED earnest: $3500-$5000
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mBuyer Scoring[2m > [22m[2mScore Capping[2m > [22m[2mcaps at 100 even with all signals
+[22m[39m✓ All signals (raw=140) → capped score=100
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mVIP + $40k deal = midpoint * 1.0 (small deal)
+[22m[39m✓ VIP $40k deal → earnest $1500
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mVIP + $75k deal = midpoint * 1.0 (small deal)
+[22m[39m✓ VIP $75k deal → earnest $1500
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mVIP + $150k deal = midpoint * 1.25 (medium deal)
+[22m[39m✓ VIP $150k deal → earnest $1875
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mVIP + $250k deal = midpoint * 1.25 (medium deal)
+[22m[39m✓ VIP $250k deal → earnest $1875
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mUNVERIFIED + $40k deal = midpoint * 1.0
+[22m[39m✓ UNVERIFIED $40k deal → earnest $4250
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mUNVERIFIED + $250k deal = midpoint * 1.25
+[22m[39m✓ UNVERIFIED $250k deal → earnest $5000
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mEarnest Money Calculation[2m > [22m[2mcalculateEarnestAmount by deal value[2m > [22m[2mVIP + $500k deal allows up to 2x max for high-value
+[22m[39m✓ VIP $500k deal → earnest $3000
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mTier Utilities[2m > [22m[2misContactable[2m > [22m[2mCOLD is NOT contactable
+[22m[39m✓ COLD tier is not contactable
+
+[90mstdout[2m | src/app/api/prospects/__tests__/scoring-engine.test.ts[2m > [22m[2mProspect Scoring Engine[2m > [22m[2mTier Utilities[2m > [22m[2mrequiresPOF[2m > [22m[2mUNVERIFIED requires POF
+[22m[39m✓ UNVERIFIED tier requires POF
+
+ [32m✓[39m src/app/api/prospects/__tests__/scoring-engine.test.ts [2m([22m[2m101 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/utils/__tests__/normalize.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/app/api/eval/run/route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/app/api/payments/webhook/webhook.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/app/api/esign/webhook/webhook.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 127[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/mail/run/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+[90mstdout[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mIdempotency Protection[2m > [22m[2mduplicate deduction with same idempotency key returns original result
+[22m[39m[CREDITS] Duplicate request detected: idem_123
+
+ [32m✓[39m src/app/api/__tests__/security/credits.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/valuationEngine.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+[90mstdout[2m | src/app/api/sms/inbound/twilio-inbound.test.ts[2m > [22m[2mTwilio-native inbound webhook[2m > [22m[2mparses form-encoded body with valid signature and enqueues ai_reply job
+[22m[39m[sms/inbound] Twilio webhook received {
+  from: [32m'+15551112222'[39m,
+  messageSid: [32m'SM_unique_123'[39m,
+  signatureValid: [33mtrue[39m
+}
+
+[90mstdout[2m | src/app/api/sms/inbound/twilio-inbound.test.ts[2m > [22m[2mTwilio-native inbound webhook[2m > [22m[2mdeduplicates on MessageSid (second request returns 200 TwiML without re-processing)
+[22m[39m[sms/inbound] Twilio webhook received {
+  from: [32m'+15551112222'[39m,
+  messageSid: [32m'SM_dedup_test'[39m,
+  signatureValid: [33mtrue[39m
+}
+
+[90mstdout[2m | src/app/api/sms/inbound/twilio-inbound.test.ts[2m > [22m[2mTwilio-native inbound webhook[2m > [22m[2mdeduplicates on MessageSid (second request returns 200 TwiML without re-processing)
+[22m[39m[sms/inbound] Duplicate MessageSid, skipping: SM_dedup_test
+
+[90mstdout[2m | src/app/api/sms/inbound/twilio-inbound.test.ts[2m > [22m[2mTwilio-native inbound webhook[2m > [22m[2mrecognizes owner number with E.164 normalization
+[22m[39m[sms/inbound] Twilio webhook received {
+  from: [32m'+15025241638'[39m,
+  messageSid: [32m'SM_owner_test'[39m,
+  signatureValid: [33mtrue[39m
+}
+
+ [32m✓[39m src/app/api/sms/inbound/twilio-inbound.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dispatchGateDnc.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/negotiationAutomation.test.ts [2m([22m[2m45 tests[22m[2m)[22m[32m 70[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/negotiationSession.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ses-sign.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 482[2mms[22m[39m
+   [33m[2m✓[22m[39m ses-sign (AWS SigV4 compliance)[2m > [22mRED: matches the get-vanilla canonical-request LINES the suite pins [33m 457[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/regional-fee-engine.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 71[2mms[22m[39m
+ [32m✓[39m src/app/api/campaigns/[id]/route.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/numberPool.select.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/app/api/feedback/[id]/response/route.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/p3/ceiling-fuzz.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 50[2mms[22m[39m
+ [32m✓[39m src/app/api/negotiation/__tests__/analyze.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/app/api/feedback/[id]/vote/route.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 125[2mms[22m[39m
+ [32m✓[39m src/app/api/approvals/[id]/approve.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/app/api/territories/route.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/call-queue/outcome/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/plan/route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dealEconomics.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 55[2mms[22m[39m
+ [32m✓[39m src/app/api/feedback/[id]/route.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/app/api/test-phones/otp-limits.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 96[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/scheduler/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/app/api/sms/status/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/step-out/confirm/route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-negotiation.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/step-out/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/create-campaign/dealTarget.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/endpoints.contract.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/mailDriver.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m src/app/api/territories/[id]/route.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/mail/export/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 36[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/security/auth.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/users/[id]/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 44[2mms[22m[39m
+ [32m✓[39m src/app/api/feedback/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m src/app/api/campaigns/[id]/leads/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/p3/escalation-fuzz.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/credits.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/cadenceEngine.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+[90mstdout[2m | src/app/api/utils/bedrock-client.test.ts[2m > [22m[2mmodel alias resolution[2m > [22m[2mresolves fable-5 to sonnet (Fable not available on Bedrock)
+[22m[39m[Bedrock] Resolved model "fable-5" -> "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+[90mstdout[2m | src/app/api/utils/bedrock-client.test.ts[2m > [22m[2mmodel alias resolution[2m > [22m[2mresolves claude-sonnet-4 to correct Bedrock ID
+[22m[39m[Bedrock] Resolved model "claude-sonnet-4" -> "us.anthropic.claude-sonnet-4-20250514-v1:0"
+
+ [32m✓[39m src/app/api/utils/bedrock-client.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 54[2mms[22m[39m
+ [32m✓[39m src/app/api/sms/inbound/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/app/api/contracts/[id]/route.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/thread/[leadId]/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/phase_remaining.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/campaignBuilder.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/app/api/earnings/route.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/app/api/sms/inbound/pause-ai.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+[90mstdout[2m | src/app/api/services/esignProvider.test.ts[2m > [22m[2mMockEsignProvider[2m > [22m[2mcreates a signing link with mock envelope ID
+[22m[39m[DealFlow LOG] esign_link_created on contract:contract-1 {
+  provider: [32m'mock'[39m,
+  envelopeId: [32m'mock_env_8a35d170-b142-4430-afd5-eea164e0baeb'[39m,
+  signerName: [32m'John Buyer'[39m,
+  expiresAt: [32m'2026-10-11T20:26:40.196Z'[39m
+}
+
+[90mstdout[2m | src/app/api/services/esignProvider.test.ts[2m > [22m[2mDocumensoProvider[2m > [22m[2mcreates a signing link with documenso envelope ID
+[22m[39m[DealFlow LOG] esign_link_created on contract:contract-2 {
+  provider: [32m'documenso'[39m,
+  envelopeId: [32m'doc_env_8ae0690e-2ac1-405f-bc7d-3f09fa368811'[39m,
+  signerName: [32m'Jane Seller'[39m,
+  note: [32m'LIVE: Replace with real Documenso API call'[39m
+}
+
+[90mstdout[2m | src/app/api/services/esignProvider.test.ts[2m > [22m[2mDocusignStub[2m > [22m[2mcreates a signing link with docusign envelope ID
+[22m[39m[DealFlow LOG] esign_link_created on contract:contract-3 {
+  provider: [32m'docusign'[39m,
+  envelopeId: [32m'ds_env_31d3297c-a243-43bf-b57f-e1bb38a837ef'[39m,
+  signerName: [32m'Bob Agent'[39m,
+  note: [32m'LIVE: Replace with real DocuSign API call'[39m
+}
+
+ [32m✓[39m src/app/api/services/esignProvider.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/app/api/leads/bulk/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+ [32m✓[39m src/app/api/payments/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/emailDriver.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/app/api/leads/[id]/ai/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/contacts/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/earnings/[id]/refund/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/evalHarness.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/p3/escalation-fuzz-per-profile.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ollama-client.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/resume/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/inbound/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+[90mstdout[2m | src/app/api/gateway/voice-gateway.test.ts[2m > [22m[2mINT-2 — Voice / RVM Gateway[2m > [22m[2mMockVoiceDriver[2m > [22m[2mlogs instead of dialing (dialCount increments)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550001'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'answered'[39m,
+  script: [32m'Hello, this is a test call'[39m,
+  consentBasis: [32m'inbound-initiated'[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-gateway.test.ts[2m > [22m[2mINT-2 — Voice / RVM Gateway[2m > [22m[2mTwilioVoiceStub[2m > [22m[2mreturns stubbed status when config is present
+[22m[39m[TwilioVoiceStub] would dial { to: [32m'+15025550001'[39m, from: [32m'+15025550101'[39m, channel: [32m'voice'[39m }
+
+[90mstdout[2m | src/app/api/gateway/voice-gateway.test.ts[2m > [22m[2mINT-2 — Voice / RVM Gateway[2m > [22m[2mVoiceGateway[2m > [22m[2mdispatches voice call through mock driver
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550001'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'voicemail'[39m,
+  script: [32m'Test script'[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-gateway.test.ts[2m > [22m[2mINT-2 — Voice / RVM Gateway[2m > [22m[2mVoiceGateway[2m > [22m[2mdispatches rvm call through mock driver
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550001'[39m,
+  channel: [32m'rvm'[39m,
+  outcome: [32m'voicemail'[39m,
+  script: [32m'Drop voicemail script'[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-gateway.test.ts[2m > [22m[2mP2.0-W: dispatchGate wiring at the dial hop[2m > [22m[2mcalls the gate with channel + consentBasis BEFORE any dial
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'no_answer'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [32m'manual-list-attested'[39m
+}
+
+ [32m✓[39m src/app/api/gateway/voice-gateway.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/app/api/jobs/process/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/evalRubric.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/start/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+ [32m✓[39m src/app/api/campaigns/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/cancel/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/create-campaign/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dispatchGateEmail.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/app/api/leads/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/organizations/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/pipelineOrchestrator.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m src/app/api/negotiation/profiles/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/phase0/complianceGate.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/pause/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/app/api/campaigns/[id]/launch/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/twilio-adapter.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/utils/__tests__/planner.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/app/api/openapi/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/leadSuppression.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m src/app/api/services/stripeProvider.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/campaigns/[id]/stats/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m src/app/api/conversations/[leadId]/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/funnel/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/app/api/lead-finder/utils/__tests__/parseSourcedRecords.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/admin/users/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/app/api/approvals/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/numberPool.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/access-control.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/dncRegistry.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/contactResolution.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'answered'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+ [32m✓[39m src/app/api/utils/__tests__/contactImport.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'answered'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'no_answer'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'no_answer'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'voicemail'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2mrng thresholds map to the declared weights (deterministic)
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'voicemail'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2manswered calls carry a transcript; other outcomes never do
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'answered'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2manswered calls carry a transcript; other outcomes never do
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'no_answer'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [90mundefined[39m
+}
+
+[90mstdout[2m | src/app/api/gateway/voice-outcomes.test.ts[2m > [22m[2mMockVoiceDriver — weighted outcomes[2m > [22m[2moutcome + transcript ride through VoiceGateway.call to the record
+[22m[39m[MockVoiceDriver] would dial {
+  to: [32m'+15025550101'[39m,
+  channel: [32m'voice'[39m,
+  outcome: [32m'answered'[39m,
+  script: [32m'Hi, this is the DealFlow team following up on the '[39m,
+  consentBasis: [32m'manual-list-attested'[39m
+}
+
+ [32m✓[39m src/app/api/gateway/voice-outcomes.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+[90mstdout[2m | src/app/api/services/humanRequestDetector.test.ts[2m > [22m[2mHuman Request Detector[2m > [22m[2mCombined detection[2m > [22m[2mrejects ALL non-human-request messages
+[22m[39m[P3] False-positive rate: 0.0% (0/15)
+
+ [32m✓[39m src/app/api/services/humanRequestDetector.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/services/stageTransitionRecorder.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-orchestrator.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/readiness.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/followUpScheduler.cap.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/outreach/call-queue/__tests__/brief.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/messaging.gate.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/tierLimits.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/services/dealOutcomes.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/emailWarmup.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-sales-prompt.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/app/campaigns/planner/planner.test.ts [2m([22m[2m28 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/contactImport.edge.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-provider.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/escalationInvariant.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-settings.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/a2pConfig.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+[90mstdout[2m | src/app/api/optimization/__tests__/orchestrator.test.ts[2m > [22m[2mSimpleOrchestrator[2m > [22m[2mshould process lead through all agents in sequence
+[22m[39m[Orchestrator] Processing lead 123
+
+[90mstdout[2m | src/app/api/optimization/__tests__/orchestrator.test.ts[2m > [22m[2mSimpleOrchestrator[2m > [22m[2mshould process lead through all agents in sequence
+[22m[39m[Orchestrator] Lead score: 0.75
+
+[90mstdout[2m | src/app/api/optimization/__tests__/orchestrator.test.ts[2m > [22m[2mSimpleOrchestrator[2m > [22m[2mshould process lead through all agents in sequence
+[22m[39m[Orchestrator] ARV: $500000
+
+[90mstdout[2m | src/app/api/optimization/__tests__/orchestrator.test.ts[2m > [22m[2mSimpleOrchestrator[2m > [22m[2mshould process lead through all agents in sequence
+[22m[39m[Orchestrator] P(close): 65.0%
+
+[90mstdout[2m | src/app/api/optimization/__tests__/orchestrator.test.ts[2m > [22m[2mSimpleOrchestrator[2m > [22m[2mshould process lead through all agents in sequence
+[22m[39m[Orchestrator] Decision: PURSUE (priority: 8)
+
+ [32m✓[39m src/app/api/optimization/__tests__/orchestrator.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/reviews/queries.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/app/api/gateway/test-mode-block.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/sesEvents.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/rateLimit.test.ts [2m([22m[2m8 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/emailReply.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/usageTracker.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/app/api/optimization/agents/__tests__/types.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/pipeline-health-engine.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/app/api/optimization/agents/__tests__/lead-scoring.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/optOutRegression.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/numberPoolStore.validation.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/area-codes.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/app/api/optimization/agents/__tests__/valuation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/sla.ack.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/app/api/services/__tests__/ownerNumberCollision.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/uploadValidation.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/integration/concurrency.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/observability.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/demoHeadline.ownergated.test.ts [2m([22m[2m2 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/ai-negotiation-types.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/contactLock.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/numberPoolStore.test.ts [2m([22m[2m9 tests[22m[2m | [22m[33m8 skipped[39m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/sla.test.ts [2m([22m[2m10 tests[22m[2m | [22m[33m9 skipped[39m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/app/api/utils/__tests__/security.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 6[2mms[22m[39m
+ [2m[90m↓[39m[22m src/app/api/bank-accounts/__tests__/bank-accounts.test.ts [2m([22m[2m31 tests[22m[2m | [22m[33m31 skipped[39m[2m)[22m
+ [32m✓[39m src/app/api/__tests__/flows/flows-live.test.ts [2m([22m[2m4 tests[22m[2m | [22m[33m3 skipped[39m[2m)[22m[32m 5[2mms[22m[39m
+
+
+[2m Test Files [22m [1m[32m172 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (173)[39m
+[2m      Tests [22m [1m[32m2057 passed[39m[22m[2m | [22m[33m23 skipped[39m[2m | [22m[90m30 todo[39m[90m (2110)[39m
+[2m   Start at [22m 16:23:11
+[2m   Duration [22m 399.46s[2m (transform 64.74s, setup 101.91s, collect 130.79s, tests 9.35s, environment 581.62s, prepare 72.74s)[22m
+

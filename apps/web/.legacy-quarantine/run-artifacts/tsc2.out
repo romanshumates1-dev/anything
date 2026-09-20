@@ -1,0 +1,139 @@
+src/app/api/__tests__/security/auth.test.ts(60,58): error TS2345: Argument of type 'RequestInit' is not assignable to parameter of type 'import("D:/anything/apps/web/node_modules/next/dist/server/web/spec-extension/request").RequestInit'.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | null | undefined' is not assignable to type 'AbortSignal | undefined'.
+      Type 'null' is not assignable to type 'AbortSignal | undefined'.
+src/app/api/__tests__/security/auth.test.ts(103,49): error TS2345: Argument of type '{ user: { id: string; email: string; }; }' is not assignable to parameter of type 'null'.
+src/app/api/__tests__/security/auth.test.ts(119,49): error TS2345: Argument of type '{ user: { id: string; email: string; }; }' is not assignable to parameter of type 'null'.
+src/app/api/__tests__/security/auth.test.ts(159,49): error TS2345: Argument of type '{ user: { id: string; email: string; }; }' is not assignable to parameter of type 'null'.
+src/app/api/__tests__/security/auth.test.ts(352,53): error TS2345: Argument of type '{ user: { id: string; email: string; }; }' is not assignable to parameter of type 'null'.
+src/app/api/__tests__/security/auth.test.ts(371,49): error TS2345: Argument of type '{ user: { id: string; email: string; }; }' is not assignable to parameter of type 'null'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(30,5): error TS2322: Type 'string' is not assignable to type '{ street?: string | undefined; city?: string | undefined; state: string; zip?: string | undefined; }'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(48,9): error TS2322: Type 'string' is not assignable to type '{ street?: string | undefined; city?: string | undefined; state: string; zip?: string | undefined; }'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(64,9): error TS2322: Type 'string' is not assignable to type '{ street?: string | undefined; city?: string | undefined; state: string; zip?: string | undefined; }'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(199,9): error TS2322: Type 'string' is not assignable to type '{ street?: string | undefined; city?: string | undefined; state: string; zip?: string | undefined; }'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(286,9): error TS2322: Type 'string' is not assignable to type '{ street?: string | undefined; city?: string | undefined; state: string; zip?: string | undefined; }'.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(295,7): error TS1345: An expression of type 'void' cannot be tested for truthiness.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(307,7): error TS1345: An expression of type 'void' cannot be tested for truthiness.
+src/app/api/compliance/__tests__/messaging-gate.test.ts(330,7): error TS1345: An expression of type 'void' cannot be tested for truthiness.
+src/app/api/contracts/generate/route.test.ts(24,104): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/app/api/contracts/generate/route.test.ts(47,38): error TS2345: Argument of type 'Response' is not assignable to parameter of type 'null'.
+src/app/api/contracts/generate/route.test.ts(53,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/contracts/send/route.test.ts(24,104): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/app/api/contracts/send/route.test.ts(61,38): error TS2345: Argument of type 'Response' is not assignable to parameter of type 'null'.
+src/app/api/contracts/send/route.test.ts(67,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/contracts/step-out/confirm/route.test.ts(167,48): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/app/api/contracts/step-out/confirm/route.test.ts(247,48): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/app/api/contracts/step-out/route.test.ts(61,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/contracts/validate/route.test.ts(40,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/email/inbound/route.test.ts(110,26): error TS7006: Parameter 'q' implicitly has an 'any' type.
+src/app/api/email/inbound/route.test.ts(111,34): error TS7006: Parameter 'q' implicitly has an 'any' type.
+src/app/api/esign/webhook/webhook.test.ts(297,27): error TS2503: Cannot find namespace 'vi'.
+src/app/api/esign/webhook/webhook.test.ts(329,53): error TS7006: Parameter 'call' implicitly has an 'any' type.
+src/app/api/eval/run/route.test.ts(142,20): error TS2352: Conversion of type 'undefined' to type 'any[]' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/app/api/eval/run/route.test.ts(142,43): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/feedback/[id]/response/route.test.ts(42,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/feedback/[id]/response/route.test.ts(183,49): error TS2353: Object literal may only specify known properties, and 'response' does not exist in type '{ ok: boolean; userId: string; }'.
+src/app/api/gateway/sms-gateway.test.ts(543,7): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/gateway/sms-gateway.test.ts(560,42): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/gateway/sms-gateway.test.ts(575,7): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/gateway/sms-gateway.test.ts(656,42): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/gateway/voice-gateway.test.ts(231,47): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/optimization/__tests__/orchestrator.test.ts(38,21): error TS2749: 'SimpleOrchestrator' refers to a value, but is being used as a type here. Did you mean 'typeof SimpleOrchestrator'?
+src/app/api/optimization/agents/__tests__/lead-scoring.test.ts(143,39): error TS2339: Property 'join' does not exist on type 'string'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(19,36): error TS2322: Type '{ id: number; name: string; phone: string; email: null; status: string; metadata: { call_brief: { text: string; generated_at: string; }; }; recent_messages: null; }' is not assignable to type 'never'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(38,31): error TS2322: Type '{ id: number; name: string; phone: string; email: string; status: string; metadata: { call_brief: { text: string; generated_at: string; }; property_address: string; signals: string[]; }; recent_messages: null; }' is not assignable to type 'never'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(56,45): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(57,12): error TS18048: 'aiCall' is possibly 'undefined'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(58,12): error TS18048: 'aiCall' is possibly 'undefined'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(63,31): error TS2322: Type '{ id: number; name: string; phone: string; email: null; status: string; metadata: { signals: string[]; equity: string; }; recent_messages: { role: string; content: string; }[]; }' is not assignable to type 'never'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(77,20): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(77,45): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(89,31): error TS2322: Type '{ id: number; name: string; phone: string; email: null; status: string; metadata: {}; recent_messages: null; }' is not assignable to type 'never'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(102,24): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/__tests__/brief.test.ts(102,46): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/route.test.ts(48,15): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/route.test.ts(48,37): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/route.test.ts(55,15): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/route.test.ts(55,37): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/route.test.ts(66,15): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/route.test.ts(66,37): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/outreach/call-queue/route.test.ts(74,12): error TS2532: Object is possibly 'undefined'.
+src/app/api/outreach/call-queue/route.test.ts(74,34): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/services/__tests__/usageTracker.test.ts(27,9): error TS2322: Type '{ limit_value: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(45,9): error TS2322: Type '{ total: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(54,9): error TS2322: Type '{ total: null; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(66,11): error TS2322: Type '{ limit_value: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(69,11): error TS2322: Type '{ total: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(84,11): error TS2322: Type '{ limit_value: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(87,11): error TS2322: Type '{ total: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(100,11): error TS2322: Type '{ limit_value: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(103,11): error TS2322: Type '{ total: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(115,11): error TS2322: Type '{ limit_value: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(118,11): error TS2322: Type '{ total: string; }' is not assignable to type 'never'.
+src/app/api/services/__tests__/usageTracker.test.ts(121,11): error TS2322: Type '{ campaign_status: string; }' is not assignable to type 'never'.
+src/app/api/services/stripeProvider.test.ts(131,30): error TS2339: Property 'amount' does not exist on type 'Session | PaymentIntent | Refund | PaymentMethod | Charge | Application | BankAccount | ... 73 more ... | ReceivedDebit'.
+  Property 'amount' does not exist on type 'Session'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(52,41): error TS2345: Argument of type '(strings: any, ..._values: any[]) => Promise<{ id: string; follow_ups_sent: number; phone: string; organization_id: string; }[] | { id: string; delay_hours: number; body: string; }[]>' is not assignable to parameter of type 'NormalizedProcedure<SqlQueryFunction>'.
+  Property 'parameterizedQuery' is missing in type 'Promise<{ id: string; follow_ups_sent: number; phone: string; organization_id: string; }[] | { id: string; delay_hours: number; body: string; }[]>' but required in type 'NeonQueryPromise<boolean, boolean, Record<string, any>[] | any[][] | FullQueryResults<boolean>>'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(87,41): error TS2345: Argument of type '(strings: any, ..._values: any[]) => Promise<{ id: string; follow_ups_sent: number; phone: string; }[]>' is not assignable to parameter of type 'NormalizedProcedure<SqlQueryFunction>'.
+  Property 'parameterizedQuery' is missing in type 'Promise<{ id: string; follow_ups_sent: number; phone: string; }[]>' but required in type 'NeonQueryPromise<boolean, boolean, Record<string, any>[] | any[][] | FullQueryResults<boolean>>'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(206,41): error TS2345: Argument of type '(strings: any, ..._values: any[]) => Promise<{ id: string; status: string; opted_out_at: null; last_reply_at: null; seller_lead_id: string; }[]>' is not assignable to parameter of type 'NormalizedProcedure<SqlQueryFunction>'.
+  Property 'parameterizedQuery' is missing in type 'Promise<{ id: string; status: string; opted_out_at: null; last_reply_at: null; seller_lead_id: string; }[]>' but required in type 'NeonQueryPromise<boolean, boolean, Record<string, any>[] | any[][] | FullQueryResults<boolean>>'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(359,12): error TS18048: 'opts' is possibly 'undefined'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(360,19): error TS18048: 'opts' is possibly 'undefined'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(360,19): error TS18048: 'opts.runAt' is possibly 'undefined'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(385,7): error TS2353: Object literal may only specify known properties, and 'errorMessage' does not exist in type '{ callUuid: string; status: string; channel: string; provider: string; leadId: number; to: string; dispatchTime: Date; }'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(444,7): error TS2353: Object literal may only specify known properties, and 'outcome' does not exist in type '{ callUuid: string; status: string; channel: string; provider: string; leadId: number; to: string; dispatchTime: Date; }'.
+src/app/api/utils/__tests__/cadenceEngine.test.ts(468,63): error TS2353: Object literal may only specify known properties, and 'outcome' does not exist in type '{ callUuid: string; status: string; channel: string; provider: string; leadId: number; to: string; dispatchTime: Date; }'.
+src/app/api/utils/__tests__/demoAllowlist.test.ts(47,37): error TS2345: Argument of type '(f: string) => Promise<boolean>' is not assignable to parameter of type 'NormalizedProcedure<() => Promise<boolean>>'.
+  Target signature provides too few arguments. Expected 1 or more, but got 0.
+src/app/api/utils/__tests__/demoAllowlist.test.ts(54,37): error TS2345: Argument of type 'null' is not assignable to parameter of type '{ accountSid: string; authToken: string; }'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(106,72): error TS2322: Type '"off"' is not assignable to type '"advisory"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(125,72): error TS2322: Type '"strict"' is not assignable to type '"advisory"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(134,72): error TS2322: Type '"strict"' is not assignable to type '"advisory"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(135,59): error TS2322: Type 'null' is not assignable to type 'Date'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(135,80): error TS2322: Type 'null' is not assignable to type 'number'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(142,72): error TS2322: Type '"strict"' is not assignable to type '"advisory"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(150,42): error TS2322: Type '"required"' is not assignable to type '"attested"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(158,42): error TS2322: Type '"required"' is not assignable to type '"attested"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(173,42): error TS2322: Type '"required"' is not assignable to type '"attested"'.
+src/app/api/utils/__tests__/dispatchGateDnc.test.ts(180,42): error TS2322: Type '"required"' is not assignable to type '"attested"'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(101,12): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(101,17): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(101,21): error TS2493: Tuple type '[]' of length '0' has no element at index '2'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(102,12): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(102,17): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(102,21): error TS2493: Tuple type '[]' of length '0' has no element at index '2'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(104,12): error TS18048: 'p1' is possibly 'undefined'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(105,12): error TS18048: 'o1' is possibly 'undefined'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(106,12): error TS18048: 'o1' is possibly 'undefined'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(107,12): error TS18048: 'p2' is possibly 'undefined'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(108,12): error TS18048: 'o2' is possibly 'undefined'.
+src/app/api/utils/__tests__/inspectionClock.test.ts(109,12): error TS18048: 'o2' is possibly 'undefined'.
+src/app/api/utils/__tests__/messaging.gate.test.ts(48,7): error TS2322: Type 'false' is not assignable to type 'true'.
+src/app/api/utils/__tests__/negotiationEngine.test.ts(496,21): error TS2339: Property 'reason' does not exist on type 'GuardVerdict'.
+  Property 'reason' does not exist on type '{ ok: true; }'.
+src/app/api/utils/__tests__/negotiationEngine.test.ts(504,21): error TS2339: Property 'reason' does not exist on type 'GuardVerdict'.
+  Property 'reason' does not exist on type '{ ok: true; }'.
+src/app/api/utils/__tests__/negotiationEngine.test.ts(510,21): error TS2339: Property 'reason' does not exist on type 'GuardVerdict'.
+  Property 'reason' does not exist on type '{ ok: true; }'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(101,12): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(101,18): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(101,27): error TS2493: Tuple type '[]' of length '0' has no element at index '2'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(103,12): error TS18048: 'opts' is possibly 'undefined'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(104,12): error TS18048: 'payload' is possibly 'undefined'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(105,12): error TS18048: 'payload' is possibly 'undefined'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(106,12): error TS18048: 'payload' is possibly 'undefined'.
+src/app/api/utils/__tests__/negotiationSession.test.ts(139,21): error TS2554: Expected 2-3 arguments, but got 1.
+src/app/api/utils/__tests__/ollama-client.test.ts(32,54): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/ollama-client.test.ts(40,54): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/ollama-client.test.ts(48,46): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/ollama-client.test.ts(56,46): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/ollama-client.test.ts(64,12): error TS2493: Tuple type '[]' of length '0' has no element at index '0'.
+src/app/api/utils/__tests__/ollama-client.test.ts(64,17): error TS2493: Tuple type '[]' of length '0' has no element at index '1'.
+src/app/api/utils/__tests__/valuationEngine.test.ts(46,39): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number | bigint'.
+  Type 'null' is not assignable to type 'number | bigint'.
+src/app/api/utils/__tests__/valuationEngine.test.ts(52,46): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number | bigint'.
+  Type 'null' is not assignable to type 'number | bigint'.
+src/app/api/utils/sql.ts(39,13): error TS2352: Conversion of type '(...args: unknown[]) => Promise<SqlQueryFunction>' to type 'SqlQueryFunction' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'transaction' is missing in type '(...args: unknown[]) => Promise<SqlQueryFunction>' but required in type 'NeonQueryFunction<false, false>'.

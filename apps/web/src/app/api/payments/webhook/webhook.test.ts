@@ -168,4 +168,46 @@ describe('Payments Webhook', () => {
     expect(response.status).toBe(200);
     expect(logEvent).toHaveBeenCalledWith('payment_failed', 'contract', 'c-1', expect.any(Object));
   });
+
+  it('fails closed in production with mock provider (forgery attempt → 503)', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    delete process.env.ALLOW_MOCK_PAYMENT_WEBHOOKS;
+    try {
+      // Mock provider accepts ANY signature — in mock+production this must be
+      // rejected before signature verification can even matter.
+      const response = await POST(createMockRequest({
+        type: 'payment_intent.succeeded',
+        id: 'evt_forge',
+        data: { object: { id: 'pi_1', amount: 1000, currency: 'usd', status: 'succeeded' } },
+      }));
+
+      expect(response.status).toBe(503);
+      const data = await response.json();
+      expect(data.error).toBe('Payment provider not configured');
+      // Ledger must not have been touched
+      expect(sql).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('allows mock webhook in production only with explicit ALLOW_MOCK_PAYMENT_WEBHOOKS=1', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('ALLOW_MOCK_PAYMENT_WEBHOOKS', '1');
+    (sql as any).mockImplementation(async () => []);
+    try {
+      const response = await POST(createMockRequest({
+        type: 'payment_intent.succeeded',
+        id: 'evt_optin',
+        data: { object: { id: 'pi_9', amount: 1000, currency: 'usd', status: 'succeeded' } },
+      }));
+
+      // Guard skipped → request proceeds past provider resolution (404 = no
+      // ledger row found in the empty mock DB). Anything but 503 proves the
+      // opt-in path works.
+      expect(response.status).toBe(404);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

@@ -1,0 +1,18 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mD:/anything/apps/web[39m
+
+[90mstdout[2m | src/app/api/__tests__/security/credits.test.ts[2m > [22m[2mCredit Security[2m > [22m[2mIdempotency Protection[2m > [22m[2mduplicate deduction with same idempotency key returns original result
+[22m[39m[CREDITS] Duplicate request detected: idem_123
+
+ [32m✓[39m src/app/api/__tests__/security/credits.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/accessGate.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 79[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/rateLimit.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 889[2mms[22m[39m
+   [33m[2m✓[22m[39m Item 4 — per-KEY sliding window[2m > [22mis per-KEY: a different key on the SAME ip is unaffected [33m 350[2mms[22m[39m
+ [32m✓[39m src/app/api/__tests__/security/auth.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+
+
+[2m Test Files [22m [1m[32m4 passed[39m[22m[90m (4)[39m
+[2m      Tests [22m [1m[32m83 passed[39m[22m[90m (83)[39m
+[2m   Start at [22m 16:22:09
+[2m   Duration [22m 10.86s[2m (transform 946ms, setup 1.54s, collect 1.88s, tests 1.06s, environment 10.20s, prepare 1.51s)[22m
+
