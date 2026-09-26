@@ -16,6 +16,7 @@ import { callAI } from '@/app/api/utils/ai-provider';
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export const dynamic = 'force-dynamic';
 
@@ -87,7 +88,8 @@ export async function GET(req: NextRequest) {
         COALESCE(AVG(clq.touch_number) FILTER (WHERE clq.status = 'interested'), 0)::numeric(4,2) as avg_touches_to_interest,
         COALESCE(AVG(clq.expected_value) FILTER (WHERE clq.status = 'interested'), 0)::int as avg_deal_value
       FROM campaign_lead_queue clq
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${organization.id}
+        AND clq.created_at > now() - (${days} || ' days')::interval
         ${campaignId ? sql`AND clq.campaign_id = ${campaignId}` : sql``}
     `.catch(() => [{}]) as any[];
 
@@ -102,7 +104,8 @@ export async function GET(req: NextRequest) {
               NULLIF(COUNT(*) FILTER (WHERE clq.status = 'sent'), 0) * 100, 2) as response_rate
       FROM campaign_lead_queue clq
       JOIN campaigns c ON c.id = clq.campaign_id
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${organization.id}
+        AND clq.created_at > now() - (${days} || ' days')::interval
       GROUP BY c.id, c.name
       HAVING COUNT(*) FILTER (WHERE clq.status = 'sent') > 10
       ORDER BY response_rate DESC NULLS LAST
@@ -118,7 +121,8 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE clq.status = 'interested')::int as interested
       FROM campaign_lead_queue clq
       JOIN leads l ON l.id = clq.lead_id
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${organization.id}
+        AND clq.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.state, 'Unknown')
       HAVING COUNT(DISTINCT clq.lead_id) > 20
       ORDER BY COUNT(DISTINCT clq.lead_id) DESC
@@ -133,7 +137,8 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE me.status = 'delivered')::int as delivered,
         COUNT(*) FILTER (WHERE me.status IN ('replied', 'responded'))::int as replied
       FROM message_events me
-      WHERE me.created_at > now() - (${days} || ' days')::interval
+      WHERE me.organization_id = ${organization.id}
+        AND me.created_at > now() - (${days} || ' days')::interval
         AND me.direction = 'outbound'
       GROUP BY EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')
       ORDER BY hour
@@ -149,7 +154,8 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE clq.status = 'interested')::int as interested
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      WHERE l.created_at > now() - (${days} || ' days')::interval
+      WHERE l.organization_id = ${organization.id}
+        AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown')
       HAVING COUNT(DISTINCT l.id) > 10
       ORDER BY COUNT(DISTINCT l.id) DESC
@@ -330,7 +336,7 @@ IMPORTANT RULES:
 
   } catch (error: any) {
     console.error('AI recommendations error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/analytics/ai-recommendations/route.ts]", status: 500 });
   }
 }
 

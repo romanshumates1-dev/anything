@@ -108,6 +108,12 @@ export default function OutreachCalculator() {
 
   useEffect(() => {
     calculate();
+    // Intentionally mount-only: this effect seeds the default result on first
+    // render. `calculate` closes over every form field and doubles as the
+    // Calculate button's handler — putting it in the dep array would re-fire
+    // the POST on every keystroke instead of only on demand. Same convention
+    // as ReviewsContent's guarded reload effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleChannel = (channel: string) => {

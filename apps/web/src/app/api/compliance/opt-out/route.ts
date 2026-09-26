@@ -1,5 +1,6 @@
 import { registerOptOut } from '../../utils/compliance';
 import { logEvent } from '../../utils/logger';
+import { timingSafeSecretEqual } from '../../utils/secretCompare';
 
 export async function POST(request: Request) {
   // SECURITY: opt-outs are provider/"STOP"-driven webhooks. Secret-gate them
@@ -7,7 +8,7 @@ export async function POST(request: Request) {
   // to suppress arbitrary numbers.
   const secret = process.env.SMS_INBOUND_SECRET;
   const provided = request.headers.get('x-sms-secret');
-  if (!secret || provided !== secret) {
+  if (!secret || !timingSafeSecretEqual(provided, secret)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

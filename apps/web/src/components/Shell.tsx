@@ -220,11 +220,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 {session.user?.email?.[0]?.toUpperCase() || 'U'}
               </span>
             </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+            {/* min-w-0 is REQUIRED: without it a long unbroken email lets the
+                flex child grow past the sidebar (min-width:auto) and `truncate`
+                never engages — the exact long-email overflow bug. title gives
+                full-text access on hover. */}
+            <div className="flex-1 min-w-0 text-left">
+              <p
+                className="text-sm font-medium text-[var(--text-primary)] truncate"
+                title={session.user?.name || session.user?.email || ''}
+              >
                 {session.user?.name || session.user?.email?.split('@')[0]}
               </p>
-              <p className="text-xs text-[var(--text-muted)] truncate">{session.user?.email}</p>
+              <p
+                className="text-xs text-[var(--text-muted)] truncate"
+                title={session.user?.email || ''}
+              >
+                {session.user?.email}
+              </p>
             </div>
             <ChevronDown className={`h-4 w-4 text-[var(--text-muted)] transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -241,10 +253,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                    <p
+                      className="text-sm font-medium text-[var(--text-primary)] truncate"
+                      title={session.user?.name || session.user?.email || ''}
+                    >
                       {session.user?.name || session.user?.email?.split('@')[0]}
                     </p>
-                    <p className="text-xs text-[var(--text-muted)] truncate">{session.user?.email}</p>
+                    <p
+                      className="text-xs text-[var(--text-muted)] truncate"
+                      title={session.user?.email || ''}
+                    >
+                      {session.user?.email}
+                    </p>
                   </div>
                   {(session.user as { role?: string })?.role && (
                     <Badge className={`text-xs ${(session.user as { role?: string })?.role === 'ADMIN' ? 'bg-[var(--accent-purple)]/20 text-[var(--accent-purple)]' : 'bg-[var(--accent-blue)]/20 text-[var(--accent-blue)]'}`}>

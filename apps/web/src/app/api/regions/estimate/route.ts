@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (regions.length === 0) {
-      // No regions = all leads
+      // No regions = all leads FOR THIS TENANT ONLY.
       const [result] = await sql`
-        SELECT COUNT(*) as count FROM leads
+        SELECT COUNT(*) as count FROM leads WHERE organization_id = ${organization.id}
       `;
       return NextResponse.json({ count: Number(result.count) });
     }
@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
       const [result] = await sql`
         SELECT COUNT(*) as count
         FROM leads l
-        WHERE (
+        WHERE l.organization_id = ${organization.id}
+        AND (
           ${includeZips.length > 0 ? sql`l.zip = ANY(${includeZips})` : sql`FALSE`}
           OR ${includeStates.length > 0 ? sql`l.state = ANY(${includeStates})` : sql`FALSE`}
           OR ${includeCounties.length > 0 ? sql`(l.state || '_' || l.county) = ANY(${includeCounties})` : sql`FALSE`}
@@ -108,7 +109,8 @@ export async function POST(request: NextRequest) {
       const [result] = await sql`
         SELECT COUNT(*) as count
         FROM leads l
-        WHERE (
+        WHERE l.organization_id = ${organization.id}
+        AND (
           ${excludeZips.length > 0 ? sql`(l.zip IS NULL OR l.zip != ALL(${excludeZips}))` : sql`TRUE`}
           AND ${excludeStates.length > 0 ? sql`(l.state IS NULL OR l.state != ALL(${excludeStates}))` : sql`TRUE`}
           AND ${excludeCounties.length > 0 ? sql`((l.state || '_' || l.county) IS NULL OR (l.state || '_' || l.county) != ALL(${excludeCounties}))` : sql`TRUE`}
@@ -118,7 +120,7 @@ export async function POST(request: NextRequest) {
     } else {
       // No filters
       const [result] = await sql`
-        SELECT COUNT(*) as count FROM leads
+        SELECT COUNT(*) as count FROM leads WHERE organization_id = ${organization.id}
       `;
       leadsCount = Number(result.count);
     }

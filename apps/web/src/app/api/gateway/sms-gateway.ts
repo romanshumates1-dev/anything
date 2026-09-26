@@ -377,18 +377,14 @@ export class SMSGateway {
           deliveredAt: Date.now(),
         });
 
-        // Record usage for successful SMS send
-        if (organizationId) {
-          await recordUsage(organizationId, 'sms', 1);
-        }
-
-        await logEvent('message_dispatched_gateway', 'message', String(leadId), {
-          messageUuid,
-          provider: provider.name,
-          providerId,
-        });
-
-        return dispatchRecord;
+        // The provider has ACCEPTED the message. Leave the dispatch loop now:
+        // post-dispatch bookkeeping (usage ledger + dispatch event) deliberately
+        // runs AFTER the loop (step 6b) so that a failure writing that
+        // bookkeeping can never be caught by the handler below as if the
+        // dispatch itself failed — doing so would trip the circuit breaker and
+        // fail over to the next provider, i.e. send the same SMS twice to the
+        // same recipient.
+        break;
       } catch (error: any) {
         lastError = error;
         circuitBreaker?.recordFailure();
@@ -406,6 +402,50 @@ export class SMSGateway {
         }
         provider = nextProvider;
       }
+    }
+
+    // 6b. POST-DISPATCH BOOKKEEPING (success path)
+    // Kept outside the dispatch try/catch on purpose (see the `break` in step 6):
+    // the SMS has already been handed to the provider, so neither a usage-ledger
+    // write nor an event-log write may be treated as a provider failure.
+    if (dispatchRecord) {
+      if (organizationId) {
+        try {
+          await recordUsage(organizationId, 'sms', 1);
+        } catch (usageError: any) {
+          // Never fail a completed send over accounting. Log the gap so the
+          // missing usage entry is visible and reconcilable.
+          console.error('[sms-gateway] recordUsage failed after successful dispatch', {
+            messageUuid,
+            organizationId,
+            error: usageError?.message,
+          });
+          try {
+            await logEvent('message_usage_record_failed', 'message', String(leadId), {
+              messageUuid,
+              organizationId,
+              error: usageError?.message,
+            });
+          } catch {
+            // Best-effort only; the console.error above is the fallback trail.
+          }
+        }
+      }
+
+      try {
+        await logEvent('message_dispatched_gateway', 'message', String(leadId), {
+          messageUuid,
+          provider: dispatchRecord.provider,
+          providerId: dispatchRecord.providerId,
+        });
+      } catch (eventError: any) {
+        console.error('[sms-gateway] dispatch event log failed after successful dispatch', {
+          messageUuid,
+          error: eventError?.message,
+        });
+      }
+
+      return dispatchRecord;
     }
 
     // 7. ALL PROVIDERS EXHAUSTED

@@ -24,13 +24,20 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'leadId required' }, { status: 400 });
   }
 
-  // Verify lead belongs to organization
+  // Verify the lead belongs to the caller's organization.
+  //
+  // TENANT ISOLATION: `leadId` comes straight from the query string, so this lookup is a
+  // trust boundary. The join chain reaches the campaign but nothing constrained it to the
+  // caller's org, so any authenticated member of any tenant could pass an arbitrary
+  // leadId, read that lead's metadata, and - because a miss returns 404 while a hit
+  // returns 200 - use the response as an existence oracle for another tenant's leads.
   const [lead] = await sql`
     SELECT l.id, l.metadata
     FROM leads l
     JOIN campaign_leads cl ON cl.lead_id = l.id
     JOIN campaigns c ON c.id = cl.campaign_id
     WHERE l.id = ${leadId}
+      AND c.organization_id = ${organization.id}
     LIMIT 1
   `.catch(() => []);
 

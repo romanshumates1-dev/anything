@@ -8,12 +8,23 @@
  */
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
+import { getOrganization } from '@/lib/organization-context';
 import { adminAudit, clientIp } from '@/app/api/utils/adminAudit';
 import { logEvent } from '@/app/api/utils/logger';
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
+
+  // TENANT ISOLATION (2026-09-26 re-review): paymentId is caller-supplied and
+  // payments_ledger has NO organization_id column, so the ledger row is bound
+  // to the caller through its contract. Without this, any org admin could mark
+  // ANOTHER tenant's payment as paid. The same predicate is repeated in the
+  // UPDATE so a TOCTOU window cannot be used to slip past it.
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
+  }
 
   try {
     const body = await request.json().catch(() => ({}));
@@ -27,8 +38,11 @@ export async function POST(request: Request) {
     }
 
     const [payment] = await sql`
-      SELECT id, contract_id, status
-      FROM payments_ledger WHERE id = ${paymentId} LIMIT 1
+      SELECT pl.id, pl.contract_id, pl.status
+      FROM payments_ledger pl
+      INNER JOIN contracts c ON c.id = pl.contract_id
+      WHERE pl.id = ${paymentId} AND c.organization_id = ${organization.id}
+      LIMIT 1
     `;
     if (!payment) {
       return Response.json({ error: 'Payment not found' }, { status: 404 });
@@ -41,6 +55,9 @@ export async function POST(request: Request) {
       UPDATE payments_ledger
       SET status = 'paid', paid_at = now(), reason = ${reason}
       WHERE id = ${paymentId} AND status != 'paid'
+        AND contract_id IN (
+          SELECT id FROM contracts WHERE organization_id = ${organization.id}
+        )
       RETURNING id, contract_id, amount_cents
     `;
     if (!updated) {

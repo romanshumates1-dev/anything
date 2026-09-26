@@ -19,6 +19,7 @@
 import sql from './sql';
 import { addCredits } from './credits';
 import { logEvent } from './logger';
+import { selectPlanRow } from './planCatalog';
 
 export interface PlanRow {
   id: string;
@@ -40,16 +41,21 @@ export interface PlanRow {
  * Single definition of the plan shape — /api/billing/subscribe delegates here.
  */
 export async function getPlanRow(planId: string): Promise<PlanRow | null> {
-  const [row] = await sql`
+  // Fetch every row matching by id OR tier, then resolve deterministically.
+  // The previous `ORDER BY (tier = ...) LIMIT 1` could not distinguish the
+  // canonical plan_pro from the retained "Pro (Legacy)" alias — both are
+  // tier='pro' — so which plan a verified webhook activated depended on row
+  // order. Selection rules live in planCatalog.ts (exact id > canonical
+  // plan_<tier> > stable tiebreak).
+  const rows = await sql`
     SELECT id, name, tier, price_cents, limits
     FROM subscription_plans
     WHERE id = ${planId} OR tier = ${planId}
-    ORDER BY (tier = ${planId}) DESC
-    LIMIT 1
   `;
+  const row = selectPlanRow(rows as Array<{ id: string; tier: string }>, planId);
   if (!row) return null;
 
-  const plan = row as {
+  const plan = row as unknown as {
     id: string;
     name: string;
     tier: string;

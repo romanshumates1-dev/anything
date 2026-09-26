@@ -17,6 +17,7 @@ import {
   type NegotiationRecord,
   type DealData,
 } from '../engine';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface ValidateContractRequest {
   // Option 1: Provide contract variables directly
@@ -245,9 +246,7 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('[CONTRACTS] Validation error:', error);
-    return Response.json({
-      error: error.message || 'Failed to validate contract',
-    }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/contracts/validate/route.ts]", status: 500 });
   }
 }
 

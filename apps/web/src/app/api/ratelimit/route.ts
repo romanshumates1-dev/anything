@@ -83,18 +83,29 @@ async function getUsage(orgId: string, channel: Channel, provider: Provider): Pr
   return Number(result?.count || 0);
 }
 
-// Get usage for a specific lead
-async function getLeadUsage(leadId: string, channel: Channel): Promise<{ daily: number; weekly: number }> {
+// Get usage for a specific lead.
+//
+// TENANT ISOLATION: `leadId` arrives from a query parameter, so it MUST be bound to the
+// caller's organization. Without the org predicate an admin of org A could pass a lead id
+// belonging to org B and read back that lead's daily/weekly message volume — an
+// activity oracle across tenants — and have it feed `leadLimitOk`, a business decision.
+async function getLeadUsage(
+  orgId: string,
+  leadId: string,
+  channel: Channel
+): Promise<{ daily: number; weekly: number }> {
   const [daily] = await sql`
     SELECT COUNT(*) as count FROM rate_limit_log
-    WHERE lead_id = ${leadId}
+    WHERE organization_id = ${orgId}
+    AND lead_id = ${leadId}
     AND channel = ${channel}
     AND created_at > CURRENT_DATE
   `.catch(() => [{ count: 0 }]);
 
   const [weekly] = await sql`
     SELECT COUNT(*) as count FROM rate_limit_log
-    WHERE lead_id = ${leadId}
+    WHERE organization_id = ${orgId}
+    AND lead_id = ${leadId}
     AND channel = ${channel}
     AND created_at > NOW() - INTERVAL '7 days'
   `.catch(() => [{ count: 0 }]);
@@ -149,7 +160,7 @@ export async function GET(req: NextRequest) {
 
       let leadLimitOk = true;
       if (leadId && config.perLeadDailyLimit) {
-        const leadUsage = await getLeadUsage(leadId, channel);
+        const leadUsage = await getLeadUsage(organization.id, leadId, channel);
         leadLimitOk = leadUsage.daily < config.perLeadDailyLimit &&
                       leadUsage.weekly < (config.perLeadWeeklyLimit || Infinity);
       }
@@ -251,7 +262,7 @@ export async function POST(req: NextRequest) {
 
     // Check lead-specific limits
     if (leadId && config.perLeadDailyLimit) {
-      const leadUsage = await getLeadUsage(leadId, channel);
+      const leadUsage = await getLeadUsage(organization.id, leadId, channel);
       if (leadUsage.daily >= config.perLeadDailyLimit) {
         return Response.json({
           logged: false,

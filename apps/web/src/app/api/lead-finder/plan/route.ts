@@ -9,6 +9,7 @@ import {
   type SellerFunnel,
   type BuyerFunnel,
 } from '@/app/api/lead-finder/utils/planner';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 /**
  * POST /api/lead-finder/plan — "I want N deals; how many leads is that, and do
@@ -73,12 +74,14 @@ export async function POST(request: Request) {
     if (body.useObserved) {
       const [counts] = await sql`
         SELECT
-          COUNT(*) FILTER (WHERE to_stage = 'CONTACTED')::int   AS contacted,
-          COUNT(*) FILTER (WHERE to_stage = 'ENGAGED')::int     AS engaged,
-          COUNT(*) FILTER (WHERE to_stage = 'NEGOTIATING')::int AS negotiating,
-          COUNT(*) FILTER (WHERE to_stage = 'SIGNED')::int      AS signed,
-          COUNT(*) FILTER (WHERE to_stage = 'ASSIGNED')::int    AS assigned
-        FROM stage_transitions
+          COUNT(*) FILTER (WHERE st.to_stage = 'CONTACTED')::int   AS contacted,
+          COUNT(*) FILTER (WHERE st.to_stage = 'ENGAGED')::int     AS engaged,
+          COUNT(*) FILTER (WHERE st.to_stage = 'NEGOTIATING')::int AS negotiating,
+          COUNT(*) FILTER (WHERE st.to_stage = 'SIGNED')::int      AS signed,
+          COUNT(*) FILTER (WHERE st.to_stage = 'ASSIGNED')::int    AS assigned
+        FROM stage_transitions st
+        INNER JOIN leads l ON l.id::text = st.lead_id::text
+        WHERE l.organization_id = ${organization.id}
       `;
       const c = counts as Record<string, number>;
       const observed = observedSellerFunnel({
@@ -124,6 +127,10 @@ export async function POST(request: Request) {
       WHERE status = 'new'
         AND distress_score >= ${minScore}
         AND (${county}::text IS NULL OR county ILIKE ${county})
+        AND source_id IN (
+          SELECT id FROM lead_sources
+          WHERE organization_id = ${organization.id} OR organization_id IS NULL
+        )
     `;
     const availableSellers = (inv as { sellers: number })?.sellers ?? 0;
     const availableBuyers = (inv as { buyers: number })?.buyers ?? 0;
@@ -164,11 +171,16 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     // A bad rate override is the caller's error, not a server fault — surface
-    // the validation message instead of a blank 500.
+    // the validation message instead of a blank 500. This message describes the
+    // caller's OWN invalid input, so returning it is safe and useful.
     if (error instanceof Error && /must be a (finite rate|positive number)/.test(error.message)) {
-      return Response.json({ error: error.message }, { status: 400 });
+      return safeErrorResponse(error, {
+        context: '[lead-finder/plan]',
+        status: 400,
+        message: error.message,
+        code: 'INVALID_RATE_OVERRIDE',
+      });
     }
-    console.error('POST /api/lead-finder/plan error', error);
-    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+    return safeErrorResponse(error, { context: '[lead-finder/plan]' });
   }
 }

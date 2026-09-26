@@ -174,6 +174,7 @@ export async function PATCH(
         is_default = COALESCE(${isDefault}, is_default),
         updated_at = NOW()
       WHERE id = ${id}
+        AND organization_id = ${organization.id}
       RETURNING
         id,
         name,
@@ -228,6 +229,7 @@ export async function DELETE(
     await sql`
       DELETE FROM saved_territories
       WHERE id = ${id}
+        AND organization_id = ${organization.id}
     `;
 
     await logEvent('territory_deleted', 'territory', id, {

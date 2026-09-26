@@ -152,21 +152,30 @@ export async function handleHumanRequest(
   organizationId: string,
   detection: HumanRequestResult
 ): Promise<void> {
-  // Mark lead as requiring human
-  await sql`
+  // TENANT ISOLATION (defense in depth): organizationId is caller-supplied, so it
+  // must ALSO be a query predicate — never just a log label. Scoping the write to the
+  // (leadId, organizationId) pair means a mismatched pair updates zero rows instead of
+  // silently writing another tenant's lead. Fail-closed: a zero-row update still logs.
+  const updated = await sql`
     UPDATE leads
     SET requires_human = true, ai_paused = true
     WHERE id = ${leadId}
+      AND organization_id = ${organizationId}
+    RETURNING id
   `;
 
-  // Log the event
+  // Log the event — organizationId travels inside the payload because logEvent's 5th
+  // slot is user_id, NOT organization_id. Passing it positionally would misattribute
+  // the audit row to a user with that id.
   await logEvent('human_request_detected', 'lead', String(leadId), {
     conversationId,
     messageText: messageText.slice(0, 200),
     detectionMethod: detection.method,
     matchedKeyword: detection.matchedKeyword,
     confidence: detection.confidence,
-  }, organizationId);
+    organizationId,
+    tenantScopedWrite: updated.length > 0,
+  });
 
   // The owner notification will be sent via dispatchGate by the caller
   // (inbound SMS route), which has access to the SMS gateway.

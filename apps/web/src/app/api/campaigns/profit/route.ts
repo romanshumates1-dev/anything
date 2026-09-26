@@ -7,6 +7,7 @@
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export const dynamic = 'force-dynamic';
 
@@ -186,6 +187,6 @@ export async function GET(req: NextRequest) {
 
   } catch (error: any) {
     console.error('GET /api/campaigns/profit error', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/campaigns/profit/route.ts]", status: 500 });
   }
 }

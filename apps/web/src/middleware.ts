@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import {
   hasRequiredRole,
-  isEmailDomainAllowed,
 } from '@/app/api/utils/access-control';
+import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 import { REQUIRED_ACCEPTANCE_VERSIONS, ACCEPTANCE_DOC_TYPES } from '@/lib/legal-versions';
 import { isAccessDenied } from '@/lib/user-status';
 
@@ -143,7 +143,7 @@ export async function enforceRateLimit(req: NextRequest): Promise<NextResponse> 
   // a user thus rejects their API tokens too (Phase 4 DoD).
   if (
     !record.owner_email ||
-    !isEmailDomainAllowed(record.owner_email) ||
+    !(await isEmailDomainAllowedEffective(record.owner_email)) ||
     !hasRequiredRole(record.owner_role) ||
     isAccessDenied({ banned: record.owner_banned, suspended_until: record.owner_suspended_until })
   ) {
@@ -275,7 +275,7 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(new URL('/access-restricted', req.url));
   }
 
-  if (!isEmailDomainAllowed(user.email)) {
+  if (!(await isEmailDomainAllowedEffective(user.email))) {
     if (isApi) {
       return NextResponse.json(
         { error: 'Access restricted: account domain is not authorized' },

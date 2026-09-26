@@ -351,24 +351,28 @@ export async function POST(req: NextRequest) {
 }
 
 // Webhook handler for signature status updates
-// SECURITY: Validates webhook signature to prevent spoofed requests
+//
+// SECURITY: this handler used to "validate" by comparing the raw ESIGN_WEBHOOK_SECRET
+// against a request header, and only when that env var happened to be set. That was
+// three defects at once:
+//   1. Permissive default - an unset secret skipped validation completely, leaving an
+//      unauthenticated endpoint that flipped contracts to 'signed'.
+//   2. Secret-as-signature - the shared secret was transmitted as the credential itself
+//      rather than an HMAC over the body, so any leak (log, proxy, header capture) was
+//      a permanent forge capability, and the comparison was not constant-time.
+//   3. No tenant scope - the envelope and lead updates below carried no organization
+//      predicate, so a valid or forged call could mutate another tenant's contract.
+// The real provider path is POST /api/esign/webhook, which calls provider.verifyWebhook()
+// and is already guarded. Nothing in the app calls this route. It is therefore restricted
+// to an authenticated admin and scoped to that admin's organization, which preserves the
+// legitimate "apply a signature update" capability while closing all three holes.
 export async function PUT(req: NextRequest) {
-  // Verify webhook signature
-  const signature = req.headers.get('x-webhook-signature');
-  const webhookSecret = process.env.ESIGN_WEBHOOK_SECRET;
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
 
-  if (webhookSecret) {
-    if (!signature) {
-      console.warn('[ESIGN] Webhook rejected: missing signature');
-      return Response.json({ error: 'Missing signature' }, { status: 401 });
-    }
-    // In production, verify HMAC signature here
-    // For now, require the secret to match directly (simple validation)
-    const expectedSig = webhookSecret;
-    if (signature !== expectedSig) {
-      console.warn('[ESIGN] Webhook rejected: invalid signature');
-      return Response.json({ error: 'Invalid signature' }, { status: 401 });
-    }
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
   }
 
   let body;
@@ -391,17 +395,22 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    // Update envelope status
+    // Update envelope status. Scoped to the caller's organization so a caller cannot
+    // mutate another tenant's envelope by id.
     await sql`
       UPDATE esign_envelopes
       SET status = ${status}, updated_at = NOW()
       WHERE id = ${envelopeId}
+      AND organization_id = ${organization.id}
     `;
 
     // If fully signed, update deal status
     if (status === 'signed') {
       const [envelope] = await sql`
-        SELECT deal_id, contract_type FROM esign_envelopes WHERE id = ${envelopeId}
+        SELECT deal_id, contract_type, organization_id
+        FROM esign_envelopes
+        WHERE id = ${envelopeId}
+        AND organization_id = ${organization.id}
       `;
 
       if (envelope) {
@@ -410,9 +419,13 @@ export async function PUT(req: NextRequest) {
                          envelope.contract_type === 'assignment_contract' ? 'ASSIGNED' : null;
 
         if (newStatus) {
+          // The lead is the contract's counterparty, so it is scoped to the same
+          // organization. Without this, a caller who owned one envelope could flip a
+          // lead belonging to any tenant.
           await sql`
             UPDATE leads SET status = ${newStatus}, updated_at = NOW()
             WHERE id = ${envelope.deal_id}
+            AND organization_id = ${organization.id}
           `;
         }
 

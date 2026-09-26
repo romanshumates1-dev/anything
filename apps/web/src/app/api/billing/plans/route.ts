@@ -4,6 +4,7 @@
  */
 import { NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
+import { dedupePlansByTier } from '@/app/api/utils/planCatalog';
 
 export interface PlanFromDB {
   id: string;
@@ -47,7 +48,10 @@ export interface PlanForUI {
 }
 
 /**
- * Fetch all subscription plans from database
+ * Fetch all subscription plans from database.
+ * Deduplicated to ONE row per tier (canonical `plan_<tier>` preferred) so a
+ * retained legacy alias (e.g. "Pro (Legacy)", tier='pro') is never advertised
+ * next to — or silently replace — the canonical plan.
  */
 export async function getPlansFromDB(): Promise<PlanFromDB[]> {
   const rows = await sql`
@@ -56,7 +60,7 @@ export async function getPlansFromDB(): Promise<PlanFromDB[]> {
     WHERE tier IN ('free', 'starter', 'pro', 'business', 'scale')
     ORDER BY price_cents ASC
   `;
-  return rows as PlanFromDB[];
+  return dedupePlansByTier(rows as PlanFromDB[]);
 }
 
 /**

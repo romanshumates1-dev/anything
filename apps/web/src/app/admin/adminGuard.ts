@@ -2,7 +2,8 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import sql from '@/app/api/utils/sql';
-import { isAdminRole, isEmailDomainAllowed } from '@/app/api/utils/access-control';
+import { isAdminRole } from '@/app/api/utils/access-control';
+import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 
 /**
  * Server-side guard for /admin PAGES. Mirrors requireAdmin (used by the admin
@@ -15,7 +16,7 @@ export async function requireAdminPage(): Promise<{ userId: string; email: strin
   if (!session) redirect('/account/signin?callbackUrl=%2Fadmin');
 
   const [user] = await sql`SELECT email, role FROM "user" WHERE id = ${session.user.id} LIMIT 1`;
-  if (!user || !isEmailDomainAllowed(user.email)) redirect('/access-restricted');
+  if (!user || !(await isEmailDomainAllowedEffective(user.email))) redirect('/access-restricted');
   if (!isAdminRole(user.role)) redirect('/pending-access');
 
   return { userId: session.user.id, email: user.email };

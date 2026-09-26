@@ -1,75 +1,49 @@
 /**
- * Signup Restrictions - runtime check against app_settings.
+ * Signup Restrictions — admin-configurable signup gate (app_settings).
  *
- * Used by better-auth hooks to enforce email domain restrictions at signup.
- * Settings are stored in app_settings with key 'signup_restrictions'.
+ * Since the 2026-09-24 dual-authority fix this module DELEGATES to
+ * `email-domain-policy`, the single resolver consumed by middleware, the
+ * better-auth hooks, and the admin APIs. Keeping the old exports means the
+ * auth-hook call sites (and any tests) keep working unchanged, while the
+ * semantics can no longer drift from what the admin UI shows.
  */
-import sql from '@/app/api/utils/sql';
+import {
+  getEmailDomainPolicy,
+  isEmailDomainAllowedEffective,
+} from '@/app/api/utils/email-domain-policy';
 
 interface SignupRestrictions {
   signup_restricted: boolean;
   allowed_email_domains: string[];
 }
 
-const DEFAULT_SETTINGS: SignupRestrictions = {
-  signup_restricted: false,
-  allowed_email_domains: ['dealswiftautomation.com'],
-};
-
 /**
- * Get current signup restriction settings from the database.
- * Falls back to defaults if not configured.
+ * Current effective signup restrictions (database setting when present,
+ * environment allowlist fallback otherwise).
  */
 export async function getSignupRestrictions(): Promise<SignupRestrictions> {
-  try {
-    const [row] = await sql`
-      SELECT value FROM app_settings WHERE key = 'signup_restrictions' LIMIT 1
-    `;
-
-    if (!row?.value) {
-      return DEFAULT_SETTINGS;
-    }
-
-    const settings = row.value as SignupRestrictions;
-    return {
-      signup_restricted: settings.signup_restricted ?? false,
-      allowed_email_domains: settings.allowed_email_domains ?? DEFAULT_SETTINGS.allowed_email_domains,
-    };
-  } catch (error) {
-    console.error('[SignupRestrictions] Failed to load settings:', error);
-    return DEFAULT_SETTINGS;
-  }
+  const policy = await getEmailDomainPolicy();
+  return {
+    signup_restricted: policy.restricted,
+    allowed_email_domains: policy.domains,
+  };
 }
 
 /**
- * Check if an email is allowed to sign up based on current restrictions.
- * Returns { allowed: true } if signup is permitted, or { allowed: false, message } if denied.
+ * Check whether an email may sign up under the current policy.
+ * Returns { allowed: true } when permitted, or { allowed: false, message }.
  */
 export async function checkSignupAllowed(email: string): Promise<{
   allowed: boolean;
   message?: string;
 }> {
-  const settings = await getSignupRestrictions();
+  const policy = await getEmailDomainPolicy();
 
-  // If signup is not restricted, allow everyone (but still check the static allowlist)
-  if (!settings.signup_restricted) {
+  if (!policy.restricted) {
     return { allowed: true };
   }
 
-  // Extract domain from email
-  const atIndex = email.lastIndexOf('@');
-  if (atIndex <= 0 || atIndex === email.length - 1) {
-    return { allowed: false, message: 'Invalid email format' };
-  }
-
-  const domain = email.slice(atIndex + 1).trim().toLowerCase();
-
-  // Check if domain is in the allowed list
-  const normalizedAllowed = settings.allowed_email_domains.map((d) =>
-    d.trim().toLowerCase()
-  );
-
-  if (normalizedAllowed.includes(domain)) {
+  if (await isEmailDomainAllowedEffective(email)) {
     return { allowed: true };
   }
 

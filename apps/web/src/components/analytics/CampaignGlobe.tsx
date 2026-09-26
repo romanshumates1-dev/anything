@@ -282,6 +282,11 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
     };
     window.addEventListener('resize', onResize);
 
+    // Read the ref's value once here: react-hooks/exhaustive-deps forbids
+    // touching `.current` inside the cleanup itself (the ref may have been
+    // swapped by then). `rot` is never reassigned — only its fields mutate —
+    // so this is the same object the handlers above use.
+    const rotState = rot.current;
     return () => {
       // Mark as unmounted FIRST to prevent new frames from being scheduled.
       isMounted = false;
@@ -299,7 +304,7 @@ export default function CampaignGlobe({ campaigns }: { campaigns: GlobeCampaign[
       window.removeEventListener('resize', onResize);
 
       // Reset dragging state to prevent stale state on remount.
-      rot.current.dragging = false;
+      rotState.dragging = false;
     };
   }, [campaigns, reducedMotion]);
 

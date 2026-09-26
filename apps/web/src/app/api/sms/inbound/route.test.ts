@@ -35,11 +35,21 @@ vi.mock('../../services/humanRequestDetector', () => ({
 const { registerOptOut } = vi.hoisted(() => ({ registerOptOut: vi.fn(async () => {}) }));
 vi.mock('../../utils/compliance', () => ({ registerOptOut }));
 
-const { recordStageTransition, resolveLeadIdByPhone } = vi.hoisted(() => ({
-  recordStageTransition: vi.fn(async () => {}),
-  resolveLeadIdByPhone: vi.fn(async () => null as number | null),
+const { recordStageTransition, recordStageTransitionsBulk, resolveLeadIdByPhone, resolveLeadIdsByPhoneGlobal } =
+  vi.hoisted(() => ({
+    recordStageTransition: vi.fn(async () => {}),
+    recordStageTransitionsBulk: vi.fn(async () => {}),
+    // The webhook path has no authenticated tenant, so it must NOT use the strict
+    // resolver (which requires an organization and would fail closed).
+    resolveLeadIdByPhone: vi.fn(async () => null as string | null),
+    resolveLeadIdsByPhoneGlobal: vi.fn(async () => [] as string[]),
+  }));
+vi.mock('../../services/stageTransitionRecorder', () => ({
+  recordStageTransition,
+  recordStageTransitionsBulk,
+  resolveLeadIdByPhone,
+  resolveLeadIdsByPhoneGlobal,
 }));
-vi.mock('../../services/stageTransitionRecorder', () => ({ recordStageTransition, resolveLeadIdByPhone }));
 
 import { POST } from './route';
 
@@ -57,7 +67,9 @@ beforeEach(() => {
 
 describe('POST /api/sms/inbound — STOP keyword', () => {
   it('records a CLOSED_LOST stage transition for a real opt-out', async () => {
-    resolveLeadIdByPhone.mockResolvedValueOnce(321);
+    // The suppression above is platform-wide, so attribution must cover EVERY lead holding
+    // the number - not one arbitrarily-chosen tenant.
+    resolveLeadIdsByPhoneGlobal.mockResolvedValueOnce(['321']);
     mockSql.mockResolvedValueOnce([]); // UPDATE campaign_contacts -> OPTED_OUT
 
     const res = await POST(req({ from: '+15025551234', text: 'STOP' }));
@@ -65,20 +77,48 @@ describe('POST /api/sms/inbound — STOP keyword', () => {
     expect(await res.json()).toEqual({ status: 'opted_out' });
 
     expect(registerOptOut).toHaveBeenCalledWith('+15025551234', 'sms', expect.objectContaining({ reason: 'stop_keyword' }));
-    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15025551234');
-    expect(recordStageTransition).toHaveBeenCalledTimes(1);
-    expect(recordStageTransition).toHaveBeenCalledWith(
-      expect.objectContaining({ leadId: 321, toStage: 'CLOSED_LOST', channel: 'inbound' })
+    expect(resolveLeadIdsByPhoneGlobal).toHaveBeenCalledWith('+15025551234');
+    expect(recordStageTransitionsBulk).toHaveBeenCalledTimes(1);
+    expect(recordStageTransitionsBulk).toHaveBeenCalledWith(
+      ['321'],
+      'CLOSED_LOST',
+      expect.objectContaining({ channel: 'inbound' })
     );
   });
 
+  it('attributes the opt-out to EVERY matching lead, not a single arbitrary tenant', async () => {
+    // Same phone held as a lead by two organizations. The old code resolved exactly one
+    // via `ORDER BY updated_at DESC`, so a STOP on org A's number could mutate org B's
+    // funnel. Attribution must now be symmetric with the global suppression.
+    resolveLeadIdsByPhoneGlobal.mockResolvedValueOnce(['lead_a', 'lead_b']);
+    mockSql.mockResolvedValueOnce([]);
+
+    const res = await POST(req({ from: '+15025550100', text: 'STOP' }));
+    expect(res.status).toBe(200);
+    expect(recordStageTransitionsBulk).toHaveBeenCalledWith(
+      ['lead_a', 'lead_b'],
+      'CLOSED_LOST',
+      expect.objectContaining({ channel: 'inbound' })
+    );
+  });
+
+  it('does not use the strict resolver on a webhook path with no tenant context', async () => {
+    resolveLeadIdsByPhoneGlobal.mockResolvedValueOnce([]);
+    mockSql.mockResolvedValueOnce([]);
+
+    await POST(req({ from: '+15025551234', text: 'STOP' }));
+    // resolveLeadIdByPhone requires an organization and fails closed; using it here
+    // would silently disable attribution rather than scope it.
+    expect(resolveLeadIdByPhone).not.toHaveBeenCalled();
+  });
+
   it('does not record a transition when no lead matches the opted-out phone (best-effort)', async () => {
-    resolveLeadIdByPhone.mockResolvedValueOnce(null);
+    resolveLeadIdsByPhoneGlobal.mockResolvedValueOnce([]);
     mockSql.mockResolvedValueOnce([]);
 
     const res = await POST(req({ from: '+19999999999', text: 'STOP' }));
     expect(res.status).toBe(200);
-    expect(recordStageTransition).not.toHaveBeenCalled();
+    expect(recordStageTransitionsBulk).not.toHaveBeenCalled();
   });
 
   it('does not record a transition (or opt out) for a normal, non-STOP message', async () => {
@@ -87,6 +127,6 @@ describe('POST /api/sms/inbound — STOP keyword', () => {
     const res = await POST(req({ from: '+15025551234', text: 'Yes I am interested' }));
     expect(res.status).toBe(200);
     expect(registerOptOut).not.toHaveBeenCalled();
-    expect(recordStageTransition).not.toHaveBeenCalled();
+    expect(recordStageTransitionsBulk).not.toHaveBeenCalled();
   });
 });

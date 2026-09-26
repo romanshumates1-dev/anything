@@ -115,7 +115,7 @@ export async function POST(_request: NextRequest) {
           // Funnel analytics (P4): QUEUED -> SENT is the real "contacted" event.
           // campaign_contacts.seller_lead_id/buyer_lead_id are populated at contact
           // creation time; fallback to phone lookup for legacy contacts or failed lookups.
-          const leadId = contact.seller_lead_id || contact.buyer_lead_id || await resolveLeadIdByPhone(contact.phone);
+          const leadId = contact.seller_lead_id || contact.buyer_lead_id || await resolveLeadIdByPhone(contact.phone, organizationId);
           if (leadId) {
             await recordStageTransition({
               leadId,

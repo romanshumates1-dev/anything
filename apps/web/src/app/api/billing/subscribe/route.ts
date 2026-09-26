@@ -4,6 +4,17 @@
  *
  * IMPORTANT: Pricing is sourced from subscription_plans table (migration 067)
  * Do NOT hardcode prices here - fetch from database.
+ *
+ * PAYMENT MODEL
+ * Entitlements are granted in exactly one place: the signature-verified
+ * `checkout.session.completed` handler in /api/payments/webhook. This route
+ * only *starts* a purchase. Nothing here — and nothing a client sends — can
+ * activate a plan or add credits on its own.
+ *
+ *   live (STRIPE_PROVIDER=live + both secrets)  → Stripe Checkout redirect
+ *   production without a usable Stripe config   → 503, nothing granted
+ *   dev/test                                    → direct activation, so the
+ *                                                 flow stays workable offline
  */
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
@@ -12,6 +23,118 @@ import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 import { sendEmailAuto } from '@/app/api/utils/emailProviders';
+import { addCredits } from '@/app/api/utils/credits';
+import {
+  getStripeProvider,
+  type StripeProvider,
+  type StripeProviderType,
+} from '@/app/api/services/stripeProvider';
+import { appBaseUrl } from '@/app/api/utils/appUrl';
+import { selectPlanRow, dedupePlansByTier } from '@/app/api/utils/planCatalog';
+
+// ─── Payments: configuration ────────────────────────────────────────────────
+
+function stripeMode(): StripeProviderType {
+  return (process.env.STRIPE_PROVIDER || 'mock').toLowerCase() === 'live'
+    ? 'live'
+    : 'mock';
+}
+
+/**
+ * The first missing piece of configuration that makes real payment unsafe, or
+ * null when the live path is usable.
+ *
+ * STRIPE_WEBHOOK_SECRET is required alongside the secret key on purpose.
+ * Entitlements are granted ONLY from a signature-verified webhook, so with the
+ * key present but the webhook secret missing a customer would be charged and
+ * never receive anything. Refusing the checkout is the safe failure.
+ */
+function stripeConfigGap(): string | null {
+  if (stripeMode() !== 'live') return 'STRIPE_PROVIDER';
+  if (!process.env.STRIPE_SECRET_KEY) return 'STRIPE_SECRET_KEY';
+  if (!process.env.STRIPE_WEBHOOK_SECRET) return 'STRIPE_WEBHOOK_SECRET';
+  return null;
+}
+
+function isPaymentLive(): boolean {
+  return stripeConfigGap() === null;
+}
+
+/**
+ * The organization's Stripe customer, when it already has one.
+ *
+ * Read, never created, here: the first checkout lets Stripe mint the customer
+ * and the webhook persists the id from the verified event. Every later checkout
+ * reuses it, so an organization can never accumulate duplicate customers.
+ */
+async function getStripeCustomerId(organizationId: string): Promise<string | undefined> {
+  const [row] = await sql`
+    SELECT stripe_customer_id
+    FROM organizations
+    WHERE id = ${organizationId}
+    LIMIT 1
+  `;
+  const id = (row as { stripe_customer_id?: string | null } | undefined)
+    ?.stripe_customer_id;
+  return id ?? undefined;
+}
+
+/** 503 carrying the name of the missing variable, so ops can fix it fast. */
+function notConfiguredResponse(missing: string): NextResponse {
+  console.error(`[BILLING] Refusing to sell: Stripe is not configured (${missing} missing)`);
+  return NextResponse.json(
+    {
+      error: 'Payment processing is not configured',
+      code: 'PAYMENT_NOT_CONFIGURED',
+    },
+    { status: 503 }
+  );
+}
+
+/**
+ * Start a Stripe Checkout session for an organization purchase.
+ *
+ * `amountCents` always comes from a plan or pack row read out of the database,
+ * never from the request body, and the organization travels in Stripe metadata
+ * so the webhook can resolve the purchase from the verified event alone.
+ *
+ * Callers must check isPaymentLive() first: the live provider throws when the
+ * secret key is absent.
+ */
+async function startCheckout(params: {
+  organizationId: string;
+  userId: string;
+  userEmail?: string;
+  userName?: string;
+  planId?: string;
+  creditPackId?: string;
+  amountCents: number;
+  productName: string;
+  productDescription?: string;
+}): Promise<string> {
+  const provider: StripeProvider = getStripeProvider({ type: stripeMode() });
+  const base = appBaseUrl();
+
+  const session = await provider.createBillingCheckoutSession({
+    userId: params.userId,
+    organizationId: params.organizationId,
+    planId: params.planId,
+    creditPackId: params.creditPackId,
+    amountCents: params.amountCents,
+    productName: params.productName,
+    productDescription: params.productDescription,
+    customerEmail: params.userEmail,
+    stripeCustomerId: await getStripeCustomerId(params.organizationId),
+    // The return URL is a UI hint ONLY. Access is granted by the webhook, so
+    // landing on this URL proves nothing and grants nothing.
+    successUrl: `${base}/settings/billing?checkout=success`,
+    cancelUrl: `${base}/settings/billing?checkout=cancelled`,
+  });
+
+  return session.checkoutUrl;
+}
+
+
 
 interface PlanConfig {
   name: string;
@@ -25,19 +148,28 @@ interface PlanConfig {
 }
 
 /**
- * Fetch plan configuration from database (single source of truth)
+ * Fetch plan configuration from database (single source of truth).
+ *
+ * Resolves by primary key OR tier, then picks THE row deterministically:
+ * a tier can map to more than one row (plan_professional is a retained
+ * "Pro (Legacy)" alias of tier 'pro'), and `WHERE tier = ... LIMIT 1` with no
+ * ORDER BY could quote either $79 or $299 for the same plan depending on
+ * Postgres row order. See utils/planCatalog.ts for the selection rules.
  */
-async function getPlanFromDB(tier: string): Promise<PlanConfig | null> {
+async function getPlanFromDB(planOrTier: string): Promise<PlanConfig | null> {
   const rows = await sql`
-    SELECT name, price_cents, limits
+    SELECT id, tier, name, price_cents, limits
     FROM subscription_plans
-    WHERE tier = ${tier}
-    LIMIT 1
+    WHERE id = ${planOrTier} OR tier = ${planOrTier}
   `;
 
-  if (!rows[0]) return null;
+  const plan = selectPlanRow(
+    rows as Array<{ id: string; tier: string }>,
+    planOrTier
+  ) as { name: string; price_cents: number; limits: any } | null;
 
-  const plan = rows[0] as any;
+  if (!plan) return null;
+
   const limits = plan.limits;
 
   return {
@@ -53,17 +185,19 @@ async function getPlanFromDB(tier: string): Promise<PlanConfig | null> {
 }
 
 /**
- * Fetch all available plans from database
+ * Fetch all available plans from database — exactly ONE row per tier
+ * (canonical `plan_<tier>` preferred) so a retained legacy alias can neither
+ * overwrite the canonical plan in this record nor be advertised beside it.
  */
 async function getAllPlansFromDB(): Promise<Record<string, PlanConfig>> {
   const rows = await sql`
-    SELECT tier, name, price_cents, limits
+    SELECT id, tier, name, price_cents, limits
     FROM subscription_plans
     WHERE tier IN ('free', 'starter', 'pro', 'business', 'scale')
   `;
 
   const plans: Record<string, PlanConfig> = {};
-  for (const row of rows as any[]) {
+  for (const row of dedupePlansByTier(rows as Array<{ id: string; tier: string }>) as any[]) {
     const limits = row.limits;
     plans[row.tier] = {
       name: row.name,
@@ -96,7 +230,11 @@ export async function POST(req: NextRequest) {
 
   const { planId, email, password, creditPackId, promoCode } = body;
 
-  // Handle credit pack purchase
+  // ── Credit pack purchase ──────────────────────────────────────────────────
+  // /settings/billing buys packs through the canonical /api/credits/purchase
+  // endpoint; this branch is retained for existing clients, but it must not
+  // become a way to obtain paid credits without payment, so it is gated exactly
+  // like a plan purchase.
   if (creditPackId) {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session) {
@@ -113,17 +251,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid credit pack' }, { status: 400 });
     }
 
-    try {
-      // Add credits to organization
-      await sql`
-        UPDATE organizations
-        SET
-          ai_credits = COALESCE(ai_credits, 0) + ${pack.credits},
-          updated_at = NOW()
-        WHERE id = ${organization.id}
-      `;
+    // Real payment: hand off to Stripe. Credits are granted by the verified
+    // webhook, never here.
+    let checkoutUrl: string | null = null;
+    if (isPaymentLive()) {
+      try {
+        checkoutUrl = await startCheckout({
+          organizationId: organization.id,
+          userId: session.user.id,
+          userEmail: session.user.email,
+          userName: session.user.name,
+          creditPackId,
+          amountCents: pack.price * 100,
+          productName: `DealFlow AI — ${pack.credits.toLocaleString()} AI credits`,
+          productDescription: `${pack.credits.toLocaleString()} AI credits for SMS, email and AI operations`,
+        });
+      } catch (error: any) {
+        console.error('[BILLING] Credit pack checkout error:', error);
+        return NextResponse.json({ error: 'Failed to start checkout' }, { status: 502 });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      // Production must never grant paid credits without a verified payment.
+      return notConfiguredResponse(stripeConfigGap() ?? 'STRIPE_PROVIDER');
+    }
 
-      // Log the purchase
+    if (checkoutUrl) {
+      await logEvent('credits_checkout_started', 'billing', organization.id, {
+        credits: pack.credits,
+        amount: pack.price,
+        packId: creditPackId,
+      }, session.user.id);
+
+      return NextResponse.json({
+        success: true,
+        requiresPayment: true,
+        checkoutUrl,
+        creditsAdded: 0,
+        message: `Redirecting to secure checkout for ${pack.credits.toLocaleString()} credits`,
+      });
+    }
+
+    // ── dev/test only (no Stripe configured, NODE_ENV !== 'production') ─────
+    // Grants through the authoritative credit ledger so local behaviour matches
+    // the webhook path, instead of writing the legacy mirror by hand.
+    try {
+      const result = await addCredits(
+        organization.id,
+        pack.credits,
+        'PURCHASE',
+        `Dev credit purchase: ${creditPackId}`,
+        { packId: creditPackId, devFallback: true },
+        `dev-credit-${crypto.randomUUID()}`
+      );
+
       await sql`
         INSERT INTO billing_events (
           id, organization_id, event_type, amount, metadata, created_at
@@ -132,7 +312,11 @@ export async function POST(req: NextRequest) {
           ${organization.id},
           'credit_purchase',
           ${pack.price},
-          ${JSON.stringify({ credits: pack.credits, packId: creditPackId })},
+          ${JSON.stringify({
+            credits: pack.credits,
+            packId: creditPackId,
+            devFallback: true,
+          })}::jsonb,
           NOW()
         )
       `.catch(console.error);
@@ -140,11 +324,13 @@ export async function POST(req: NextRequest) {
       await logEvent('credits_purchased', 'billing', organization.id, {
         credits: pack.credits,
         amount: pack.price,
+        devFallback: true,
       }, session.user.id);
 
       return NextResponse.json({
         success: true,
         creditsAdded: pack.credits,
+        newBalance: result.balance,
         message: `Added ${pack.credits} AI credits to your account`,
       });
     } catch (error: any) {
@@ -177,6 +363,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No organization' }, { status: 403 });
     }
 
+    // Real payment: hand off to Stripe. The verified webhook activates the plan;
+    // activation must never happen synchronously here, because this route cannot
+    // know whether the customer actually paid.
+    if (isPaymentLive()) {
+      try {
+        const checkoutUrl = await startCheckout({
+          organizationId: organization.id,
+          userId: session.user.id,
+          userEmail: session.user.email,
+          userName: session.user.name,
+          planId,
+          // finalPrice is in dollars (getPlanFromDB divides price_cents by 100).
+          amountCents: Math.round(finalPrice * 100),
+          productName: `DealFlow AI — ${plan.name} plan`,
+          productDescription: `${plan.aiCredits.toLocaleString()} AI credits, ${
+            plan.leads === -1 ? 'unlimited' : plan.leads.toLocaleString()
+          } leads, ${plan.sms.toLocaleString()} SMS per month`,
+        });
+
+        await logEvent('subscription_checkout_started', 'billing', organization.id, {
+          plan: planId,
+          price: finalPrice,
+          discount,
+        }, session.user.id);
+
+        return NextResponse.json({
+          success: true,
+          requiresPayment: true,
+          plan: planId,
+          price: finalPrice,
+          checkoutUrl,
+          message: `Redirecting to secure checkout for the ${plan.name} plan`,
+        });
+      } catch (error: any) {
+        console.error('[BILLING] Plan checkout error:', error);
+        return NextResponse.json({ error: 'Failed to start checkout' }, { status: 502 });
+      }
+    }
+
+    if (process.env.NODE_ENV === 'production') {
+      // Production must never grant a paid plan without a verified payment.
+      return notConfiguredResponse(stripeConfigGap() ?? 'STRIPE_PROVIDER');
+    }
+
+    // ── dev/test only (no Stripe configured, NODE_ENV !== 'production') ─────
     try {
       // Update subscription
       await sql`
@@ -256,11 +487,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
   }
 
+  // A paid plan cannot be granted before payment, and there is no organization to
+  // attach a Stripe Checkout session to until the account exists. In live mode a
+  // *paid* plan therefore requires the account first; the client should sign up,
+  // then purchase from the authenticated billing page. A zero-price plan is
+  // still allowed through, since nothing is owed and nothing is bypassed.
+  if (isPaymentLive() && finalPrice > 0) {
+    return NextResponse.json(
+      {
+        error: 'Create your account first, then choose a paid plan',
+        code: 'SIGNUP_REQUIRED',
+        signupUrl: '/signup',
+      },
+      { status: 409 }
+    );
+  }
+
   try {
-    // Check if user exists
+    // Check if user exists. The table is `"user"` (better-auth's schema, quoted
+    // because `user` is a reserved word) — the previous `users` reference raised
+    // 42P01, and because it was wrapped in `.catch(() => [null])` the duplicate
+    // account check silently never matched.
     const [existingUser] = await sql`
-      SELECT id FROM users WHERE email = ${email.toLowerCase()}
-    `.catch(() => [null]);
+      SELECT id FROM "user" WHERE email = ${email.toLowerCase()}
+    `;
 
     if (existingUser) {
       return NextResponse.json({

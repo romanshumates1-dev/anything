@@ -3,6 +3,7 @@ import { logEvent } from '@/app/api/utils/logger';
 import { classifySesEvent, parseSnsEnvelope } from '@/app/api/utils/sesEvents';
 import sql from '@/app/api/utils/sql';
 import { recordEmailBounce, recordEmailComplaint } from '@/app/api/utils/emailWarmup';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 /**
  * POST /api/email/ses-events — Amazon SES bounce/complaint feedback, delivered
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
   const secret = process.env.SMS_INBOUND_SECRET;
   const url = new URL(request.url);
   const provided = url.searchParams.get('s') || request.headers.get('x-sms-secret');
-  if (!secret || provided !== secret) {
+  if (!secret || !timingSafeSecretEqual(provided, secret)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -19,12 +19,24 @@ export const metadata: Metadata = {
 export default async function AutomationDashboardPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
-    redirect('/auth/sign-in');
+    redirect('/account/signin');
   }
 
   const organization = await getOrganization();
   if (!organization) {
-    redirect('/onboarding');
+    // No /onboarding route exists and auth auto-creates an org on signup, so
+    // a null org means a legacy account predating that hook. Render an inline
+    // empty state (same pattern as optimization/dashboard) rather than
+    // redirecting to a nonexistent route.
+    return (
+      <div className="container mx-auto py-8">
+        <h1 className="text-2xl font-bold text-gray-900">Automation Dashboard</h1>
+        <p className="text-gray-500 mt-1">
+          No organization found for your account. Please contact support to set
+          up your workspace.
+        </p>
+      </div>
+    );
   }
 
   return (

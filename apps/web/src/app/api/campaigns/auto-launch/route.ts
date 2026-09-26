@@ -28,6 +28,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { sizeCampaign } from '@/app/api/lead-finder/utils/planner';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface LaunchRequest {
   targetDeals: number;
@@ -356,6 +357,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('[AUTO-LAUNCH] Error:', error);
-    return Response.json({ error: error.message || 'Failed to launch campaign' }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/campaigns/auto-launch/route.ts]", status: 500 });
   }
 }

@@ -13,10 +13,15 @@ export async function finalizeDeal(params: {
 }) {
   const { organizationId, negotiationId, contactId, direction, agreedPrice, contactPhone } = params;
 
+  // TENANT ISOLATION: contactId arrives from the caller, so the predicate must bind the
+  // caller's organization. Without it, an authenticated member of ANY org that knows a
+  // campaign_contacts id could flip another org's contact to DEAL_AGREED and queue a
+  // human approval against it. Same class as the markDealNoAgreement fix below.
   await sql`
     UPDATE campaign_contacts
     SET status = 'DEAL_AGREED', updated_at = now()
     WHERE id = ${contactId}
+      AND organization_id = ${organizationId}
   `;
 
   await sql`
@@ -36,12 +41,12 @@ export async function markDealNoAgreement(params: {
   const { organizationId, negotiationId, contactId, contactPhone } = params;
 
   await sql`
-    UPDATE campaign_contacts SET status = 'DEAL_NO_AGREEMENT', updated_at = now() WHERE id = ${contactId}
+    UPDATE campaign_contacts SET status = 'DEAL_NO_AGREEMENT', updated_at = now() WHERE id = ${contactId} AND organization_id = ${organizationId}
   `;
 
   // Funnel analytics (P4): the real closed-lost event for a negotiation that
   // didn't reach agreement. Best-effort, never blocks the outcome.
-  const leadId = await resolveLeadIdByPhone(contactPhone);
+  const leadId = await resolveLeadIdByPhone(contactPhone, organizationId);
   if (leadId) {
     await recordStageTransition({
       leadId,

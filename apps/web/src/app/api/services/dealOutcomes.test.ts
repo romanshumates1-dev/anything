@@ -43,7 +43,7 @@ describe('markDealNoAgreement', () => {
       contactPhone: '+15025551234',
     });
 
-    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15025551234');
+    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15025551234', 'org-1');
     expect(recordStageTransition).toHaveBeenCalledTimes(1);
     expect(recordStageTransition).toHaveBeenCalledWith(
       expect.objectContaining({ leadId: 15, fromStage: 'NEGOTIATING', toStage: 'CLOSED_LOST' })

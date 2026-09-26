@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Get related entity data if available
     let entityData = null;
     if (action.entity_type && action.entity_id) {
-      entityData = await getEntityData(action.entity_type, action.entity_id);
+      entityData = await getEntityData(action.entity_type, action.entity_id, organization.id);
     }
 
     return NextResponse.json({
@@ -137,14 +137,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 async function getEntityData(
   entityType: string,
-  entityId: string
+  entityId: string,
+  organizationId: string
 ): Promise<Record<string, unknown> | null> {
+  // TENANT ISOLATION (defence in depth): every lookup is filtered on the caller's
+  // organization as well as the entity id. The action row itself is org-scoped, but
+  // resolving the entity must not depend on that invariant alone — an entity id that
+  // ever ended up attached to another tenant's action would otherwise be readable and
+  // actionable across organizations.
   try {
     switch (entityType) {
       case 'lead': {
         const [lead] = await sql`
           SELECT id, name, email, phone, status, metadata, created_at
-          FROM leads WHERE id = ${entityId}
+          FROM leads WHERE id = ${entityId} AND organization_id = ${organizationId}
         `;
         return lead || null;
       }
@@ -154,7 +160,7 @@ async function getEntityData(
           SELECT ac.*, l.name as lead_name, l.phone as lead_phone
           FROM ai_conversations ac
           JOIN leads l ON l.id = ac.lead_id
-          WHERE ac.id = ${entityId}
+          WHERE ac.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         return conv || null;
       }
@@ -164,7 +170,7 @@ async function getEntityData(
           SELECT ns.*, l.name as lead_name
           FROM negotiation_sessions ns
           JOIN leads l ON l.id = ns.lead_id
-          WHERE ns.id = ${entityId}
+          WHERE ns.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         return session || null;
       }
@@ -174,14 +180,15 @@ async function getEntityData(
           SELECT c.*, l.name as lead_name
           FROM contracts c
           LEFT JOIN leads l ON l.id = c.seller_lead_id
-          WHERE c.id = ${entityId}
+          WHERE c.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         return contract || null;
       }
 
       case 'campaign': {
         const [campaign] = await sql`
-          SELECT * FROM outreach_campaigns WHERE id = ${entityId}
+          SELECT * FROM outreach_campaigns
+          WHERE id = ${entityId} AND (organization_id = ${organizationId} OR organization_id = 'default')
         `;
         return campaign || null;
       }
@@ -210,7 +217,9 @@ async function executeAction(
       if (action === 'approve') {
         // Approve the deal, generate contract
         const [session] = await sql`
-          SELECT * FROM negotiation_sessions WHERE id = ${entityId}
+          SELECT ns.* FROM negotiation_sessions ns
+          JOIN leads l ON l.id = ns.lead_id
+          WHERE ns.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         if (session) {
           await enqueueJob('generate_contract_auto', {
@@ -223,16 +232,18 @@ async function executeAction(
         return { dealApproved: true };
       } else if (action === 'reject') {
         await sql`
-          UPDATE negotiation_sessions
+          UPDATE negotiation_sessions ns
           SET status = 'REJECTED', updated_at = NOW()
-          WHERE id = ${entityId}
+          WHERE ns.id = ${entityId}
+            AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ns.lead_id AND l.organization_id = ${organizationId})
         `;
         return { dealRejected: true };
       } else if (action === 'renegotiate') {
         await sql`
-          UPDATE negotiation_sessions
+          UPDATE negotiation_sessions ns
           SET status = 'ACTIVE', awaiting_response = false, updated_at = NOW()
-          WHERE id = ${entityId}
+          WHERE ns.id = ${entityId}
+            AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ns.lead_id AND l.organization_id = ${organizationId})
         `;
         return { renegotiating: true };
       }
@@ -246,7 +257,7 @@ async function executeAction(
           SELECT c.*, l.email
           FROM contracts c
           LEFT JOIN leads l ON l.id = c.seller_lead_id
-          WHERE c.id = ${entityId}
+          WHERE c.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         if (contract) {
           await enqueueJob('send_contract', {
@@ -260,6 +271,11 @@ async function executeAction(
             UPDATE contracts
             SET status = 'PENDING_SIGNATURE', updated_at = NOW()
             WHERE id = ${entityId}
+              AND EXISTS (
+                SELECT 1 FROM leads l
+                WHERE l.id = contracts.seller_lead_id
+                  AND l.organization_id = ${organizationId}
+              )
           `;
         }
         return { contractSent: true };
@@ -268,6 +284,11 @@ async function executeAction(
           UPDATE contracts
           SET status = 'REJECTED', updated_at = NOW()
           WHERE id = ${entityId}
+            AND EXISTS (
+              SELECT 1 FROM leads l
+              WHERE l.id = contracts.seller_lead_id
+                AND l.organization_id = ${organizationId}
+            )
         `;
         return { contractRejected: true };
       }
@@ -281,16 +302,23 @@ async function executeAction(
           UPDATE contracts
           SET status = 'CLOSED', closing_confirmed_at = NOW(), updated_at = NOW()
           WHERE id = ${entityId}
+            AND EXISTS (
+              SELECT 1 FROM leads l
+              WHERE l.id = contracts.seller_lead_id
+                AND l.organization_id = ${organizationId}
+            )
         `;
 
         // Update lead status
         const [contract] = await sql`
-          SELECT seller_lead_id FROM contracts WHERE id = ${entityId}
+          SELECT c.seller_lead_id FROM contracts c
+          JOIN leads l ON l.id = c.seller_lead_id
+          WHERE c.id = ${entityId} AND l.organization_id = ${organizationId}
         `;
         if (contract?.seller_lead_id) {
           await sql`
             UPDATE leads SET status = 'CLOSED', updated_at = NOW()
-            WHERE id = ${contract.seller_lead_id}
+            WHERE id = ${contract.seller_lead_id} AND organization_id = ${organizationId}
           `;
         }
 
@@ -304,6 +332,11 @@ async function executeAction(
           UPDATE contracts
           SET status = 'CANCELLED', updated_at = NOW()
           WHERE id = ${entityId}
+            AND EXISTS (
+              SELECT 1 FROM leads l
+              WHERE l.id = contracts.seller_lead_id
+                AND l.organization_id = ${organizationId}
+            )
         `;
         return { cancelled: true };
       } else if (action === 'extend') {
@@ -317,24 +350,27 @@ async function executeAction(
       if (action === 'approve_ai') {
         // Let AI continue the conversation
         await sql`
-          UPDATE ai_conversations
+          UPDATE ai_conversations ac
           SET requires_human = false, status = 'active', updated_at = NOW()
-          WHERE id = ${entityId}
+          WHERE ac.id = ${entityId}
+            AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ac.lead_id AND l.organization_id = ${organizationId})
         `;
         return { aiContinuing: true };
       } else if (action === 'respond_manual') {
         // Mark for manual response - user will respond in inbox
         await sql`
-          UPDATE ai_conversations
+          UPDATE ai_conversations ac
           SET status = 'manual_response', updated_at = NOW()
-          WHERE id = ${entityId}
+          WHERE ac.id = ${entityId}
+            AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ac.lead_id AND l.organization_id = ${organizationId})
         `;
         return { manualResponse: true };
       } else if (action === 'escalate') {
         await sql`
-          UPDATE ai_conversations
+          UPDATE ai_conversations ac
           SET status = 'escalated', updated_at = NOW()
-          WHERE id = ${entityId}
+          WHERE ac.id = ${entityId}
+            AND EXISTS (SELECT 1 FROM leads l WHERE l.id = ac.lead_id AND l.organization_id = ${organizationId})
         `;
         return { escalated: true };
       }

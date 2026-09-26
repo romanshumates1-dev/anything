@@ -21,6 +21,7 @@ import {
   generateStepOutConfirmationEmail,
   type StepOutParty,
 } from '@/app/api/utils/step-out-engine';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -138,6 +139,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('POST /api/contracts/step-out error', error);
-    return Response.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/contracts/step-out/route.ts]", status: 500 });
   }
 }

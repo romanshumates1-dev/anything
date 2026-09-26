@@ -30,13 +30,27 @@ ALTER TABLE organizations
   ADD COLUMN IF NOT EXISTS subscription_refunded_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS subscription_refund_amount_cents INTEGER;
 
--- Backfill organizations table with refund eligibility
-UPDATE organizations
+-- Backfill organizations table with refund eligibility.
+--
+-- The previous predicate was `WHERE subscription_tier IS NOT NULL`, but NO
+-- migration ever creates `organizations.subscription_tier` — 068 adds that
+-- column to `"user"`, not `organizations` — so this statement raised 42703
+-- (column does not exist) and aborted the migration chain.
+-- `organization_subscriptions` is the authoritative subscription state, so
+-- drive the backfill from there. That also preserves the original intent of
+-- marking only organizations that actually hold a subscription, rather than
+-- every organization.
+UPDATE organizations o
 SET
-  subscription_purchased_at = COALESCE(subscription_purchased_at, created_at),
-  subscription_refund_eligible_until = COALESCE(subscription_purchased_at, created_at) + INTERVAL '7 days'
-WHERE subscription_tier IS NOT NULL
-  AND subscription_refund_eligible_until IS NULL;
+  subscription_purchased_at = COALESCE(o.subscription_purchased_at, s.started_at, o.created_at),
+  subscription_refund_eligible_until = COALESCE(s.started_at, o.created_at) + INTERVAL '7 days'
+FROM (
+  SELECT organization_id, MIN(COALESCE(started_at, created_at)) AS started_at
+  FROM organization_subscriptions
+  GROUP BY organization_id
+) s
+WHERE s.organization_id = o.id
+  AND o.subscription_refund_eligible_until IS NULL;
 
 -- Track subscription refund requests for audit trail
 CREATE TABLE IF NOT EXISTS subscription_refund_requests (

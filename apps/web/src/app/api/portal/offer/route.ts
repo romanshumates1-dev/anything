@@ -11,6 +11,7 @@ import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+import { verifyPortalToken } from '@/app/api/utils/portalToken';
 
 // Rate limits for public portal actions
 const PORTAL_VIEW_LIMIT = 30; // 30 views per hour per IP
@@ -32,15 +33,7 @@ interface OfferDetails {
   status: 'pending' | 'accepted' | 'countered' | 'declined' | 'expired';
 }
 
-function parseToken(token: string): { leadId: string; action: string; ts: number } | null {
-  try {
-    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
-    const [leadId, action, ts] = decoded.split(':');
-    return { leadId, action, ts: parseInt(ts, 10) };
-  } catch {
-    return null;
-  }
-}
+// verifyPortalToken (imported) replaces the previous unsigned base64 parse.
 
 export async function GET(req: NextRequest) {
   // Rate limit to prevent enumeration attacks
@@ -52,21 +45,41 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const token = url.searchParams.get('t');
-  const leadId = url.searchParams.get('ref') || url.searchParams.get('leadId');
 
-  if (!token && !leadId) {
-    return Response.json({ error: 'Missing token or leadId' }, { status: 400 });
-  }
+  // AUTHENTICATION (2026-09-26): the credential for this public portal is a SIGNED
+  // token. Previously a bare ?leadId= was accepted for any lead (and ?t= was unsigned
+  // base64), so anyone could read — and, via POST, mutate — offers for any tenant.
+  // Now either a valid signed token, or an authenticated session scoped to its org.
+  let resolvedLeadId: string | null = null;
+  let viaSession = false;
+  let sessionOrganization: { id: string } | null = null;
 
-  // Parse token if provided
-  let resolvedLeadId = leadId;
-  if (token && !leadId) {
-    const parsed = parseToken(token);
+  if (token) {
+    const parsed = verifyPortalToken(token);
     if (!parsed) {
-      return Response.json({ error: 'Invalid token' }, { status: 400 });
+      return Response.json({ error: 'Invalid or expired link' }, { status: 401 });
     }
     resolvedLeadId = parsed.leadId;
+  } else {
+    const { requireSession } = await import('@/app/api/utils/authz');
+    const session = await requireSession();
+    if (!session.ok) return session.response;
+    const { getOrganization } = await import('@/lib/organization-context');
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization' }, { status: 403 });
+    }
+    sessionOrganization = organization;
+    viaSession = true;
+    resolvedLeadId = url.searchParams.get('ref') || url.searchParams.get('leadId');
+    if (!resolvedLeadId) {
+      return Response.json({ error: 'Missing lead reference' }, { status: 400 });
+    }
   }
+
+  // Signed action URLs let the seller page POST back with the same credential it
+  // was opened with; the token is bound to leadId+action and re-verified on POST.
+  const tokenQuery = token ? `&t=${encodeURIComponent(token)}` : '';
 
   try {
     // Get lead and offer details
@@ -85,6 +98,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN lead_scores ls ON ls.lead_id = l.id
       LEFT JOIN property_valuations v ON v.lead_id = l.id
       WHERE l.id = ${resolvedLeadId}
+        ${viaSession ? sql`AND l.organization_id = ${sessionOrganization!.id}` : sql``}
       ORDER BY v.created_at DESC NULLS LAST
       LIMIT 1
     `.catch(() => [null]);
@@ -100,7 +114,8 @@ export async function GET(req: NextRequest) {
           assessed_value_cents,
           created_at
         FROM sourced_leads
-        WHERE id::text = ${resolvedLeadId} OR source_id = ${resolvedLeadId}
+        WHERE (id::text = ${resolvedLeadId} OR source_id = ${resolvedLeadId})
+          ${viaSession ? sql`AND source_id IN (SELECT id FROM lead_sources WHERE organization_id = ${sessionOrganization!.id} OR organization_id IS NULL)` : sql``}
         LIMIT 1
       `.catch(() => [null]);
 
@@ -134,10 +149,10 @@ export async function GET(req: NextRequest) {
       return Response.json({
         offer,
         actions: {
-          accept: '/api/portal/offer?action=accept',
-          counter: '/api/portal/offer?action=counter',
-          decline: '/api/portal/offer?action=decline',
-          question: '/api/portal/offer?action=question',
+          accept: `/api/portal/offer?action=accept${tokenQuery}`,
+          counter: `/api/portal/offer?action=counter${tokenQuery}`,
+          decline: `/api/portal/offer?action=decline${tokenQuery}`,
+          question: `/api/portal/offer?action=question${tokenQuery}`,
         },
         faq: [
           { q: 'How does the closing process work?', a: 'Once you accept, we open escrow with a local title company. They handle all paperwork. A mobile notary comes to you for signatures. Funds wire to your account at closing.' },
@@ -175,10 +190,10 @@ export async function GET(req: NextRequest) {
     return Response.json({
       offer,
       actions: {
-        accept: '/api/portal/offer?action=accept',
-        counter: '/api/portal/offer?action=counter',
-        decline: '/api/portal/offer?action=decline',
-        question: '/api/portal/offer?action=question',
+        accept: `/api/portal/offer?action=accept${tokenQuery}`,
+        counter: `/api/portal/offer?action=counter${tokenQuery}`,
+        decline: `/api/portal/offer?action=decline${tokenQuery}`,
+        question: `/api/portal/offer?action=question${tokenQuery}`,
       },
       faq: [
         { q: 'How does the closing process work?', a: 'Once you accept, we open escrow with a local title company. They handle all paperwork. A mobile notary comes to you for signatures. Funds wire to your account at closing.' },
@@ -196,6 +211,7 @@ export async function GET(req: NextRequest) {
 interface OfferResponse {
   leadId: string;
   action: 'accept' | 'counter' | 'decline' | 'question';
+  token?: string;
   counterAmount?: number;
   preferredClosingDate?: string;
   questions?: string;
@@ -218,9 +234,54 @@ export async function POST(req: NextRequest) {
   }
 
   const { leadId, action, counterAmount, preferredClosingDate, questions, contactPreference } = body;
+  const providedToken = body.token || new URL(req.url).searchParams.get('t');
 
   if (!leadId || !action) {
     return Response.json({ error: 'leadId and action required' }, { status: 400 });
+  }
+
+  // AUTHORIZATION (2026-09-26): mutations require a signed token whose lead and
+  // action match the request, or a session that owns the lead. Previously ANY
+  // caller could accept/counter/decline an arbitrary lead id — including leads
+  // belonging to another tenant.
+  if (providedToken) {
+    const parsed = verifyPortalToken(providedToken);
+    if (!parsed) {
+      return Response.json({ error: 'Invalid or expired link' }, { status: 401 });
+    }
+    if (parsed.action !== action) {
+      return Response.json({ error: 'This link does not permit that action' }, { status: 403 });
+    }
+    if (String(parsed.leadId) !== String(leadId)) {
+      return Response.json({ error: 'Lead does not match the link' }, { status: 403 });
+    }
+  } else {
+    const { requireSession } = await import('@/app/api/utils/authz');
+    const session = await requireSession();
+    if (!session.ok) return session.response;
+    const { getOrganization } = await import('@/lib/organization-context');
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization' }, { status: 403 });
+    }
+    const [ownedLead] = await sql`
+      SELECT id FROM leads WHERE id = ${leadId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `.catch(() => [null]);
+    if (!ownedLead) {
+      const [ownedSourced] = await sql`
+        SELECT id FROM sourced_leads
+        WHERE (id::text = ${leadId} OR source_id = ${leadId})
+          AND source_id IN (
+            SELECT id FROM lead_sources
+            WHERE organization_id = ${organization.id} OR organization_id IS NULL
+          )
+        LIMIT 1
+      `.catch(() => [null]);
+      if (!ownedSourced) {
+        return Response.json({ error: 'Lead not found' }, { status: 404 });
+      }
+    }
   }
 
   try {

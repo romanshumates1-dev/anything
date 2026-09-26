@@ -3,10 +3,21 @@
  *
  * Real-time campaign monitoring data for the dashboard.
  * Returns job stats, queue status, email metrics, quality gates, and health status.
+ *
+ * TENANT ISOLATION (2026-09-26 re-review): every query is now bound to the
+ * caller's organization. This endpoint used to return PLATFORM-WIDE data to
+ * any signed-in user — all tenants' queue volumes and expected values, all
+ * tenants' email deliverability counters, and (worst) `SELECT ... FROM
+ * email_warmup_config LIMIT 1`, which returns ANOTHER tenant's warmup row
+ * because that table is keyed by organization_id. `jobs` has no
+ * organization_id column (it is a global worker queue whose org lives in the
+ * payload), so those queries filter on payload->>'organizationId' instead.
  */
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
+import { getOrganization } from '@/lib/organization-context';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,6 +25,12 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   const session = await requireSession();
   if (!session.ok) return session.response;
+
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
+  }
+  const orgId = organization.id;
 
   try {
     if (!process.env.DATABASE_URL) {
@@ -45,6 +62,7 @@ export async function GET(req: NextRequest) {
           COUNT(*) FILTER (WHERE type = 'pipeline_health_check')::int as health_jobs,
           COUNT(*) FILTER (WHERE type LIKE '%email%')::int as email_jobs
         FROM jobs
+        WHERE payload->>'organizationId' = ${orgId}
         GROUP BY status
       `.catch(() => []),
 
@@ -56,6 +74,7 @@ export async function GET(req: NextRequest) {
           COALESCE(SUM(expected_value), 0)::bigint as total_value,
           COALESCE(AVG(touch_number), 0)::float as avg_touch
         FROM campaign_lead_queue
+        WHERE organization_id = ${orgId}
         GROUP BY status
       `.catch(() => []),
 
@@ -74,6 +93,7 @@ export async function GET(req: NextRequest) {
         FROM message_events
         WHERE channel = 'email'
           AND direction = 'outbound'
+          AND organization_id = ${orgId}
           AND created_at >= ${todayStart.toISOString()}
       `.catch(() => [{ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0, unsubscribed: 0, failed: 0, total: 0 }]),
 
@@ -85,6 +105,7 @@ export async function GET(req: NextRequest) {
           paused_reason,
           updated_at
         FROM email_warmup_config
+        WHERE organization_id = ${orgId}
         LIMIT 1
       `.catch(() => []),
 
@@ -99,6 +120,7 @@ export async function GET(req: NextRequest) {
           updated_at
         FROM jobs
         WHERE status IN ('failed', 'dead')
+          AND COALESCE(payload->>'organizationId', '') = ${orgId}
         ORDER BY updated_at DESC
         LIMIT 10
       `.catch(() => []),
@@ -111,6 +133,7 @@ export async function GET(req: NextRequest) {
         FROM message_events
         WHERE channel = 'email'
           AND direction = 'outbound'
+          AND organization_id = ${orgId}
           AND created_at > now() - interval '24 hours'
         GROUP BY date_trunc('hour', created_at)
         ORDER BY hour DESC
@@ -124,8 +147,9 @@ export async function GET(req: NextRequest) {
           COUNT(*)::int as count,
           AVG(clq.expected_value)::bigint as avg_value
         FROM campaign_lead_queue clq
-        JOIN leads l ON l.id = clq.lead_id
+        JOIN leads l ON l.id = clq.lead_id AND l.organization_id = ${orgId}
         WHERE clq.status IN ('queued', 'sent', 'completed')
+          AND clq.organization_id = ${orgId}
         GROUP BY l.metadata->>'state'
         ORDER BY count DESC
         LIMIT 10
@@ -223,6 +247,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('GET /api/campaigns/monitor error', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/campaigns/monitor/route.ts]", status: 500 });
   }
 }

@@ -11,6 +11,8 @@ import Stripe from 'stripe';
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
+import { safeErrorResponse } from '@/app/api/utils/safeError';
+import { resolveAssignmentFeeCents } from '@/app/api/utils/assignmentFee';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
@@ -69,11 +71,47 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // SERVER-AUTHORITATIVE MONEY (2026-09-26): the figure charged is derived from the
+    // buyer contract, never from the request body. A mismatch is refused so a stale or
+    // tampered client value can never create a Stripe intent for a wrong amount.
+    const [buyerContract] = await sql`
+      SELECT c.assignment_fee_cents, l.metadata AS deal_metadata
+      FROM contracts c
+      LEFT JOIN leads l ON l.id = c.seller_lead_id
+      WHERE c.organization_id = ${organization.id}
+        AND c.seller_lead_id = ${dealId}
+        AND c.direction = 'BUYER'
+      ORDER BY c.created_at DESC
+      LIMIT 1
+    `;
+    const contractFeeCents = resolveAssignmentFeeCents(buyerContract);
+    if (!contractFeeCents) {
+      return Response.json(
+        {
+          error:
+            'Assignment fee could not be determined from the contract. Record the fee on the contract before creating a payment.',
+          code: 'FEE_NOT_DETERMINED',
+        },
+        { status: 409 }
+      );
+    }
+    if (contractFeeCents !== Number(amountCents)) {
+      return Response.json(
+        {
+          error: 'Amount does not match the assignment fee recorded on the contract',
+          code: 'FEE_MISMATCH',
+          expectedAmount: contractFeeCents,
+        },
+        { status: 409 }
+      );
+    }
+
     // Check if payment already exists for this deal
     const [existing] = await sql`
       SELECT id, status, stripe_payment_intent_id, stripe_client_secret
       FROM payments
       WHERE deal_id = ${dealId} AND buyer_id = ${buyerId} AND status != 'failed'
+        AND organization_id = ${organization.id}
       ORDER BY created_at DESC
       LIMIT 1
     `;
@@ -150,10 +188,13 @@ export async function POST(req: NextRequest) {
       }, { status: 500 });
     }
 
-    return Response.json({
-      error: error.message || 'Payment creation failed',
-      code: error.code || 'UNKNOWN'
-    }, { status: 500 });
+    // A Stripe API error is described to the caller generically; the raw provider message
+    // (which can embed internal account/endpoint detail) stays in the server log.
+    return safeErrorResponse(error, {
+      context: '[payments/stripe]',
+      message: 'Payment creation failed',
+      code: 'PAYMENT_CREATION_FAILED',
+    });
   }
 }
 

@@ -11,6 +11,7 @@ import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/auth';
 import { requireAdmin } from '@/app/api/utils/authz';
 import sql from '@/app/api/utils/sql';
+import { syntheticDataAllowed } from '@/app/api/utils/syntheticData';
 import {
   SELLER_SOURCES,
   type PublicDataSource,
@@ -297,6 +298,13 @@ async function generatePublicSourceLeads(
   county: string | undefined,
   limit: number
 ): Promise<GeneratedLead[]> {
+  // NO FABRICATED LEADS IN PRODUCTION (2026-09-26): this generator invents owners,
+  // addresses and distress scores. Dev-only, behind an explicit opt-in flag.
+  if (!syntheticDataAllowed('ALLOW_SIMULATED_LEADS')) {
+    console.warn('[PUBLIC-POOL] Simulated public-source leads disabled');
+    return [];
+  }
+
   const leads: GeneratedLead[] = [];
 
   // Get sources to use

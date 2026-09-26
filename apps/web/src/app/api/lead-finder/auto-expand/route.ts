@@ -14,10 +14,12 @@
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
+import { syntheticDataAllowed } from '@/app/api/utils/syntheticData';
 import { logEvent } from '@/app/api/utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { TOP_WHOLESALE_MARKETS, getMarketStats } from '../markets/config';
 import { SELLER_SOURCES, BUYER_SOURCES, type PublicDataSource } from '../public-sources/config';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface ExpandRequest {
   markets?: string[];
@@ -162,9 +164,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Generate leads for each source type. Synthetic generation is dev-only
+    // (2026-09-26): production must never insert invented owners or properties
+    // into sourced_leads.
+    const allowSynthetic = syntheticDataAllowed('ALLOW_SIMULATED_LEADS');
+    if (!allowSynthetic) {
+      results.errors.push(
+        'Simulated lead generation is disabled outside development (set ALLOW_SIMULATED_LEADS=true to enable locally)'
+      );
+    }
+
     // Generate simulated leads for each source type
     for (const source of allSources) {
-      const leads = generateMarketLeads(market, source, limit);
+      const leads = allowSynthetic ? generateMarketLeads(market, source, limit) : [];
 
       for (const lead of leads) {
         // Look up the actual DB source ID for this source+county combination
@@ -358,6 +370,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return safeErrorResponse(err, { context: "[src/app/api/lead-finder/auto-expand/route.ts]", status: 500 });
   }
 }

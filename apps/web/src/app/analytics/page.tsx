@@ -75,7 +75,10 @@ export default function AnalyticsPage() {
   const costs = stats?.costs || { smsCostCents: 0, aiCostCents: 0, totalCostCents: 0, costPerContactCents: 0, costPerDealCents: 0 };
   const margin = stats?.margin || {};
   const totals = stats?.totals || {};
-  const perCampaign: any[] = stats?.perCampaign || [];
+  // Memoized on `stats` so the derived useMemos below see a stable reference
+  // instead of a fresh `[]` on every render — react-hooks/exhaustive-deps flags
+  // deps that "change every render" otherwise.
+  const perCampaign: any[] = useMemo(() => stats?.perCampaign || [], [stats]);
 
   // Filtered campaign list for display (when a specific campaign is selected)
   const filteredPerCampaign = useMemo(() => {

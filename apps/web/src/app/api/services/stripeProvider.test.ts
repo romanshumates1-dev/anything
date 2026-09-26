@@ -128,7 +128,9 @@ describe('MockStripeProvider', () => {
       'any'
     );
     expect(event.type).toBe('payment_intent.succeeded');
-    expect(event.data.object.amount).toBe(1000);
+    // parseWebhookEvent returns the untyped wire object; narrow before access.
+    const object = event.data.object as { amount?: number };
+    expect(object.amount).toBe(1000);
   });
 });
 
@@ -236,10 +238,19 @@ describe('getStripeProvider', () => {
     expect(provider).toBeInstanceOf(LiveStripeProvider);
   });
 
-  it('caches the provider instance', () => {
-    const p1 = getStripeProvider({ type: 'mock' });
-    const p2 = getStripeProvider({ type: 'live' });
-    expect(p1).toBe(p2);
-    expect(p1.type).toBe('mock');
+  it('caches the provider instance per type', () => {
+    const mock1 = getStripeProvider({ type: 'mock' });
+    const mock2 = getStripeProvider({ type: 'mock' });
+    const live1 = getStripeProvider({ type: 'live' });
+    const live2 = getStripeProvider({ type: 'live' });
+    // Same type → same cached instance.
+    expect(mock1).toBe(mock2);
+    expect(live1).toBe(live2);
+    // Different types must NEVER share an instance: the old single-slot cache
+    // handed the mock provider to the live webhook path, silently disabling
+    // signature verification.
+    expect(mock1).not.toBe(live1);
+    expect(mock1.type).toBe('mock');
+    expect(live1.type).toBe('live');
   });
 });

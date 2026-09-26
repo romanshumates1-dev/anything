@@ -26,11 +26,11 @@ import { resolveWebSocketConstructor } from '@/lib/websocket';
 import {
   ROLE_ADMIN,
   ROLE_MEMBER,
-  isEmailDomainAllowed,
   isSeedAdminEmail,
 } from '@/app/api/utils/access-control';
 import { runWithDbRetry } from '@/app/api/utils/dbRetry';
 import { checkSignupAllowed } from '@/app/api/utils/signup-restrictions';
+import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 import { isAccessDenied } from '@/lib/user-status';
 
 // Runtime-agnostic: global WebSocket on workerd / Node >= 22, `ws` on Node 20.
@@ -139,7 +139,7 @@ export const auth = betterAuth({
       // databaseHooks below, so no single bypass grants access.
       if (ctx.path === '/sign-up/email' || ctx.path === '/sign-in/email') {
         const body = ctx.body as { email?: unknown } | undefined;
-        if (!body || typeof body.email !== 'string' || !isEmailDomainAllowed(body.email)) {
+        if (!body || typeof body.email !== 'string' || !(await isEmailDomainAllowedEffective(body.email))) {
           throw new APIError('FORBIDDEN', {
             message: 'Access restricted: this platform is limited to authorized email domains.',
           });
@@ -181,7 +181,7 @@ export const auth = betterAuth({
         // first signup — idempotent by construction (runs once per create,
         // never duplicates; migration 005 upgrades a pre-existing row).
         before: async (user) => {
-          if (!isEmailDomainAllowed(user.email)) {
+          if (!(await isEmailDomainAllowedEffective(user.email))) {
             throw new APIError('FORBIDDEN', {
               message: 'Access restricted: this platform is limited to authorized email domains.',
             });
@@ -255,7 +255,7 @@ export const auth = betterAuth({
             [session.userId]
           );
           const u = rows[0];
-          if (!u || !isEmailDomainAllowed(u.email)) return false;
+          if (!u || !(await isEmailDomainAllowedEffective(u.email))) return false;
           if (isAccessDenied(u)) return false;
           return { data: session };
         },

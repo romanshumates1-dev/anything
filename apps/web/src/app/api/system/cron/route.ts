@@ -17,6 +17,7 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { recordRun } from '@/app/api/utils/execution-ledger';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 import { checkInspectionPeriods } from '@/app/api/services/contractNotifications';
 
 type CronTask = {
@@ -372,7 +373,7 @@ const TASKS: Record<string, CronTask> = {
 
 export async function POST(request: Request) {
   const provided = request.headers.get('x-cron-secret');
-  if (!CRON_SECRET || provided !== CRON_SECRET) {
+  if (!CRON_SECRET || !timingSafeSecretEqual(provided, CRON_SECRET)) {
     return unauthorized();
   }
 

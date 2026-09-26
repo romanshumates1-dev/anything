@@ -103,7 +103,7 @@ export async function POST(
     const leadIdColumn = campaign.direction === 'SELLER' ? 'seller_lead_id' : 'buyer_lead_id';
     for (const c of validContacts) {
       try {
-        const leadId = await resolveLeadIdByPhone(c.phone);
+        const leadId = await resolveLeadIdByPhone(c.phone, organization.id);
         if (leadId) {
           await sql`
             UPDATE campaign_contacts

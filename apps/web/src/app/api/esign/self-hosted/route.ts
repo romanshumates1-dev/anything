@@ -27,6 +27,7 @@ import {
   type ESignDocument,
   type SigningSession,
 } from './engine';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -262,7 +263,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('[ESIGN-SELF] Error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/esign/self-hosted/route.ts]", status: 500 });
   }
 }
 

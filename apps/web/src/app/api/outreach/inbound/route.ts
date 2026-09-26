@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
           // Funnel analytics (P4): an affirmative reply is the real "engaged"
           // event. Resolve lead_id by phone (campaign_contacts carries no
           // reliable lead_id column) — best-effort, never blocks the reply.
-          const leadId = await resolveLeadIdByPhone(from);
+          const leadId = await resolveLeadIdByPhone(from, organizationId);
           if (leadId) {
             await recordStageTransition({
               leadId,

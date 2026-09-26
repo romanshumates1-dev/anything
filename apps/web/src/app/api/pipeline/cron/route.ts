@@ -10,18 +10,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { schedulePipelineRun, sendDailyDigests, processAutoContinue } from '@/app/api/utils/pipelineOrchestrator';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 // Verify cron secret to prevent unauthorized access
 function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
-  // If no secret is configured, allow in development
-  if (!cronSecret && process.env.NODE_ENV === 'development') {
-    return true;
+  if (!cronSecret) {
+    // No secret configured: development may proceed, production FAILS CLOSED.
+    // (A raw `authHeader === \`Bearer ${cronSecret}\`` here would accept the
+    // literal header "Bearer undefined" when the env var is missing.)
+    return process.env.NODE_ENV === 'development';
   }
 
-  return authHeader === `Bearer ${cronSecret}`;
+  const token =
+    authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  return timingSafeSecretEqual(token, cronSecret);
 }
 
 export async function POST(request: NextRequest) {

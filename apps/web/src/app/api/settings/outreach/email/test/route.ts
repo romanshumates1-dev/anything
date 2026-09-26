@@ -9,6 +9,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
 // Rate limiting is done via audit_logs for test-specific daily limits
 import sql from '@/app/api/utils/sql';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface TestEmailRequest {
   to: string;
@@ -372,6 +373,6 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('[EmailTest] Error:', error);
-    return Response.json({ error: error.message || 'Failed to send test email' }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/settings/outreach/email/test/route.ts]", status: 500 });
   }
 }

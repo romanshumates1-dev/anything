@@ -228,11 +228,20 @@ export async function GET(req: NextRequest) {
 </body>
 </html>
     `, {
-      headers: { 'Content-Type': 'text/html' },
+      headers: {
+        'Content-Type': 'text/html',
+        // SECURITY: reached from a one-time email link. Never cache or store this
+        // response at an intermediary, and do not leak the token onward via Referer.
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        'Referrer-Policy': 'no-referrer',
+      },
     });
 
   } catch (error: any) {
-    console.error('GET /api/contracts/step-out/confirm error', error);
-    return Response.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    // SECURITY: this endpoint is unauthenticated (the email link IS the credential),
+    // so internal error text must never be echoed to the caller.
+    console.error('GET /api/contracts/step-out/confirm error:', error);
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

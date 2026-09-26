@@ -54,6 +54,27 @@ export async function POST(request: Request) {
     // actually uses, bypassing signature verification entirely.
     const provider: EsignProviderType = (process.env.ESIGN_PROVIDER || 'mock') as EsignProviderType;
 
+    // SECURITY (production hardening): the mock provider accepts ANY signature
+    // (documented in esignProvider.ts) and ESIGN_PROVIDER DEFAULTS to 'mock'.
+    // Without this guard a publicly reachable deployment could have a forged
+    // `{ event_type: 'signed', contract_id: ... }` body accepted with any
+    // signature, driving the contract status machine to SIGNED/COUNTERSIGNED and
+    // firing buyer/seller notifications for a deal nobody signed.
+    // This mirrors the guard on /api/payments/webhook (ALLOW_MOCK_PAYMENT_WEBHOOKS),
+    // which was added for the identical class of flaw. Operators running the mock
+    // provider in production must opt in explicitly.
+    if (
+      provider === 'mock' &&
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_MOCK_ESIGN_WEBHOOKS !== '1'
+    ) {
+      console.error('[esign/webhook] Refusing event: e-sign provider is not configured (ESIGN_PROVIDER=mock in production)');
+      return new Response(JSON.stringify({ error: 'E-sign provider not configured' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // Verify webhook signature
     const provider_ = getEsignProvider({ type: provider });
     if (!provider_.verifyWebhook({ body, signature, provider })) {

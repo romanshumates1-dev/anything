@@ -20,7 +20,7 @@ import { cancelCadence } from '../../utils/cadenceEngine';
 import { detectHumanRequest, handleHumanRequest } from '../../services/humanRequestDetector';
 import { isOptOutMessage } from '../../services/optOutDetection';
 import { registerOptOut } from '../../utils/compliance';
-import { recordStageTransition, resolveLeadIdByPhone } from '../../services/stageTransitionRecorder';
+import { recordStageTransitionsBulk, resolveLeadIdsByPhoneGlobal } from '../../services/stageTransitionRecorder';
 
 const SNS_SIGNING_CERT_URL_PATTERN = /^https:\/\/sns\.[a-z0-9-]+\.amazonaws\.com\//;
 
@@ -48,7 +48,15 @@ interface SMSMessage {
 }
 
 async function verifySNSSignature(message: SNSMessage): Promise<boolean> {
-  if (!process.env.AWS_SNS_VERIFY_SIGNATURES || process.env.AWS_SNS_VERIFY_SIGNATURES === 'false') {
+  // FAIL CLOSED BY DEFAULT (fixed 2026-09-26 re-review): the old gate was
+  // `if (!process.env.AWS_SNS_VERIFY_SIGNATURES || === 'false') return true;`
+  // — an UNSET variable silently disabled verification, so anyone could POST
+  // a forged SNS Notification to /api/sms/sns-inbound and inject inbound SMS
+  // (opt-outs, negotiation jobs). .env.example and DEPLOY.md both document
+  // the default as `true`; the code now matches them. Verification only runs
+  // when explicitly disabled with AWS_SNS_VERIFY_SIGNATURES=false (local
+  // development without network access to AWS signing certs).
+  if (process.env.AWS_SNS_VERIFY_SIGNATURES === 'false') {
     return true;
   }
 
@@ -162,14 +170,14 @@ export async function POST(request: Request) {
   if (isStop) {
     await registerOptOut(from, 'sms', upperText);
     await cancelCadence(from);
-    const leadId = await resolveLeadIdByPhone(from);
-    if (leadId) {
-      await recordStageTransition({
-        leadId,
-        fromStage: null,
-        toStage: 'CLOSED_LOST',
+    // registerOptOut above is platform-wide by design, so attribution is symmetric:
+    // every lead holding this number gets the closed-lost event, rather than one
+    // arbitrary tenant chosen by ORDER BY updated_at DESC.
+    const optOutLeadIds = await resolveLeadIdsByPhoneGlobal(from);
+    if (optOutLeadIds.length) {
+      await recordStageTransitionsBulk(optOutLeadIds, 'CLOSED_LOST', {
         channel: 'sms',
-        metadata: { reason: 'opt_out' },
+        reason: 'opt_out',
       });
     }
     await logEvent('sms_opt_out', from, 'sns_inbound', { keyword: upperText, messageSid });
@@ -178,8 +186,15 @@ export async function POST(request: Request) {
 
   const humanDetection = detectHumanRequest(text);
   if (humanDetection.isHumanRequest) {
-    const humanLeadId = await resolveLeadIdByPhone(from);
-    if (humanLeadId) {
+    // TENANT ISOLATION: a stranger texting the platform must not be able to pick
+    // which tenant acts on it. Previously this resolved ONE arbitrary lead, read that
+    // lead's organization_id, and ran handleHumanRequest inside that tenant - an
+    // unauthenticated cross-tenant write. Attribution is now acted on only when it is
+    // UNAMBIGUOUS (exactly one lead). With several matches we log and skip the tenant
+    // action rather than silently choosing one.
+    const humanLeadIds = await resolveLeadIdsByPhoneGlobal(from);
+    if (humanLeadIds.length === 1) {
+      const humanLeadId = humanLeadIds[0];
       const [humanLead] = await sql`SELECT organization_id FROM leads WHERE id = ${humanLeadId}`;
       if (humanLead) {
         await handleHumanRequest(
@@ -190,19 +205,55 @@ export async function POST(request: Request) {
           humanDetection
         );
       }
+    } else if (humanLeadIds.length > 1) {
+      await logEvent('human_request_ambiguous', from, 'sns_inbound', {
+        text,
+        messageSid,
+        matchCount: humanLeadIds.length,
+      });
     }
     await logEvent('human_request', from, 'sns_inbound', { text, messageSid });
     return Response.json({ status: 'human_requested' });
   }
 
-  const [lead] = await sql`
-    SELECT l.id, l.name, l.organization_id, clq.campaign_id
-    FROM leads l
-    LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-    WHERE l.phone = ${from}
-    ORDER BY l.updated_at DESC
-    LIMIT 1
-  `;
+  // TENANT ISOLATION (independent-review fix): the general reply path must route by the
+  // DESTINATION number through the platform's own send history — the same
+  // server-trusted primitive the Twilio route uses — and NOT by sender phone. The old
+  // code did `WHERE l.phone = from ORDER BY updated_at DESC LIMIT 1`: a number shared
+  // by two tenants attributed the reply (AI job + conversation + message event) to
+  // whichever tenant touched it last. destinationNumber is platform-observed metadata,
+  // not caller-chosen identity, and the campaign join below binds the org explicitly.
+  const destinationNumber = smsData.destinationNumber;
+  let lead: { id: string; name: string; organization_id: string; campaign_id: string | null } | undefined;
+  if (destinationNumber) {
+    const [campaign] = await sql`
+      SELECT cc.campaign_id AS "campaignId", c.organization_id AS "organizationId"
+      FROM campaign_contacts cc
+      JOIN campaigns c ON c.id = cc.campaign_id
+      WHERE cc.phone = ${destinationNumber}
+        AND c.status NOT IN ('cancelled', 'paused')
+      ORDER BY cc.updated_at DESC
+      LIMIT 1
+    `;
+    if (campaign) {
+      const [matchedLead] = await sql`
+        SELECT l.id, l.name, l.organization_id
+        FROM leads l
+        WHERE l.phone = ${from}
+          AND l.organization_id = ${campaign.organizationId}
+        ORDER BY l.updated_at DESC
+        LIMIT 1
+      `;
+      lead = matchedLead
+        ? {
+            id: matchedLead.id,
+            name: matchedLead.name,
+            organization_id: matchedLead.organization_id,
+            campaign_id: campaign.campaignId,
+          }
+        : undefined;
+    }
+  }
 
   if (lead) {
     await recordReplyReceived(lead.id, 'sms');

@@ -10,6 +10,7 @@ import { processInspectionUrgency } from './inspectionClock';
 import type { DenyCode } from './dispatchGate';
 import { deductCreditsForAction, refundCredits } from './credits';
 import { getSubscriptionStatus } from './subscriptionGuard';
+import { authorizeAiRequest } from './aiCreditGate';
 
 /**
  * P2.0-W: what to do with a job whose send was denied by dispatchGate.
@@ -359,25 +360,23 @@ export async function processNextJob() {
           SELECT * FROM ai_conversations WHERE lead_id = ${payload.leadId} LIMIT 1
         `;
         if (conv) {
-          // Credit deduction for AI request
+          // Phase 11: server-side AI credit gate. INCLUDED credits are capped per
+          // UTC day/week/month; PURCHASED credits bypass those caps and are only
+          // reached once included credits are capped or exhausted. A denial
+          // suppresses the job (retrying cannot change the outcome).
+          let releaseAiCredit: (() => Promise<void>) | null = null;
           if (payload.organizationId) {
-            const subscription = await getSubscriptionStatus(payload.organizationId);
-            const tier = subscription?.tier || 'free';
-            const aiDeduction = await deductCreditsForAction(
-              payload.organizationId,
-              'AI_REQUEST',
-              tier,
-              `AI reply draft for lead ${payload.leadId}`,
-              { jobId: job.id, leadId: payload.leadId, conversationId: payload.conversationId }
-            );
-            if (!aiDeduction.success) {
-              // Insufficient credits - complete job as credit_exhausted
+            const authorization = await authorizeAiRequest(payload.organizationId, {
+              requestId: `ai_reply:${job.id}`,
+            });
+            if (!authorization.ok) {
               await sql`
                 UPDATE jobs SET status = 'completed', error_message = 'suppressed:insufficient_credits_ai',
                   updated_at = ${new Date()} WHERE id = ${job.id}
               `;
               return { success: false, jobId: job.id, type: job.type, error: 'insufficient_credits' };
             }
+            releaseAiCredit = authorization.release;
           }
 
           // INT-1: SLA latency tracking — record AI dispatch start
@@ -395,19 +394,33 @@ export async function processNextJob() {
 
           const history = conv.history || [];
           const lastUser = [...history].reverse().find((m: any) => m.role === 'user');
-          const decision = await orchestrateAIResponse(payload.leadId, history);
-          const riskFlag =
-            detectHighRisk(lastUser?.content || '') || detectHighRisk(decision.response_text);
-          const requiresHuman = decision.requires_human || riskFlag;
-          await sql`
-            UPDATE ai_conversations
-            SET history = history || ${JSON.stringify([{ role: 'assistant', content: decision.response_text }])}::jsonb,
-                confidence_score = ${decision.confidence_score},
-                requires_human = ${requiresHuman},
-                status = ${requiresHuman ? 'needs_review' : 'active'},
-                last_message_at = NOW()
-            WHERE id = ${conv.id}
-          `;
+          // The credit was already taken before the provider was called. If the AI work
+          // throws, compensate (idempotently) so a provider outage does not silently
+          // consume the customer's included or purchased credits.
+          try {
+            const decision = await orchestrateAIResponse(payload.leadId, history);
+            const riskFlag =
+              detectHighRisk(lastUser?.content || '') || detectHighRisk(decision.response_text);
+            const requiresHuman = decision.requires_human || riskFlag;
+            await sql`
+              UPDATE ai_conversations
+              SET history = history || ${JSON.stringify([{ role: 'assistant', content: decision.response_text }])}::jsonb,
+                  confidence_score = ${decision.confidence_score},
+                  requires_human = ${requiresHuman},
+                  status = ${requiresHuman ? 'needs_review' : 'active'},
+                  last_message_at = NOW()
+              WHERE id = ${conv.id}
+            `;
+          } catch (error) {
+            if (releaseAiCredit) {
+              try {
+                await releaseAiCredit();
+              } catch (releaseError) {
+                console.error('[jobs] Failed to release AI credit after AI failure:', releaseError);
+              }
+            }
+            throw error;
+          }
         }
         break;
       }

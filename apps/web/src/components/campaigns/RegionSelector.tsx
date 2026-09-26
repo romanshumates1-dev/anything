@@ -183,9 +183,13 @@ export function RegionSelector({
     const statesFromValue = value
       .filter((r) => r.type === 'STATE' && r.include)
       .map((r) => r.value);
-    if (JSON.stringify(statesFromValue) !== JSON.stringify(selectedStates)) {
-      setSelectedStates(statesFromValue);
-    }
+    // Compare via the functional updater so this sync's deps stay [value]:
+    // reading `selectedStates` here would force it into the dep array and
+    // re-run the sync after every local selection change. Returning `prev`
+    // bails out of the re-render exactly like the old equality check did.
+    setSelectedStates((prev) =>
+      JSON.stringify(statesFromValue) !== JSON.stringify(prev) ? statesFromValue : prev
+    );
   }, [value]);
 
   // Fetch counties for selected states

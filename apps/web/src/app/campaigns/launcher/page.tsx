@@ -201,7 +201,7 @@ export default function CampaignLauncherPage() {
   }
 
   if (!session) {
-    redirect('/login');
+    redirect('/account/signin');
   }
 
   if (launchStatus === 'success') {

@@ -127,13 +127,18 @@ async function main() {
   // ========================================
   console.log('\n--- 2. INBOUND REPLY PROCESSING ---\n');
 
-  await test('Inbound SMS webhook exists', async () => {
-    const { status } = await fetchApi('/api/inbound/sms', {
+  await test('Inbound SMS webhook exists (canonical, authenticated)', async () => {
+    // The legacy /api/inbound/sms duplicate is now a shim over /api/sms/inbound
+    // (it was an unauthenticated fail-open copy). Probe the canonical route and
+    // send the simulator credential; 401/403 still prove the endpoint exists
+    // with its auth gate intact.
+    const { status } = await fetchApi('/api/sms/inbound', {
       method: 'POST',
-      body: JSON.stringify({ From: '+15025551234', Body: 'Yes interested' }),
+      headers: { 'x-sms-secret': process.env.SMS_INBOUND_SECRET || '' },
+      body: JSON.stringify({ from: '+15025551234', text: 'Yes interested' }),
     });
-    // 200 = processed, 400 = validation, both mean endpoint exists
-    if (![200, 400].includes(status)) throw new Error(`Status ${status}`);
+    // 200 = processed, 400 = body validation, 401/403 = auth gate answering
+    if (![200, 400, 401, 403].includes(status)) throw new Error(`Status ${status}`);
     return true;
   });
 
@@ -143,12 +148,17 @@ async function main() {
   });
 
   await test('Opt-out detection works', async () => {
-    // Test that STOP keyword triggers opt-out
-    const { status, json } = await fetchApi('/api/inbound/sms', {
+    // STOP keyword triggers opt-out on the canonical route (authenticated).
+    const { status, json } = await fetchApi('/api/sms/inbound', {
       method: 'POST',
-      body: JSON.stringify({ From: '+15029999999', Body: 'STOP' }),
+      headers: { 'x-sms-secret': process.env.SMS_INBOUND_SECRET || '' },
+      body: JSON.stringify({ from: '+15029999999', text: 'STOP' }),
     });
-    log('  ', 'STOP keyword detected as opt-out');
+    if (status === 401 || status === 403) {
+      log('  ', 'STOP path auth-gated (SMS_INBOUND_SECRET not configured here)');
+      return 'WARN';
+    }
+    log('  ', `STOP keyword detected as opt-out (${json?.status ?? status})`);
     return true;
   });
 

@@ -7,6 +7,7 @@
 import sql from '@/app/api/utils/sql';
 import { headers } from 'next/headers';
 import { auth } from '@/lib/auth';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 export type Organization = {
   id: string;
@@ -46,7 +47,7 @@ export async function getOrganization(): Promise<Organization | null> {
     if (
       process.env.NODE_ENV === 'development' &&
       devSecret &&
-      headersList.get('x-local-dev') === devSecret
+      timingSafeSecretEqual(headersList.get('x-local-dev'), devSecret)
     ) {
       console.log('[ORG-CONTEXT] Local dev bypass active');
 

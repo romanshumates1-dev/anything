@@ -74,19 +74,49 @@ WHERE id = 'plan_scale';
 
 -- ============================================================================
 -- Credit Packs Table
+--
+-- 066 already created this table — with a DIFFERENT shape
+-- (id, name, credits, price_cents, savings_percent, active, created_at) and the
+-- pack_100..pack_5000 rows already seeded. The `CREATE TABLE IF NOT EXISTS`
+-- that used to sit here was therefore a silent no-op, so the INSERTs below
+-- failed on the columns it never added (`type`, `margin_percent`) and ABORTED
+-- the migration chain at 071 — which is why 080-086 (the credit system) never
+-- applied and every credits/billing route returns 500.
+--
+-- Reconcile the two definitions instead of redeclaring the table: add the
+-- columns this migration needs, backfill the rows 066 seeded, then restore the
+-- NOT NULL guarantees 071 always intended. `savings_percent` and every other
+-- pre-existing column are left untouched, and no row is deleted or rewritten
+-- beyond filling in the two new columns.
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS public.credit_packs (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK (type IN ('sms', 'ai', 'email')),
-  name TEXT NOT NULL,
-  credits INTEGER NOT NULL,
-  price_cents INTEGER NOT NULL,
-  margin_percent INTEGER NOT NULL,
-  active BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
+ALTER TABLE public.credit_packs
+  ADD COLUMN IF NOT EXISTS type TEXT,
+  ADD COLUMN IF NOT EXISTS margin_percent INTEGER,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- Backfill. Every pack 066 seeded is an AI credit pack, so 'ai' is the
+-- accurate value rather than an arbitrary placeholder. margin_percent was not
+-- tracked before 071, so 0 is the honest default.
+UPDATE public.credit_packs SET type = 'ai' WHERE type IS NULL;
+UPDATE public.credit_packs SET margin_percent = 0 WHERE margin_percent IS NULL;
+
+ALTER TABLE public.credit_packs ALTER COLUMN type SET NOT NULL;
+ALTER TABLE public.credit_packs ALTER COLUMN margin_percent SET NOT NULL;
+
+-- ADD CONSTRAINT has no IF NOT EXISTS, so guard it to keep re-runs no-ops.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.credit_packs'::regclass
+      AND conname = 'credit_packs_type_check'
+  ) THEN
+    ALTER TABLE public.credit_packs
+      ADD CONSTRAINT credit_packs_type_check
+      CHECK (type IN ('sms', 'ai', 'email'));
+  END IF;
+END $$;
 
 -- SMS Packs
 INSERT INTO public.credit_packs (id, type, name, credits, price_cents, margin_percent) VALUES

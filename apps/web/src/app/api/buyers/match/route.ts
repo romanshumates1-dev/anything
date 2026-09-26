@@ -20,6 +20,7 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface BuyerMatch {
   id: number;
@@ -229,6 +230,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('POST /api/buyers/match error', error);
-    return Response.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/buyers/match/route.ts]", status: 500 });
   }
 }

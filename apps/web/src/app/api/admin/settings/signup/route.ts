@@ -8,6 +8,10 @@
  */
 import { requireAdmin } from '@/app/api/utils/authz';
 import sql from '@/app/api/utils/sql';
+import {
+  getEmailDomainPolicy,
+  _resetEmailDomainPolicyCache,
+} from '@/app/api/utils/email-domain-policy';
 
 const SETTINGS_KEY = 'signup_restrictions';
 
@@ -16,28 +20,19 @@ interface SignupRestrictions {
   allowed_email_domains: string[];
 }
 
-const DEFAULT_SETTINGS: SignupRestrictions = {
-  signup_restricted: false,
-  allowed_email_domains: ['dealswiftautomation.com'],
-};
-
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
   try {
-    const [row] = await sql`
-      SELECT value FROM app_settings WHERE key = ${SETTINGS_KEY} LIMIT 1
-    `;
-
-    if (!row?.value) {
-      return Response.json(DEFAULT_SETTINGS);
-    }
-
-    const settings = row.value as SignupRestrictions;
+    // Return the EFFECTIVE policy (database setting when present, environment
+    // allowlist fallback otherwise) so the admin UI can never display a state
+    // that differs from what middleware/auth actually enforce.
+    const policy = await getEmailDomainPolicy();
     return Response.json({
-      signup_restricted: settings.signup_restricted ?? false,
-      allowed_email_domains: settings.allowed_email_domains ?? DEFAULT_SETTINGS.allowed_email_domains,
+      signup_restricted: policy.restricted,
+      allowed_email_domains: policy.domains,
+      source: policy.source,
     });
   } catch (error) {
     console.error('GET /api/admin/settings/signup error', error);
@@ -125,7 +120,11 @@ export async function PUT(request: Request) {
       )
     `;
 
-    return Response.json(settings);
+    // Make the toggle visible to THIS instance immediately; other runtime
+    // instances converge within the policy cache TTL (10 s).
+    _resetEmailDomainPolicyCache();
+
+    return Response.json({ ...settings, source: 'database' });
   } catch (error) {
     console.error('PUT /api/admin/settings/signup error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });

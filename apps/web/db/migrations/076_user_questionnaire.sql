@@ -9,8 +9,13 @@
 -- User questionnaire responses table
 CREATE TABLE IF NOT EXISTS public.user_questionnaire_responses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
-  org_id uuid REFERENCES public.organizations(id) ON DELETE SET NULL,
+  -- `"user".id` is TEXT (better-auth generates text ids) and `organizations.id`
+  -- is TEXT (migration 022 keys organizations on text). These were declared
+  -- uuid, so the foreign keys could never be implemented and CREATE TABLE
+  -- failed outright — aborting the migration chain. Match the referenced
+  -- columns exactly instead of forcing an incompatible uuid relationship.
+  user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  org_id text REFERENCES public.organizations(id) ON DELETE SET NULL,
 
   -- Experience & Scale (Screen 1)
   experience_level text CHECK (experience_level IN ('BEGINNER', 'INTERMEDIATE', 'ADVANCED', 'EXPERT')),

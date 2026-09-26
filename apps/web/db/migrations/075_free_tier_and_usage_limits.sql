@@ -30,12 +30,22 @@ ON CONFLICT (id) DO UPDATE
       price_cents = EXCLUDED.price_cents, limits = EXCLUDED.limits,
       updated_at = now();
 
--- Update tier constraint to include 'free'
+-- Tier constraint — keep the FULL tier set.
+--
+-- This migration is the LAST one to touch subscription_plans_tier_check, but it
+-- previously narrowed the constraint back to four values
+-- ('free','starter','professional','enterprise') after 066 and 067 had already
+-- widened it to seven. `ADD CONSTRAINT` validates existing rows, and the live
+-- database holds pro / business / scale rows, so the statement raised:
+--   check constraint "subscription_plans_tier_check" ... is violated by some row
+-- and aborted the entire migration chain here (075) — which is why 080-086
+-- (the credit system) never applied. The list below is the SUPERSET of every
+-- tier any migration inserts; never narrow it again.
 ALTER TABLE public.subscription_plans
   DROP CONSTRAINT IF EXISTS subscription_plans_tier_check;
 ALTER TABLE public.subscription_plans
   ADD CONSTRAINT subscription_plans_tier_check
-  CHECK (tier IN ('free', 'starter', 'professional', 'enterprise'));
+  CHECK (tier IN ('free', 'starter', 'pro', 'professional', 'business', 'scale', 'enterprise'));
 
 -- Add usage ledger metric types for leads, campaigns, email
 ALTER TABLE public.usage_ledger

@@ -29,7 +29,12 @@ import { Loader2, ArrowRight, Sparkles, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {
-  const { data: session, isPending: authLoading } = useSession();
+  const {
+    data: session,
+    isPending: authLoading,
+    isSessionError,
+    retrySession,
+  } = useSession();
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -55,6 +60,26 @@ export default function DashboardPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
+      </div>
+    );
+  }
+
+  // Transient session-fetch failure: auth state is UNKNOWN, not signed-out.
+  // Show a retry state instead of bouncing an authenticated user to signin
+  // (the "random sign-out"). Genuine sign-out is data:null + error:null.
+  if (isSessionError) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+        <p className="text-sm text-gray-500">
+          Couldn&apos;t verify your session. Check your connection and try again.
+        </p>
+        <button
+          type="button"
+          onClick={retrySession}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Retry
+        </button>
       </div>
     );
   }

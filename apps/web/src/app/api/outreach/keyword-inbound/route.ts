@@ -21,12 +21,15 @@
  *   From, Body, To, source? (optional routing param)
  */
 import sql from '@/app/api/utils/sql';
+
+import { resolvePlatformOrganizationId } from '@/app/api/utils/platformOrg';
 import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { suppressLeadAllChannels } from '@/app/api/services/leadSuppression';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 import { validateTwilioSignature } from '@/app/api/utils/twilio-webhook';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 /** Keywords that trigger inbound enrollment. Case-insensitive. */
 const ENROLLMENT_KEYWORDS = ['offer', 'cash', 'sell', 'info', 'yes', 'start'];
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     // JSON path (simulator/tests): require SMS_INBOUND_SECRET
     const secret = process.env.SMS_INBOUND_SECRET;
     const provided = request.headers.get('x-sms-secret');
-    if (!secret || provided !== secret) {
+    if (!secret || !timingSafeSecretEqual(provided, secret)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -123,14 +126,23 @@ export async function POST(request: Request) {
     return Response.json({ status: 'ignored', reason: 'unrecognized_keyword' });
   }
 
-  // Upsert lead — phone is the key for inbound
+  // Upsert lead — phone is the key for inbound. organization_id is NOT NULL on
+  // leads (migration 030): the previous unattributed INSERT threw on every
+  // enrollment (same class as BREAKAGE_TABLE #35). A public SMS webhook cannot
+  // resolve a session, so the lead is attributed to the platform's primary org.
+  const inboundOrganizationId = await resolvePlatformOrganizationId();
+  if (!inboundOrganizationId) {
+    return Response.json({ error: 'Platform organization not configured' }, { status: 503 });
+  }
+
   const [lead] = await sql`
-    INSERT INTO leads (phone, source, status, metadata)
+    INSERT INTO leads (phone, source, status, metadata, organization_id)
     VALUES (
       ${phone},
       ${'keyword_inbound'},
       ${'new'},
-      ${JSON.stringify({ inbound_source: source, keyword, enrolled_at: new Date().toISOString() })}
+      ${JSON.stringify({ inbound_source: source, keyword, enrolled_at: new Date().toISOString() })},
+      ${inboundOrganizationId}
     )
     ON CONFLICT (phone) DO UPDATE
       SET metadata = leads.metadata || ${JSON.stringify({ inbound_source: source, keyword, last_keyword_at: new Date().toISOString() })}::jsonb,

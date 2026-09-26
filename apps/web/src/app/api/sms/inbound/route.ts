@@ -6,10 +6,11 @@ import { validateTwilioSignature } from '../../utils/twilio-webhook';
 import { enqueueJob } from '../../utils/jobs';
 import { recordReplyReceived } from '../../utils/sla';
 import { cancelCadence } from '../../utils/cadenceEngine';
+import { timingSafeSecretEqual } from '../../utils/secretCompare';
 import { detectHumanRequest, handleHumanRequest } from '../../services/humanRequestDetector';
 import { isOptOutMessage } from '../../services/optOutDetection';
 import { registerOptOut } from '../../utils/compliance';
-import { recordStageTransition, resolveLeadIdByPhone } from '../../services/stageTransitionRecorder';
+import { recordStageTransitionsBulk, resolveLeadIdsByPhoneGlobal } from '../../services/stageTransitionRecorder';
 
 /**
  * Inbound SMS webhook.
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       // Used by curl, tests, and the SMS simulator. NOT reachable by Twilio.
       const secret = process.env.SMS_INBOUND_SECRET;
       const provided = request.headers.get('x-sms-secret');
-      if (!secret || provided !== secret) {
+      if (!secret || !timingSafeSecretEqual(provided, secret)) {
         return Response.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
@@ -130,13 +131,16 @@ export async function POST(request: Request) {
       // Funnel analytics (P4): a real STOP is a closed-lost event. Best-effort
       // — runs for every sender (even ones with no matching lead), so a miss
       // here is expected and must never block the compliance response.
-      const optOutLeadId = await resolveLeadIdByPhone(from);
-      if (optOutLeadId) {
-        await recordStageTransition({
-          leadId: optOutLeadId,
-          fromStage: null,
-          toStage: 'CLOSED_LOST',
+      const optOutLeadIds = await resolveLeadIdsByPhoneGlobal(from);
+      // The suppression above is platform-wide by design (a STOP must unsubscribe
+      // a person everywhere), so attribution must be symmetric with it: record the
+      // closed-lost event on EVERY lead holding this number. Resolving a single lead
+      // picked one arbitrary tenant via ORDER BY updated_at DESC, which let a STOP
+      // arriving on org A's number mutate org B's funnel.
+      if (optOutLeadIds.length) {
+        await recordStageTransitionsBulk(optOutLeadIds, 'CLOSED_LOST', {
           channel: 'inbound',
+          reason: 'opt_out',
         });
       }
 

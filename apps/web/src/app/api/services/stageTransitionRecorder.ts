@@ -42,7 +42,26 @@ export async function recordStageTransition(transition: StageTransition): Promis
   }
 }
 
-export async function resolveLeadIdByPhone(phone: string | null | undefined): Promise<string | null> {
+/**
+ * STRICT, tenant-scoped lead resolution.
+ *
+ * TENANT ISOLATION INVARIANT: a phone number is NOT a tenant-unique key. The same person
+ * can be a lead in several organizations, so resolving by phone alone can hand a caller
+ * another tenant's lead id. `organizationId` is therefore REQUIRED, not optional: making
+ * it required is what forces every call site to state its tenant explicitly instead of
+ * silently inheriting global resolution.
+ *
+ * Returns null when no lead matches. It never returns another organization's lead.
+ */
+export async function resolveLeadIdByPhone(
+  phone: string | null | undefined,
+  organizationId: string
+): Promise<string | null> {
+  if (!organizationId) {
+    // Fail closed rather than degrade to an unscoped global lookup.
+    console.error('[STAGE-TRANSITION] resolveLeadIdByPhone called without an organization; refusing to resolve');
+    return null;
+  }
   // Short-circuit for null/empty phone - never hit the DB
   if (!phone || typeof phone !== 'string' || phone.trim() === '') {
     return null;
@@ -50,11 +69,52 @@ export async function resolveLeadIdByPhone(phone: string | null | undefined): Pr
 
   try {
     const [lead] = await sql`
-      SELECT id FROM leads WHERE phone = ${phone} ORDER BY updated_at DESC LIMIT 1
+      SELECT id FROM leads
+      WHERE phone = ${phone}
+        AND organization_id = ${organizationId}
+      ORDER BY updated_at DESC
+      LIMIT 1
     `;
     return lead?.id || null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * GLOBAL, ambiguity-safe lead resolution - for provider webhooks with no authenticated
+ * tenant context (Twilio inbound SMS, AWS SNS).
+ *
+ * WHY THIS EXISTS RATHER THAN SCOPING: the TCPA opt-out gate intentionally suppresses a
+ * number platform-wide, because a person sending STOP must be unsubscribed everywhere and
+ * over-suppression can only prevent sending - it never exposes data or moves money. That
+ * suppression is deliberately cross-tenant.
+ *
+ * The defect this replaces was an ASYMMETRY: suppression was global and correct, while
+ * funnel attribution used `resolveLeadIdByPhone(from)` and therefore picked ONE arbitrary
+ * tenant via `ORDER BY updated_at DESC`. A STOP arriving on org A's number could write a
+ * closed-lost stage transition onto org B's lead.
+ *
+ * INVARIANT: this returns EVERY lead matching the number so attribution is symmetric with
+ * the global suppression. It never selects a single arbitrary tenant. Callers must treat
+ * the result as a set and must not assume a single tenant.
+ */
+export async function resolveLeadIdsByPhoneGlobal(
+  phone: string | null | undefined
+): Promise<string[]> {
+  if (!phone || typeof phone !== 'string' || phone.trim() === '') {
+    return [];
+  }
+
+  try {
+    const rows = await sql`
+      SELECT id FROM leads
+      WHERE phone = ${phone}
+      ORDER BY updated_at DESC
+    `;
+    return (rows ?? []).map((r: Record<string, unknown>) => String(r.id));
+  } catch {
+    return [];
   }
 }
 

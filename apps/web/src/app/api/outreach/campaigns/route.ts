@@ -135,9 +135,14 @@ export async function POST(request: NextRequest) {
         return sql`INSERT INTO campaign_message_templates (id, organization_id, campaign_id, kind, body, sequence_order, delay_hours)
                    VALUES (${fuId}, ${organizationId}, ${campaignId}, 'FOLLOW_UP', ${fu.body}, ${idx + 1}, ${fu.delayHours})`;
       }),
-      // Link selected test phones if test mode
-      ...(testMode && selectedTestPhones.length > 0 ? selectedTestPhones.map(phoneId => 
-        sql`UPDATE test_phone_numbers SET organization_id = ${organizationId} WHERE id = ${phoneId}`
+      // Link selected test phones if test mode. TENANT ISOLATION (2026-09-26
+      // re-review): phoneId is caller-supplied and test_phone_numbers is an
+      // ORG-OWNED table (organization_id NOT NULL) that also stores OTP
+      // codes — without the org predicate any admin could reassign another
+      // tenant's number (and its OTP state) into their own org. Only rows
+      // already owned by the caller may be (re)linked.
+      ...(testMode && selectedTestPhones.length > 0 ? selectedTestPhones.map(phoneId =>
+        sql`UPDATE test_phone_numbers SET organization_id = ${organizationId} WHERE id = ${phoneId} AND organization_id = ${organizationId}`
       ) : []),
       // Note: lead_id population happens after transaction via resolveLeadIdByPhone
       ...validContacts.flatMap((c) => {
@@ -154,7 +159,7 @@ export async function POST(request: NextRequest) {
     const leadIdColumn = direction === 'SELLER' ? 'seller_lead_id' : 'buyer_lead_id';
     for (const c of validContacts) {
       try {
-        const leadId = await resolveLeadIdByPhone(c.phone);
+        const leadId = await resolveLeadIdByPhone(c.phone, organizationId);
         if (leadId) {
           await sql`
             UPDATE campaign_contacts

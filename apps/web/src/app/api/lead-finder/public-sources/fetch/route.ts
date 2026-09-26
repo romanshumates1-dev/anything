@@ -25,6 +25,7 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
 import { getOrganization } from '@/lib/organization-context';
+import { syntheticDataAllowed } from '@/app/api/utils/syntheticData';
 import {
   ALL_SOURCES,
   SELLER_SOURCES,
@@ -394,6 +395,13 @@ function parseATTOMResponse(data: any, recordType: string): RawLead[] {
 }
 
 function simulateLeads(source: PublicDataSource, counties: string[], limit: number): RawLead[] {
+  // NO FABRICATED LEADS IN PRODUCTION (2026-09-26): these rows carry invented
+  // owner names, addresses and distress signals, and previously flowed straight
+  // into sourced_leads whenever no provider API key was configured.
+  if (!syntheticDataAllowed('ALLOW_SIMULATED_LEADS')) {
+    console.warn(`[FETCH] Simulated lead generation disabled — source ${source.id} returns no rows`);
+    return [];
+  }
   const leads: RawLead[] = [];
   const leadsPerCounty = Math.ceil(limit / counties.length);
 

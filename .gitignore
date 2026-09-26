@@ -90,3 +90,10 @@ dev-clean.log
 apps/web/public/geo/countries-50m.topo.json
 apps/web/jobs-restart.log
 DealFlow-AI-Setup.exe
+
+# Verification run artifacts (regenerable via scripts/*-walk.mjs, browser-qa.cjs, perf-harness.cjs)
+browser-qa-artifacts/
+perf-artifacts/
+apps/web/browser-qa-artifacts/
+apps/web/perf-artifacts/
+apps/web/.legacy-quarantine/

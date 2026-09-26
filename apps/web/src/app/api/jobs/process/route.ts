@@ -1,4 +1,5 @@
 import { drainJobs } from '../../utils/jobs';
+import { timingSafeSecretEqual } from '../../utils/secretCompare';
 
 /**
  * Job runner trigger. Serverless has no resident worker, so this authenticated
@@ -17,8 +18,10 @@ function isAuthorized(request: Request): boolean {
   const headerSecret = request.headers.get('x-job-runner-secret');
   const bearer = request.headers.get('authorization');
 
-  if (jobSecret && headerSecret === jobSecret) return true;
-  if (cronSecret && bearer === `Bearer ${cronSecret}`) return true;
+  if (jobSecret && timingSafeSecretEqual(headerSecret, jobSecret)) return true;
+  const bearerToken =
+    bearer && bearer.startsWith('Bearer ') ? bearer.slice(7) : null;
+  if (cronSecret && timingSafeSecretEqual(bearerToken, cronSecret)) return true;
   return false;
 }
 

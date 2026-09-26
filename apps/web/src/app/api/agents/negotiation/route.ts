@@ -541,6 +541,20 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'leadId and sellerReply required' }, { status: 400 });
   }
 
+  // TENANT ISOLATION (2026-09-26 re-review): leadId is caller-supplied. Without
+  // this check any authenticated ADMIN of tenant B could flip tenant A's lead to
+  // OPTED_OUT and inject a suppression row — a cross-tenant IDOR write. 404 is
+  // returned both when the lead does not exist and when it belongs to another
+  // org, so the response is not an existence oracle across tenants.
+  const [ownedLead] = await sql`
+    SELECT id FROM leads
+    WHERE id = ${leadId} AND organization_id = ${organization.id}
+    LIMIT 1
+  `.catch(() => [null]);
+  if (!ownedLead) {
+    return Response.json({ error: 'Lead not found' }, { status: 404 });
+  }
+
   try {
     // Classify response (checks opt-out first)
     const classification = classifyResponse(sellerReply);

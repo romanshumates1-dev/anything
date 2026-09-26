@@ -4,8 +4,14 @@
  * 30-message fixture corpus: explicit asks, embedded-word false-positive traps,
  * normal replies. Zero missed explicit asks, FP rate logged.
  */
-import { describe, it, expect } from 'vitest';
-import { detectHumanRequest, detectHumanRequestKeyword, detectHumanRequestLLM } from './humanRequestDetector';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { detectHumanRequest, detectHumanRequestKeyword, detectHumanRequestLLM, handleHumanRequest } from './humanRequestDetector';
+
+const { mockSql } = vi.hoisted(() => ({ mockSql: vi.fn() }));
+vi.mock('@/app/api/utils/sql', () => ({ default: mockSql }));
+vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn() }));
+
+import { logEvent } from '@/app/api/utils/logger';
 
 // ─── Fixture Corpus ──────────────────────────────────────────────────────────
 
@@ -125,6 +131,41 @@ describe('Human Request Detector', () => {
 
       // Acceptable: zero false positives on this corpus
       expect(falsePositives).toEqual([]);
+    });
+  });
+
+  describe('handleHumanRequest tenant scope (independent-review hardening)', () => {
+    const lastQuery = () => (mockSql.mock.calls.at(-1)?.[0] ?? []).join('?');
+    const argsOf = () => (mockSql.mock.calls.at(-1) ?? []).slice(1);
+    const detection = { isHumanRequest: true, method: 'keyword' as const, matchedKeyword: 'call me' };
+
+    beforeEach(() => vi.clearAllMocks());
+
+    it('scopes the write to the (leadId, organizationId) pair — would cross-write without it', async () => {
+      mockSql.mockResolvedValueOnce([{ id: 7 }]);
+      await handleHumanRequest(7, 'conv-1', 'call me please', 'org_a', detection);
+      expect(lastQuery()).toContain('organization_id');
+      expect(argsOf()).toContain('org_a');
+      expect(argsOf()).toContain(7);
+    });
+
+    it('fails closed on a mismatched pair: zero rows updated, audit still records the miss', async () => {
+      mockSql.mockResolvedValueOnce([]);
+      await handleHumanRequest(7, 'conv-1', 'call me please', 'org_b', detection);
+      expect(vi.mocked(logEvent)).toHaveBeenCalledWith(
+        'human_request_detected',
+        'lead',
+        '7',
+        expect.objectContaining({ organizationId: 'org_b', tenantScopedWrite: false }),
+      );
+    });
+
+    it('never attributes the audit row to a user: organizationId travels in the payload, not the user_id slot', async () => {
+      mockSql.mockResolvedValueOnce([{ id: 7 }]);
+      await handleHumanRequest(7, 'conv-1', 'call me please', 'org_a', detection);
+      // logEvent(action, targetType, targetId, payload) — no 5th positional arg.
+      expect(vi.mocked(logEvent).mock.calls[0].length).toBe(4);
+      expect(vi.mocked(logEvent).mock.calls[0][3]).toMatchObject({ organizationId: 'org_a' });
     });
   });
 });

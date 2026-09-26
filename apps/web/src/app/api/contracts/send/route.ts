@@ -17,6 +17,7 @@ import { logEvent } from '@/app/api/utils/logger';
 import { getEsignProvider } from '@/app/api/services/esignProvider';
 import { recordStageTransition } from '@/app/api/services/stageTransitionRecorder';
 import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 const PURCHASE_AGREEMENT_TEMPLATE = `
 REAL ESTATE PURCHASE AGREEMENT
@@ -364,6 +365,6 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Unknown contract type' }, { status: 400 });
   } catch (error: any) {
     console.error('POST /api/contracts/send error', error);
-    return Response.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/contracts/send/route.ts]", status: 500 });
   }
 }

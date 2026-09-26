@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
-import { hasRequiredRole, isEmailDomainAllowed } from '@/app/api/utils/access-control';
+import { hasRequiredRole } from '@/app/api/utils/access-control';
+import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 
 function hashKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
@@ -46,7 +47,7 @@ export async function authenticateApiKey(request: NextRequest): Promise<{
     // layer alone is a single point of bypass.
     if (
       !record.owner_email ||
-      !isEmailDomainAllowed(record.owner_email) ||
+      !(await isEmailDomainAllowedEffective(record.owner_email)) ||
       !hasRequiredRole(record.owner_role)
     ) {
       return {

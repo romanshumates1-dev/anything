@@ -1,6 +1,14 @@
 import { type NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
+  // SECURITY: this page builds and fires a FORGED 'signed' webhook event against
+  // /api/esign/webhook. It is a development simulation tool and must never be
+  // reachable on a production deployment, where it would let an unauthenticated
+  // visitor attempt to mark arbitrary contracts as signed.
+  if (process.env.NODE_ENV === 'production') {
+    return new Response('Not found', { status: 404 });
+  }
+
   const searchParams = request.nextUrl.searchParams;
   const envelopeId = searchParams.get('envelopeId');
   const contractId = searchParams.get('contractId');

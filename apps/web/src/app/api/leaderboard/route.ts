@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/app/api/utils/auth';
+import { getOrganization } from '@/lib/organization-context';
 import sql from '@/app/api/utils/sql';
 
 export async function GET(request: Request) {
   const session = await requireSession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // TENANT ISOLATION (2026-09-26): a leaderboard entry exposes a user's revenue and
+  // deal counts. Ranking every account on the platform leaked those figures across
+  // tenants, so the board is scoped to the caller's organization.
+  const organization = await getOrganization();
+  if (!organization) {
+    return NextResponse.json({ error: 'No organization' }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -37,6 +46,10 @@ export async function GET(request: Request) {
       FROM "user" u
       LEFT JOIN user_stats s ON s.user_id = u.id
       WHERE u.banned IS NOT TRUE
+        AND u.id IN (
+          SELECT om.user_id FROM organization_members om
+          WHERE om.organization_id = ${organization.id}
+        )
       ORDER BY COALESCE(s.points, 0) DESC, u."createdAt" ASC
       LIMIT ${limit}
       OFFSET ${offset}
@@ -49,13 +62,17 @@ export async function GET(request: Request) {
           user_id,
           ROW_NUMBER() OVER (ORDER BY points DESC) as rank
         FROM user_stats
+        WHERE user_id IN (
+          SELECT om.user_id FROM organization_members om
+          WHERE om.organization_id = ${organization.id}
+        )
       )
       SELECT rank FROM ranked WHERE user_id = ${session.userId}
     `;
 
     // Get total user count
     const [{ count: totalUsers }] = await sql`
-      SELECT COUNT(*)::int as count FROM "user" WHERE banned IS NOT TRUE
+      SELECT COUNT(*)::int as count FROM organization_members WHERE organization_id = ${organization.id}
     `;
 
     return NextResponse.json({

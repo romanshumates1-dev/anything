@@ -22,6 +22,11 @@ import {
 
 const ONBOARDING_KEY = 'onboarding_completed';
 const TUTORIAL_PROGRESS_KEY = 'tutorial_step_progress';
+// Quick Start path: welcome → import-leads → create-campaign (step indices).
+// Module scope — a literal constant — so handleQuickStart's useCallback dep
+// array doesn't need a per-render local (react-hooks/exhaustive-deps rejects
+// "QUICK_START_STEPS ... changes every render").
+const QUICK_START_STEPS = [0, 2, 3];
 
 const tutorialSteps: TutorialStepData[] = [
   {
@@ -307,7 +312,6 @@ export function OnboardingTutorial({ onComplete, forceShow = false }: Onboarding
   }, [completeOnboarding]);
 
   // Quick Start: Jump to Import Leads step (step 2, index 2), then to Campaign creation (step 3, index 3)
-  const QUICK_START_STEPS = [0, 2, 3]; // welcome, import-leads, create-campaign
   const isQuickStartStep = QUICK_START_STEPS.includes(currentStep);
 
   const handleQuickStart = useCallback(() => {

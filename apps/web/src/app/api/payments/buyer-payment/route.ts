@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import Stripe from 'stripe';
+import { safeErrorResponse } from '@/app/api/utils/safeError';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
@@ -164,7 +165,10 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[PAYMENT-VALIDATE] Error:', error);
 
-    // Handle Stripe-specific errors
+    // Handle Stripe-specific errors.
+    // A StripeCardError message is authored by Stripe for the cardholder, and `code` is
+    // the machine-readable decline reason — both are safe and useful to return, and the
+    // UI needs them to explain a decline.
     if (error.type === 'StripeCardError') {
       return Response.json({
         valid: false,
@@ -174,9 +178,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return Response.json(
-      { error: 'Payment validation failed', details: error.message },
-      { status: 500 }
-    );
+    // Anything else is an internal fault (DB, network, unexpected). Do NOT echo it.
+    return safeErrorResponse(error, {
+      context: '[payments/buyer-payment]',
+      message: 'Payment validation failed',
+      code: 'PAYMENT_VALIDATION_FAILED',
+    });
   }
 }

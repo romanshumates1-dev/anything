@@ -1,7 +1,9 @@
 import { headers } from 'next/headers';
 import { auth } from '@/lib/auth';
 import sql from '@/app/api/utils/sql';
-import { isAdminRole, isEmailDomainAllowed } from '@/app/api/utils/access-control';
+import { isAdminRole } from '@/app/api/utils/access-control';
+import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 /**
  * Server-side authorization for admin-only surfaces (user management, role
@@ -24,7 +26,7 @@ export async function requireAdmin(): Promise<AdminCheck> {
   if (
     process.env.NODE_ENV === 'development' &&
     devSecret &&
-    headersList.get('x-local-dev') === devSecret
+    timingSafeSecretEqual(headersList.get('x-local-dev'), devSecret)
   ) {
     return { ok: true, userId: 'local-dev', email: 'dev@localhost' };
   }
@@ -38,7 +40,7 @@ export async function requireAdmin(): Promise<AdminCheck> {
     SELECT email, role FROM "user" WHERE id = ${session.user.id} LIMIT 1
   `;
 
-  if (!user || !isEmailDomainAllowed(user.email)) {
+  if (!user || !(await isEmailDomainAllowedEffective(user.email))) {
     return {
       ok: false,
       response: Response.json(
@@ -74,7 +76,7 @@ export async function requireSession(): Promise<SessionCheck> {
   if (
     process.env.NODE_ENV === 'development' &&
     devSecret &&
-    headersList.get('x-local-dev') === devSecret
+    timingSafeSecretEqual(headersList.get('x-local-dev'), devSecret)
   ) {
     return { ok: true, userId: 'local-dev', email: 'dev@localhost', role: 'MEMBER' };
   }

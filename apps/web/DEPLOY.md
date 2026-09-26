@@ -220,6 +220,18 @@ Note: Vercel uses its own output format. The `VERCEL=1` environment variable is 
 NODE_ENV=production yarn start
 ```
 
+#### Option D: Cloudflare Workers (staged)
+
+The same codebase deploys as a Cloudflare Worker via `@opennextjs/cloudflare`.
+This is the target production runtime; it is currently STAGED on
+`*.workers.dev` with the apex untouched. Full runbook:
+[Cloudflare Workers deploy](#cloudflare-workers-deploy).
+
+```bash
+cd apps/web
+yarn cf:deploy        # build + size gate + secret scan + wrangler deploy
+```
+
 ### 5. Configure Background Jobs
 
 The job processor must be triggered periodically. Options:
@@ -254,12 +266,18 @@ node --env-file=.env scripts/jobs-dev.mjs
 #### Twilio Webhooks (if using Twilio)
 
 1. Go to Twilio Console > Messaging > Services
-2. Set webhook URL: `https://your-domain.com/api/sms/inbound?secret=$SMS_INBOUND_SECRET`
+2. Set webhook URL: `https://your-domain.com/api/sms/inbound`
+   - Auth is Twilio's `x-twilio-signature`, validated against
+     `TWILIO_AUTH_TOKEN` + `PUBLIC_WEBHOOK_URL`. This route does **not** read a
+     `?secret=` query parameter.
 
 #### AWS SNS Webhooks (if using SNS)
 
 1. Create an SNS topic for delivery receipts
-2. Subscribe your endpoint: `https://your-domain.com/api/sms/inbound?secret=$SMS_INBOUND_SECRET`
+2. Subscribe your endpoint: `https://your-domain.com/api/sms/sns-inbound`
+   - The SNS route verifies the SNS message signature. Subscribing
+     `/api/sms/inbound` with `?secret=` would fail: that route's JSON branch
+     authenticates with the `x-sms-secret` **header** and returns 401 without it.
 
 ### 7. Verify Deployment
 
@@ -413,6 +431,170 @@ Before going live, verify:
 - 10DLC has carrier-specific rate limits (T-Mobile: 2000/day default)
 - Request throughput increases from Twilio for higher volumes
 - Consider toll-free for higher throughput (requires verification)
+
+---
+
+## Cloudflare Workers deploy
+
+The web app builds and runs as a Cloudflare Worker via `@opennextjs/cloudflare`.
+`wrangler.jsonc` and `.dev.vars.example` reference this section as the operator
+runbook.
+
+### Topology
+
+| Piece | Location | Notes |
+|-------|----------|-------|
+| Worker | `dealswift-app` (`wrangler.jsonc`) | Staged URL: `https://dealswift-app.romanshumates1.workers.dev` |
+| Entry point | `apps/web/custom-worker.ts` | Re-exports the OpenNext `fetch` handler and adds `scheduled` for Cron Triggers. |
+| Static assets | `assets` → `.open-next/assets` (binding `ASSETS`) | Served by the assets binding — free and unmetered on every plan. |
+| Compatibility | `nodejs_compat` | `enable_nodejs_tcp_sockets` is deliberately OFF (see Known constraints). |
+| Cron Triggers | `triggers.crons` | 3 schedules, dispatched by `routeForCron()` in `custom-worker.ts`. |
+
+Deploy is **staged**: no `routes` entry, so the Worker stays on `*.workers.dev`
+and the live WordPress site on the apex is untouched. Adding an apex route
+REPLACES the DNS records serving WordPress — that is the cutover moment (see
+"Apex cutover" below).
+
+### Prerequisites
+
+- Workers **Paid** plan — the compiled script is ~8.5 MB gzip, above the Free
+  3 MB cap (`cf:size` passes `10485760`, the Paid cap).
+- `npx wrangler whoami` shows the target account (OAuth or `CLOUDFLARE_API_TOKEN`).
+- Neon `DATABASE_URL` reachable from Workers (pooled endpoint).
+
+### Commands (run from `apps/web`)
+
+| Command | Effect |
+|---------|--------|
+| `yarn cf:build` | `opennextjs-cloudflare build` → `scrub-opennext-env.mjs` → `patch-opennext-instrumentation.mjs` |
+| `yarn cf:size` | `wrangler deploy --dry-run --outdir .wrangler/dry-run-out`, then the gzip size gate |
+| `yarn cf:gate` | `cf:build` + `cf:size` + secret scan of the dry-run output — the deploy gate |
+| `yarn cf:deploy` | `cf:gate`, then `OPEN_NEXT_DEPLOY=true wrangler deploy` |
+| `yarn cf:preview` | Build + `opennextjs-cloudflare preview` (local workerd) |
+| `yarn cf:typecheck` | Build + `tsc -p tsconfig.cloudflare.json` |
+| `yarn cf:typegen` | Regenerate `cloudflare-env.d.ts` from the wrangler config |
+
+Windows notes:
+
+- Run wrangler commands with `apps/web` as cwd; wrangler refuses to run from the
+  monorepo workspace root. `check-worker-size.mjs` re-roots itself when invoked
+  from the repo root.
+- `scripts/rebuild-and-deploy.mjs` is the one-shot orchestrator
+  (build → gate → deploy) that passes `OPEN_NEXT_DEPLOY` as a real environment
+  variable — the `VAR=x command` inline syntax is not portable to cmd. It logs
+  to `D:\tmp\rebuild-deploy.log`.
+- CI (`.github/workflows/ci.yml`) does not run the Cloudflare gates yet;
+  `cf:gate` is an operator step. Add it to CI for deploy-parity on PRs.
+
+### What the gates enforce
+
+- **Script size** — Cloudflare meters the compiled Worker AFTER compression
+  (3 MB Free / 10 MB Paid). `check-worker-size.mjs` gzips exactly the files
+  `wrangler deploy --dry-run` would upload (static assets excluded) and fails
+  closed. It prefers wrangler's own reported gzip figure; its local recount is
+  the fallback, and a >5% divergence is printed.
+- **No secrets in shipped artifacts** — `scrub-opennext-env.mjs` blanks
+  `.open-next/cloudflare/next-env.mjs`, which the adapter fills with every
+  value from `.env`; `check-secrets-in-bundle.mjs` then scans the client
+  bundle, `.open-next` and the wrangler dry-run output for the configured
+  secret VALUES and for secret-shaped literals (`sk_live_`, `whsec_`,
+  `sk-ant-`, `AKIA…`, credential-bearing `postgres://` URLs). Both were added
+  after a real leak.
+
+### Secrets
+
+- **Local / preview:** `cp .dev.vars.example .dev.vars`, fill in; used by
+  `yarn cf:preview` and `wrangler dev`. `.dev.vars*` is gitignored except the
+  `.example`.
+- **Production:** `.dev.vars.prod` holds the production overrides (apex
+  `BETTER_AUTH_URL` / `PUBLIC_WEBHOOK_URL`; `RUN_LIVE_FLOWS=0` and
+  `AWS_SNS_SMS_ENABLED=false` for the first cutover so cron triggers cannot
+  send real SMS/email until verified). Upload with:
+
+  ```bash
+  npx wrangler secret bulk .dev.vars.prod   # 32 keys as of 2026-09-19
+  ```
+
+- Rotate one key with `npx wrangler secret put NAME` — a secret change creates a
+  new Worker version but does not rebuild the bundle.
+- `NEXT_PUBLIC_*` values are inlined at BUILD time, not read at runtime — they
+  must be present in the build environment, not (only) as Worker secrets.
+
+### Cron Triggers
+
+Three UTC schedules in `wrangler.jsonc`; `custom-worker.ts` maps each to an
+internal route in `routeForCron()`. Keep both sides in sync — an unmapped
+expression logs an error rather than doing nothing silently, and the internal
+routes fail closed when their secrets are missing.
+
+| Cron | Route | Purpose |
+|------|-------|---------|
+| `*/5 * * * *` | `POST /api/jobs/process` | job-queue drain (speed-to-lead SLA) |
+| `*/15 * * * *` | `POST /api/pipeline/cron` | pipeline orchestration + digests |
+| `0 8 * * *` | `POST /api/jobs/process` | end-of-day drain sweep |
+
+Workers Free allows 5 cron triggers per account — this stays at 3.
+
+### Known constraints
+
+- **SMTP is not viable** (outbound ports 25/587 blocked). Email runs through the
+  SES HTTPS API (`EMAIL_PROVIDER=ses`); `enable_nodejs_tcp_sockets` stays off.
+- **Ollama is not viable** (localhost TCP + GPU). `AI_PROVIDER` must be
+  `anthropic` or `bedrock`; the runtime refuses localhost providers on workerd.
+- **Standalone output is Docker-only.** `next.config.js` disables it when
+  `VERCEL`, `OPEN_NEXT` or `CLOUDFLARE` is set — a manual `CLOUDFLARE=1 yarn
+  build` produces a Worker-oriented build that will NOT run under Docker.
+- `www` must 301-redirect to the apex (Cloudflare Redirect Rule):
+  `csrfProtection.ts` compares hosts and would reject www POSTs.
+
+### Verify a deploy
+
+Expect `200` and `"ok":true` with all services true:
+
+```bash
+curl -s https://dealswift-app.romanshumates1.workers.dev/api/system/health
+```
+
+Expect `401` — secret-gated routes fail closed without credentials:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://dealswift-app.romanshumates1.workers.dev/api/jobs/process
+```
+
+Also confirm the three cron schedules (dashboard → Workers & Pages →
+`dealswift-app` → Settings → Triggers) and that `robots.txt` advertises the
+apex sitemap (`NEXT_PUBLIC_APP_URL` is build-time).
+
+Last staged verification (2026-09-19): health 200 with `db/jobs/ai/sms` all
+true; homepage, pricing, account/signin 200; CSP and the other security headers
+present; three cron schedules registered; `/api/jobs/process` 401 without
+credentials; bundle ≈8.5 MB gzip of the 10 MB Paid cap.
+
+### Apex cutover (staged → live)
+
+⚠️ This REPLACES the DNS records currently serving the WordPress site on
+`dealswiftautomation.com`.
+
+1. Confirm the staged Worker is healthy and the verification above passes.
+2. Add the `www` → apex 301 Redirect Rule in Cloudflare.
+3. Add routes to `wrangler.jsonc`:
+
+   ```jsonc
+   "routes": [{ "pattern": "dealswiftautomation.com", "custom_domain": true }]
+   ```
+
+4. `yarn cf:gate && yarn cf:deploy` (or `scripts/rebuild-and-deploy.mjs`).
+5. Enable live flows (`RUN_LIVE_FLOWS=1`, messaging flags) only after the flows
+   are verified on the cutover host.
+
+### Rollback
+
+- Previous Worker version: `npx wrangler rollback`.
+- Back to WordPress: remove the `routes` entry, redeploy, restore the DNS
+  records.
+- The bundle is environment-free (env file scrubbed at build time), so the same
+  artifact can be rolled forward/back without a rebuild.
 
 ---
 

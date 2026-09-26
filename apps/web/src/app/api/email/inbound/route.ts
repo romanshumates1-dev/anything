@@ -10,6 +10,7 @@ import sql from '@/app/api/utils/sql';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { registerOptOut } from '@/app/api/utils/compliance';
 import { logEvent } from '@/app/api/utils/logger';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 const EMAIL_QUOTE_HEADER_REGEX = /On .*wrote:/;
 const UNSUBSCRIBE_KEYWORDS = ['unsubscribe', 'stop', 'remove me', 'opt out'];
@@ -37,7 +38,7 @@ function isUnsubscribe(text: string): boolean {
 export async function POST(req: NextRequest) {
   // Gate 1: Security. The webhook must be called with a shared secret.
   const secret = req.nextUrl.searchParams.get('s');
-  if (secret !== process.env.SMS_INBOUND_SECRET) {
+  if (!timingSafeSecretEqual(secret, process.env.SMS_INBOUND_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -20,6 +20,7 @@ import {
   type NegotiationRecord,
 } from '../engine';
 import { requireValidCsrf } from '@/app/api/utils/csrfProtection';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface GenerateContractRequest {
   dealId: string;
@@ -310,8 +311,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('[CONTRACTS] Error generating contract:', error);
-    return Response.json({
-      error: error.message || 'Failed to generate contract',
-    }, { status: 500 });
+    return safeErrorResponse(error, { context: "[src/app/api/contracts/generate/route.ts]", status: 500 });
   }
 }

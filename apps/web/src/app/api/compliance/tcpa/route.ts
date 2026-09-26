@@ -132,12 +132,16 @@ async function checkFrequency(phone: string, channel: string): Promise<boolean> 
 }
 
 // Check consent status
-async function checkConsent(leadId: string, channel: string): Promise<boolean> {
+async function checkConsent(leadId: string, channel: string, organizationId: string): Promise<boolean> {
   if (!leadId) return true; // No lead ID = can't verify, allow with caution
 
+  // TENANT ISOLATION (2026-09-26 re-review): scope the read to the caller's
+  // org. An unowned/nonexistent leadId is indistinguishable from "no consent
+  // record", which the fallback below already treats as allowed — so this is
+  // not a cross-tenant existence oracle either.
   const [consent] = await sql`
     SELECT consent_sms, consent_call, consent_email
-    FROM leads WHERE id = ${leadId}
+    FROM leads WHERE id = ${leadId} AND organization_id = ${organizationId}
   `.catch(() => [null]);
 
   if (!consent) return true; // No consent record = assume allowed
@@ -172,6 +176,21 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'phone and channel required' }, { status: 400 });
   }
 
+  // TENANT ISOLATION (2026-09-26 re-review): a caller-supplied leadId is only
+  // honoured for leads this org owns. A foreign/unknown id is dropped (not
+  // rejected) so the response cannot be used as a cross-tenant existence
+  // oracle; phone-based checks (suppression, frequency, DNC) still run, which
+  // is the platform-wide, caller-independent part of the TCPA decision.
+  let scopedLeadId: string | undefined;
+  if (typeof leadId === 'string' && leadId) {
+    const [ownedLead] = await sql`
+      SELECT id FROM leads
+      WHERE id = ${leadId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `.catch(() => [null]);
+    if (ownedLead) scopedLeadId = leadId;
+  }
+
   try {
     const state = getStateFromPhone(phone);
     const { isQuiet, nextAllowed } = isQuietHours(timezone || 'America/New_York', state);
@@ -179,9 +198,9 @@ export async function POST(req: NextRequest) {
     // Run all checks in parallel
     const [onDNC, onSuppression, frequencyOk, consentValid] = await Promise.all([
       checkDNCList(phone),
-      checkSuppressionList(phone, leadId),
+      checkSuppressionList(phone, scopedLeadId),
       checkFrequency(phone, channel),
-      checkConsent(leadId || '', channel),
+      checkConsent(scopedLeadId || '', channel, organization.id),
     ]);
 
     const stateRestricted = RESTRICTED_STATES.includes(state);
@@ -235,6 +254,34 @@ export async function PUT(req: NextRequest) {
   }
 
   const { phone, channel, leadId, success } = body;
+
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization' }, { status: 403 });
+  }
+
+  if (typeof phone !== 'string' || !phone) {
+    return Response.json({ error: 'phone required' }, { status: 400 });
+  }
+  if (typeof channel !== 'string' || !channel) {
+    return Response.json({ error: 'channel required' }, { status: 400 });
+  }
+
+  // TENANT ISOLATION (2026-09-26 re-review): leadId is caller-supplied and
+  // contact_log rows are read by the platform-wide frequency check. Inserting
+  // a row against another tenant's lead let an admin pollute a foreign lead's
+  // contact history (and skew that phone's weekly frequency counter). Reject
+  // any lead the caller's org does not own.
+  if (leadId != null) {
+    const [ownedLead] = await sql`
+      SELECT id FROM leads
+      WHERE id = ${leadId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `.catch(() => [null]);
+    if (!ownedLead) {
+      return Response.json({ error: 'Lead not found' }, { status: 404 });
+    }
+  }
 
   try {
     await sql`

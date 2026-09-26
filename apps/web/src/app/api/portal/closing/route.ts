@@ -79,10 +79,25 @@ export async function GET(req: NextRequest) {
       return Response.json({ error: 'Invalid or expired access token' }, { status: 401 });
     }
   } else {
-    // No token - require session auth
+    // No token - require session auth (2026-09-26: also verify the lead belongs to
+    // the session's organization; previously any authenticated user could read any
+    // tenant's closing by guessing a lead id).
     const { requireSession } = await import('@/app/api/utils/authz');
     const session = await requireSession();
     if (!session.ok) return session.response;
+    const { getOrganization } = await import('@/lib/organization-context');
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization' }, { status: 403 });
+    }
+    const [ownedLead] = await sql`
+      SELECT 1 FROM leads
+      WHERE id = ${leadId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `.catch(() => [null]);
+    if (!ownedLead) {
+      return Response.json({ error: 'Lead not found' }, { status: 404 });
+    }
   }
 
   try {
@@ -261,10 +276,25 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Invalid or expired access token' }, { status: 401 });
     }
   } else {
-    // No token - require session auth
+    // No token - require session auth (2026-09-26: also verify the lead belongs to
+    // the session's organization; previously any authenticated user could mutate any
+    // tenant's closing record by guessing a lead id).
     const { requireSession } = await import('@/app/api/utils/authz');
     const session = await requireSession();
     if (!session.ok) return session.response;
+    const { getOrganization } = await import('@/lib/organization-context');
+    const organization = await getOrganization();
+    if (!organization) {
+      return Response.json({ error: 'No organization' }, { status: 403 });
+    }
+    const [ownedLead] = await sql`
+      SELECT 1 FROM leads
+      WHERE id = ${leadId} AND organization_id = ${organization.id}
+      LIMIT 1
+    `.catch(() => [null]);
+    if (!ownedLead) {
+      return Response.json({ error: 'Lead not found' }, { status: 404 });
+    }
   }
 
   try {

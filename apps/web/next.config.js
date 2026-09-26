@@ -31,11 +31,16 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ka-p.fontawesome.com",
+              // static.cloudflareinsights.com serves the Cloudflare Web Analytics beacon
+              // that the Workers platform injects automatically. Without this the beacon is
+              // blocked on EVERY page (verified in a real browser: 11/13 routes logged a CSP
+              // violation) and Web Analytics silently collects nothing.
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ka-p.fontawesome.com https://static.cloudflareinsights.com",
               "style-src 'self' 'unsafe-inline' https://ka-p.fontawesome.com",
               "font-src 'self' https://ka-p.fontawesome.com data:",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://ka-p.fontawesome.com https://*.neon.tech wss://*.neon.tech",
+              // connect-src must also allow the beacon's reporting endpoint.
+              "connect-src 'self' https://ka-p.fontawesome.com https://*.neon.tech wss://*.neon.tech https://cloudflareinsights.com https://static.cloudflareinsights.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

@@ -33,43 +33,22 @@ import {
 type TimePeriod = 'week' | 'month' | 'all';
 
 /**
- * Mock leaderboard data for development.
- *
- * Future API endpoint: GET /api/leaderboard
- * Query params:
- *   - period: 'week' | 'month' | 'all' (default: 'month')
- *   - limit: number (default: 20)
- *   - offset: number (default: 0)
- *
- * Response: {
- *   leaderboard: LeaderboardEntry[],
- *   currentUser: { rank: number, entry: LeaderboardEntry },
- *   totalUsers: number
- * }
+ * Leaderboard entry as rendered by this page. Data comes from
+ * GET /api/leaderboard (organization-scoped); no mock/demo rows are shown.
  */
-const mockLeaderboard = [
-  { id: '1', name: 'Alex Johnson', avatar: 'AJ', deals: 24, revenue: 125000, responseRate: 42, points: 4850, trend: 'up' as const, streak: 15, rankChange: 2 },
-  { id: '2', name: 'Sarah Chen', avatar: 'SC', deals: 21, revenue: 98000, responseRate: 38, points: 4200, trend: 'up' as const, streak: 12, rankChange: 1 },
-  { id: '3', name: 'Mike Williams', avatar: 'MW', deals: 18, revenue: 87000, responseRate: 35, points: 3600, trend: 'same' as const, streak: 8, rankChange: 0 },
-  { id: '4', name: 'Emily Davis', avatar: 'ED', deals: 16, revenue: 76000, responseRate: 33, points: 3200, trend: 'down' as const, streak: 5, rankChange: -2 },
-  { id: '5', name: 'David Brown', avatar: 'DB', deals: 15, revenue: 72000, responseRate: 31, points: 3000, trend: 'up' as const, streak: 10, rankChange: 3 },
-  { id: '6', name: 'Lisa Anderson', avatar: 'LA', deals: 14, revenue: 68000, responseRate: 30, points: 2800, trend: 'same' as const, streak: 6, rankChange: 0 },
-  { id: '7', name: 'James Wilson', avatar: 'JW', deals: 13, revenue: 64000, responseRate: 28, points: 2600, trend: 'up' as const, streak: 4, rankChange: 1 },
-  { id: '8', name: 'current_user', avatar: 'YU', deals: 12, revenue: 58000, responseRate: 27, points: 2400, trend: 'up' as const, streak: 7, isCurrentUser: true, rankChange: 2 },
-  { id: '9', name: 'Jennifer Martinez', avatar: 'JM', deals: 11, revenue: 52000, responseRate: 25, points: 2200, trend: 'down' as const, streak: 3, rankChange: -1 },
-  { id: '10', name: 'Robert Taylor', avatar: 'RT', deals: 10, revenue: 48000, responseRate: 24, points: 2000, trend: 'same' as const, streak: 2, rankChange: 0 },
-  { id: '11', name: 'Amanda Thomas', avatar: 'AT', deals: 9, revenue: 44000, responseRate: 22, points: 1800, trend: 'up' as const, streak: 5, rankChange: 2 },
-  { id: '12', name: 'Chris Jackson', avatar: 'CJ', deals: 8, revenue: 40000, responseRate: 20, points: 1600, trend: 'down' as const, streak: 1, rankChange: -3 },
-  { id: '13', name: 'Nicole White', avatar: 'NW', deals: 7, revenue: 35000, responseRate: 18, points: 1400, trend: 'same' as const, streak: 4, rankChange: 0 },
-  { id: '14', name: 'Kevin Harris', avatar: 'KH', deals: 6, revenue: 30000, responseRate: 16, points: 1200, trend: 'up' as const, streak: 2, rankChange: 1 },
-  { id: '15', name: 'Melissa Clark', avatar: 'MC', deals: 5, revenue: 25000, responseRate: 15, points: 1000, trend: 'down' as const, streak: 1, rankChange: -1 },
-  { id: '16', name: 'Brandon Lee', avatar: 'BL', deals: 4, revenue: 22000, responseRate: 14, points: 880, trend: 'up' as const, streak: 3, rankChange: 2 },
-  { id: '17', name: 'Rachel Green', avatar: 'RG', deals: 4, revenue: 20000, responseRate: 13, points: 800, trend: 'same' as const, streak: 2, rankChange: 0 },
-  { id: '18', name: 'Tyler Ross', avatar: 'TR', deals: 3, revenue: 18000, responseRate: 12, points: 680, trend: 'down' as const, streak: 1, rankChange: -2 },
-  { id: '19', name: 'Samantha Hill', avatar: 'SH', deals: 3, revenue: 15000, responseRate: 11, points: 550, trend: 'up' as const, streak: 2, rankChange: 1 },
-  { id: '20', name: 'Derek Stone', avatar: 'DS', deals: 2, revenue: 12000, responseRate: 10, points: 420, trend: 'same' as const, streak: 1, rankChange: 0 },
-];
-
+interface LeaderboardEntry {
+  id: string;
+  name: string;
+  avatar: string;
+  deals: number;
+  revenue: number;
+  responseRate: number;
+  points: number;
+  trend: 'up' | 'down' | 'same';
+  streak: number;
+  rankChange: number;
+  isCurrentUser?: boolean;
+}
 const TrendIcon = ({ trend, rankChange }: { trend: 'up' | 'down' | 'same'; rankChange?: number }) => {
   if (trend === 'up') {
     return (
@@ -100,7 +79,7 @@ function PodiumCard({
   currentUserEmail,
 }: {
   rank: 1 | 2 | 3;
-  user: typeof mockLeaderboard[0];
+  user: LeaderboardEntry;
   currentUserEmail?: string;
 }) {
   const config = {
@@ -190,15 +169,31 @@ export default function LeaderboardPage() {
   const { data: session, isPending: authLoading } = useSession();
   const [period, setPeriod] = useState<TimePeriod>('month');
 
-  // In production, this would fetch from API
+  // Organization-scoped data from GET /api/leaderboard. A failed or empty
+  // response renders the honest empty state below — never placeholder people.
   const { data: leaderboard, isLoading } = useQuery({
     queryKey: ['leaderboard', period],
     queryFn: async () => {
-      // Simulate API call
-      await new Promise((r) => setTimeout(r, 500));
-      return mockLeaderboard;
+      const res = await fetch(`/api/leaderboard?period=${period}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to load leaderboard');
+      const data = await res.json();
+      const entries: LeaderboardEntry[] = (data.leaderboard || []).map((e: any) => ({
+        id: String(e.id),
+        name: e.name || 'Team member',
+        avatar: e.avatar || '?',
+        deals: Number(e.deals) || 0,
+        revenue: Number(e.revenue) || 0,
+        responseRate: Math.round(Number(e.response_rate) || 0),
+        points: Number(e.points) || 0,
+        trend: e.trend === 'up' || e.trend === 'down' ? e.trend : ('same' as const),
+        streak: Number(e.streak) || 0,
+        rankChange: Number(e.rank_change) || 0,
+        isCurrentUser: !!e.is_current_user,
+      }));
+      return entries;
     },
     enabled: !!session,
+    retry: false,
   });
 
   if (authLoading) {
@@ -247,6 +242,14 @@ export default function LeaderboardPage() {
         <div className="py-20 flex justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
         </div>
+      ) : !leaderboard || leaderboard.length === 0 ? (
+        <GlassCard className="py-16 text-center">
+          <Trophy className="h-10 w-10 text-[var(--text-muted)] mx-auto mb-3" />
+          <p className="text-[var(--text-primary)] font-medium">No leaderboard activity yet</p>
+          <p className="text-sm text-[var(--text-muted)] mt-1">
+            Rankings appear here once deals close.
+          </p>
+        </GlassCard>
       ) : (
         <>
           {/* Podium */}

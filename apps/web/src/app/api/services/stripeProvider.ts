@@ -47,6 +47,49 @@ export interface RefundResult {
   status: string; // 'succeeded' | 'pending' | ...
 }
 
+// ─── Billing Checkout ────────────────────────────────────────────────────────
+
+/**
+ * Billing checkout — a one-time payment for a plan or a credit pack.
+ *
+ * Everything that decides WHAT is being bought and for WHICH organization is
+ * decided by the route and passed in here; nothing is ever taken from the
+ * client. It is mirrored into Stripe `metadata` so the webhook can resolve the
+ * purchase from a signature-verified event alone.
+ */
+export interface BillingCheckoutParams {
+  /** Authenticated user making the purchase. Recorded in metadata. */
+  userId: string;
+  /** Organization the purchase belongs to; omitted only on the signup flow. */
+  organizationId?: string;
+  /** Exactly one of planId / creditPackId is set. */
+  planId?: string;
+  creditPackId?: string;
+  /** Authoritative charge amount in cents. Never taken from the client. */
+  amountCents: number;
+  currency?: string;
+  productName: string;
+  productDescription?: string;
+  customerEmail?: string;
+  /** Reuse this customer rather than creating a new one per checkout attempt. */
+  stripeCustomerId?: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Extra key/values stored on the session and its PaymentIntent. */
+  metadata?: Record<string, string>;
+  /** Session lifetime in seconds (Stripe allows 30 minutes–24 hours). */
+  expiresInSeconds?: number;
+}
+
+export interface BillingCheckoutResult {
+  checkoutUrl: string;
+  sessionId: string;
+  /** Customer the session was bound to, when Stripe created or returned one. */
+  customerId?: string;
+  status: string; // 'created'
+}
+
+
 
 
 // ─── Interface ───────────────────────────────────────────────────────────────
@@ -54,6 +97,7 @@ export interface RefundResult {
 export interface StripeProvider {
   readonly type: StripeProviderType;
   createPaymentLink(params: CreatePaymentParams): Promise<PaymentResult>;
+  createBillingCheckoutSession(params: BillingCheckoutParams): Promise<BillingCheckoutResult>;
   parseWebhookEvent(body: string, signature: string): Stripe.Event;
   verifyWebhook(params: VerifyWebhookParams): boolean;
   refund(params: RefundParams): Promise<RefundResult>;
@@ -82,6 +126,46 @@ export class MockStripeProvider implements StripeProvider {
     return {
       paymentLink,
       paymentIntentId,
+      status: 'created',
+    };
+  }
+
+  /**
+   * Test double ONLY. The billing route will not route a real purchase through
+   * the mock provider — `isPaymentLive()` in /api/billing/subscribe refuses and
+   * returns a configuration error instead — so this exists purely so tests and
+   * local tooling can exercise the redirect contract without a Stripe account.
+   * It grants nothing and charges nothing.
+   */
+  async createBillingCheckoutSession(
+    params: BillingCheckoutParams
+  ): Promise<BillingCheckoutResult> {
+    const sessionId = `cs_mock_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+    const baseUrl = process.env.PUBLIC_WEBHOOK_URL || 'http://localhost:4000';
+    const query = new URLSearchParams({
+      session: sessionId,
+      amount: String(params.amountCents),
+      ...(params.planId ? { planId: params.planId } : {}),
+      ...(params.creditPackId ? { creditPackId: params.creditPackId } : {}),
+    });
+
+    await logEvent(
+      'billing_checkout_created',
+      'billing',
+      params.organizationId ?? params.userId,
+      {
+        provider: 'mock',
+        sessionId,
+        amountCents: params.amountCents,
+        planId: params.planId ?? null,
+        creditPackId: params.creditPackId ?? null,
+      },
+      params.organizationId
+    );
+
+    return {
+      checkoutUrl: `${baseUrl}/api/payments/mock-checkout?${query.toString()}`,
+      sessionId,
       status: 'created',
     };
   }
@@ -176,6 +260,86 @@ export class LiveStripeProvider implements StripeProvider {
     };
   }
 
+  /**
+   * Create a real Stripe Checkout Session (one-time payment).
+   *
+   * `metadata` is written to BOTH the session and its PaymentIntent so that
+   * `checkout.session.completed` and `payment_intent.*` can each resolve the
+   * organization on their own — the webhook never has to guess from an amount.
+   */
+  async createBillingCheckoutSession(
+    params: BillingCheckoutParams
+  ): Promise<BillingCheckoutResult> {
+    const metadata: Record<string, string> = {
+      ...(params.metadata ?? {}),
+      userId: params.userId,
+      ...(params.organizationId ? { organization_id: params.organizationId } : {}),
+      ...(params.planId ? { plan_id: params.planId } : {}),
+      ...(params.creditPackId ? { credit_pack_id: params.creditPackId } : {}),
+    };
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: params.currency || 'usd',
+            product_data: {
+              name: params.productName,
+              ...(params.productDescription
+                ? { description: params.productDescription }
+                : {}),
+            },
+            unit_amount: params.amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      // Reuse the organization's existing customer when we have one, so a retry
+      // or a second purchase can never fork a duplicate Stripe customer.
+      ...(params.stripeCustomerId
+        ? { customer: params.stripeCustomerId }
+        : params.customerEmail
+          ? { customer_email: params.customerEmail }
+          : {}),
+      metadata,
+      payment_intent_data: { metadata },
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      expires_at: Math.floor(Date.now() / 1000) + (params.expiresInSeconds ?? 3600),
+    });
+
+    if (!session.url) {
+      throw new Error(
+        `[stripeProvider] Stripe returned session ${session.id} without a checkout URL.`
+      );
+    }
+
+    await logEvent(
+      'billing_checkout_created',
+      'billing',
+      params.organizationId ?? params.userId,
+      {
+        provider: 'live',
+        sessionId: session.id,
+        amountCents: params.amountCents,
+        planId: params.planId ?? null,
+        creditPackId: params.creditPackId ?? null,
+      },
+      params.organizationId
+    );
+
+    const customerId =
+      typeof session.customer === 'string' ? session.customer : session.customer?.id;
+
+    return {
+      checkoutUrl: session.url,
+      sessionId: session.id,
+      customerId,
+      status: 'created',
+    };
+  }
+
   parseWebhookEvent(body: string, signature: string): Stripe.Event {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!secret) {
@@ -224,27 +388,28 @@ export class LiveStripeProvider implements StripeProvider {
 
 // ─── Provider Resolution ─────────────────────────────────────────────────────
 
-let _provider: StripeProvider | null = null;
+// Cached PER TYPE, not globally. The previous single-slot cache returned the
+// first provider it built and ignored `config.type` on every later call, so a
+// process that touched the mock provider anywhere would hand the mock provider
+// to the live webhook path too. That is exactly the kind of mistake that
+// silently disables signature verification.
+const _providers = new Map<StripeProviderType, StripeProvider>();
 
 export function getStripeProvider(config?: { type?: StripeProviderType }): StripeProvider {
-  if (_provider) return _provider;
+  const type: StripeProviderType = (config?.type ||
+    process.env.STRIPE_PROVIDER ||
+    'mock') as StripeProviderType;
 
-  const type: StripeProviderType = (config?.type || process.env.STRIPE_PROVIDER || 'mock') as StripeProviderType;
+  const cached = _providers.get(type);
+  if (cached) return cached;
 
-  switch (type) {
-    case 'live':
-      _provider = new LiveStripeProvider();
-      break;
-    case 'mock':
-    default:
-      _provider = new MockStripeProvider();
-      break;
-  }
-
-  return _provider;
+  const provider: StripeProvider =
+    type === 'live' ? new LiveStripeProvider() : new MockStripeProvider();
+  _providers.set(type, provider);
+  return provider;
 }
 
-/** Reset the cached provider (for tests). */
+/** Reset the cached providers (for tests). */
 export function resetStripeProvider(): void {
-  _provider = null;
+  _providers.clear();
 }

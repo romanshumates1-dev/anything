@@ -10,6 +10,8 @@ import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
 import { addCredits, getBalance } from '@/app/api/utils/credits';
 import { logEvent } from '@/app/api/utils/logger';
+import { appBaseUrl } from '@/app/api/utils/appUrl';
+import { safeErrorResponse } from '@/app/api/utils/safeError';
 
 /**
  * Credit packs available for purchase.
@@ -153,16 +155,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Production: Create Stripe checkout session
     const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeKey) {
-      // In production, payment is required - fail if Stripe is not configured
-      if (process.env.NODE_ENV === 'production') {
-        console.error('[CREDITS] Stripe not configured in production - cannot process payment');
-        return NextResponse.json(
-          { error: 'Payment processing is not configured. Please contact support.' },
-          { status: 503 }
-        );
-      }
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+    // Production fails CLOSED, and requires BOTH keys. Credits are granted only
+    // from a signature-verified webhook, so with the secret key present but the
+    // webhook secret missing a customer would be charged and never credited.
+    if (process.env.NODE_ENV === 'production' && (!stripeKey || !webhookSecret)) {
+      const missing = !stripeKey ? 'STRIPE_SECRET_KEY' : 'STRIPE_WEBHOOK_SECRET';
+      console.error(`[CREDITS] Refusing to sell in production: ${missing} is not configured`);
+      return NextResponse.json(
+        { error: 'Payment processing is not configured', code: 'PAYMENT_NOT_CONFIGURED' },
+        { status: 503 }
+      );
+    }
+
+    if (!stripeKey) {
       // Development/staging fallback: grant credits for demo purposes only
       console.warn('[CREDITS] Stripe not configured (non-production), granting credits directly');
 
@@ -220,8 +227,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         packId,
         credits: pack.credits.toString(),
       },
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?purchase=success&credits=${pack.credits}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/settings/billing?purchase=cancelled`,
+            success_url: `${appBaseUrl()}/settings/billing?purchase=success&credits=${pack.credits}`,
+      cancel_url: `${appBaseUrl()}/settings/billing?purchase=cancelled`,
       customer_email: session.user.email,
     });
 
@@ -237,11 +244,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       checkoutUrl: checkoutSession.url,
     });
   } catch (error: any) {
-    console.error('[CREDITS] Purchase error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to create checkout' },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      context: '[credits/purchase]',
+      message: 'Failed to create checkout',
+      code: 'CHECKOUT_FAILED',
+    });
   }
 }
 

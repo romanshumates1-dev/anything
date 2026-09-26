@@ -75,10 +75,38 @@ export default function SupportChat() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to get response");
+        // Surface the API's own user-facing state instead of a generic
+        // failure: the route returns a graceful `content` fallback on AI
+        // outages, and static `error` strings for rate limits / auth.
+        let body: { error?: unknown; content?: unknown } | null = null;
+        try {
+          body = (await response.json()) as { error?: unknown; content?: unknown };
+        } catch {
+          body = null;
+        }
+
+        if (body && typeof body.content === "string" && body.content.trim()) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `assistant-${Date.now()}`, role: "assistant", content: body!.content as string, timestamp: new Date() },
+          ]);
+          return;
+        }
+
+        const apiMessage = body && typeof body.error === "string" ? (body.error as string) : "";
+        if (response.status === 429) {
+          throw new Error(apiMessage || "AI rate limit reached — please try again in a few minutes.");
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(apiMessage || "Please sign in to use AI support.");
+        }
+        throw new Error(apiMessage || "The assistant is unavailable right now. Please try again shortly.");
       }
 
-      const data = await response.json();
+      const data = (await response.json().catch(() => null)) as { content?: unknown } | null;
+      if (!data || typeof data.content !== "string" || !data.content.trim()) {
+        throw new Error("The assistant returned an empty response. Please try again.");
+      }
 
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
@@ -90,10 +118,14 @@ export default function SupportChat() {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Support chat error:", error);
+      const detail =
+        error instanceof Error && error.message && error.message.length <= 200 ? error.message : "";
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment, or click \"Talk to Human\" below for direct support.",
+        content: detail
+          ? `${detail} You can also click "Talk to Human" below.`
+          : "I'm sorry, I'm having trouble connecting right now. Please try again in a moment, or click \"Talk to Human\" below for direct support.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -123,26 +155,30 @@ export default function SupportChat() {
 
   return (
     <>
-      {/* Floating Button - positioned above the Feedback button */}
+      {/* Floating Button - smaller, quieter, positioned above the Feedback button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`fixed bottom-20 right-6 z-50 p-4 rounded-full shadow-lg transition-all duration-300 ${
+        className={`fixed bottom-20 right-6 z-50 p-3 rounded-full shadow-lg transition-all duration-300 ${
           isOpen
             ? "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
             : "btn-gradient"
         }`}
         aria-label={isOpen ? "Close support chat" : "Open support chat"}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
       >
         {isOpen ? (
-          <ChevronDown className="h-6 w-6" />
+          <ChevronDown className="h-5 w-5" />
         ) : (
-          <MessageSquare className="h-6 w-6" />
+          <MessageSquare className="h-5 w-5" />
         )}
       </button>
 
       {/* Chat Panel */}
       <div
-        className={`fixed bottom-36 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] rounded-xl shadow-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] transition-all duration-300 transform ${
+        role="dialog"
+        aria-label="DealFlow support chat"
+        className={`fixed bottom-32 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] rounded-xl shadow-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] transition-all duration-300 transform ${
           isOpen
             ? "opacity-100 translate-y-0 pointer-events-auto"
             : "opacity-0 translate-y-4 pointer-events-none"

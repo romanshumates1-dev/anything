@@ -115,22 +115,25 @@ export default function AdvancedAnalytics() {
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/analytics/advanced?days=${days}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (err) {
-      console.error('Fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // `fetchData` is declared inside the effect: it only closes over `days`
+  // (already a dep). A component-scope version would be a fresh reference
+  // every render, which react-hooks/exhaustive-deps forces into the deps —
+  // and since setLoading/setData trigger renders, that would loop the fetch.
   useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/analytics/advanced?days=${days}`);
+        if (res.ok) {
+          const json = await res.json();
+          setData(json);
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, [days]);
 

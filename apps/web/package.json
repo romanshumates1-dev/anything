@@ -14,7 +14,7 @@
 		"check:secrets-in-bundle": "node --env-file=.env scripts/check-secrets-in-bundle.mjs",
 		"cf:build": "opennextjs-cloudflare build && node scripts/scrub-opennext-env.mjs && node scripts/patch-opennext-instrumentation.mjs",
 		"cf:preview": "yarn cf:build && opennextjs-cloudflare preview",
-				"cf:deploy": "yarn cf:gate && OPEN_NEXT_DEPLOY=true wrangler deploy",
+		"cf:deploy": "yarn cf:gate && OPEN_NEXT_DEPLOY=true wrangler deploy",
 		"cf:dry-run": "yarn cf:gate",
 		"cf:secrets": "node --env-file=.env scripts/check-secrets-in-bundle.mjs",
 		"cf:size": "node scripts/check-worker-size.mjs 10485760",
@@ -56,6 +56,7 @@
 		"ws": "^8.18.2"
 	},
 	"devDependencies": {
+		"@electric-sql/pglite": "^0.5.8",
 		"@opennextjs/cloudflare": "^1.20.6",
 		"@playwright/test": "1.61.1",
 		"@tailwindcss/postcss": "^4.1.16",

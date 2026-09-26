@@ -321,11 +321,30 @@ export async function POST(req: NextRequest) {
       dataSource = 'internal';
     }
 
-    // Last resort: simulated data (for testing only)
-    if (comps.length === 0) {
+    // Last resort: simulated data. NEVER in production and never silently:
+    // comps drive pricing decisions, so a production response must contain only
+    // real data. Simulated rows are opt-in for local development via
+    // ALLOW_SIMULATED_COMPS=true and are labelled dataSource='simulated'.
+    const allowSimulated =
+      process.env.NODE_ENV !== 'production' && process.env.ALLOW_SIMULATED_COMPS === 'true';
+    if (comps.length === 0 && allowSimulated) {
       comps = generateSimulatedComps(body);
       dataSource = 'simulated';
-      console.log('[COMPS] Warning: Using simulated data - configure API keys for real comps');
+      console.warn('[COMPS] SIMULATED data returned (ALLOW_SIMULATED_COMPS=true, non-production) — not real comps');
+    }
+
+    // Fail closed when no real source produced data: an empty analysis is
+    // returned with an explicit marker so no caller mistakes zeros for a priced
+    // recommendation. (Previously this path returned random numbers.)
+    if (comps.length === 0) {
+      return Response.json(
+        {
+          error: 'No comparable sales data available for this property',
+          code: 'COMPS_UNAVAILABLE',
+          dataSource: 'none',
+        },
+        { status: 503 }
+      );
     }
 
     const analysis = analyzeComps(comps, sqft);

@@ -63,7 +63,17 @@ export async function POST(request: Request) {
     let segment: any[];
 
     if (ids.length) {
-      segment = await sql`SELECT * FROM sourced_leads WHERE id = ANY(${ids}) AND status = 'new'`;
+      // Tenant isolation (2026-09-26): caller-supplied ids still have to belong to a
+      // source this organization owns (or a platform source); sourced_leads has no
+      // organization_id column of its own, so ownership is asserted via lead_sources.
+      segment = await sql`
+        SELECT * FROM sourced_leads
+        WHERE id = ANY(${ids}) AND status = 'new'
+          AND source_id IN (
+            SELECT id FROM lead_sources
+            WHERE organization_id = ${organization.id} OR organization_id IS NULL
+          )
+      `;
     } else if (hasTarget) {
       // ── DEAL-TARGET MODE. This is the path that removes the manual import
       // step: the operator states an outcome ("2 assignments") and the system
@@ -83,6 +93,10 @@ export async function POST(request: Request) {
           WHERE status = 'new' AND category = 'seller'
             AND distress_score >= ${minScore}
             AND (${county}::text IS NULL OR county ILIKE ${county})
+            AND source_id IN (
+              SELECT id FROM lead_sources
+              WHERE organization_id = ${organization.id} OR organization_id IS NULL
+            )
           ORDER BY distress_score DESC, id ASC
           LIMIT ${sizing.sellersNeeded}
         `,
@@ -91,6 +105,10 @@ export async function POST(request: Request) {
           WHERE status = 'new' AND category = 'buyer'
             AND distress_score >= ${minScore}
             AND (${county}::text IS NULL OR county ILIKE ${county})
+            AND source_id IN (
+              SELECT id FROM lead_sources
+              WHERE organization_id = ${organization.id} OR organization_id IS NULL
+            )
           ORDER BY distress_score DESC, id ASC
           LIMIT ${sizing.buyersNeeded}
         `,
@@ -115,6 +133,10 @@ export async function POST(request: Request) {
           AND (${f.county ?? null}::text IS NULL OR county ILIKE ${f.county ?? null})
           AND (${f.category ?? null}::text IS NULL OR category = ${f.category ?? null})
           AND (${f.recordType ?? null}::text IS NULL OR record_type = ${f.recordType ?? null})
+          AND source_id IN (
+            SELECT id FROM lead_sources
+            WHERE organization_id = ${organization.id} OR organization_id IS NULL
+          )
         ORDER BY distress_score DESC
       `;
     }

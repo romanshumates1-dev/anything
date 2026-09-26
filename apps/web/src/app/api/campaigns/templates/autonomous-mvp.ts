@@ -1,3 +1,5 @@
+import { signPortalToken } from '@/app/api/utils/portalToken';
+
 /**
  * Autonomous MVP Email Templates
  *
@@ -168,10 +170,16 @@ export interface EmailTemplate {
   html: (ctx: TemplateContext) => string;
 }
 
-// Generate unique tracking links
+// Generate unique tracking links. Portal tokens are HMAC-signed (2026-09-26) so a
+// link can never be forged from a known lead id; without a signing secret no token
+// is embedded and the portal falls back to session authentication.
 function makeLink(baseUrl: string, path: string, leadId: string, action: string): string {
-  const token = Buffer.from(`${leadId}:${action}:${Date.now()}`).toString('base64url');
-  return `${baseUrl}${path}?t=${token}&ref=${leadId}`;
+  const token = signPortalToken(leadId, action);
+  if (!token) {
+    console.warn('[portal] PORTAL_TOKEN_SECRET not configured — portal links are session-only');
+    return `${baseUrl}${path}?ref=${encodeURIComponent(leadId)}`;
+  }
+  return `${baseUrl}${path}?t=${token}&ref=${encodeURIComponent(leadId)}`;
 }
 
 // ════════════════════════════════════════════════════════════════════

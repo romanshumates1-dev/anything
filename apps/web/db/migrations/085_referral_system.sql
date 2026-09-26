@@ -31,7 +31,15 @@ CREATE TABLE IF NOT EXISTS referral_signups (
 
 CREATE INDEX IF NOT EXISTS idx_referral_signups_referrer ON referral_signups(referrer_user_id);
 CREATE INDEX IF NOT EXISTS idx_referral_signups_referred ON referral_signups(referred_user_id);
-CREATE INDEX IF NOT EXISTS idx_referral_signups_month ON referral_signups(referrer_user_id, DATE_TRUNC('month', signed_up_at));
+-- The original expression was
+--   (referrer_user_id, DATE_TRUNC('month', signed_up_at))
+-- which Postgres rejects: expression indexes require IMMUTABLE functions and
+-- date_trunc() is only STABLE, so CREATE INDEX failed and aborted the chain.
+-- Index the raw timestamp instead. It serves the same monthly-rollup queries
+-- (`WHERE referrer_user_id = ? AND signed_up_at >= ? AND signed_up_at < ?`)
+-- with an index range scan, so no query needs a derived column to stay fast.
+CREATE INDEX IF NOT EXISTS idx_referral_signups_month
+  ON referral_signups(referrer_user_id, signed_up_at);
 
 -- Social media shares for bonus credits
 CREATE TABLE IF NOT EXISTS social_media_shares (
@@ -43,9 +51,22 @@ CREATE TABLE IF NOT EXISTS social_media_shares (
   verified BOOLEAN DEFAULT FALSE,
   credits_awarded BOOLEAN DEFAULT FALSE,
   credits_amount INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(user_id, platform, DATE(created_at))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  -- The original table-level constraint was
+  --   UNIQUE(user_id, platform, DATE(created_at))
+  -- which Postgres rejects: a table constraint may only name columns, never an
+  -- expression ("syntax error at or near ("). The intent — at most one share per
+  -- user, per platform, per day — is enforced by the unique expression index
+  -- below instead.
 );
+
+-- DATE(created_at) / created_at::date resolve against the session TimeZone, so
+-- they are only STABLE and cannot appear in an index or constraint either.
+-- Pinning the cast to UTC makes the expression IMMUTABLE while preserving the
+-- intended "per day" semantics, and does so deterministically rather than
+-- depending on whatever TimeZone the session happens to use.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_social_shares_user_platform_day
+  ON social_media_shares (user_id, platform, ((created_at AT TIME ZONE 'UTC')::date));
 
 CREATE INDEX IF NOT EXISTS idx_social_shares_user ON social_media_shares(user_id);
 CREATE INDEX IF NOT EXISTS idx_social_shares_platform ON social_media_shares(platform);

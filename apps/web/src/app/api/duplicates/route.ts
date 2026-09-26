@@ -306,6 +306,29 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
+    // TENANT ISOLATION (2026-09-26 re-review): primaryLeadId and every
+    // duplicateLeadIds entry are caller-supplied. The old code reassigned
+    // message_events + contact_log BEFORE any ownership check (and those
+    // UPDATEs were .catch(() => {})), so an admin of tenant B could move
+    // tenant A's message history onto a lead they control (cross-tenant
+    // data theft) even when the later leads UPDATE matched zero rows.
+    // Validate BOTH sides belong to the caller's org first; the response
+    // is identical for "does not exist" and "belongs to another tenant",
+    // so it is not a cross-tenant existence oracle.
+    const idsToVerify = [primaryLeadId, ...duplicateLeadIds] as string[];
+    const ownedRows = await sql`
+      SELECT id FROM leads
+      WHERE id = ANY(${idsToVerify}) AND organization_id = ${organization.id}
+    `;
+    const owned = new Set((ownedRows as { id: string }[]).map((r) => r.id));
+    const notOwned = idsToVerify.filter((id) => !owned.has(id));
+    if (notOwned.length > 0) {
+      return Response.json(
+        { error: 'Lead not found', leadId: notOwned[0] },
+        { status: 404 }
+      );
+    }
+
     // Move all activity to primary lead
     for (const dupId of duplicateLeadIds) {
       // Update message events

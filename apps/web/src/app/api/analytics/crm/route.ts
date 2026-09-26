@@ -20,6 +20,7 @@ import {
   getCRMDashboardAnalytics,
   type DateRange,
 } from '@/app/api/utils/crmAnalyticsEngine';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export const dynamic = 'force-dynamic';
 
@@ -100,9 +101,6 @@ export async function GET(request: NextRequest) {
     }
   } catch (error: any) {
     console.error('[CRM Analytics] Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal server error' },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, { context: "[src/app/api/analytics/crm/route.ts]", status: 500 });
   }
 }

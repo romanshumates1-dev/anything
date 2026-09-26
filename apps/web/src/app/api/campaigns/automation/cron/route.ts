@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
 import { logEvent } from '@/app/api/utils/logger';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 import sql from '@/app/api/utils/sql';
 
 // Secret for cron authentication (set in environment)
@@ -23,7 +24,16 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const providedSecret = authHeader?.replace('Bearer ', '');
 
-  if (CRON_SECRET && providedSecret !== CRON_SECRET) {
+  if (!CRON_SECRET) {
+    // FAIL CLOSED outside development. The old check was gated on the secret
+    // being configured (`CRON_SECRET && ...`), which skipped authentication
+    // ENTIRELY whenever CRON_SECRET was unset - an unauthenticated trigger for
+    // bulk campaign automation. Local dev keeps the no-secret convenience;
+    // production must have the secret set.
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } else if (!timingSafeSecretEqual(providedSecret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -28,12 +28,15 @@ export default async function CampaignAutomationPage({ params }: PageProps) {
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
-    redirect('/auth/sign-in');
+    redirect('/account/signin');
   }
 
   const organization = await getOrganization();
   if (!organization) {
-    redirect('/onboarding');
+    // No /onboarding route exists and auth auto-creates an org on signup, so
+    // a null org means a legacy account predating that hook. Stay on a real
+    // destination: the campaigns list (sibling of the missing /onboarding).
+    redirect('/campaigns');
   }
 
   // Get campaign details

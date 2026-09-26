@@ -14,6 +14,8 @@
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
+import { getOrganization } from '@/lib/organization-context';
+import { safeErrorResponse } from '@/app/api/utils/safeError';
 
 export const dynamic = 'force-dynamic';
 
@@ -219,6 +221,16 @@ export async function GET(req: NextRequest) {
   const session = await requireSession();
   if (!session.ok) return session.response;
 
+  // TENANT ISOLATION (security fix): this endpoint previously required only a
+  // session and scoped NOTHING, so any authenticated user of any tenant could read
+  // every other tenant's funnel, pipeline value, average deal value and ROI.
+  // The organization is now resolved from the session and applied to every query.
+  const organization = await getOrganization();
+  if (!organization) {
+    return Response.json({ error: 'No organization found' }, { status: 403 });
+  }
+  const orgId = organization.id;
+
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: 'DATABASE_URL not configured' }, { status: 500 });
   }
@@ -243,7 +255,8 @@ export async function GET(req: NextRequest) {
         COUNT(DISTINCT clq.campaign_id)::int as active_campaigns,
         AVG(clq.touch_number)::numeric(4,2) as avg_touches
       FROM campaign_lead_queue clq
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${orgId}
+        AND clq.created_at > now() - (${days} || ' days')::interval
         ${campaignId ? sql`AND clq.campaign_id = ${campaignId}` : sql``}
     `.catch(() => [{}]) as any[];
 
@@ -261,7 +274,8 @@ export async function GET(req: NextRequest) {
       JOIN leads l ON l.id = clq.lead_id
       LEFT JOIN contracts c ON c.lead_id = l.id
       LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${orgId}
+        AND clq.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.state, 'Unknown')
       ORDER BY COUNT(DISTINCT clq.lead_id) DESC
       LIMIT 20
@@ -284,7 +298,8 @@ export async function GET(req: NextRequest) {
         JOIN leads l ON l.id = clq.lead_id
         LEFT JOIN contracts c ON c.lead_id = l.id
         LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
-        WHERE clq.created_at > now() - (${days} || ' days')::interval
+        WHERE clq.organization_id = ${orgId}
+          AND clq.created_at > now() - (${days} || ' days')::interval
       )
       SELECT
         CASE
@@ -355,7 +370,8 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE clq.status = 'interested')::int as interested,
         COALESCE(SUM(clq.expected_value) FILTER (WHERE clq.status = 'interested'), 0)::bigint as pipeline_value
       FROM campaign_lead_queue clq
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${orgId}
+        AND clq.created_at > now() - (${days} || ' days')::interval
       GROUP BY DATE(clq.created_at)
       ORDER BY DATE(clq.created_at) DESC
     `.catch(() => []);
@@ -370,7 +386,8 @@ export async function GET(req: NextRequest) {
         COUNT(*) FILTER (WHERE me.status = 'clicked')::int as clicked,
         COUNT(*) FILTER (WHERE me.status = 'replied')::int as replied
       FROM message_events me
-      WHERE me.created_at > now() - (${days} || ' days')::interval
+      WHERE me.organization_id = ${orgId}
+        AND me.created_at > now() - (${days} || ' days')::interval
         AND me.type IN ('email', 'sms')
       GROUP BY COALESCE(me.metadata->>'template', 'default')
       ORDER BY COUNT(*) DESC
@@ -388,7 +405,8 @@ export async function GET(req: NextRequest) {
         COALESCE(AVG(clq.expected_value) FILTER (WHERE clq.status = 'interested'), 0)::int as avg_value
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      WHERE l.created_at > now() - (${days} || ' days')::interval
+      WHERE l.organization_id = ${orgId}
+        AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown')
       ORDER BY COUNT(DISTINCT l.id) DESC
     `.catch(() => []);
@@ -403,7 +421,8 @@ export async function GET(req: NextRequest) {
         AVG(clq.touch_number) FILTER (WHERE clq.status = 'interested')::numeric(4,2) as avg_touches_to_interest,
         AVG(clq.touch_number) FILTER (WHERE clq.status = 'replied')::numeric(4,2) as avg_touches_to_reply
       FROM campaign_lead_queue clq
-      WHERE clq.created_at > now() - (${days} || ' days')::interval
+      WHERE clq.organization_id = ${orgId}
+        AND clq.created_at > now() - (${days} || ' days')::interval
     `.catch(() => [{}]) as any[];
 
     // 7. Hourly Performance Breakdown
@@ -420,7 +439,8 @@ export async function GET(req: NextRequest) {
         ))::int as interested
       FROM message_events me
       LEFT JOIN campaign_contacts cc ON cc.id = me.contact_id
-      WHERE me.created_at > now() - (${days} || ' days')::interval
+      WHERE me.organization_id = ${orgId}
+        AND me.created_at > now() - (${days} || ' days')::interval
         AND me.direction = 'outbound'
       GROUP BY EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')
       ORDER BY hour
@@ -468,7 +488,8 @@ export async function GET(req: NextRequest) {
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
       LEFT JOIN contracts c ON c.lead_id = l.id
       LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
-      WHERE l.created_at > now() - (${days} || ' days')::interval
+      WHERE l.organization_id = ${orgId}
+        AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown'), l.metadata->>'acquisition_cost_cents'
       ORDER BY COUNT(DISTINCT l.id) DESC
     `.catch(() => []);
@@ -526,7 +547,8 @@ export async function GET(req: NextRequest) {
         ))::int as interested
       FROM message_events me
       LEFT JOIN campaign_contacts cc ON cc.id = me.contact_id
-      WHERE me.created_at > now() - (${days} || ' days')::interval
+      WHERE me.organization_id = ${orgId}
+        AND me.created_at > now() - (${days} || ' days')::interval
         AND me.direction = 'outbound'
         AND me.metadata->>'ab_test_id' IS NOT NULL
       GROUP BY
@@ -546,7 +568,8 @@ export async function GET(req: NextRequest) {
         COUNT(*)::int as sent,
         COUNT(*) FILTER (WHERE me.status IN ('replied', 'responded'))::int as replied
       FROM message_events me
-      WHERE me.created_at > now() - (${days} || ' days')::interval
+      WHERE me.organization_id = ${orgId}
+        AND me.created_at > now() - (${days} || ' days')::interval
         AND me.direction = 'outbound'
       GROUP BY
         to_char(me.created_at AT TIME ZONE 'America/New_York', 'Day'),
@@ -568,7 +591,8 @@ export async function GET(req: NextRequest) {
       JOIN leads l ON l.phone = cr.target OR l.email = cr.target
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
       LEFT JOIN contracts c ON c.lead_id = l.id
-      WHERE cr.type = 'consent'
+      WHERE l.organization_id = ${orgId}
+        AND cr.type = 'consent'
         AND cr.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(cr.metadata->>'consentMethod', 'unknown')
       HAVING COUNT(DISTINCT l.id) >= 5
@@ -588,8 +612,11 @@ export async function GET(req: NextRequest) {
         COALESCE(AVG(EXTRACT(DAY FROM (ba.updated_at - ba.created_at))) FILTER (WHERE ba.status = 'SIGNED'), 0)::int as avg_close_days
       FROM buyers b
       LEFT JOIN buyer_assignments ba ON ba.buyer_id = b.id
-      WHERE b.created_at > now() - (${days} || ' days')::interval
-        OR ba.created_at > now() - (${days} || ' days')::interval
+      WHERE b.organization_id = ${orgId}
+        AND (
+          b.created_at > now() - (${days} || ' days')::interval
+          OR ba.created_at > now() - (${days} || ' days')::interval
+        )
     `.catch(() => [{}]) as any[];
 
     // 13. Seller Pipeline Metrics
@@ -605,7 +632,8 @@ export async function GET(req: NextRequest) {
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
       LEFT JOIN contracts c ON c.lead_id = l.id
-      WHERE l.created_at > now() - (${days} || ' days')::interval
+      WHERE l.organization_id = ${orgId}
+        AND l.created_at > now() - (${days} || ' days')::interval
     `.catch(() => [{}]) as any[];
 
     // 14. Top Lead Sources for Seller Pipeline
@@ -618,7 +646,8 @@ export async function GET(req: NextRequest) {
               NULLIF(COUNT(DISTINCT l.id), 0) * 100, 2) as contract_rate
       FROM leads l
       LEFT JOIN contracts c ON c.lead_id = l.id
-      WHERE l.created_at > now() - (${days} || ' days')::interval
+      WHERE l.organization_id = ${orgId}
+        AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown')
       HAVING COUNT(DISTINCT l.id) >= 10
       ORDER BY contract_rate DESC NULLS LAST
@@ -641,13 +670,16 @@ export async function GET(req: NextRequest) {
           clq.status as stage,
           COUNT(DISTINCT clq.lead_id)::int as count
         FROM campaign_lead_queue clq
-        WHERE clq.created_at > now() - (${days} || ' days')::interval
+        WHERE clq.organization_id = ${orgId}
+          AND clq.created_at > now() - (${days} || ' days')::interval
         GROUP BY clq.status
       ),
       contract_stage AS (
-        SELECT 7 as stage_order, 'contracted' as stage, COUNT(DISTINCT lead_id)::int as count
-        FROM contracts
-        WHERE created_at > now() - (${days} || ' days')::interval
+        SELECT 7 as stage_order, 'contracted' as stage, COUNT(DISTINCT ct.lead_id)::int as count
+        FROM contracts ct
+        JOIN leads l ON l.id = ct.lead_id
+        WHERE l.organization_id = ${orgId}
+          AND ct.created_at > now() - (${days} || ' days')::interval
       )
       SELECT stage_order, stage, count
       FROM stage_counts
@@ -882,8 +914,10 @@ export async function GET(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Advanced analytics error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return safeErrorResponse(error, {
+      context: '[analytics/advanced]',
+      code: 'ANALYTICS_FAILED',
+    });
   }
 }
 

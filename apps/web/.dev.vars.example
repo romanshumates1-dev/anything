@@ -89,3 +89,24 @@ PUBLIC_WEBHOOK_URL=https://dealswiftautomation.com/api/sms/inbound
 LEGAL_ENTITY_NAME=
 LEGAL_ENTITY_STATE=
 SUPPORT_EMAIL=
+
+# ── Apollo.io lead source (optional) ──
+# Server-side ONLY — never exposed to the client. Set the key as a Worker
+# secret: wrangler secret put APOLLO_API_KEY
+# Without it, POST /api/lead-finder/apollo returns a precise
+# 503 APOLLO_NOT_CONFIGURED (the integration never fakes success).
+APOLLO_API_KEY=
+# APOLLO_BASE_URL=https://api.apollo.io
+# APOLLO_SEARCH_PATH=/api/v1/mixed_people/search
+# APOLLO_TIMEOUT_MS=15000
+
+# ── Public seller portal link signing ──
+# HMAC key for signed /api/portal/offer links (openssl rand -base64 32).
+# Unset = portal links cannot be minted/verified; the portal then requires a
+# signed-in session. Fail closed either way.
+PORTAL_TOKEN_SECRET=
+
+# ── Synthetic data gates (DEV ONLY — the gate also requires NODE_ENV≠production) ──
+ALLOW_SIMULATED_COMPS=false
+ALLOW_SIMULATED_LEADS=false
+

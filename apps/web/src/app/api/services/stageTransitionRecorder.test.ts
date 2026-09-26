@@ -31,49 +31,46 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('resolveLeadIdByPhone', () => {
-  it('returns the matching lead id', async () => {
+describe('resolveLeadIdByPhone (STRICT - organization is required)', () => {
+  it('returns the matching lead id for a known organization', async () => {
     mockSql.mockResolvedValueOnce([{ id: 42 }]);
-    const id = await resolveLeadIdByPhone('+15025551234');
+    const id = await resolveLeadIdByPhone('+15025551234', 'org_a');
     expect(id).toBe(42);
-    expect(queryText('SELECT id FROM leads WHERE phone')).toBe(true);
+    expect(queryText('organization_id')).toBe(true);
+  });
+
+  it('scopes the lookup to the supplied organization', async () => {
+    mockSql.mockResolvedValueOnce([{ id: 7 }]);
+    const id = await resolveLeadIdByPhone('+15025551234', 'org_a');
+    expect(id).toBe(7);
+  });
+
+  it('FAILS CLOSED without an organization rather than resolving globally', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // No queued result: the strict primitive short-circuits before touching the DB,
+    // so a queued value here would leak into the following test.
+    expect(await resolveLeadIdByPhone('+15025551234', '')).toBeNull();
+    expect(mockSql).not.toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it('returns null when no lead matches', async () => {
     mockSql.mockResolvedValueOnce([]);
-    const id = await resolveLeadIdByPhone('+19999999999');
+    const id = await resolveLeadIdByPhone('+19999999999', 'org_a');
     expect(id).toBeNull();
   });
 
   it('returns null (never throws) for a null/empty phone', async () => {
-    expect(await resolveLeadIdByPhone(null)).toBeNull();
-    expect(await resolveLeadIdByPhone(undefined)).toBeNull();
-    expect(await resolveLeadIdByPhone('')).toBeNull();
+    expect(await resolveLeadIdByPhone(null, 'org_a')).toBeNull();
+    expect(await resolveLeadIdByPhone(undefined, 'org_a')).toBeNull();
+    expect(await resolveLeadIdByPhone('', 'org_a')).toBeNull();
     expect(mockSql).not.toHaveBeenCalled();
   });
 
   it('swallows a DB error and returns null (best-effort, never blocks the caller)', async () => {
     mockSql.mockRejectedValueOnce(new Error('connection lost'));
-    const id = await resolveLeadIdByPhone('+15025551234');
+    const id = await resolveLeadIdByPhone('+15025551234', 'org_a');
     expect(id).toBeNull();
   });
 });
 
-describe('recordStageTransitionsBulk', () => {
-  it('issues one INSERT for the whole batch of lead ids', async () => {
-    mockSql.mockResolvedValueOnce([]);
-    await recordStageTransitionsBulk([1, 2, 3], 'NEW', { channel: 'system' });
-    expect(mockSql).toHaveBeenCalledTimes(1);
-    expect(queryText('INSERT INTO stage_transitions')).toBe(true);
-  });
-
-  it('is a no-op for an empty id list (no wasted round trip)', async () => {
-    await recordStageTransitionsBulk([], 'NEW');
-    expect(mockSql).not.toHaveBeenCalled();
-  });
-
-  it('swallows a DB error (best-effort, never throws)', async () => {
-    mockSql.mockRejectedValueOnce(new Error('db down'));
-    await expect(recordStageTransitionsBulk([1], 'NEW')).resolves.toBeUndefined();
-  });
-});

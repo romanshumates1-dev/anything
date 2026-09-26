@@ -15,6 +15,7 @@ import {
 } from '@/app/api/alerts/notification-engine';
 // [MEDIUM FIX] Import FEE_FLOOR_CENTS from single source of truth
 import { FEE_FLOOR_CENTS } from '@/app/api/utils/negotiationEngine';
+import { safeErrorResponse } from '@/app/api/utils/safeError';
 
 if (!process.env.STRIPE_SECRET_KEY) {
   console.error('[STRIPE] STRIPE_SECRET_KEY not configured');
@@ -46,6 +47,10 @@ interface ChargeResult {
 }
 
 // [MEDIUM FIX] FEE_FLOOR_CENTS now imported from negotiationEngine.ts - no local redefinition
+// SERVER-AUTHORITATIVE MONEY (2026-09-26): fee resolution shared with payments/stripe.
+import { resolveAssignmentFeeCents } from '@/app/api/utils/assignmentFee';
+
+// resolveAssignmentFeeCents is imported from '@/app/api/utils/assignmentFee' (see top of file).
 
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin();
@@ -68,13 +73,13 @@ export async function POST(req: NextRequest) {
     buyerId,
     paymentMethodId,
     paymentType,
-    amount,
+    amount: requestedAmount,
     propertyAddress,
     buyerName,
     buyerEmail,
   } = body;
 
-  if (!dealId || !buyerId || !paymentType || !amount) {
+  if (!dealId || !buyerId || !paymentType || !requestedAmount) {
     return Response.json(
       { error: 'dealId, buyerId, paymentType, and amount required' },
       { status: 400 }
@@ -82,16 +87,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Enforce fee floor
-  if (amount < FEE_FLOOR_CENTS) {
+  if (requestedAmount < FEE_FLOOR_CENTS) {
     return Response.json(
       {
         success: false,
-        error: `Assignment fee $${(amount / 100).toLocaleString()} is below minimum $5,000`,
+        error: `Assignment fee $${(Number(requestedAmount) / 100).toLocaleString()} is below minimum $5,000`,
         feeFloor: FEE_FLOOR_CENTS / 100,
       },
       { status: 400 }
     );
   }
+
+  // Server-resolved fee, hoisted so the error handler can report it even when
+  // the failure happens inside the try block (scope fix 2026-09-26).
+  let resolvedAmountCents = 0;
 
   try {
     // Verify buyer has signed (check contract status)
@@ -121,6 +130,43 @@ export async function POST(req: NextRequest) {
           contractStatus: contract.status,
         },
         { status: 400 }
+      );
+    }
+
+    // SERVER-AUTHORITATIVE MONEY: the figure charged to the buyer is derived
+    // from the contract, never from the request. A mismatch is refused so the
+    // UI can re-read the contract instead of silently charging a stale number.
+    const amount = resolveAssignmentFeeCents(contract);
+    resolvedAmountCents = amount;
+    if (!amount) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            'Assignment fee could not be determined from the contract. Record the fee on the contract before charging.',
+        },
+        { status: 409 }
+      );
+    }
+    if (Number(requestedAmount) !== amount) {
+      return Response.json(
+        {
+          success: false,
+          error: 'Assignment fee does not match the contract',
+          expectedAmount: amount,
+          requestedAmount: Number(requestedAmount) || requestedAmount,
+        },
+        { status: 409 }
+      );
+    }
+    if (amount < FEE_FLOOR_CENTS) {
+      return Response.json(
+        {
+          success: false,
+          error: 'Assignment fee recorded on the contract is below the $5,000 minimum',
+          feeFloor: FEE_FLOOR_CENTS / 100,
+        },
+        { status: 409 }
       );
     }
 
@@ -242,29 +288,34 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[CHARGE-ASSIGNMENT] Error:', error);
 
-    // Handle Stripe errors
+    // Handle Stripe errors. A StripeCardError message is authored for the cardholder and
+    // `code` is the machine-readable decline reason — both safe and needed to explain a
+    // decline. (Line 251's use of error.message is an internal alert/log call, not a response.)
     if (error.type === 'StripeCardError') {
       await alertPaymentFailed(
         dealId,
         buyerName || buyerId,
-        amount / 100,
+        resolvedAmountCents / 100,
         error.message
       );
 
       return Response.json({
         success: false,
-        amount,
-        amountFormatted: `$${(amount / 100).toLocaleString()}`,
+        amount: resolvedAmountCents,
+        amountFormatted: `$${(resolvedAmountCents / 100).toLocaleString()}`,
         paymentType,
         error: error.message,
         code: error.code,
       });
     }
 
-    return Response.json(
-      { success: false, error: 'Charge failed', details: error.message },
-      { status: 500 }
-    );
+    // Anything else is an internal fault — do NOT echo it to the caller.
+    return safeErrorResponse(error, {
+      context: '[payments/charge-assignment]',
+      message: 'Charge failed',
+      code: 'CHARGE_FAILED',
+      extra: { success: false },
+    });
   }
 }
 

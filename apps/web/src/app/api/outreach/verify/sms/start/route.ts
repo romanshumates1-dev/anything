@@ -44,9 +44,12 @@ async function sendVerificationSms(
       return { success: true };
     } catch (error: any) {
       console.error('[SMS Verification] Twilio error:', error);
+      // Do not echo provider error text to the client: it can disclose account
+      // state (credential problems, sender/number configuration). The detail is
+      // already in the server log above. (2026-09-26 re-review)
       return {
         success: false,
-        error: error.message || 'Failed to send verification SMS via Twilio',
+        error: 'Failed to send verification SMS via Twilio',
       };
     }
   }
@@ -79,9 +82,11 @@ async function sendVerificationSms(
       return { success: true };
     } catch (error: any) {
       console.error('[SMS Verification] AWS SNS error:', error);
+      // Provider text is logged, not returned — SDK errors can disclose region /
+      // credential-provider state. (2026-09-26 re-review)
       return {
         success: false,
-        error: error.message || 'Failed to send verification SMS via AWS SNS',
+        error: 'Failed to send verification SMS via AWS SNS',
       };
     }
   }

@@ -1,4 +1,5 @@
 import { processMaturedEarnings } from '@/app/api/utils/earningsEscrow';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 /**
  * POST /api/cron/earnings
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
   }
 
-  if (cronSecret !== expectedSecret) {
+  if (!timingSafeSecretEqual(cronSecret, expectedSecret)) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -33,11 +33,21 @@ vi.mock('@/app/api/utils/jobs', () => ({ enqueueJob: (...a: any[]) => enqueueJob
 
 vi.mock('@/app/api/utils/cadenceEngine', () => ({ CONSENT_BASIS_ATTESTED: 'manual-list-attested' }));
 
-const { recordStageTransition, resolveLeadIdByPhone } = vi.hoisted(() => ({
-  recordStageTransition: vi.fn(async () => {}),
-  resolveLeadIdByPhone: vi.fn(async () => null as number | null),
+const { recordStageTransition, recordStageTransitionsBulk, resolveLeadIdByPhone, resolveLeadIdsByPhoneGlobal } =
+  vi.hoisted(() => ({
+    recordStageTransition: vi.fn(async () => {}),
+    recordStageTransitionsBulk: vi.fn(async () => {}),
+    // This route is session-authenticated and resolves an organization, so it uses the
+    // STRICT resolver, whose organization argument is required.
+    resolveLeadIdByPhone: vi.fn(async () => null as string | null),
+    resolveLeadIdsByPhoneGlobal: vi.fn(async () => [] as string[]),
+  }));
+vi.mock('@/app/api/services/stageTransitionRecorder', () => ({
+  recordStageTransition,
+  recordStageTransitionsBulk,
+  resolveLeadIdByPhone,
+  resolveLeadIdsByPhoneGlobal,
 }));
-vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition, resolveLeadIdByPhone }));
 
 import { POST } from './route';
 
@@ -159,8 +169,8 @@ describe('POST /api/outreach/scheduler/run', () => {
     const res = await POST(req());
     expect(res.status).toBe(200);
 
-    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550001');
-    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550002');
+    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550001', 'org-1');
+    expect(resolveLeadIdByPhone).toHaveBeenCalledWith('+15550002', 'org-1');
     expect(recordStageTransition).toHaveBeenCalledTimes(2);
     expect(recordStageTransition).toHaveBeenCalledWith(
       expect.objectContaining({ leadId: 501, fromStage: 'NEW', toStage: 'CONTACTED', campaignId: 'camp-1', channel: 'sms' })

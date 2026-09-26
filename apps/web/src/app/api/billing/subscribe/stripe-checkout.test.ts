@@ -85,9 +85,14 @@ const PLAN_LIMITS = {
   features: [],
 };
 
-function mockPlanSql(priceCents = 2900) {
+function mockPlanSql(priceCents = 2900, tier = 'starter') {
   (sql as any)
-    .mockResolvedValueOnce([{ name: 'Starter', price_cents: priceCents, limits: PLAN_LIMITS }]) // getPlanFromDB
+    // REAL row shape: getPlanFromDB now SELECTs id + tier too, because a tier
+    // can map to multiple rows (plan_professional "Pro (Legacy)" alias) and
+    // selectPlanRow needs them to pick the canonical row deterministically.
+    // The row MUST match the requested planId/tier — a mismatched row is now
+    // correctly rejected as "Invalid plan" instead of silently priced.
+    .mockResolvedValueOnce([{ id: `plan_${tier}`, tier, name: tier, price_cents: priceCents, limits: PLAN_LIMITS }]) // getPlanFromDB
     .mockResolvedValueOnce([{ rowCount: 1 }]); // UPDATE organizations
 }
 
@@ -128,7 +133,7 @@ describe('billing/subscribe — Stripe Checkout session creation', () => {
   it('returns 200 for plan purchase when Stripe keys are absent (mock/direct path, no throw)', async () => {
     (auth.api.getSession as any).mockReturnValue(sessionFixture());
     (getOrganization as any).mockReturnValue({ id: FAKE_ORG_ID });
-    mockPlanSql(4900);
+    mockPlanSql(4900, 'pro');
 
     await expect(POST(makeReq({ planId: 'pro' }))).resolves.toBeDefined();
   });

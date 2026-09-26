@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://dealflow.ai";
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://dealswiftautomation.com";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

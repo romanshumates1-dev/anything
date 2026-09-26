@@ -22,8 +22,16 @@ export async function GET() {
     // Get total user count for spots calculation
     let totalUsers = 0;
     let signupsThisWeek = 0;
-    let lastSignupLocation = 'Austin, TX';
+    // DATA INTEGRITY: the user table has no location column, so a signup location is
+    // simply not knowable here. We report `null` and the UI omits the notification.
+    // It was previously filled with a RANDOM city, which shipped a fabricated
+    // "someone in <city> just signed up" alert to real visitors. Never invent data.
+    let lastSignupLocation: string | null = null;
     let lastSignupTime: Date | null = null;
+    // Only true when every query above actually returned. The inner catch resets the
+    // counters to zero, so without this the endpoint would report verified zeros
+    // as if they were real measurements.
+    let dataVerified = false;
 
     try {
       // Total users - note: table is "user" not "users"
@@ -52,18 +60,7 @@ export async function GET() {
         lastSignupTime = new Date(lastSignupResult[0].created_at);
       }
 
-      // Use a randomized default location for social proof
-      // In production, this could come from IP geolocation during signup
-      const locations = [
-        'Austin, TX',
-        'Phoenix, AZ',
-        'Atlanta, GA',
-        'Houston, TX',
-        'Dallas, TX',
-        'Miami, FL',
-        'Denver, CO',
-      ];
-      lastSignupLocation = locations[Math.floor(Math.random() * locations.length)];
+      dataVerified = true;
     } catch {
       // Database query failed - return zeros to indicate no verified data
       // This is expected in development or when tables don't exist
@@ -93,9 +90,12 @@ export async function GET() {
       lastSignupLocation,
       lastSignupTimeAgo,
       promoEndDate: PROMO_END_DATE.toISOString(),
-      // Additional stats
-      activeUsers: totalUsers,
+      // DATA MINIMISATION: `percentClaimed` is derived from the real signup count, but
+      // the exact figure is deliberately NOT published. This endpoint is anonymous and
+      // cacheable, so returning `activeUsers: <exact count>` leaked the business's real
+      // customer total to anyone who called it. Keep it coarse.
       percentClaimed: Math.round((totalUsers / MAX_BETA_SPOTS) * 100),
+      dataVerified,
     };
 
     return NextResponse.json(response, {

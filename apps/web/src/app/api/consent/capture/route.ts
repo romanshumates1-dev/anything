@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { resolvePlatformOrganizationId } from '@/app/api/utils/platformOrg';
 
 /**
  * POST /api/consent/capture — public inbound consent capture.
@@ -40,15 +41,29 @@ export async function POST(request: Request) {
       return Response.json({ error: 'consentTextVersion is required' }, { status: 400 });
     }
 
-    const leadId = await ensureLead({
-      firstName: typeof b.firstName === 'string' ? b.firstName.trim() : null,
-      lastName: typeof b.lastName === 'string' ? b.lastName.trim() : null,
-      email,
-      phone,
-      propertyAddress: typeof b.propertyAddress === 'string' ? b.propertyAddress.trim() : null,
-      mailingAddress: typeof b.mailingAddress === 'string' ? b.mailingAddress.trim() : null,
-      metadata,
-    });
+    // ORGANIZATION ATTRIBUTION (2026-09-26): leads.organization_id is NOT NULL
+    // (migration 030), so the previous unattributed INSERT threw and the public
+    // "cash offer" form 500'd on every submission (same class as BREAKAGE_TABLE
+    // #35). A public funnel cannot resolve a session, so captures belong to the
+    // platform's primary organization — the same resolution
+    // lib/organization-context.ts falls back to.
+    const organizationId = await resolvePlatformOrganizationId();
+    if (!organizationId) {
+      return Response.json({ error: 'Platform organization not configured' }, { status: 503 });
+    }
+
+    const leadId = await ensureLead(
+      {
+        firstName: typeof b.firstName === 'string' ? b.firstName.trim() : null,
+        lastName: typeof b.lastName === 'string' ? b.lastName.trim() : null,
+        email,
+        phone,
+        propertyAddress: typeof b.propertyAddress === 'string' ? b.propertyAddress.trim() : null,
+        mailingAddress: typeof b.mailingAddress === 'string' ? b.mailingAddress.trim() : null,
+        metadata,
+      },
+      organizationId
+    );
 
     const [row] = await sql`
       INSERT INTO compliance_records
@@ -98,13 +113,14 @@ async function ensureLead(opts: {
   propertyAddress: string | null;
   mailingAddress: string | null;
   metadata: Record<string, unknown>;
-}) {
-  // Upsert by email or phone. Prefer email when both are present.
+}, organizationId: string) {
+  // Upsert by email or phone, WITHIN the funnel organization. Prefer email when
+  // both are present.
   const key = opts.email ? { email: opts.email } : opts.phone ? { phone: opts.phone } : null;
   if (!key) {
     const [inserted] = await sql`
-      INSERT INTO leads (first_name, last_name, email, phone, metadata, source, status)
-      VALUES (${opts.firstName}, ${opts.lastName}, ${opts.email}, ${opts.phone}, ${JSON.stringify(opts.metadata)}, 'consent_capture', 'new')
+      INSERT INTO leads (first_name, last_name, email, phone, metadata, source, status, organization_id)
+      VALUES (${opts.firstName}, ${opts.lastName}, ${opts.email}, ${opts.phone}, ${JSON.stringify(opts.metadata)}, 'consent_capture', 'new', ${organizationId})
       RETURNING id
     `;
     return inserted.id as number;
@@ -112,7 +128,8 @@ async function ensureLead(opts: {
 
   const [existing] = await sql`
     SELECT id FROM leads
-    WHERE ${key.email ? sql`LOWER(email) = ${opts.email!.toLowerCase()}` : sql`1=1`}
+    WHERE organization_id = ${organizationId}
+      ${key.email ? sql`AND LOWER(email) = ${opts.email!.toLowerCase()}` : sql`AND 1=1`}
       ${key.phone ? sql`AND phone = ${opts.phone}` : sql`AND 1=1`}
     ORDER BY id DESC
     LIMIT 1
@@ -132,8 +149,8 @@ async function ensureLead(opts: {
   }
 
   const [inserted] = await sql`
-    INSERT INTO leads (first_name, last_name, email, phone, metadata, source, status)
-    VALUES (${opts.firstName}, ${opts.lastName}, ${opts.email}, ${opts.phone}, ${JSON.stringify(opts.metadata)}, 'consent_capture', 'new')
+    INSERT INTO leads (first_name, last_name, email, phone, metadata, source, status, organization_id)
+    VALUES (${opts.firstName}, ${opts.lastName}, ${opts.email}, ${opts.phone}, ${JSON.stringify(opts.metadata)}, 'consent_capture', 'new', ${organizationId})
     RETURNING id
   `;
   return inserted.id as number;

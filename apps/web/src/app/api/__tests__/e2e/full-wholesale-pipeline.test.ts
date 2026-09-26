@@ -46,6 +46,13 @@ const { checkLimit, recordMetricUsage } = vi.hoisted(() => ({
 }));
 vi.mock('@/app/api/services/tierLimits', () => ({ checkLimit, recordMetricUsage }));
 
+// Outreach verification gate in [id]/launch: at least one channel must be
+// ACTIVE. In this pipeline test we treat the org as fully verified so the
+// launch step proceeds instead of short-circuiting with a 403.
+vi.mock('@/app/api/utils/outreachVerification', () => ({
+  isOutreachActive: vi.fn(async () => true),
+}));
+
 const { recordStageTransition } = vi.hoisted(() => ({ recordStageTransition: vi.fn(async () => {}) }));
 vi.mock('@/app/api/services/stageTransitionRecorder', () => ({ recordStageTransition }));
 

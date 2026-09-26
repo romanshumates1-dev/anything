@@ -1,22 +1,37 @@
 /**
  * Phase P2 — Stripe payment webhook receiver.
  *
- * Receives payment events from Stripe (or mock). Validates the webhook
- * signature, idempotently processes events, and updates the payments ledger.
+ * THE ONLY PLACE PAID ACCESS IS GRANTED.
  *
- * Events handled:
- *   payment_intent.succeeded  → cross-check amount → mark paid
- *   payment_intent.payment_failed → mark failed
- *   payment_intent.refunded   → mark refunded
+ * Validates the webhook signature, then dispatches:
  *
- * Amount cross-check: if the Stripe amount doesn't match the ledger, the
- * payment is HELD (not auto-marked) and an alert is logged.
+ *   checkout.session.completed           → plan activation / credit grant
+ *   checkout.session.async_payment_succeeded → same handler (settled later)
+ *   payment_intent.succeeded             → contract assignment-fee ledger
+ *   payment_intent.payment_failed        → mark the ledger entry failed
+ *   payment_intent.refunded              → mark the ledger entry refunded
+ *   charge.refunded                      → mark the ledger entry refunded
+ *
+ * Contract payments cross-check the Stripe amount against the ledger; on a
+ * mismatch the payment is HELD (not auto-marked) and an alert is logged.
+ *
+ * Billing purchases never trust the amount or the buyer from the request: the
+ * organization and the product come from Stripe `metadata`, which is covered by
+ * the signature, and every write is idempotent on a Stripe object id.
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { getStripeProvider, type StripeProviderType } from '@/app/api/services/stripeProvider';
+import { activatePlan, grantCreditPack } from '@/app/api/utils/billingEntitlements';
 import type Stripe from 'stripe';
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
+}
+
 
 export async function POST(request: Request) {
   try {
@@ -65,6 +80,36 @@ export async function POST(request: Request) {
       });
     }
 
+    // The SDK types the full event union it knows about, but the wire can
+    // carry events the SDK version predates or models differently (e.g.
+    // payment_intent.refunded arrives as a Charge refund object). The
+    // signature is already verified above; at this layer event.type is
+    // untrusted wire data, not a compile-time enum — narrow the union to
+    // string before comparing.
+    const eventType: string = event.type;
+
+    // Billing purchases are keyed by Stripe object ids; contract payments by the
+    // payments_ledger. Dispatch first, so a checkout event never falls through to
+    // the ledger lookup (which would 404 for having no ledger row).
+    if (
+      eventType === 'checkout.session.completed' ||
+      eventType === 'checkout.session.async_payment_succeeded'
+    ) {
+      return await handleCheckoutCompleted(event);
+    }
+
+    // Only payment-intent and charge events touch the ledger. Everything else
+    // (account.updated, customer.subscription.deleted, etc.) is acknowledged
+    // so Stripe does not redeliver.
+    if (
+      !['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.refunded', 'charge.refunded'].includes(
+        eventType
+      )
+    ) {
+      console.log(`[payments/webhook] Ignoring unhandled event type: ${eventType}`);
+      return json({ received: true });
+    }
+
     // Idempotency: check if this event was already processed
     const existing = await sql`
       SELECT 1 FROM payments_ledger
@@ -73,10 +118,7 @@ export async function POST(request: Request) {
     `;
 
     if (existing.length > 0) {
-      return new Response(JSON.stringify({ ok: true, idempotent: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return json({ received: true, idempotent: true });
     }
 
     const pi = event.data.object as Stripe.PaymentIntent;
@@ -92,16 +134,23 @@ export async function POST(request: Request) {
     `;
 
     if (ledgerRows.length === 0) {
+      // A billing purchase also emits `payment_intent.succeeded` for the same
+      // money. `checkout.session.completed` has already provisioned it, so
+      // acknowledge rather than 404 — a 404 makes Stripe redeliver this event
+      // forever.
+      if (isBillingPaymentIntent(pi)) {
+        console.log(
+          `[payments/webhook] PI ${paymentIntentId} belongs to a billing checkout; already handled by the checkout handler`
+        );
+        return json({ received: true, handledBy: 'checkout.session.completed' });
+      }
       console.warn(`[payments/webhook] No ledger entry for PI ${paymentIntentId}`);
-      return new Response(JSON.stringify({ error: 'Payment intent not found in ledger' }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return json({ error: 'Payment intent not found in ledger' }, 404);
     }
 
     const ledger = ledgerRows[0];
 
-    switch (event.type) {
+    switch (eventType) {
       case 'payment_intent.succeeded': {
         // Cross-check amount against ledger
         if (pi.amount !== ledger.amount_cents) {
@@ -112,10 +161,7 @@ export async function POST(request: Request) {
             ledgerAmount: ledger.amount_cents,
           });
           // Hold — do not auto-mark paid
-          return new Response(JSON.stringify({ ok: true, held: true, reason: 'amount_mismatch' }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          });
+          return json({ received: true, held: true, reason: 'amount_mismatch' });
         }
 
         // Mark paid
@@ -170,6 +216,7 @@ export async function POST(request: Request) {
         break;
       }
 
+      case 'payment_intent.refunded':
       case 'charge.refunded': {
         await sql`
           UPDATE payments_ledger
@@ -188,13 +235,10 @@ export async function POST(request: Request) {
 
       default:
         // Unknown event type — acknowledge but don't process
-        console.log(`[payments/webhook] Unhandled event type: ${event.type}`);
+        console.log(`[payments/webhook] Unhandled event type: ${eventType}`);
     }
 
-    return new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return json({ received: true });
   } catch (error: any) {
     console.error('[payments/webhook] Error', error);
     return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
@@ -202,4 +246,158 @@ export async function POST(request: Request) {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+}
+
+/**
+ * `checkout.session.completed` — grant exactly what was bought.
+ *
+ * Every input comes from the signature-verified event. The amount is never used
+ * to infer the product, and the buyer is never taken from the request body.
+ */
+async function handleCheckoutCompleted(event: Stripe.Event): Promise<Response> {
+  const session = event.data.object as Stripe.Checkout.Session;
+
+  // Only a settled payment may grant anything. 'unpaid' means an async payment
+  // method is still clearing — `checkout.session.async_payment_succeeded`
+  // follows and arrives here again — and 'no_payment_required' means nothing was
+  // ever charged.
+  if (session.payment_status === 'unpaid') {
+    console.log(`[payments/webhook] Session ${session.id} is not settled yet (unpaid)`);
+    return json({ received: true, awaitingPayment: true });
+  }
+  if (session.payment_status !== 'paid') {
+    console.warn(
+      `[payments/webhook] Session ${session.id} has payment_status=${session.payment_status}; nothing granted`
+    );
+    return json({ received: true, granted: false, reason: session.payment_status ?? 'unknown' });
+  }
+
+  const metadata = (session.metadata ?? {}) as Record<string, string>;
+  // snake_case is the canonical shape written by our own checkout calls. The
+  // camelCase fallbacks exist because /api/credits/purchase historically wrote
+  // `organizationId`/`packId`, and sessions created before that was normalised
+  // may still complete.
+  const organizationId = metadata.organization_id ?? metadata.organizationId;
+  const planId = metadata.plan_id ?? metadata.planId;
+  const creditPackId = metadata.credit_pack_id ?? metadata.creditPackId ?? metadata.packId;
+
+  if (!organizationId || (!planId && !creditPackId)) {
+    // Redelivery cannot fix a session that was created without attribution, so
+    // acknowledge (200) instead of letting Stripe retry forever — but make it
+    // loud, because this needs a human.
+    console.error(
+      `[payments/webhook] Session ${session.id} is PAID but cannot be attributed ` +
+        `(organization_id=${organizationId ?? 'missing'}, plan_id=${planId ?? 'missing'}, ` +
+        `credit_pack_id=${creditPackId ?? 'missing'}). Manual reconciliation required.`
+    );
+    await logEvent('billing_webhook_unattributable', 'billing', organizationId ?? 'unknown', {
+      sessionId: session.id,
+      eventId: event.id,
+      amountTotal: session.amount_total ?? null,
+      reason: 'missing_metadata',
+    });
+    return json({ received: true, granted: false, reason: 'missing_metadata' });
+  }
+
+  // Stripe supplies the customer on the session. Persisting it is what stops a
+  // second Stripe customer being created for the same organization later.
+  const stripeCustomerId =
+    typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null;
+
+  if (planId) {
+    const result = await activatePlan({
+      organizationId,
+      planId,
+      // The Checkout Session id is the idempotency anchor for both the
+      // subscription row and the credit grant.
+      processorReference: session.id,
+      stripeCustomerId,
+      amountCents: session.amount_total ?? 0,
+      eventId: event.id,
+      status: 'active',
+    });
+
+    return json({
+      received: true,
+      granted: true,
+      kind: 'plan',
+      plan: result.planTier,
+      creditsGranted: result.creditsGranted,
+      alreadyProcessed: result.alreadyProcessed,
+    });
+  }
+
+  const credits = await resolvePackCredits(creditPackId as string, metadata);
+  if (!credits) {
+    console.error(
+      `[payments/webhook] Session ${session.id} is PAID but pack "${creditPackId}" is unknown ` +
+        `and carries no credits value. Manual reconciliation required.`
+    );
+    await logEvent('billing_webhook_unattributable', 'billing', organizationId, {
+      sessionId: session.id,
+      eventId: event.id,
+      creditPackId,
+      reason: 'unknown_credit_pack',
+    });
+    return json({ received: true, granted: false, reason: 'unknown_credit_pack' });
+  }
+
+  const result = await grantCreditPack({
+    organizationId,
+    credits,
+    amountCents: session.amount_total ?? 0,
+    packId: creditPackId as string,
+    // Keyed on the Stripe event id, so a replayed delivery re-reads the same
+    // ledger row instead of granting twice.
+    idempotencyKey: `credit-pack:${event.id}`,
+    eventId: event.id,
+    stripeCustomerId,
+  });
+
+  return json({
+    received: true,
+    granted: !result.alreadyProcessed,
+    kind: 'credit_pack',
+    creditsGranted: result.creditsGranted,
+    alreadyProcessed: result.alreadyProcessed,
+  });
+}
+
+/**
+ * How many credits a verified credit-pack purchase should grant.
+ *
+ * Prefers the authoritative `credit_packs` row. The metadata fallback exists
+ * because the legacy /api/billing/subscribe pack ids ('100', '5000') are not
+ * rows in that table; the value is safe to trust there because it travelled in
+ * the Stripe-signed session metadata. Returns null rather than guessing.
+ */
+async function resolvePackCredits(
+  packId: string,
+  metadata: Record<string, string>
+): Promise<number | null> {
+  const [row] = await sql`
+    SELECT credits FROM credit_packs WHERE id = ${packId} LIMIT 1
+  `;
+  const fromDb = Number((row as { credits?: number } | undefined)?.credits ?? 0);
+  if (fromDb > 0) return fromDb;
+
+  const fromMetadata = Number(metadata.credits ?? 0);
+  if (Number.isFinite(fromMetadata) && fromMetadata > 0) return fromMetadata;
+
+  return null;
+}
+
+/**
+ * True when a PaymentIntent belongs to a billing purchase rather than a contract
+ * assignment fee — used to avoid 404-ing (and so retry-storming) the duplicate
+ * `payment_intent.succeeded` that every Checkout payment emits.
+ */
+function isBillingPaymentIntent(pi: Stripe.PaymentIntent): boolean {
+  const metadata = (pi.metadata ?? {}) as Record<string, string>;
+  return Boolean(
+    metadata.plan_id ||
+      metadata.credit_pack_id ||
+      metadata.organization_id ||
+      metadata.type === 'credit_purchase'
+  );
 }
