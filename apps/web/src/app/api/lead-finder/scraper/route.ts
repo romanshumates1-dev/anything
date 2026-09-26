@@ -34,6 +34,7 @@ import {
 import {
   simulateBySourceType,
 } from './simulator';
+import { syntheticDataAllowed } from '@/app/api/utils/syntheticData';
 import {
   COUNTY_CONFIGS,
   getConfigByCounty,
@@ -180,6 +181,29 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // SYNTHETIC-DATA GATE (2026-09-26): USE_SIMULATOR_DEFAULT is true, and the
+  // real-scraper path also falls back to the simulator when a scraper is missing
+  // or returns nothing. Fabricated owners and properties must never be persisted
+  // as real inventory on a production deployment (same class as BREAKAGE_TABLE
+  // #20). Outside development this route degrades to real scraping only.
+  const allowSynthetic = syntheticDataAllowed('ALLOW_SIMULATED_LEADS');
+  const useSimulatorEffective = useSimulator && allowSynthetic;
+  if (useSimulator && !allowSynthetic) {
+    console.warn('[SCRAPER] Simulator mode disabled outside development — using real scrapers only');
+  }
+
+  const simulationDisabledResult = (sourceType: string, config: { county: string; stateCode: string }): ScrapeResult => ({
+    success: false,
+    source: sourceType as any,
+    county: config.county,
+    state: config.stateCode,
+    leadsFound: 0,
+    leads: [],
+    errors: ['SIMULATED_LEADS_DISABLED: simulator fallback is disabled outside development'],
+    scrapedAt: new Date().toISOString(),
+    durationMs: 0,
+  });
+
   const results: ScrapeResult[] = [];
   let totalFound = 0;
   let totalSaved = 0;
@@ -187,29 +211,37 @@ export async function POST(req: NextRequest) {
   for (const config of configs) {
     for (const sourceType of typesToScrape) {
       try {
-        console.log(`[SCRAPER] ${useSimulator ? 'Simulating' : 'Scraping'} ${sourceType} from ${config.county}, ${config.stateCode}`);
+        console.log(`[SCRAPER] ${useSimulatorEffective ? 'Simulating' : 'Scraping'} ${sourceType} from ${config.county}, ${config.stateCode}`);
 
         let result: ScrapeResult;
 
-        if (useSimulator) {
-          // Use simulator for reliable data generation
+        if (useSimulatorEffective) {
+          // Use simulator for reliable data generation (dev-only, gated above)
           result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
         } else {
           // Try actual scraping
           const scraperFn = SOURCE_TYPE_MAP[sourceType];
           if (!scraperFn) {
-            result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
+            result = allowSynthetic
+              ? simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length))
+              : simulationDisabledResult(sourceType, config);
           } else {
             try {
               result = await scraperFn(config);
               // Fall back to simulator if scraper returns no results
               if (!result.success || result.leads.length === 0) {
-                console.log(`[SCRAPER] Scraper returned no results, falling back to simulator`);
-                result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
+                if (allowSynthetic) {
+                  console.log(`[SCRAPER] Scraper returned no results, falling back to simulator`);
+                  result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
+                }
               }
             } catch (scrapeErr) {
-              console.log(`[SCRAPER] Scraper failed, falling back to simulator`);
-              result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
+              if (allowSynthetic) {
+                console.log(`[SCRAPER] Scraper failed, falling back to simulator`);
+                result = simulateBySourceType(config, sourceType, Math.ceil(limit / configs.length));
+              } else {
+                throw scrapeErr;
+              }
             }
           }
         }

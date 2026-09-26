@@ -15,7 +15,9 @@ import { logEvent } from '@/app/api/utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { TOP_WHOLESALE_MARKETS } from '../../lead-finder/markets/config';
 import { simulateBySourceType } from '../../lead-finder/scraper/simulator';
+import { syntheticDataAllowed } from '@/app/api/utils/syntheticData';
 import { COUNTY_CONFIGS } from '../../lead-finder/scraper/county-configs';
+import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 interface MegaLaunchRequest {
   sellerCount?: number;
@@ -166,6 +168,17 @@ export async function POST(req: NextRequest) {
   }
 
   // EXECUTE THE LAUNCH
+  // SYNTHETIC-DATA GATE (2026-09-26): every "lead" below is produced by
+  // simulateBySourceType and written into sourced_leads. On a production
+  // deployment that is fabricated inventory (same class as BREAKAGE_TABLE #20),
+  // so execution requires ALLOW_SIMULATED_LEADS.
+  if (!syntheticDataAllowed('ALLOW_SIMULATED_LEADS')) {
+    return Response.json({
+      error: 'SIMULATED_LEADS_DISABLED',
+      detail: 'Mega-launch generates simulated leads and is disabled outside development (set ALLOW_SIMULATED_LEADS=true locally).',
+    }, { status: 503 });
+  }
+
   const MAX_ERRORS = 100; // Prevent unbounded growth
   const results = {
     sellersGenerated: 0,
@@ -454,6 +467,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 500 });
+    return safeErrorResponse(err, { context: "[src/app/api/campaigns/mega-launch/route.ts]", status: 500 });
   }
 }
