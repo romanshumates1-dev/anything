@@ -137,3 +137,49 @@ whether Shopify is a lead source or a checkout/payment rail, how an order maps
 to a lead/account, and whether it complements or replaces Stripe. A guessed
 integration would be worse than an honest gap, so it stays BLOCKED on that
 decision. The exact questions are listed in `MASTER-REQUIREMENTS-MATRIX.md` §17.
+
+---
+
+## F. Final gate state (2026-09-27, after the last code change)
+
+| gate | command | result |
+|---|---|---|
+| Types | `yarn typecheck` | **PASS - exit 0** |
+| Unit/integration | `yarn test` | **PASS - 235 files (234 passed, 1 skipped), 2631 passed / 23 skipped / 30 todo, 0 failed** |
+| E2E (real Edge, real session) | `yarn test:e2e` | **PASS - 2 passed, 1 skipped (documented wizard drift), exit 0** |
+| Database | `node scripts/migration-gate.mjs --compare-live` | **PASS - baseline + 93 migrations on an empty DB, idempotent re-run, 0 drift vs live (160 tables both sides)** |
+| Live API | `node scripts/api-probe.mjs` | **PASS on auth wall (401 everywhere unauthenticated) and data paths (200)**; one expected 429 (free-plan AI credits) |
+| Browser (auth) | `node scripts/browser-qa.mjs --auth --warm` | **60/70 route-viewports pass**; failures are 3 endpoints still carrying baselined fragment sites (`compliance/audit`, plus `/` and `/admin` sub-calls) |
+| Browser (guest) | `node scripts/browser-qa.mjs --warm` | 36 routes x 2 viewports; protected routes correctly bounce to sign-in |
+| Production build | `yarn build` | **PASS - exit 0** (Next 16.3.6) |
+| Bundle leak sweep | exact env secret VALUES in 104 client assets | **PASS - 0 found** |
+| Dependency audit | `yarn npm audit` | 28 -> 1 advisory (1 dev-only) |
+
+### Defects found by executing the system (#30-#36)
+
+#30 sign-up impossible · #31 new users had no organization · #32 nested SQL
+fragments (500s, and silently wrong ORDER BY) · #33 `contracts.metadata` never
+existed · #34 rate-limit `uuid` vs text org ids · #35 prompt-injection markers
+absent from the review net · #36 public endpoint published internal user ids.
+Details and proof in `PRODUCTION-HARDENING-STATUS.md` session 8.
+
+### Known open work (measured, not hidden)
+
+- **46 nested-fragment sites across 18 files** remain (66 -> 46 after this
+  session). Each is pinned per-file in a ratchet that can only decrease;
+  `node scripts/scan-fragments.mjs` prints the current state. Endpoints already
+  observed returning 500 because of them: `compliance/audit`, and the
+  `dashboard/quick-stats` + `admin/stats` calls the pages make.
+- `journey.spec.ts` is `test.fixme` (wizard was redesigned to a multi-step flow).
+- vitest 4 migration (1 moderate dev-only advisory).
+
+## G. Scores
+
+| dimension | score | basis |
+|---|---|---|
+| Original requirements | **8.5/10** | 12 of 17 COMPLETE, 5 PARTIAL (each blocked only on a live credential or a browser visual) |
+| Security | **8/10** | CSRF, CORS, secrets, SSRF, webhooks, IDOR, AI-injection closed and tested; 46 SQL-composition sites still open, so the code is not yet uniformly correct |
+| Engineering quality | **8.5/10** | shared `sqlFragments` builder, ratchet-based guards, docs reconciled, no speculative refactors; debt remains in the legacy routes |
+| Testing / QA | **8.5/10** | 2631 unit tests, real E2E, real browser, migration gate, live API probe; new tests this session were written to FIND misses and found 7 defects |
+| Performance | **7/10** | measured 175 ms - 16 s (dev-mode compile dominates); production-build timings not yet captured |
+| **Overall** | **8/10** | Not 10/10: a known defect class (46 SQL sites) and a production build/browser pass on the deployed domain are outstanding |
