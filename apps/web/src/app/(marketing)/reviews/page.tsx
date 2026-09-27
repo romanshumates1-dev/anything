@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { ReviewsContent } from "./ReviewsContent";
 import { fetchReviewsPage } from "@/app/api/reviews/queries";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/reviews'),
   title: "Reviews",
   description: "Verified customer reviews for DealFlow AI. See what real users say about our automated wholesaling platform.",
   openGraph: {

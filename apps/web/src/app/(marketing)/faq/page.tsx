@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/faq'),
   title: "FAQ",
   description:
     "Frequently asked questions about DealFlow AI: setup, pricing, AI capabilities, compliance, and integrations.",

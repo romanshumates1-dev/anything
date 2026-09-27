@@ -1,6 +1,7 @@
 import sql from '@/app/api/utils/sql';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 import { getAiConfig } from '@/app/api/utils/ai-settings';
+import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
 
 /**
  * PUBLIC health probe — used by uptime checks, the Shell status dot, and the
@@ -18,7 +19,7 @@ import { getAiConfig } from '@/app/api/utils/ai-settings';
 const START_TIME = Date.now();
 const VERSION = process.env.APP_VERSION || '0.1.0';
 
-export async function GET() {
+export async function GET(request: Request) {
   const services = { db: false, jobs: false, ai: false, sms: false };
 
   try {
@@ -49,7 +50,7 @@ export async function GET() {
 
   const ok = services.db && services.jobs;
 
-  // LIVENESS ONLY — booleans + uptime/version. Deliberately NO config:
+  // LIVENESS ONLY by default — booleans + status. Deliberately NO config:
   // no provider/driver names, no beta flags, no latency numbers, no number
   // type. This endpoint is unauthenticated and internet-facing in prod, so
   // publishing feature/vendor config here would re-open the Phase-5
@@ -57,15 +58,29 @@ export async function GET() {
   //   flags   → GET /api/settings/beta-flags   (requireAdmin)
   //   ops     → /api/system/{readiness,database,metrics,queue-status} (requireAdmin)
   //   local   → scripts/launch-status.mjs (reads .env + DB directly, dev only)
-  return Response.json(
-    {
-      ok,
-      status: ok ? 'healthy' : 'degraded',
-      uptime: Math.floor((Date.now() - START_TIME) / 1000),
-      version: VERSION,
-      services,
-      timestamp: new Date().toISOString(),
-    },
-    { status: ok ? 200 : 503 }
-  );
+  //
+  // SECURITY (2026-09-27 live sweep): the public payload additionally carried
+  // `version`, `uptime` and the per-service map. Each is reconnaissance:
+  //   - `version` is an exact fingerprint for matching published CVEs
+  //   - `services: {ai, sms}` discloses which integrations are CONFIGURED, and
+  //     so which subsystems are worth attacking
+  //   - `uptime` reveals how freshly the process was restarted
+  // An uptime checker and a status dot only need `ok`, so the detail is
+  // released solely to a caller presenting the ops secret. The local launcher
+  // reads .env and the database directly, so it never needed it from here.
+  const opsSecret = process.env.CRON_SECRET;
+  const isOps =
+    !!opsSecret && timingSafeSecretEqual(request.headers.get('x-cron-secret'), opsSecret);
+
+  const base = {
+    ok,
+    status: ok ? 'healthy' : 'degraded',
+    timestamp: new Date().toISOString(),
+  };
+
+  const payload = isOps
+    ? { ...base, uptime: Math.floor((Date.now() - START_TIME) / 1000), version: VERSION, services }
+    : base;
+
+  return Response.json(payload, { status: ok ? 200 : 503 });
 }

@@ -11,8 +11,10 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/how-it-works'),
   title: "How It Works",
   description:
     "DealFlow AI's automated real estate wholesaling pipeline: lead import, AI SMS outreach, negotiation within bounds, contract generation, and e-signature.",

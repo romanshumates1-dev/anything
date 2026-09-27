@@ -26,9 +26,14 @@ import {
   LiveSocialProof,
   LimitedTimeOffer,
 } from "@/components/marketing";
+import { canonicalFor } from '@/lib/seo';
 
 // Marketing landing owns "/". Guests see this page; authenticated users are
 // sent to the SaaS app at /dashboard.
+export const metadata = {
+	...canonicalFor('/'),
+};
+
 export default async function LandingPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (session) redirect("/dashboard");

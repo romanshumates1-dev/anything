@@ -13,8 +13,10 @@ import {
 } from "@/components/marketing";
 import sql from "@/app/api/utils/sql";
 import PricingTierSelector from "./PricingTierSelector";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/pricing'),
   title: "Pricing - DealFlow AI",
   description:
     "AI-powered real estate deal-finding automation. Start free, scale as you grow. Compare to PropStream, REsimpli, BatchLeads.",

@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { LegalDocPage } from "@/components/LegalDocPage";
 import { getLegalDoc } from "@/lib/legal";
+import { canonicalFor } from '@/lib/seo';
 
 const SLUG = "acceptable-use";
 
 export function generateMetadata(): Metadata {
   const doc = getLegalDoc(SLUG);
   return {
+    ...canonicalFor('/legal/acceptable-use'),
     title: doc?.title ?? "Legal",
     description: `${doc?.title ?? "Legal document"} for DealFlow AI. Template — requires attorney review before launch.`,
   };

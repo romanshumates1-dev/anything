@@ -424,7 +424,26 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // SECURITY (2026-09-27 live sweep): this handler was reachable WITHOUT
+  // authentication and returned the full internal job roster and schedule:
+  // task names like `ghost-sweep`, `resurrection`, `dead-letter-alert` and
+  // `buyer-pipeline`, plus their exact cadence. The POST that actually RUNS a
+  // task was correctly gated on `x-cron-secret`; the GET that DESCRIBES the
+  // system was not. Protecting the action while publishing the blueprint is the
+  // same class of bug - it hands an attacker the operational map (which jobs
+  // exist, how often they run, and therefore when the system is quietest) plus
+  // the internal vocabulary needed to guess sibling endpoints.
+  //
+  // The existing secret-compare ratchet missed this because it only asserted
+  // the file CONTAINS a `timingSafeSecretEqual(` call, not that EVERY exported
+  // handler in it is guarded. `operational-disclosure-guard.test.ts` now
+  // checks per-handler.
+  const provided = request.headers.get('x-cron-secret');
+  if (!CRON_SECRET || !timingSafeSecretEqual(provided, CRON_SECRET)) {
+    return unauthorized();
+  }
+
   return Response.json({
     tasks: Object.keys(TASKS),
     schedule: {

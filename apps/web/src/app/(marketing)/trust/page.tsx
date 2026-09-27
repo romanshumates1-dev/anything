@@ -2,8 +2,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Shield, Clock, Lock, FileText, AlertTriangle, CheckCircle } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/trust'),
   title: "Compliance Center",
   description:
     "DealFlow AI's messaging practices, consent requirements, and data handling policies. TCPA compliant SMS outreach for real estate investors.",

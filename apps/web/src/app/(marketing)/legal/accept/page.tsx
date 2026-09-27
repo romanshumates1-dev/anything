@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { AcceptForm } from "./AcceptForm";
 import { getLegalDoc } from "@/lib/legal";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/legal/accept'),
   title: "Review & Accept",
   robots: { index: false },
 };

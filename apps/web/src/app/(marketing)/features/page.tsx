@@ -15,8 +15,10 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/features'),
   title: "Features",
   description:
     "DealFlow AI features: AI negotiation, approval workflows, 10DLC compliance, test mode, rate limiting, analytics, and enterprise security.",

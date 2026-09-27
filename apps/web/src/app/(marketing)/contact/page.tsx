@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { ContactForm } from "./ContactForm";
 import { Mail, MessageSquare, Clock } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/contact'),
   title: "Contact",
   description:
     "Contact DealFlow AI for a demo, pricing questions, or enterprise inquiries. We'll respond within 1 business day.",

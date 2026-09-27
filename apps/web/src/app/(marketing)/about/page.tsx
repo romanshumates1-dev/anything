@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Shield, Clock, CheckCircle, Zap } from "lucide-react";
+import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
+	...canonicalFor('/about'),
   title: "About",
   description:
     "DealFlow AI automates real estate wholesaling with AI-powered SMS outreach, compliant negotiation, and contract generation. Built for investors, by investors.",
