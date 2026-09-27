@@ -747,6 +747,64 @@ address that looks like routable IPv6 but connects to loopback. Fixed by decodin
 
 ## 32. Tenant isolation: financial + personal data matrix (18 tests, real Postgres)
 
+
+---
+
+# PART 7 — MASTER TRACEABILITY MATRIX (re-synchronised 2026-09-26)
+
+Re-synchronised against the ORIGINAL 17 OWNER TASKS supplied in conversation, which remain
+authoritative regardless of repository phase numbering. Every "Implemented" below was confirmed by
+inspecting the CURRENT code in this session, not by trusting a status document.
+
+Status vocabulary — **COMPLETE** (implemented + automated evidence) · **PARTIAL** (implemented,
+evidence incomplete) · **BLOCKED** (genuine external dependency) · **UNVERIFIED** (exists but never
+exercised). "Prod Verified" is a separate column and is **never** inferred from code or mocks.
+
+## A. Original 17 owner tasks
+
+| # | Requirement | Impl | Unit | Integration | E2E | Browser | Security | Adversarial | Regressed | Prod Verified | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | AI support functional + smaller/optimal button | ✅ `components/SupportChat.tsx`, `api/support/chat` | ⚠️ | ⚠️ | ❌ | ⚠️ | ❌ | ❌ | ✅ | **PARTIAL** — built, never browser-verified |
+| 2 | Long username/email sidebar fix | ✅ `components/UsageMeterSidebar.tsx` | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | ✅ | **PARTIAL** — no long-string test |
+| 3 | Apollo as a lead source | ✅ `api/lead-finder/apollo/` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** — logic only, live API **BLOCKED** |
+| 4 | Third-party lead-source handling | ✅ | ⚠️ | ❌ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** |
+| 5 | Third-party lead-source upcharge/billing | ✅ 15 sites | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** — client-price manipulation untested |
+| 6 | Free-trial demo data, no A2P to explore | ✅ 21 sites | ⚠️ | ⚠️ | ❌ | ❌ | ⚠️ | ⚠️ | ✅ | **PARTIAL** |
+| 7 | Performance: 5–10 s navigation | ✅ | — | — | — | ✅ | — | — | ✅ | **PARTIAL** — measured 175–1126 ms; cause = dev Turbopack, not app |
+| 8 | Full route/page functionality test + repair | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** — 7 blank routes found & fixed |
+| 9 | Payment/subscription/credit systems verified | ✅ | ✅ | ✅ | ❌ | ⚠️ | ✅ | ✅ | ✅ | **PARTIAL** — live Stripe **BLOCKED** |
+| 10 | Console/error audit + repair | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **COMPLETE** |
+| 11 | Premium UI/VFX + SEO | ⚠️ | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | ✅ | **UNVERIFIED** — design pass + SEO not done this round |
+| 12 | AI credits: weekly ≤ ¼ monthly, daily ≤ ⅕ weekly, purchased usable | ✅ `aiCreditGate/Limits` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ | **PARTIAL** — needs RE-VERIFICATION after tax work |
+| 13 | Restricted signup domain toggle ON/OFF | ✅ `api/admin/settings/signup`, `access-restricted/` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** |
+| 14 | Billing/payment pages work | ✅ | ⚠️ | ⚠️ | ❌ | ❌ | ✅ | ⚠️ | ✅ | **PARTIAL** |
+| 15 | Payout/earnings filters: d/w/m/q/y | ✅ `api/tax/report` `date_trunc` | ✅ | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** — earnings UI filter unverified |
+| 16 | Earnings/tax-reporting document | ✅ `api/tax/report` + CSV | ✅ | ✅ | ❌ | ❌ | ✅ | ⚠️ | ✅ | **PARTIAL** — concurrency untested |
+| 17 | Optional auto-tax withholding, visible in payouts | ✅ `api/tax/settings` + withdrawal hook | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | **PARTIAL** — **concurrency/replay OPEN** |
+
+## B. Security addendum — assessment
+
+| area | evidence | status |
+|---|---|---|
+| Authentication | session/admin/api-key/secret guards swept; `requireAdmin`, `authenticateApiKey`, `timingSafeSecretEqual` | **COMPLETE** |
+| Authorization / IDOR | `getEffectiveOrganizationId` IDOR fixed; 34 isolation tests incl. 18 real-Postgres | **PARTIAL** — matrix expanded, not exhaustive |
+| Tenant isolation | ORG-A/ORG-B on earnings, withdrawals, bank accounts, tax, leads, campaigns, territories, actions, portal | **PARTIAL** |
+| Dev/mock production escapes | 3 dev routes found unguarded → `devOnlyGuard` (allow-list + secret) | **COMPLETE** for those found |
+| SSRF | stored-webhook URL guard, 30 evasion tests | **PARTIAL** — DNS rebinding documented as unsolved |
+| Data leakage | `error.message` audit closed; provider errors sanitized | **PARTIAL** — no full source-map/bundle sweep |
+| Webhooks | esign + payments signature-verified; Twilio callbacks verified | **COMPLETE** |
+| Financial integrity | integer cents, losslessness grid, zero-floored balance, UNIQUE idempotency | **PARTIAL** — concurrency untested |
+| AI security | — | **UNVERIFIED** |
+| Dependency/supply chain | — | **UNVERIFIED** |
+| HTTP headers / CSRF / CORS | partial | **UNVERIFIED** |
+| Independent adversarial review | 5 rounds, 8+ real defects found | **ONGOING** |
+
+## C. Honest note on verification levels
+
+Everything marked ✅ above is **automated evidence from this repository**. Nothing in this matrix
+constitutes **production verification**, which requires the credentials listed in Part 9. PGlite is
+a real PostgreSQL engine and is legitimate evidence of SQL behaviour, but it is **not Neon**.
+
 The existing `multitenant-matrix.test.ts` covers CRM resources. This adds the classes with the
 worst blast radius — **earnings, withdrawals, bank accounts, tax withholding** — against a **real
 Postgres engine (PGlite)**, because isolation bugs live in the SQL and
