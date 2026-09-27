@@ -277,39 +277,53 @@ export async function getActionQueue(
 ): Promise<{ items: ActionQueueItem[]; total: number }> {
   const { status = 'PENDING', priority, type, userId, limit = 50, offset = 0 } = options;
 
-  // Build dynamic query conditions
-  let conditions = sql`organization_id = ${organizationId}`;
+  // Build the WHERE clause as SQL TEXT plus a params array (defect #32).
+  //
+  // The previous code accumulated fragments with
+  // `conditions = sql`${conditions} AND ...``, which looks like string
+  // concatenation but is not: this driver maps EVERY template interpolation to
+  // a positional parameter, so each accumulated fragment was sent as a JSON
+  // value. Postgres then failed with
+  //   invalid input syntax for type boolean: "{"parameterizedQuery":{...}}"
+  // and /api/actions returned 500 for every signed-in user — the sidebar badge
+  // calls it on every page load, so the app looked broken everywhere.
+  //
+  // Only fixed SQL text is concatenated here; every caller-supplied value is
+  // bound as a parameter, so nothing user-controlled reaches the statement.
+  const clauses: string[] = ['organization_id = $1'];
+  const params: unknown[] = [organizationId];
+  const bind = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
 
-  if (status) {
-    conditions = sql`${conditions} AND status = ${status}`;
-  }
-  if (priority) {
-    conditions = sql`${conditions} AND priority = ${priority}`;
-  }
-  if (type) {
-    conditions = sql`${conditions} AND type = ${type}`;
-  }
+  if (status) clauses.push(`status = ${bind(status)}`);
+  if (priority) clauses.push(`priority = ${bind(priority)}`);
+  if (type) clauses.push(`type = ${bind(type)}`);
   if (userId) {
-    conditions = sql`${conditions} AND (user_id = ${userId} OR user_id IS NULL)`;
+    clauses.push(`(user_id = ${bind(userId)} OR user_id IS NULL)`);
   }
+  const where = clauses.join(' AND ');
 
-  const [countResult] = await sql`
-    SELECT COUNT(*) as total FROM action_queue WHERE ${conditions}
-  `;
+  const [countResult] = await sql(
+    `SELECT COUNT(*) as total FROM action_queue WHERE ${where}`,
+    params
+  );
 
-  const items = await sql`
-    SELECT * FROM action_queue
-    WHERE ${conditions}
-    ORDER BY
-      CASE priority
-        WHEN 'URGENT' THEN 1
-        WHEN 'HIGH' THEN 2
-        WHEN 'NORMAL' THEN 3
-        WHEN 'LOW' THEN 4
-      END,
-      created_at ASC
-    LIMIT ${limit} OFFSET ${offset}
-  `;
+  const items = await sql(
+    `SELECT * FROM action_queue
+     WHERE ${where}
+     ORDER BY
+       CASE priority
+         WHEN 'URGENT' THEN 1
+         WHEN 'HIGH' THEN 2
+         WHEN 'NORMAL' THEN 3
+         WHEN 'LOW' THEN 4
+       END,
+       created_at ASC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
 
   return {
     items: items.map(mapActionQueueRow),

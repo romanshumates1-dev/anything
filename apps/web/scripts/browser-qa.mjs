@@ -20,7 +20,7 @@
  * Usage: node scripts/browser-qa.mjs [baseUrl]
  */
 import { chromium } from 'playwright';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const BASE = process.argv[2] || 'http://localhost:3111';
@@ -91,13 +91,50 @@ const browser = await chromium.launch({
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
 
+/**
+ * AUTHENTICATED MODE (`--auth`).
+ *
+ * The default pass deliberately uses a FRESH context, which proves the auth
+ * wall: an anonymous visitor must be bounced off every protected route. That
+ * is only half the evidence. With `--auth` the context is seeded with the
+ * Playwright storage state that e2e/global-setup.ts produced by registering a
+ * REAL account against the REAL database, so protected routes are expected to
+ * RENDER rather than redirect — that is what actually proves the application
+ * works for a signed-in user.
+ *
+ * `node scripts/browser-qa.mjs http://localhost:4000 --auth`
+ */
+const AUTH_MODE = process.argv.includes('--auth');
+const RESULTS_SUFFIX = AUTH_MODE ? '-authenticated' : '';
+const STORAGE_STATE = 'e2e/.auth/state.json';
+if (AUTH_MODE && !existsSync(STORAGE_STATE)) {
+  console.error(
+    `--auth requires ${STORAGE_STATE}. Run \`yarn test:e2e\` first: its global setup registers the account and writes the state file.`
+  );
+  process.exit(2);
+}
 
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     isMobile: vp.name === 'mobile',
     hasTouch: vp.name === 'mobile',
+    ...(AUTH_MODE ? { storageState: STORAGE_STATE } : {}),
   });
+
+  // Warm-up pass: in `next dev` the FIRST request to a route pays an on-demand
+  // compile, so measuring it reports compile latency rather than the app. Each
+  // route is fetched once and discarded before anything is measured.
+  if (process.argv.includes('--warm')) {
+    const warm = await context.newPage();
+    for (const [route] of ROUTES) {
+      await warm
+        .goto(BASE + route, { waitUntil: 'domcontentloaded', timeout: 60000 })
+        .catch(() => {});
+    }
+    await warm.close();
+    console.log('[warm] compile warm-up complete');
+  }
 
   for (const [route, kind, expectRedirect] of ROUTES) {
     const page = await context.newPage();
@@ -146,16 +183,28 @@ for (const vp of VIEWPORTS) {
     const elapsed = Date.now() - t0;
 
     // An unauthenticated visitor must NOT be able to render a protected page.
+    // In AUTHENTICATED mode the same routes are expected to RENDER, and a
+    // redirect to the login page is then the failure (a stale/absent session
+    // would otherwise look like a pass).
     let authGuardOk = null;
     if (kind === 'protected') {
       const body = extract(await page.content()).toLowerCase();
       const onLogin = /signin|login|unauthorized|forbidden/i.test(page.url());
       const looksProtected =
         /sign in|log in|unauthorized|access denied|authentication required/.test(body);
-      authGuardOk = onLogin || looksProtected;
+      authGuardOk = AUTH_MODE ? !onLogin : onLogin || looksProtected;
     }
 
-    const realContent = bytes > 5000 && textLen > 400;
+    // A correctly-bounced protected route lands on the sign-in page, which is
+    // legitimately short. Demanding 400+ chars of text there produced 40+
+    // phantom failures; the requirement is that the GUARD fired, not that the
+    // login page be verbose. In authenticated mode the same routes must render
+    // real content instead.
+    const isLoginPage =
+      /\/account\/signin|signin|login/i.test(page.url()) ||
+      /sign in|log in/i.test(extract(await page.content()));
+    const realContent =
+      bytes > 5000 && (textLen > 400 || (kind === 'protected' && !AUTH_MODE && isLoginPage));
     results.push({
       viewport: vp.name,
       route,
@@ -186,9 +235,13 @@ for (const vp of VIEWPORTS) {
 }
 
 await browser.close();
-writeFileSync('artifacts/browser-qa/results.json', JSON.stringify(results, null, 2));
-
+// The directory must exist BEFORE the write: previously writeFileSync ran
+// above mkdirSync and only survived because screenshots happened to create it.
 mkdirSync('artifacts/browser-qa', { recursive: true });
+writeFileSync(
+  `artifacts/browser-qa/results${RESULTS_SUFFIX}.json`,
+  JSON.stringify(results, null, 2)
+);
 
 let pass = 0;
 let fail = 0;

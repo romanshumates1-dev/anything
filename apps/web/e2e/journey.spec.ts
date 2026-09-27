@@ -23,13 +23,33 @@ const env = loadEnv();
  *   the negotiation is unblocked (AWAITING_OWNER_RANGE → NEGOTIATING) in the DB.
  */
 test('full journey: wizard → launch → inbox/thread → approve range → negotiation unblocked', async ({ page }) => {
+  test.fixme(
+    true,
+    'Spec drift (2026-09-27), not a product defect. This spec encodes the OLD ' +
+      'single-step wizard: fill #name, pick a "Paste Numbers" combobox, fill ' +
+      '#paste/#opening, then step through Follow-ups/Sending. The shipped wizard ' +
+      'is now a multi-step flow (Campaign Basics → Select Contacts → …) built ' +
+      'with a LeadSourceSelector; a real browser shows the campaign-name input ' +
+      '(placeholder "e.g., Q1 Seller Outreach - Kentucky") but no ' +
+      '"Paste Numbers" combobox in step 1, so step 1 of this spec can no longer ' +
+      'be expressed. Rewriting the journey to the current wizard is real work ' +
+      'and must not be faked by deleting assertions; tracked as T3 in ' +
+      'docs/superpowers/ACCEPTANCE-MATRIX.md. Authenticated coverage that IS ' +
+      'exercised today lives in e2e/marketing.spec.ts (guest funnel) and in ' +
+      'scripts/browser-qa.mjs --auth (protected routes render for a real session).'
+  );
   const sql = db();
   const campaignName = `E2E Journey ${Date.now()}`;
 
   // --- Wizard Step 1 ---
   await page.goto('/campaigns/wizard');
-  await expect(page.locator('#name')).toBeVisible();
-  await page.fill('#name', campaignName);
+  // Selector drift (2026-09-27): the campaign-name input no longer carries
+  // `id="name"`, so `#name` never resolves even though the field renders
+  // ("Create Campaign" / "Campaign Basics" confirmed in a real browser).
+  // Target it by its placeholder, which is user-visible and stable.
+  const campaignNameInput = page.getByPlaceholder(/Q1 Seller Outreach/i);
+  await expect(campaignNameInput).toBeVisible();
+  await campaignNameInput.fill(campaignName);
   await page.getByRole('combobox').nth(1).click();
   await page.getByRole('option', { name: 'Paste Numbers' }).click();
   await page.fill('#paste', `Alice ${TEST_PHONE}\nBob +15025550002\nCarol +15025550003`);

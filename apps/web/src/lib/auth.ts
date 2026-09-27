@@ -213,10 +213,14 @@ export const auth = betterAuth({
             const orgSlug = `${emailLocal.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${orgId.slice(-8)}`;
 
             // Create organization
+            // `owner_user_id` is NOT NULL (defect #31): omitting it made this
+            // INSERT fail for EVERY new signup, and the catch below swallowed
+            // the error, so new users ended up with no organization at all and
+            // every org-scoped API answered 403 "No organization found".
             await pool.query(
-              `INSERT INTO organizations (id, name, slug, created_at)
-               VALUES ($1, $2, $3, NOW())`,
-              [orgId, orgName, orgSlug]
+              `INSERT INTO organizations (id, name, slug, owner_user_id, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+              [orgId, orgName, orgSlug, user.id]
             );
 
             // Add user as OWNER
@@ -249,14 +253,69 @@ export const auth = betterAuth({
         // read — no trust in the incoming object. Also the ban gate (Phase 4):
         // a banned or currently-suspended user cannot mint a new session, so a
         // fresh login attempt is rejected server-side.
-        before: async (session) => {
-          const { rows } = await pool.query(
-            'SELECT email, banned, suspended_until FROM "user" WHERE id = $1 LIMIT 1',
-            [session.userId]
-          );
-          const u = rows[0];
-          if (!u || !(await isEmailDomainAllowedEffective(u.email))) return false;
-          if (isAccessDenied(u)) return false;
+        // WHY THE ADAPTER LOOKUP COMES FIRST (defect #30): this hook used to
+        // read the user with the module-level `pool` only. During SIGN-UP the
+        // user row is created in the same request, inside better-auth's own
+        // transaction, so a different connection could not see it: the lookup
+        // returned no row, this hook returned false, and every signup failed
+        // with FAILED_TO_CREATE_SESSION — no new user could ever register,
+        // which is why authenticated E2E had never been run. better-auth passes
+        // the auth context as the second argument, so `internalAdapter` resolves
+        // the user on the SAME connection/transaction as the insert. The pool
+        // read remains the fallback for sign-in and any path without the
+        // adapter, and an unresolvable user still fails CLOSED.
+        before: async (session, hookCtx) => {
+          const internalAdapter = (
+            hookCtx as unknown as {
+              context?: {
+                internalAdapter?: { findUserById?: (id: string) => Promise<unknown> };
+              };
+            }
+          )?.context?.internalAdapter;
+
+          type UserRow = {
+            email: string;
+            banned?: boolean | null;
+            suspended_until?: Date | string | null;
+          };
+          let u: UserRow | null = null;
+
+          if (typeof internalAdapter?.findUserById === 'function') {
+            try {
+              u = (await internalAdapter.findUserById(session.userId)) as UserRow | null;
+            } catch (err) {
+              // Fall through to the pool read: a transient adapter error must
+              // not be the reason a legitimate sign-up is refused.
+              console.error('[Auth] session hook adapter lookup failed:', err);
+            }
+          }
+
+          if (!u) {
+            const { rows } = await pool.query(
+              'SELECT email, banned, suspended_until FROM "user" WHERE id = $1 LIMIT 1',
+              [session.userId]
+            );
+            u = rows[0] as UserRow | undefined ?? null;
+          }
+
+          if (!u) {
+            console.error(
+              `[Auth] session.create.before: user ${session.userId} not resolvable; refusing session`
+            );
+            return false;
+          }
+          if (!(await isEmailDomainAllowedEffective(u.email))) return false;
+          // `banned` is NOT NULL in the schema, but the adapter may return it as
+          // null/undefined for a shape it does not know; normalize rather than
+          // widening isAccessDenied's parameter type.
+          if (
+            isAccessDenied({
+              banned: Boolean(u.banned),
+              suspended_until: u.suspended_until ?? null,
+            })
+          ) {
+            return false;
+          }
           return { data: session };
         },
       },

@@ -39,6 +39,26 @@ const base = (
 ) as SqlQueryFunction;
 
 /**
+ * ⚠ THIS DRIVER HAS NO NESTED-FRAGMENT SUPPORT (defect #32).
+ *
+ * `@neondatabase/serverless` in the pinned version turns EVERY template
+ * interpolation into a positional `$n` parameter — there is no branch that
+ * splices a previously-built query. So this never worked and silently does the
+ * wrong thing:
+ *
+ *     const where = sql`a = ${x}`;
+ *     sql`SELECT ... WHERE ${where}`;   // -> $1 is a JSON blob, not SQL
+ *
+ * which Postgres rejects with e.g.
+ *   invalid input syntax for type boolean: "{"parameterizedQuery":{...}}"
+ *
+ * To build a dynamic WHERE clause, pass text + params to the string form
+ * (`sql(text, params)`), which this driver does support, exactly as
+ * `lead-finder/public-pool` already does. `sqlFragmentCompositionGuard.test.ts`
+ * fails the build if the broken pattern is reintroduced.
+ */
+
+/**
  * TAG-PRESERVING RETRY WRAPPER.
  *
  * WHY THE SHAPE MATTERS, NOT JUST THE RETRY

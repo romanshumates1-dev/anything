@@ -151,11 +151,17 @@ async function checkSingleRateLimit(
     };
   }
 
-  // Use the database function for atomic check-and-increment
+  // Use the database function for atomic check-and-increment.
+  // `organizationId` is passed as TEXT on purpose (defect #34): organization
+  // ids are `org_<hex>` strings throughout the schema. The function used to
+  // take uuid and this call cast to match, which made EVERY rate-limited
+  // endpoint 500 for every real organization with
+  // "invalid input syntax for type uuid: \"org_...\"". Migration 093 aligned
+  // the column and function types to text; do not reintroduce the cast.
   const result = await sql`
     SELECT * FROM check_rate_limit(
       ${userId},
-      ${organizationId}::uuid,
+      ${organizationId},
       ${metric},
       ${period},
       ${limitValue},
@@ -310,7 +316,7 @@ export async function recordRateLimitUsage(
       await sql`
         SELECT check_rate_limit(
           ${userId},
-          ${organizationId}::uuid,
+          ${organizationId},
           ${metric},
           ${period},
           ${limitValue},

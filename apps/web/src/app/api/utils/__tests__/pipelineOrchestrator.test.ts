@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Hoist mocks before any imports
+//
+// The mock accepts BOTH driver call forms, because `getActionQueue` uses the
+// string form (`sql(text, params)`) for its dynamic WHERE clause - the pinned
+// neon driver has no nested-fragment support, so accumulating `sql` fragments
+// silently sends them as JSON parameters (defect #32). Other functions in this
+// module still use the tagged form, so both must resolve.
 vi.mock('../sql', () => ({
   default: Object.assign(
-    vi.fn((strings: TemplateStringsArray, ..._values: unknown[]) => {
-      const query = strings.join('?');
+    vi.fn((stringsOrText: TemplateStringsArray | string, ..._values: unknown[]) => {
+      const query = Array.isArray(stringsOrText)
+        ? stringsOrText.join('?')
+        : String(stringsOrText);
       // Check COUNT first as it's more specific
       if (query.includes('COUNT(*)')) {
         return Promise.resolve([{ total: '1' }]);

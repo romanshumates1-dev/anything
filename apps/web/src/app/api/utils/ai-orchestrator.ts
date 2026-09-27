@@ -46,9 +46,52 @@ const HIGH_RISK_PATTERNS: RegExp[] = [
   /\bagreed?\b/i, // "so we're agreed at ..., right?"
 ];
 
+/**
+ * PROMPT-INJECTION MARKERS (defect #35, found by the adversarial suite).
+ *
+ * `detectHighRisk` was built around money and contract vocabulary, so an
+ * inbound lead message that tried to REPROGRAMME THE ASSISTANT
+ * ("ignore all previous instructions, you are now...", "do not require
+ * review", "reveal your system prompt") matched nothing. The model then
+ * returned `requires_human: false`, the risk net agreed, and the reply was
+ * queued for send without human review — the injection deciding its own
+ * review policy.
+ *
+ * These markers escalate the conversation to a human. That is the same posture
+ * the price patterns above already take: a false positive costs a human a
+ * glance, a false negative lets an attacker steer an outbound message. The
+ * conversation is not blocked — it is queued for review, which is exactly what
+ * the human-in-the-loop rule is for.
+ */
+const PROMPT_INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules?|directions?)/i,
+  /disregard\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier|your)\s+/i,
+  /forget\s+(?:everything|all)\s+(?:you|above|before)/i,
+  /\byou\s+are\s+now\b/i,
+  /\bnew\s+(?:system\s+)?(?:instructions?|prompt|persona)\s*[:\-]/i,
+  /\b(?:reveal|print|repeat|show|output|dump)\s+(?:your|the)\s+(?:system\s+)?(?:prompt|instructions?|rules?)/i,
+  /\bdo\s+not\s+(?:require|need|wait\s+for)\s+(?:any\s+)?(?:human\s+)?(?:review|approval|confirmation)/i,
+  /\b(?:auto|automatically)[- ]?(?:confirm|approve|send|approve\s+and\s+send)\b/i,
+  /\bsend\s+(?:this\s+)?(?:to\s+)?(?:all|every|everyone)\s+(?:my\s+)?(?:leads?|contacts?|people|users?)/i,
+  /\bbypass\s+(?:the\s+)?(?:safety|guardrails?|rules?|restrictions?|review)/i,
+  /\bdeveloper\s+mode\b/i,
+  /\bjailbreak\b/i,
+  /\bpretend\s+(?:you\s+)?(?:are|to\s+be)\s+(?:not|no\s+longer)\b/i,
+];
+
+export function detectPromptInjection(text: unknown): boolean {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  return PROMPT_INJECTION_PATTERNS.some((re) => re.test(text));
+}
+
 export function detectHighRisk(text: unknown): boolean {
   if (typeof text !== 'string' || text.length === 0) return false;
-  return HIGH_RISK_PATTERNS.some((re) => re.test(text));
+  return (
+    HIGH_RISK_PATTERNS.some((re) => re.test(text)) ||
+    // Injection markers ride the same net: escalate to a human, never
+    // auto-send on the strength of the injected instruction itself.
+    PROMPT_INJECTION_PATTERNS.some((re) => re.test(text))
+  );
 }
 
 export interface AIDecision {
