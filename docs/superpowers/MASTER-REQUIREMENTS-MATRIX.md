@@ -347,3 +347,375 @@ New accepted residual: DB-stored `closings.portal_access_token` rows with
     12. `tenant-isolation-2026-09-26.test.ts` (10 passed)
 
 
+
+---
+
+# PART 2 — ORIGINAL PRODUCT REQUIREMENTS TRACEABILITY (final release gate, 2026-09-26)
+
+The earlier §0 scope note recorded that the "17 original product tasks" were **not present in git
+history** and declined to invent them. The user has since restated them in conversation, so they are
+now traceable against code. Source of truth for this part is the user's directive, not the repo.
+
+**Status discipline used below.** `COMPLETE` requires automated evidence *and* a verification tier
+that matches what the row claims. Code existing is never sufficient. Where a row is only code- or
+test-verified, it says so. `BLOCKED` means an external dependency (credential, account, environment)
+prevents verification and is not a statement that the feature is absent.
+
+**Verification tiers:** CODE VERIFIED · TEST VERIFIED · SANDBOX VERIFIED · STAGING VERIFIED ·
+PRODUCTION VERIFIED · EXTERNALLY BLOCKED
+
+| # | Original requirement (user-stated) | Impl | Test tier | Prod tier | Evidence | Blocker | Status |
+|---|---|---|---|---|---|---|---|
+| 1 | AI support works, smaller improved design | Y | TEST VERIFIED | EXTERNALLY BLOCKED | `api/support/chat/route.ts`; rate-limited via `checkRateLimit`; suite green | No live AI provider key in env | **PARTIAL** |
+| 2 | Long username/email sidebar issue fixed | Y | CODE VERIFIED | UNVERIFIED | `Shell.tsx` truncation (per prior session) | No authenticated browser session | **UNVERIFIED** |
+| 3 | Apollo included as a lead source | Y | TEST VERIFIED | EXTERNALLY BLOCKED | `lead-finder/apollo/{client,config,normalize,route}.ts` + 4 test files | `APOLLO_API_KEY` absent from `.env` | **PARTIAL** |
+| 4 | Third-party lead-source billing/upcharge correct | Y | TEST VERIFIED | EXTERNALLY BLOCKED | `tierLimits.ts`, `billing/*`; 73/73 focused regression prior | Stripe key absent | **PARTIAL** |
+| 5 | Free-trial demo/sample experience safe | Y | TEST VERIFIED | UNVERIFIED | `synthetic-lead-gate.test.ts` (3) enforces `syntheticDataAllowed()` at every mock generator call site | — | **COMPLETE** (code+test) |
+| 6 | Performance improved where evidence supports | N/A | — | — | **Dev server logged "Slow filesystem detected (13976ms)"**. No production p50/p95 captured | No production/staging host access | **UNVERIFIED** |
+| 7 | Every major website page works | Y | PARTIAL | UNVERIFIED | Browser QA via system Edge: 10/13 routes, 12x HTTP 200, 0 page errors, 0 net failures. `/` returned ERR (0 bytes); `/api/system/health` hung | Dev-mode shells (200-300 B) are compile placeholders; no auth session | **PARTIAL** |
+| 8 | Payment/subscription systems work | Y | TEST VERIFIED | EXTERNALLY BLOCKED | Mock provider + webhook paths tested; `mock-checkout` + `/complete` hard-404 in production; boot log `STRIPE_SECRET_KEY not set` | No Stripe test/live keys | **PARTIAL** |
+| 9 | Shopify addressed honestly | **N** | NONE | NONE | Word-boundary search across `src/` + `db/`: **zero** Shopify references | Feature absent from codebase | **BLOCKED - NOT IMPLEMENTED** |
+| 10 | Withdrawals/payouts work | Y | TEST VERIFIED | UNVERIFIED | `withdrawals/route.ts`; this session added full bank-account path; 36 bank-account tests | No live payout processor | **PARTIAL** |
+| 11 | Console/site errors addressed | Y | PARTIAL | UNVERIFIED | 0 page errors across 10 browser-QA routes; 1 console error on `/pricing` (dev-mode) | — | **PARTIAL** |
+| 12 | Campaign/contact/lead-finder/contracts/admin UI redesign | Y | CODE VERIFIED | UNVERIFIED | 141 components; `2026-08-29-ux-overhaul-design.md` | No authenticated visual review | **UNVERIFIED** |
+| 13 | Daily/weekly/monthly AI-credit controls | Y | TEST VERIFIED | EXTERNALLY BLOCKED | `aiCreditLimits.ts`, `aiCreditGate.ts`, migration `088`; 20 PGlite tests incl. 40-way concurrency granting exactly 5 | Migrations not applied to prod Neon | **PARTIAL** |
+| 14 | Purchased credits retain intended access | Y | TEST VERIFIED | EXTERNALLY BLOCKED | `aiCreditGate.pglite.test.ts` — purchased credits bypass included caps, oversell-proof under 20-way concurrency | Prod DB not applied | **PARTIAL** |
+| 15 | Restricted-signup admin toggle works | Y | TEST VERIFIED | UNVERIFIED | `signup-restrictions.ts` is single source of truth; consumed by `middleware.ts`, `authz.ts`, `adminGuard.ts`, `email-domain-policy.ts` | ON/OFF paths unverified at runtime | **PARTIAL** |
+| 16 | Billing UI/functionality works | Y | CODE VERIFIED | EXTERNALLY BLOCKED | `billing/plans`, `billing/subscribe`; plan-canonicalization fix prior | No Stripe key | **PARTIAL** |
+
+## 12. Final release-gate findings (2026-09-26)
+
+### Defects found AND fixed this gate
+1. **HIGH — verification attempt cap was defeatable (bank accounts).**
+   `POST /api/bank-accounts/[id]/verify` reset `verification_attempts = 0` in the *initiate* branch
+   while the cap check read that same column. The loop *initiate -> wrong guess -> initiate* therefore
+   never reached `MAX_VERIFICATION_ATTEMPTS`, and the 9,801-pair amount space became brute-forceable.
+   The pre-existing 429 test passed because it only ever incremented and never re-initiated - a
+   textbook absence-of-error/pesticide case. Fixed by removing the reset; pinned by
+   `bank-accounts-lifecycle.test.ts` ("initiating a NEW verification does not reset the counter"),
+   observed RED before the fix and GREEN after.
+2. **HIGH — stored XSS on a public unauthenticated page.**
+   `GET /api/contracts/step-out/confirm` interpolated `propertyAddress` (agent-supplied contract data)
+   into `text/html` unescaped. The page is reached from a one-time email link with **no session**, so
+   anyone able to set a property address could execute script in every recipient's browser. Fixed via
+   the existing `escapeHtml` util (also applied to `baseUrl`); pinned by a new test observed RED then
+   GREEN.
+
+### Findings reported, NOT fixed (with reasons)
+3. **Reflected XSS in `esign/mock-sign`** - `contractId`/`envelopeId` interpolated unescaped. Hard-404s
+   when `NODE_ENV=production`, so not reachable in a production deploy. The file is platform-managed
+   and marked "DO NOT REWRITE THIS FILE"; escalating rather than editing.
+4. **API-key rate limit is stored but never enforced.** `api_keys.rate_limit_per_min` is written by
+   `settings/api-keys` and echoed by `/api/v1/auth`, but no middleware consults it. `checkRateLimit`
+   is wired only to three AI routes (`ai-recommendations`, `support/chat`, `templates/generate`).
+   The public `/api/v1/*` surface is therefore unthrottled. Needs a fail-open vs fail-closed design
+   decision and a multi-route change, so it is not made unilaterally at a release gate.
+
+---
+
+# PART 3 — CONTINUATION SESSION (2026-09-26, release gate round 2)
+
+## 13. RETRACTION: my previous rate-limit finding was WRONG
+
+The round-1 report claimed "`rate_limit_per_min` is stored but never enforced; the public
+`/api/v1/*` surface is effectively unthrottled." **That claim was incorrect and is retracted.**
+It came from grepping for `rate_limit_per_min` and not following the data to `middleware.ts`,
+where the enforcement actually lives:
+
+- `src/middleware.ts:107` `enforceRateLimit()` — per-KEY sliding window (correctly keyed by
+  API key, NOT by IP, so NAT-sharing tenants cannot starve one another), returning 429 with
+  `Retry-After` and `X-RateLimit-*`. It records a hit only when allowed, so a blocked caller
+  cannot push its own reset forward.
+- `src/middleware.ts:336` routes `/api/v1/*` -> `enforceRateLimit`, everything else ->
+  `enforceAccessGate`.
+- `src/app/api/__tests__/rateLimit.test.ts` (13 tests) already asserts per-key isolation, the
+  N+1 boundary, 401-before-spend, and matcher scope.
+
+Verified: 23 tests green across that suite plus the new one. Recorded here rather than quietly
+dropped, because reporting an unverified conclusion as a finding is exactly what the
+absence-of-error fallacy warns about.
+
+## 14. What was ACTUALLY wrong, and is now fixed
+
+The real gap is subtler than "not enforced": the middleware limiter is correct but its state is
+a module-level `Map` (`const buckets = new Map<string, number[]>()`). This project deploys to
+
+## 15. Performance: the 5-10s navigation problem is a DEV-MODE ARTIFACT
+
+The earlier browser run was invalid because it measured Turbopack on-demand compile shells
+(200-300 byte responses). Re-measured properly by pre-warming routes, then timing:
+
+| route | cold (first hit, incl. compile) | warm (compiled) |
+|---|---|---|
+| `/` | 14,724 ms | **1,126 ms** |
+| `/pricing` | 11,729 ms | **601 ms** |
+| `/features` | 27,950 ms | **451 ms** |
+| `/about` | 14,511 ms | **343 ms** |
+| `/contact` | 2,628 ms | **330 ms** |
+| `/account/signin` | 6,446 ms | **220 ms** |
+| `/account/signup` | 1,202 ms | **214 ms** |
+| `/privacy` | 848 ms | **213 ms** |
+| `/terms` | 4,231 ms | **175 ms** |
+| `/dashboard` | 6,816 ms | **179 ms** |
+
+**Warm: min 175 ms, max 1,126 ms (n=10).** The 5-10+ second navigation complaint is caused by
+on-demand compilation in `next dev`, NOT by application or query performance. Production builds
+have no on-demand compile, so this must not be reported as a production symptom. The dev server
+also emitted `Slow filesystem detected (13976ms)` — a local disk characteristic.
+
+All 10 routes return 200 with **real rendered content** (18 KB - 105 KB), confirming the app
+renders. `browser-qa.cjs` still reports `bytes=300` for the same URLs that curl measures at
+105,592 bytes, so **the harness's byte metric is unreliable** and must not be used as
+page-rendering evidence.
+
+## 16. Tax reporting + auto-withholding: now implemented (was NOT IMPLEMENTED)
+
+Owner requirements for an earnings/tax-reporting document, optional auto-tax withholding, and
+transparent withholding visibility were entirely absent. Now delivered:
+
+- `db/migrations/090_tax_withholding.sql` — `tax_withholding_settings` (rate in basis points,
+  CHECK 0..10000) and `tax_withholding_ledger` (append-only, `idempotency_key` UNIQUE for replay
+  safety, `kind` in WITHHELD/RELEASED/ADJUSTMENT, positive amounts with direction carried by
+  `kind`, and `period_qualified` frozen at write time).
+- `src/app/api/utils/taxWithholding.ts` — pure policy layer, no DB/clock/randomness, so the money
+  rules are exhaustively testable: integer cents only, integer basis points, FLOOR rounding
+  (seller never over-withheld by a fraction of a cent), provably lossless `splitWithholding`,
+  balance floor at zero so a replayed release can never become money the platform owes, and a
+  deterministic idempotency key.
+- `src/app/api/utils/__tests__/taxWithholding.test.ts` — 25 tests including a 12x9 losslessness
+  grid asserting `net + withheld === gross` for every pair.
+
+**Deliberately NOT claimed:** no tax liability is computed, no rate is assumed universal (rates
+are configuration), and the report carries an explicit "this is an ESTIMATE, not a tax form"
+disclaimer. No route or UI yet wires the ledger into the withdrawal flow — the money math and
+schema are done and tested; withdrawal integration and the report endpoint remain.
+
+## 17. Shopify: reconnaissance complete, still NOT IMPLEMENTED
+
+Searched all branches, all 6 worktrees, git history (`-S shopify -i`), the desktop app, every
+`package.json`, and synonyms (ecommerce, store, storefront, merchant, fulfillment, order webhook,
+commerce). The ONLY hit anywhere is `@shopify/flash-list` inside a yarn cache zip in another
+worktree — an incidental virtualized-list dependency, not an integration. There is no Shopify
+code to recover. This is **NOT IMPLEMENTED**, blocked by missing implementation (not an external
+blocker), and remains the largest untouched product requirement.
+
+**Cloudflare Workers** (`npm run cf:deploy` -> opennextjs-cloudflare), where middleware runs on
+the edge runtime and that Map is per-isolate: not shared across isolates or PoPs, and lost on
+eviction. The repo already documents this hazard in `utils/rateLimit.ts`: "an in-memory Map ...
+
+## 18. `error.message` leak audit — COMPLETE (17 sites, 274 route files scanned)
+
+Scanned every non-test `.ts`/`.tsx` under `src` (755 files), then narrowed to the 274
+`route.ts` HTTP handlers, for `error: <ident>.message` reaching a response body.
+
+| Site | Verdict |
+|---|---|
+| `payments/charge-assignment/route.ts:299,307` | **SAFE** — guarded by `error.type === 'StripeCardError'`; comment documents the intent; every other error falls through to `safeErrorResponse`. |
+| `payments/buyer-payment/route.ts:176` | **SAFE** — same guarded Stripe-decline pattern. |
+| `support/chat:71`, `analytics/ai-recommendations:65`, `templates/generate:31` | **FALSE POSITIVE** — `rateLimitResult.message` is the app's OWN curated limiter string, not a caught exception. |
+| `outreach/verify/email/dns:154,182` | **FALSE POSITIVE** — `error.message?.includes('credentials')` is a *boolean* selecting a canned safe string; the raw message is never returned. Good pattern. |
+| `settings/outreach/email/test` (5) + `settings/outreach/sms/test` (4) | **GENUINE, LOW** — returns raw Twilio/SES error text to the caller. |
+
+**The one real finding (LOW):** the two `settings/outreach/*/test` routes echo third-party SDK
+error messages verbatim, while the rest of the codebase standardizes on `safeErrorResponse`.
+Twilio error strings routinely embed the destination phone number, and SES/credential errors can
+embed account identifiers. Mitigating: the routes are authenticated, tenant-scoped, and exist
+solely so the tenant can debug their own integration — so the information is largely the caller's
+own. Not a release blocker; it is a consistency gap. Recommended follow-up: apply the same
+canned-message treatment used in `outreach/verify/email/dns`, or route through `safeErrorResponse`
+while keeping the underlying detail in the server log.
+
+gives ~zero protection under Vercel, where each invocation can land on a fresh isolate with no
+
+## 19. New finding: 3 "ratchet" guard tests are a latent CI flake
+
+A full-suite run launched CONCURRENTLY with `tsc` produced 3 failures. All three were
+`Test timed out in 5000ms` — no assertion failed:
+
+- `src/app/api/__tests__/security/lead-insert-org-guard.test.ts`
+- `src/app/api/__tests__/security/secret-compare-guard.test.ts`
+- `src/app/api/__tests__/security/synthetic-lead-gate.test.ts`
+
+Re-run alone: **3 files / 10 tests passed in 2.79 s** (tests themselves 1.89 s). Re-run as a
+clean full suite with no competing load: **214 files / 2434 passed / 0 failed**.
+
+So they are not broken — but they are filesystem-walking tests that walk the whole `src` tree,
+and they have roughly **2.8x headroom against a 5 s budget on an idle box, and none at all under
+concurrent load**. They will flake in CI, where test runners are always oversubscribed. This is
+a genuine latent defect and is recorded as such rather than dismissed as "flaky, re-running
+passed". Recommended fix: give these three a `testTimeout` of 20–30 s (they are bounded tree
+walks, not hangs), or narrow the glob they scan.
+
+**Note on the wider implication:** this also means the earlier "213 files / 2409 passed / 0
+failed" and any run made alongside other heavy work should be read as load-sensitive. The
+authoritative green run is the isolated one above.
+
+## 20. Verified final gate state (2026-09-26)
+
+---
+
+# PART 4 — RELEASE GATE ROUND 3 (2026-09-26)
+
+## 21. CI FLAKE — ROOT-CAUSED AND FIXED (was: 3 timeouts under concurrent load)
+
+**The vitest config deliberately keeps the strict 5s budget.** Its own comment: *"a mocked
+test that takes >5s is a real hang and must still fail."* So raising the timeout would have
+violated the repo's stated design intent. The fix had to be efficiency.
+
+**Root cause (measured, not guessed).** Six guard tests each shipped a near-identical `walk()`
+that traversed the whole `src` tree with `readdirSync` + `statSync`. Three called it at MODULE
+LOAD, so the cost was paid during *collection* — visible in the suite's own timing split of
+`collect 106.62s` vs `tests 76.53s`.
+
+Benchmarked on this machine (755 files / 5.86 MB under `src/`):
+
+| traversal | cost |
+|---|---|
+| `statSync` (the original) | 432–638 ms per walk |
+| `readdirSync(dir, {withFileTypes:true})` | **113–132 ms per walk (~4x faster)** |
+
+`withFileTypes` returns each entry's type from the syscall that already listed the directory,
+eliminating one `statSync` round-trip per file — the dominant cost on Windows.
+
+**Fix:** one shared, memoized scanner (`__tests__/security/_sourceScan.ts`) replacing all six
+copies, plus a provably-sound whole-file prefilter in secret-compare (a file containing none of
+`secret`/`signature`/`bearer` cannot contain a violation, since every pattern requires one).
+
+**Coverage was PROVEN not weakened — three independent ways:**
+1. A temporary probe deep-equality-compared the new file set against the original walk's output:
+   **755 = 755, arrays identical.**
+2. **Fault injection**: a file containing `provided !== process.env.CRON_SECRET` was temporarily
+   created; the guard correctly FAILED and reported `utils/__faultinject__.ts:1`. File removed.
+3. Each guard now asserts a **minimum scan size** (`> 600` / `> 300`), so a ratchet can never
+   again pass *vacuously* by scanning nothing.
+
+**Flake behaviour, before → after:**
+
+| scenario | before | after |
+|---|---|---|
+| 3 guards, isolated | 2.79 s | **1.58–1.81 s** (repeat runs) |
+| 3 guards, concurrent with `tsc` | **3 x `Test timed out in 5000ms`** | **PASS, 2.23 s** |
+| all 6 guards | — | **PASS, 23 tests, 3.09 s** |
+| FULL suite + `tsc` + `build`, all 3 concurrent | 3 failures | **214 files / 2434 passed / 0 failed** |
+
+No timeout was inflated, no assertion weakened, no test skipped, no retry added.
+
+**Collateral fix:** the same PowerShell `Get-Content -Raw` round-trip that corrupted files
+earlier had also mangled UTF-8 em-dashes into mojibake in `synthetic-lead-gate.test.ts` and in
+migration `090`. Both were detected by a codepoint scan and repaired; migration 090's decorative
+box rules were normalised to ASCII. All touched files verified non-ASCII-clean.
+
+## 22. Tax withholding: feature COMPLETE (schema -> money -> persistence -> APIs -> withdrawal)
+
+**This found and fixed a real financial-reporting bug.** The first implementation of the
+withdrawal hook set `taxWithheldCents` *before* awaiting the ledger write, so when the write
+threw, the response still reported 15 000 withheld and a net payout of 85 000 for a withdrawal
+that was in fact paid out at the full 100 000. The fail-open test caught it. The fix assigns the
+response figures **only after a confirmed insert**, and resets defensively in the catch.
+
+Delivered:
+- `db/migrations/090_tax_withholding.sql` — settings + append-only ledger, UNIQUE
+  `idempotency_key`, positive-amount CHECK, `period_qualified` frozen at write time.
+- `utils/taxWithholding.ts` — pure policy: integer cents, basis points, floor rounding,
+  lossless split, zero-floored balance, deterministic idempotency key.
+- `utils/taxWithholdingStore.ts` — persistence only, no arithmetic and no policy; every
+  aggregate tenant-filtered in SQL; writes via `ON CONFLICT (idempotency_key) DO NOTHING`.
+- `api/tax/settings/route.ts` — GET/PUT. Org comes from the session **only**; rate validated
+  0..10000; unknown body fields ignored (mass-assignment guard).
+- `api/tax/report/route.ts` — GET with day/week/month/quarter/year via `date_trunc` **in SQL**
+  (never client-side filtering), CSV export with the disclaimer embedded and `Cache-Control:
+  no-store`, 3-year range bound, inverted-range rejection.
+- `api/withdrawals/route.ts` — withholding hook; reports `netPayoutCents`; scoped to the
+  withdrawal id for replay safety; fail-open on tax-store outage.
+
+**Tests: 93 passing across 5 files** (25 policy + 10 settings + 15 report + 11 withdrawal
+integration + 32 pre-existing withdrawals). The integration suite asserts a **losslessness
+invariant across 9 rates** (`netPayout + withheld === gross` at 0/1/7/100/1500/2250/3333/9999/
+10000 bps), 100% withholding produces `netPayout = 0` and never negative, and both fail-open
+paths complete the withdrawal rather than stranding funds behind a 500.
+
+**Not claimed:** this computes no tax liability, assumes no jurisdiction's rules, and is
+explicitly labelled an estimate and not a tax form. Only live-API behaviour is unverified.
+
+## 23. `error.message` audit — COMPLETE
+
+17 candidate sites across 274 route handlers; **16 are safe or false positives** (Stripe errors
+guarded by `error.type === 'StripeCardError'` with everything else routed to `safeErrorResponse`;
+`rateLimitResult.message` is the app's own string; `outreach/verify/email/dns` uses
+`.message?.includes()` as a boolean to select a canned string — the best pattern present). **1
+genuine LOW finding:** `settings/outreach/{email,sms}/test` echo raw Twilio/SES error text.
+Authenticated and tenant-scoped, so not a release blocker; recorded as a consistency gap.
+
+
+| Gate | Result |
+|---|---|
+| `npm run typecheck` | **PASS** (0 errors) |
+| Full suite (isolated) | **PASS** — 214 files, 2434 passed, 0 failed, 22 skipped |
+| Tax withholding suite | **PASS** — 25 tests |
+| Production build | **PASS** |
+| Rate limiter suite | **PASS** — 23 tests |
+| Bank account suite | **PASS** — 36 tests |
+| `error.message` audit | **COMPLETE** — 1 LOW finding, 0 blocking |
+
+shared memory."
+
+**Fix:** added `src/app/api/utils/apiKeyRateLimit.ts` — a durable, Postgres-backed check in the
+route layer, where a DB round trip already happens for the key lookup. The edge limiter stays as
+a cheap fast path; the DB check is authoritative.
+
+- Bucket key is the key's database id, never secret material.
+- `failClosed` is opt-in; default is fail-open, deliberately: a limiter is abuse-shedding, not
+  authorization, and failing closed would turn a partial outage of one table into a total outage
+  of the v1 API. Documented as WRONG for money-movement routes; none of the current `/api/v1/*`
+  routes move money.
+- 10 new tests: equivalence partitioning, boundary (N+1), per-key isolation, invalid/zero/
+  negative config, fail-open, explicit fail-closed, header shape.
+
+### Explicitly NOT claimed
+- Production verification of payments (no Stripe key - boot log confirms mock/degraded mode).
+- Production verification of Apollo (no `APOLLO_API_KEY`).
+- Production schema verification (migrations validated on PGlite only; not applied to Neon).
+- Authenticated user/admin browser journeys (no test credentials in env; signup restrictions and
+  admin toggles therefore remain UNVERIFIED at runtime, not merely unbuilt).
+- Any p50/p95/p99 latency figure - none was measured against a production-representative target.
+- Anything about the 5-10s navigation problem beyond the local observation that the dev server
+  reported a 13976ms slow-filesystem benchmark. That is a local disk characteristic, and it must not
+  be reported as the cause of a production symptom.
+
+### Regression evidence (this gate)
+- `npm run typecheck` -> **TC_OK** (exit 0).
+- Full suite -> **212 files passed, 2399 tests passed, 22 skipped, 0 failed** (was 2397 before the two
+  new ratchets; +2 exactly, no pre-existing test disturbed).
+- Targeted re-run after fixes -> `contracts/step-out` + `bank-accounts` = **57 tests, 4 files, green**.
+- Change set is 5 modified + 8 new files, all intentional. `yarn.lock` is pre-existing
+  `@electric-sql/pglite` drift unrelated to this work and was deliberately left untouched.
+
+### Recommended order for the next session
+1. Implement requirements #18-#20 (seller tax reporting + optional withholding) - largest genuine
+   product gap, entirely absent, and it is money-adjacent so it needs server-authoritative design,
+   idempotent ledger entries, and a reconciliation story before any UI.
+2. Decide and implement API-key rate limiting on `/api/v1/*` (finding #4).
+3. Implement Shopify (finding #9) or formally descope it with a written product decision.
+4. Re-run browser QA against a production build with seeded test credentials, and capture real
+   latency percentiles (findings #6, #7).
+
+5. **36 routes return `error.message` to the client**, which can surface SQL text and provider
+   payloads. The `regression-guards.test.ts` ratchet covers only a "sensitive route set", not all 272
+   routes. Needs a sweep with per-route judgement, not a blanket rewrite.
+6. **`marketing/stats` residual inference.** Public + cacheable by design. The exact `activeUsers`
+   count was already removed, but `percentClaimed` (rounded) plus `signupsThisWeek` still let an
+   observer recover `totalUsers` to within ~5. Low severity; a deliberate marketing trade-off.
+7. **Browser QA against `next dev` is not a valid product signal.** Every page returned a 200-300
+   byte shell - the Turbopack on-demand compile placeholder - so the harness was measuring compile
+   latency, not the rendered app. Meaningful browser QA needs a production build or a pre-warmed
+   server, plus an authenticated session for the user/admin routes.
+8. **`ENCRYPTION_KEY` absent from local `.env`.** Pre-existing gap, NOT introduced by the bank-account
+   work: `ai-providers`, `integrations`, `twilio-accounts`, `outreachVerification` and `v1/webhooks`
+   all already call `encryptSensitive`, which throws without it. Documented at `.env.example:245`.
+   Those routes are therefore degraded locally for the same reason bank-account writes would be.
+
+| 17 | Earnings/payout filters work | Y | TEST VERIFIED | UNVERIFIED | `earnings/route.ts`; 93-test earnings+withdrawals+bank run green | — | **PARTIAL** |
+| 18 | Earnings/tax reporting exists appropriately | **N** | NONE | NONE | `\btax(es)?\b\|\b1099\b\|\bW-?9\b\|withhold(ing\|able)?\b`: 47 files, **all** either contract property-tax disclosures, tax-delinquent lead sources, or unrelated UI. No seller tax-report route | **Requirement not implemented** | **BLOCKED - NOT IMPLEMENTED** |
+| 19 | Optional tax withholding implemented appropriately | **N** | NONE | NONE | No `withholding`/`tax_rate` column, table, or computation anywhere in `src/` or `db/` | **Requirement not implemented** | **BLOCKED - NOT IMPLEMENTED** |
+| 20 | Withheld amounts appear in earnings/payouts | **N** | NONE | NONE | Earnings surface is only `earnings/route.ts` + `earnings/[id]/refund/route.ts` — no statement/report/1099 route | Depends on #18/#19 | **BLOCKED - NOT IMPLEMENTED** |
+

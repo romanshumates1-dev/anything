@@ -12,23 +12,10 @@
  * future change reintroduces either class anywhere in the sensitive route set.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { relative } from 'node:path';
+import { scanSource, readSource, API_ROOT } from './_sourceScan';
 
-const API_ROOT = join(process.cwd(), 'src', 'app', 'api');
-
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
-  for (const e of readdirSync(dir)) {
-    if (e === 'node_modules' || e === '__tests__') continue;
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (e === 'route.ts') out.push(p);
-  }
-  return out;
-}
-
-const routes = walk(API_ROOT);
+const routes = scanSource(API_ROOT, { onlyFile: 'route.ts' });
 
 /** Extract sql`...` templates line-aware (nested backticks make a naive regex wrong). */
 function sqlTemplates(src: string): string[] {
@@ -73,7 +60,7 @@ describe('security regression guards', () => {
     const offenders: string[] = [];
 
     for (const r of routes) {
-      const src = readFileSync(r, 'utf8');
+      const src = readSource(r);
       const rel = relative(process.cwd(), r).replace(/\\/g, '/');
 
       // Authenticated + touches org-scoped tables + resolves an org...
@@ -181,7 +168,7 @@ describe('security regression guards', () => {
     const offenders: string[] = [];
 
     for (const r of routes) {
-      const src = readFileSync(r, 'utf8');
+      const src = readSource(r);
       const rel = relative(process.cwd(), r).replace(/\\/g, '/');
       src.split(/\r?\n/).forEach((line, i) => {
         // A JSON body field that is populated straight from the thrown error.

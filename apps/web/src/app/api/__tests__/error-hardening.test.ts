@@ -6,22 +6,13 @@
  * This test fails if anyone reintroduces `detail: error.message` in a route.
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { scanSource, readSource, API_ROOT } from './security/_sourceScan';
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
-    const s = statSync(p);
-    if (s.isDirectory()) walk(p, out);
-    else if (p.endsWith('.ts') && !p.endsWith('.test.ts') && !p.includes('__tests__')) out.push(p);
-  }
-  return out;
-}
 
 describe('API error responses do not leak error.message', () => {
-  const apiDir = join(process.cwd(), 'src', 'app', 'api');
-  const files = walk(apiDir);
+  const apiDir = API_ROOT;
+  // .ts only (matches the original scan surface), excluding test files.
+  const files = scanSource(apiDir, { extensions: ['ts'] });
 
   it('scans a non-zero number of route files', () => {
     expect(files.length).toBeGreaterThan(20);
@@ -30,7 +21,7 @@ describe('API error responses do not leak error.message', () => {
   it('no route returns `detail: error.message` (info-disclosure)', () => {
     const offenders: string[] = [];
     for (const f of files) {
-      const src = readFileSync(f, 'utf8');
+      const src = readSource(f);
       if (/detail:\s*error\??\.message/.test(src)) offenders.push(f.replace(apiDir, ''));
     }
     expect(offenders, `routes leaking error.message: ${offenders.join(', ')}`).toEqual([]);

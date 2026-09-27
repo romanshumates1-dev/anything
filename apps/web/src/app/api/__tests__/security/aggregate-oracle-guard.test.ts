@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AGGREGATE / COUNT ORACLE GUARD.
  *
  * /api/regions/estimate and /api/ratelimit both leaked because a COUNT(*) carried no
@@ -10,7 +10,7 @@
  * This guard fails on any aggregate over a tenant-bearing table that has no tenant binding.
  */
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
+import { scanSource, readSource } from "./_sourceScan";
 import { join, relative } from "node:path";
 
 const ROOT = join(process.cwd(), "src", "app");
@@ -24,16 +24,6 @@ const TABLE_RE = /\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)/gi;
 const NON_TENANT =
   /^(audit_logs|ai_conversations|esign_sessions|credit_transactions|jobs|billing_events|compliance_records|ai_credit_period_usage|usage_ledger|number_pool|dnc_registry|subscription_plans|credit_costs|app_settings|contact_lock|buyer_leads|rate_limit_log)$/i;
 
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
-  for (const e of readdirSync(dir)) {
-    if (SKIP.has(e)) continue;
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (/\.tsx?$/.test(e)) out.push(p);
-  }
-  return out;
-}
 
 function sqlTemplates(src: string): string[] {
   const lines = src.split(/\r?\n/);
@@ -61,8 +51,13 @@ function sqlTemplates(src: string): string[] {
 describe("aggregate / count oracle guard", () => {
   const offenders: string[] = [];
 
-  for (const f of walk(ROOT)) {
-    const src = readFileSync(f, "utf8");
+  // Test files are intentionally INCLUDED here (fixtures matter to this guard).
+  const files = scanSource(ROOT, {
+    skipDirs: [...SKIP],
+    excludeTests: false,
+  });
+  for (const f of files) {
+    const src = readSource(f);
     if (!/getOrganization|requireSession|authenticateApiKey|requireAdmin/.test(src)) continue;
     if (!/const orgId\s*=|organization\.id|authResult\.organizationId/.test(src)) continue;
 
@@ -146,7 +141,7 @@ describe("aggregate / count oracle guard", () => {
   // rate_limit_log rows for it with no organization predicate, letting an admin measure
   // another tenant's per-lead message volume.
   it("REGRESSION: /api/ratelimit never counts another org's per-lead volume", () => {
-    const src = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'ratelimit', 'route.ts'), 'utf8');
+    const src = readSource(join(process.cwd(), 'src', 'app', 'api', 'ratelimit', 'route.ts'));
     const qs = sqlTemplates(src).filter((t) => /lead_id/i.test(t) && AGG.test(t));
     expect(qs.length).toBeGreaterThan(0);
     for (const q of qs) {
@@ -156,7 +151,9 @@ describe("aggregate / count oracle guard", () => {
 
   // REGRESSION for /api/regions/estimate, the original count-oracle finding.
   it('REGRESSION: /api/regions/estimate never counts leads globally', () => {
-    const src = readFileSync(join(process.cwd(), 'src', 'app', 'api', 'regions', 'estimate', 'route.ts'), 'utf8');
+    const src = readSource(
+    join(process.cwd(), 'src', 'app', 'api', 'regions', 'estimate', 'route.ts')
+  );
     const qs = sqlTemplates(src).filter((t) => /FROM\s+leads/i.test(t) && AGG.test(t));
     expect(qs.length).toBeGreaterThan(0);
     for (const q of qs) {

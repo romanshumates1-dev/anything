@@ -12,31 +12,24 @@
  * list. Reintroducing the bug is therefore impossible without failing CI.
  */
 import { describe, expect, it } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { scanSource, readSource, SRC_ROOT } from './_sourceScan';
 
-const SRC = join(process.cwd(), 'src');
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) {
-      if (entry === '__tests__' || entry === 'node_modules') continue;
-      walk(full, out);
-    } else if (/\.(ts|tsx)$/.test(entry) && !/\.test\.(ts|tsx)$/.test(entry)) {
-      out.push(full);
-    }
-  }
-  return out;
-}
+const SRC = SRC_ROOT;
 
 describe('lead INSERT tenant ratchet', () => {
   it('every INSERT INTO leads carries organization_id', () => {
     const offenders: string[] = [];
+    const files = scanSource(SRC);
 
-    for (const file of walk(SRC)) {
-      const text = readFileSync(file, 'utf8');
+    // A ratchet that scans nothing passes vacuously. Pin the scan size so a
+    // future path/glob regression cannot silently disable this guard.
+    // 755 files as of 2026-09-26; the floor is deliberately loose.
+    expect(files.length, 'source scan collapsed - guard would pass vacuously')
+      .toBeGreaterThan(600);
+
+    for (const file of scanSource(SRC)) {
+      const text = readSource(file);
       let idx = text.indexOf('INSERT INTO leads');
       while (idx !== -1) {
         // The column list and VALUES clause follow within the same statement; look
@@ -56,10 +49,10 @@ describe('lead INSERT tenant ratchet', () => {
   });
 
   it('public funnel and keyword webhook attribute leads to the platform org', () => {
-    const consent = readFileSync(join(SRC, 'app/api/consent/capture/route.ts'), 'utf8');
+    const consent = readSource(join(SRC, 'app/api/consent/capture/route.ts'));
     expect(consent).toContain('resolvePlatformOrganizationId');
 
-    const keyword = readFileSync(join(SRC, 'app/api/outreach/keyword-inbound/route.ts'), 'utf8');
+    const keyword = readSource(join(SRC, 'app/api/outreach/keyword-inbound/route.ts'));
     expect(keyword).toContain('resolvePlatformOrganizationId');
   });
 });

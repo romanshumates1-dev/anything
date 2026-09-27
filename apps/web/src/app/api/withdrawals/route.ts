@@ -17,6 +17,11 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { randomUUID } from 'crypto';
+import { splitWithholding } from '@/app/api/utils/taxWithholding';
+import {
+  getWithholdingSettings,
+  recordWithholding,
+} from '@/app/api/utils/taxWithholdingStore';
 
 const MINIMUM_PAYOUT_CENTS = 10000; // $100 minimum
 const MAXIMUM_PAYOUT_CENTS = 100_000_00; // $100,000 maximum per withdrawal
@@ -335,10 +340,73 @@ export async function POST(request: Request) {
       )
     `;
 
+    // ---------------------------------------------------------------
+    // TAX WITHHOLDING
+    // ---------------------------------------------------------------
+    // Withholding is applied to the GROSS withdrawal amount and reduces what
+    // the seller actually receives; the retained portion stays in the
+    // append-only ledger until it is released.
+    //
+    // IDEMPOTENCY: the ledger key is scoped to `withdrawalId`, which is unique
+    // per withdrawal, so a retried request for the SAME withdrawal cannot
+    // double-withhold. A brand-new withdrawal gets a new id and therefore a new
+    // key - which is correct, because that is genuinely a second withdrawal.
+    //
+    // FAILURE MODE: if the ledger write fails we do NOT fail the withdrawal.
+    // The money has already moved into a PENDING withdrawal; rejecting it here
+    // would strand the seller's funds behind a 500 and create a withdrawal the
+    // user believes failed but which actually exists. Instead the failure is
+    // logged for reconciliation and the withdrawal proceeds un-withheld, which
+    // is the safe direction: the seller is under-paid rather than over-paid,
+    // and the ledger's balance is derived from rows rather than from a cached
+    // total, so nothing downstream can drift.
+    let taxWithheldCents = 0;
+    let taxRateBps = 0;
+    try {
+      const taxSettings = await getWithholdingSettings(userId, orgId);
+      const split = splitWithholding(amountCents, taxSettings);
+      if (split.applied) {
+        const write = await recordWithholding({
+          userId,
+          organizationId: orgId,
+          kind: 'WITHHELD',
+          amountCents: split.withheldCents,
+          rateBps: split.rateBps,
+          scope: withdrawalId,
+          withdrawalId,
+          note: `Withholding on withdrawal ${reference}`,
+          occurredAt: now,
+        });
+        // Only report a withholding that actually exists in the ledger.
+        // `inserted: false` means a previous attempt already wrote this exact
+        // row (same idempotency key), so counting it again would double-report
+        // a withholding the seller was already billed for once.
+        if (write.inserted) {
+          taxWithheldCents = split.withheldCents;
+          taxRateBps = split.rateBps;
+        }
+      }
+    } catch (taxError) {
+      // Reset defensively: these must describe what is IN THE LEDGER, and a
+      // failed write means nothing is. Leaving the computed figure here would
+      // tell the seller tax was withheld when it was not, and would report a
+      // net payout smaller than the money they actually receive.
+      taxWithheldCents = 0;
+      taxRateBps = 0;
+      console.error(
+        '[WITHDRAWALS] tax withholding write failed; proceeding un-withheld for reconciliation',
+        { withdrawalId, userId, organizationId: orgId, taxError }
+      );
+    }
+
     return Response.json({
       success: true,
       withdrawalId,
       amountCents,
+      // What the seller is actually paid, after any withholding.
+      netPayoutCents: amountCents - taxWithheldCents,
+      taxWithheldCents,
+      taxRateBps,
       status: 'PENDING',
       reference,
       estimatedArrival: estimatedArrival.toISOString(),

@@ -19,25 +19,16 @@
  * `x-<something>-secret`/bearer gate that never calls the safe compare.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { scanSource, readSource, SRC_ROOT } from './_sourceScan';
 
-const SRC_ROOT = join(process.cwd(), 'src');
-
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
-  for (const e of readdirSync(dir)) {
-    if (e === 'node_modules' || e === '__tests__' || e === '.next') continue;
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (/\.(ts|tsx|mjs|cjs)$/.test(e) && !/\.test\.|\.spec\./.test(e)) {
-      out.push(p);
-    }
-  }
-  return out;
-}
-
-const files = walk(SRC_ROOT);
+const files = scanSource(SRC_ROOT, {
+  // The sweep covers every shipped JS/TS surface, not just .ts/.tsx.
+  extensions: ['ts', 'tsx', 'mjs', 'cjs'],
+  skipDirs: ['node_modules', '__tests__', '.next'],
+  excludeTests: true,
+});
 
 /**
  * A line is a violation when it performs a JS equality comparison
@@ -101,8 +92,34 @@ describe('secret-compare guard (timing-safe secrets)', () => {
 
   it('has no raw ===/!== comparisons against secret-shaped operands', () => {
     const violations: string[] = [];
+
+    // Vacuous-pass guard, asserted here too (not just in the sibling test) so
+    // running THIS test alone with `-t` still cannot pass on an empty scan.
+    expect(files.length, 'source scan collapsed - guard would pass vacuously')
+      .toBeGreaterThan(300);
+
     for (const f of files) {
-      const src = readFileSync(f, 'utf8');
+      const src = readSource(f);
+
+      // Cheap whole-file prefilter. Every pattern isViolation() can match
+      // requires one of these literals (case-insensitively):
+      //   - pattern 1/2: a `secret`/`signature`-shaped identifier, or
+      //                  process.env.*SECRET
+      //   - pattern 3:   get('...secret...')        (regex is case-insensitive)
+      //   - pattern 4:   `Bearer ${`
+      // A file containing none of them cannot produce a violation, so it can be
+      // skipped without splitting it into lines. This is a strict superset
+      // filter - it can only skip files that are provably clean, never a file
+      // that could contain a violation - so the guard's coverage is unchanged.
+      const lower = src.toLowerCase();
+      if (
+        !lower.includes('secret') &&
+        !lower.includes('signature') &&
+        !lower.includes('bearer')
+      ) {
+        continue;
+      }
+
       src.split(/\r?\n/).forEach((line, i) => {
         if (isViolation(line)) {
           violations.push(`${f.replace(SRC_ROOT, 'src')}:${i + 1}: ${line.trim()}`);
@@ -134,7 +151,7 @@ describe('secret-compare guard (timing-safe secrets)', () => {
       ['lib/organization-context.ts', '@/app/api/utils/secretCompare'],
     ];
     for (const [rel, importPath] of mustUseHelper) {
-      const src = readFileSync(join(SRC_ROOT, rel), 'utf8');
+      const src = readSource(join(SRC_ROOT, rel));
       expect(src.includes(`from '${importPath}'`), `${rel} lost its secretCompare import`).toBe(
         true
       );
@@ -149,7 +166,7 @@ describe('secret-compare guard (timing-safe secrets)', () => {
  */
 describe('duplicate-webhook + fail-open ratchets (re-review)', () => {
   it('legacy /api/inbound/sms stays a pure delegate to the canonical handler', () => {
-    const src = readFileSync(join(SRC_ROOT, 'app', 'api', 'inbound', 'sms', 'route.ts'), 'utf8');
+    const src = readSource(join(SRC_ROOT, 'app', 'api', 'inbound', 'sms', 'route.ts'));
     expect(src).toContain("from '../../sms/inbound/route'");
     expect(src).toContain('canonicalPost(request)');
     // No own DB access, env reads, or HMAC logic may creep back in — all of
@@ -159,10 +176,7 @@ describe('duplicate-webhook + fail-open ratchets (re-review)', () => {
   });
 
   it('SNS webhook signature verification is fail-closed by default', () => {
-    const src = readFileSync(
-      join(SRC_ROOT, 'app', 'api', 'sms', 'sns-inbound', 'route.ts'),
-      'utf8'
-    );
+    const src = readSource(join(SRC_ROOT, 'app', 'api', 'sms', 'sns-inbound', 'route.ts'));
     // Strip comments: the route's own header comment QUOTES the old fail-open
     // gate for documentation purposes.
     const code = src
