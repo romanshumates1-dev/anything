@@ -709,6 +709,74 @@ without redirecting. It deliberately permits **both** redirect forms, because `/
 flagging that would be a false positive that teaches people to ignore the guard. Minimum scan
 count included so it cannot pass vacuously.
 
+
+---
+
+# PART 6 — RELEASE GATE ROUND 5 (2026-09-26)
+
+## 30. Defect clustering: siblings of every class found
+
+Per the clustering mandate, each newly found class was swept for siblings.
+
+| class found | sibling sweep | result |
+|---|---|---|
+| blank page (`return null` on no session) | all `.tsx` components, not just pages | **0 additional** — the 7 were the complete set |
+| forged e-sign webhook | all webhook/callback handlers | 3 total: `esign/webhook` (signature), `payments/webhook` (signature), `sms/status` (`validateTwilioSignature`), plus `inbound/sms` which is a documented delegate with its own ratchet. **All authenticated.** One grep false-positive (`v1/webhooks` appeared as `auth=NONE`) was investigated and is properly API-key authenticated — recorded because an uninvestigated heuristic "finding" is how false positives become false assurance. |
+
+## 31. SSRF: stored outbound webhook target (FIXED, latent)
+
+`POST /api/v1/webhooks` stored a fully caller-controlled `url` with no validation — a stored SSRF
+primitive. A tenant could register `http://169.254.169.254/...` (cloud metadata),
+`http://127.0.0.1:5432/...` (internal database) or an internal admin host and have the platform
+fetch it from inside the network.
+
+**Latent, not live:** no delivery worker exists yet (only `v1/webhooks` touches the table). But an
+unvalidated stored target is a trap for whoever writes that worker, and the check belongs at the
+**trust boundary** — on input — so an unvalidated URL can never be persisted at all.
+
+`utils/ssrf.ts` blocks non-HTTPS schemes, loopback, link-local/metadata, RFC1918, CGNAT,
+benchmarking and multicast ranges, embedded credentials and bare internal hostnames.
+
+**Limitation stated rather than hidden:** the check is syntactic and cannot resolve DNS, so a
+rebinding hostname still passes. The module documents that a delivery worker must additionally pin
+the resolved IP at connect time. Claiming full SSRF protection here would be false.
+
+**A test caught a bug in the guard itself:** WHATWG `URL` normalizes `[::ffff:127.0.0.1]` to the hex
+form `[::ffff:7f00:1]`, so a dotted-quad check silently missed the most effective disguise — an
+address that looks like routable IPv6 but connects to loopback. Fixed by decoding both spellings.
+
+## 32. Tenant isolation: financial + personal data matrix (18 tests, real Postgres)
+
+The existing `multitenant-matrix.test.ts` covers CRM resources. This adds the classes with the
+worst blast radius — **earnings, withdrawals, bank accounts, tax withholding** — against a **real
+Postgres engine (PGlite)**, because isolation bugs live in the SQL and
+`WHERE id = $1` vs `WHERE id = $1 AND organization_id = $2` is invisible to a mocked ``sql````.
+
+Covers: read/mutate/delete/aggregate isolation; a user in two orgs keeping independent tax rates;
+**existence-oracle resistance** (a cross-tenant id must be indistinguishable from a non-existent
+one, or ids can be enumerated across tenants); and a positive property — the global UNIQUE
+`idempotency_key` blocks a cross-tenant replay.
+
+**Two of these tests were initially unfalsifiable and were fixed rather than deleted:** ORG B's bank
+account had been seeded as the default, so "ORG A tried to set it" could never fail; and the seed
+had no ORG_B tax row, so the "ORG A cannot write B" assertion read `undefined`. *A test that cannot
+fail is worse than no test.*
+
+**Sweep result (evidence, not assertion):** of **190 state-changing routes**, 81 lack an
+`organization_id` predicate. Of those, only **5** also lack a recognised auth mechanism, and all 5
+are legitimate exemptions — `auth/forgot-password` (must be unauthenticated), `legal` (public),
+`referrals/signup` (public), and two Twilio callbacks that do verify signatures. **No new unscoped
+state-changing route was found.**
+
+## 33. Gate state after round 5
+
+| Gate | Result |
+|---|---|
+| Full suite | **222 files, all passed, 0 failed** (117.99 s) |
+| Typecheck | **0 errors** |
+| Production build | **OK** (unchanged since round 4) |
+| New this round | SSRF guard + 30 tests · financial tenant-isolation matrix, 18 tests |
+
 ## 27. CRITICAL: unauthenticated payment fraud via dev-only mock checkout (FIXED)
 
 Found by an audit of every `NODE_ENV === 'production'` guard in the 274 route handlers.
