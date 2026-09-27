@@ -1,0 +1,1 @@
+{"value":"vitest","children":{"ID":1193683,"Issue":"Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock","URL":"https://github.com/advisories/GHSA-82fw-gwwq-j7x9","Severity":"moderate","Vulnerable Versions":">=2.1.0 <4.1.11","Tree Versions":["3.2.6"],"Dependents":["web@workspace:apps/web"]}}

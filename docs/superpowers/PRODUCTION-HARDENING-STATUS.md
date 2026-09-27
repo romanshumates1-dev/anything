@@ -208,6 +208,119 @@ policy is an operator task. Recommendation: set expiry when minting.
 - Shopify: deeper repo search performed; no integration found -> architecture doc + safe stub only.
 - Live-domain browser E2E at dealswiftautomation.com: BLOCKED (no owner session/credentials supplied in env).
 
+## Session 7 (2026-09-26) — CSRF choke point, client-secret defect, supply-chain audit
+
+### Defect #28 — CSRF: no origin check on any `/api/*` route (FIXED)
+
+**Root cause.** The session cookie is `sameSite: 'none'` (load-bearing for mobile
+iframes — `src/lib/auth.ts` marks it DO-NOT-CHANGE), so a cross-site request
+carries the victim's cookie. A `validateCsrf` helper existed but was called by
+only **9** of ~274 routes; every other state-changing route (withdrawals,
+earnings refund, tax settings, leads, campaigns, bank accounts…) was reachable
+from a hostile page. `text/plain` and form submissions are CORS-"simple", so the
+browser sends them **without a preflight**, and `request.json()` parses the body
+regardless of content type — so "we return no CORS headers" did not protect
+anything. No `Access-Control-*` header is set anywhere in the app (verified by
+grep across `src/` and `next.config.js`).
+
+**Fix.** `crossSiteRejection()` in `api/utils/csrfProtection.ts`, wired as the
+first statement of `middleware()`. One choke point: every route, including ones
+added later.
+
+- Rejects unsafe methods (POST/PUT/PATCH/DELETE) whose `Origin` (or, absent
+  Origin, `Referer`) is not the request's own host or a configured origin →
+  `403 {error: 'Cross-origin request rejected'}`, `Cache-Control: no-store`.
+- Explicitly allowed, each with a stated reason: safe methods; requests with
+  **no** Origin and no Referer (webhooks, health probes, curl — browsers always
+  send Origin cross-site, so absence marks non-browser traffic that never
+  carries ambient cookies); `Authorization: Bearer df_*` (header-authenticated
+  v1 API, mirroring the skip `validateCsrf` already applied).
+- `x-forwarded-host` is read when building the request host set, because this
+  repo deploys behind Cloudflare Workers: without it the internal `Host` would
+  mismatch the browser Origin and **every mutation would 403 in production**.
+- Also fixed a latent 500: `validateCsrf` did `new URL(origin)` unguarded, so
+  the legal header value `Origin: null` (sandboxed iframe) threw. It now
+  returns `valid: false`.
+
+**Evidence.** `csrfOrigin.test.ts` (17 tests) + `middleware.test.ts` (4 tests,
+wiring through real `NextRequest`) — 21/21 green, including proxy-deployment
+allow case and the "forwarded host must not become a bypass" case. Full suite
+with the gate live: **2595 passed / 0 failed, exit 0**. Typecheck exit 0.
+
+### Defect #29 — reversible "token" in a client component (FIXED)
+
+`components/compliance/CANSPAMFooter.tsx` is `'use client'` and defined
+`generateCANSPAMFooterHTML()` building
+`base64url(`${contactId}:${process.env.EMAIL_UNSUB_SECRET}`)`. Two problems: in
+a client bundle the env var is `undefined`, so it silently fell back to a
+hardcoded `'dev-secret'`; and base64 is an **encoding, not a MAC**, so any email
+receiving such a link could decode the unsubscribe secret and forge tokens. The
+function had no callers (the live path is `withCanSpamFooter()` in
+`api/utils/emailDriver.ts`, which receives an already-minted server URL), so it
+was removed along with the client-side `contactId:placeholder` token forging.
+Removal is recorded in `components/compliance/index.ts`.
+
+**Guard:** `api/__tests__/security/client-secret-scan.test.ts` — (A) no
+`'use client'` file reads a non-`NEXT_PUBLIC_` secret-bearing env var, (B) no
+shipped file reversibly encodes secret material, (C/D) the helper cannot come
+back, (E) self-check that the detector still flags the original vulnerable line
+(a ratchet that stopped detecting its own bug would be worse than none).
+Two documented exceptions: RFC 7617 HTTP Basic auth (`smsDriver.ts` builds the
+`Authorization` header server-side) and `portalToken.ts`, which base64url-encodes
+the *payload* and HMAC-signs it with the secret as key.
+
+### Requirement #2 — long username/email sidebar (test gap closed)
+
+The `Shell.tsx` fix (`min-w-0` + `truncate` + `title`) had no test.
+`components/Shell.test.tsx` renders the shell with a 300-character unbroken
+email and pins the contract in both identity blocks (collapsed button and open
+dropdown): `truncate`, correct `title`, and the `min-w-0` wrapper without which
+`truncate` can never engage. jsdom performs no layout, so browser
+confirmation remains outstanding — recorded, not claimed.
+
+### Gate config gap: component tests were not in `yarn test`
+
+`yarn test` runs `--config src/app/api/vitest.config.ts`, whose `include` was
+`**/*.test.ts` only, and whose environment is `node`. No `.test.tsx` had ever
+been collected (the repo had none), so the new `TaxReportPanel` tests would have
+been silently excluded from the merge-blocking gate. `include` now also matches
+`*.test.tsx`; each such file carries its own
+`// @vitest-environment jsdom` docblock, so node remains the default.
+
+### Supply chain: audit run (row was UNVERIFIED)
+
+`yarn npm audit` (evidence kept: `docs/superpowers/evidence/audit-before-upgrade.json`
+— 28 advisories — and `audit-after-upgrade.json` — 1):
+
+| package | installed | advisories | severities | fixed in |
+|---|---|---|---|---|
+| better-auth | 1.5.6 | 10 | 1 critical, 5 high, 3 moderate, 1 low | 1.6.22 |
+| next | 16.2.6 | 11 | 2 critical, 6 high, 3 moderate | 16.3.3 |
+| nodemailer | 9.0.3 | 4 | 2 high, 2 moderate | 9.1.0 |
+| ws | 8.20.0 | 2 | 1 high, 1 moderate | 8.21.0 |
+| vitest | 3.2.6 | 1 | moderate | 4.1.11 (dev-only, major) |
+
+Declared minimums in `apps/web/package.json` were raised to the fixed versions
+so a fresh install cannot resolve to a vulnerable build again; lockfile bumped
+to better-auth 1.7.6 / next 16.3.6 / nodemailer 9.1.1 / ws 8.22.0.
+
+**Post-upgrade verification:** typecheck **exit 0** (so better-auth 1.7.6 and
+next 16.3.6 are type-compatible with the shipped auth config) and full suite
+**2597 passed / 0 failed, exit 0** (231 files) with the upgrades installed.
+`yarn npm audit` afterwards reports **1 advisory instead of 28** — every
+production-dependency advisory (better-auth, next, nodemailer, ws) is closed.
+
+**`vitest` 3→4 was attempted and deliberately reverted.** It is the only
+remaining advisory (GHSA-82fw-gwwq-j7x9, moderate, path traversal in the
+dev-only mocker) and the only fix is a **major** bump. Measured result: **30
+tests failed across 33 files** (e.g. `stripeProvider`, `bedrock-client`,
+`seo-ratchet`, `valuation`) on vitest 4.1.11 — mock/hoisting semantics changed.
+Shipping a suite that cannot gate the repo is worse than one moderate
+dev-only advisory, so `vitest` stays at `^3.2.6` and the residual is recorded
+here. It is a test-runner dependency: it does not ship to production and cannot
+be reached by an attacker. Remediation is a dedicated task (migrate mocks file
+by file, then re-run this audit), not a mid-mission risk.
+
 ## Rules reminders
 - Evidence-only claims. Code inspection != verification.
 - Financial logic: server-authoritative, atomic, idempotent.

@@ -788,7 +788,7 @@ exercised). "Prod Verified" is a separate column and is **never** inferred from 
 | # | Requirement | Impl | Unit | Integration | E2E | Browser | Security | Adversarial | Regressed | Prod Verified | Status |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | AI support functional + smaller/optimal button | ✅ `components/SupportChat.tsx`, `api/support/chat` | ⚠️ | ⚠️ | ❌ | ⚠️ | ❌ | ❌ | ✅ | **PARTIAL** — built, never browser-verified |
-| 2 | Long username/email sidebar fix | ✅ `components/UsageMeterSidebar.tsx` | ❌ | ❌ | ❌ | ⚠️ | ❌ | ❌ | ✅ | **PARTIAL** — no long-string test |
+| 2 | Long username/email sidebar fix | ✅ `components/Shell.tsx` (`min-w-0` + `truncate` + `title`) | ✅ — `components/Shell.test.tsx`, 3 render tests with a 300-char email in both identity blocks | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** — contract tested in jsdom; visual confirmation needs a browser |
 | 3 | Apollo as a lead source | ✅ `api/lead-finder/apollo/` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** — logic only, live API **BLOCKED** |
 | 4 | Third-party lead-source handling | ✅ | ⚠️ | ❌ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** |
 | 5 | Third-party lead-source upcharge/billing | ✅ 15 sites | ⚠️ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** — client-price manipulation untested |
@@ -801,9 +801,9 @@ exercised). "Prod Verified" is a separate column and is **never** inferred from 
 | 12 | AI credits: weekly ≤ ¼ monthly, daily ≤ ⅕ weekly, purchased usable | ✅ `aiCreditGate/Limits` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ⚠️ | **PARTIAL** — needs RE-VERIFICATION after tax work |
 | 13 | Restricted signup domain toggle ON/OFF | ✅ `api/admin/settings/signup`, `access-restricted/` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | **PARTIAL** |
 | 14 | Billing/payment pages work | ✅ | ⚠️ | ⚠️ | ❌ | ❌ | ✅ | ⚠️ | ✅ | **PARTIAL** |
-| 15 | Payout/earnings filters: d/w/m/q/y | ✅ `api/tax/report` `date_trunc` | ✅ | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** — earnings UI filter unverified |
-| 16 | Earnings/tax-reporting document | ✅ `api/tax/report` + CSV | ✅ | ✅ | ❌ | ❌ | ✅ | ⚠️ | ✅ | **PARTIAL** — concurrency untested |
-| 17 | Optional auto-tax withholding, visible in payouts | ✅ `api/tax/settings` + withdrawal hook | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | **PARTIAL** — **concurrency/replay OPEN** |
+| 15 | Payout/earnings filters: d/w/m/q/y | ✅ `api/tax/report` `date_trunc` + `TaxReportPanel` period selector (payouts → Tax Report tab) | ✅ — incl. 5 `TaxReportPanel` tests (mount, period switch, abort-on-switch, error+retry, empty) | ✅ | ❌ | ❌ | ⚠️ | ❌ | ✅ | **PARTIAL** — filters tested in jsdom; browser E2E not run (no authenticated session) |
+| 16 | Earnings/tax-reporting document | ✅ `api/tax/report` + CSV export + **Tax Report tab** (`components/payouts/TaxReportPanel.tsx`) | ✅ | ✅ | ❌ | ❌ | ✅ | ⚠️ | ✅ | **PARTIAL** — UI covered by component tests; not browser-verified |
+| 17 | Optional auto-tax withholding, visible in payouts | ✅ `api/tax/settings` + withdrawal hook + **GET /api/withdrawals ledger join** (net payout + withheld per row) | ✅ — incl. `taxLedgerConcurrency.pglite.test.ts` (real Postgres, commit `140575f`) | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | **PARTIAL** — concurrency/replay now TESTED; production still unverified |
 
 ## B. Security addendum — assessment
 
@@ -814,12 +814,12 @@ exercised). "Prod Verified" is a separate column and is **never** inferred from 
 | Tenant isolation | ORG-A/ORG-B on earnings, withdrawals, bank accounts, tax, leads, campaigns, territories, actions, portal | **PARTIAL** |
 | Dev/mock production escapes | 3 dev routes found unguarded → `devOnlyGuard` (allow-list + secret) | **COMPLETE** for those found |
 | SSRF | stored-webhook URL guard, 30 evasion tests | **PARTIAL** — DNS rebinding documented as unsolved |
-| Data leakage | `error.message` audit closed; provider errors sanitized | **PARTIAL** — no full source-map/bundle sweep |
+| Data leakage | `error.message` audit closed; provider errors sanitized; **Defect #29 fixed** (client component encoded `EMAIL_UNSUB_SECRET` into an unsubscribe "token") with a new ratchet `client-secret-scan.test.ts` | **PARTIAL** — no full source-map/bundle sweep |
 | Webhooks | esign + payments signature-verified; Twilio callbacks verified | **COMPLETE** |
-| Financial integrity | integer cents, losslessness grid, zero-floored balance, UNIQUE idempotency | **PARTIAL** — concurrency untested |
+| Financial integrity | integer cents, losslessness grid, zero-floored balance, UNIQUE idempotency, atomic withdrawal batch (Defect #27) | **PARTIAL** — browser unverified |
 | AI security | — | **UNVERIFIED** |
-| Dependency/supply chain | — | **UNVERIFIED** |
-| HTTP headers / CSRF / CORS | partial | **UNVERIFIED** |
+| Dependency/supply chain | **`yarn npm audit` run: 28 advisories → 1** after upgrading better-auth 1.5.6→1.7.6, next 16.2.6→16.3.6, nodemailer 9.0.3→9.1.1, ws 8.20.0→8.22.0; evidence `docs/superpowers/evidence/audit-{before,after}-upgrade.json`; typecheck exit 0, full suite 2597/0 after upgrade | **PARTIAL** — 1 dev-only vitest advisory left; vitest 4 attempt measured **30 failures/33 files** and was reverted, documented |
+| HTTP headers / CSRF / CORS | headers/CSP already regression-tested; **Defect #28 fixed** — `crossSiteRejection()` wired as the first statement of `middleware()` (21 tests, real `NextRequest`); `Origin: null` 500 fixed; CORS "no `Access-Control-Allow-*` anywhere" turned into a ratchet | **PARTIAL** — enforced + tested; browser confirmation pending |
 | Independent adversarial review | 5 rounds, 8+ real defects found | **ONGOING** |
 
 ## C. Honest note on verification levels
@@ -1032,8 +1032,96 @@ a cheap fast path; the DB check is authoritative.
    all already call `encryptSensitive`, which throws without it. Documented at `.env.example:245`.
    Those routes are therefore degraded locally for the same reason bank-account writes would be.
 
-| 17 | Earnings/payout filters work | Y | TEST VERIFIED | UNVERIFIED | `earnings/route.ts`; 93-test earnings+withdrawals+bank run green | — | **PARTIAL** |
-| 18 | Earnings/tax reporting exists appropriately | **N** | NONE | NONE | `\btax(es)?\b\|\b1099\b\|\bW-?9\b\|withhold(ing\|able)?\b`: 47 files, **all** either contract property-tax disclosures, tax-delinquent lead sources, or unrelated UI. No seller tax-report route | **Requirement not implemented** | **BLOCKED - NOT IMPLEMENTED** |
-| 19 | Optional tax withholding implemented appropriately | **N** | NONE | NONE | No `withholding`/`tax_rate` column, table, or computation anywhere in `src/` or `db/` | **Requirement not implemented** | **BLOCKED - NOT IMPLEMENTED** |
-| 20 | Withheld amounts appear in earnings/payouts | **N** | NONE | NONE | Earnings surface is only `earnings/route.ts` + `earnings/[id]/refund/route.ts` — no statement/report/1099 route | Depends on #18/#19 | **BLOCKED - NOT IMPLEMENTED** |
+| 17 | Earnings/payout filters work | Y | TEST VERIFIED | TEST VERIFIED | `earnings/route.ts`; `api/tax/report` period d/w/m/q/y; `TaxReportPanel` period selector with 5 component tests; 93-test earnings+withdrawals+bank run green | Browser E2E (no authenticated session) | **PARTIAL** |
+| 18 | Earnings/tax reporting exists appropriately | **Y** | `tax-report.test.ts`, `tax-settings.test.ts`, `tax-withdrawal-integration.test.ts`, `taxWithholding.test.ts` (25) | `api/tax/report` (SQL `date_trunc` bucketing, tenant-scoped) + `api/tax/settings` + migration `090` + **Tax Report tab UI** | Implemented per §16/§22; superseded by session-7 evidence below | Production verification (needs live DB session) | **IMPLEMENTED — TEST VERIFIED** |
+| 19 | Optional tax withholding implemented appropriately | **Y** | 25 policy tests + `taxLedgerConcurrency.pglite.test.ts` (real Postgres) | `tax_withholding_settings` + append-only `tax_withholding_ledger` (migration 090); `splitWithholding` wired into `POST /api/withdrawals` inside the transaction | Implemented per §16/§22 | Production verification | **IMPLEMENTED — TEST VERIFIED** |
+| 20 | Withheld amounts appear in earnings/payouts | **Y** | withdrawals suite (35 tests) incl. 2 new ledger-join tests | `GET /api/withdrawals` LEFT JOIN LATERAL on ledger → `tax_withheld_cents` / `tax_net_withheld_cents` / `tax_rate_bps`; payouts row renders Net + withheld subline; Tax Report tab shows held/released totals | Implemented this session — see §34 | Browser E2E | **PARTIAL** — code+tests done, not browser-verified |
+
+## 34. Session 7 (2026-09-26): tax report UI + payouts withholding surfacing
+
+Supersedes the "No route or UI yet" claim in §16 and the "concurrency/replay OPEN" claim in
+Table A row 17. Work delivered this session:
+
+1. **`components/payouts/TaxReportPanel.tsx` (NEW)** — payouts → *Tax Report* tab: period
+   selector (day/week/month/quarter/year), server-computed totals (gross, withdrawn, net
+   received, tax currently held), settings strip (ON/OFF + rate + jurisdiction), per-period
+   breakdown table, CSV export link (carries the server disclaimer), explicit empty/error/
+   loading states. Race-safe: period switches abort the in-flight request so a stale response
+   can never overwrite a newer selection. The panel renders ONLY figures returned by the
+   server — no money math in the client.
+2. **`GET /api/withdrawals` ledger join (MODIFIED)** — `LEFT JOIN LATERAL` over
+   `tax_withholding_ledger` aggregates WITHHELD and RELEASED separately per withdrawal, floors
+   net at zero with `GREATEST(...,0)`, and returns `tax_withheld_cents`,
+   `tax_net_withheld_cents`, `tax_rate_bps`; the subquery is tenant-scoped on both
+   `user_id` and `organization_id`.
+3. **Payouts withdrawal rows (MODIFIED)** — when net withholding > 0 the Amount cell renders
+   `Net $X · $Y withheld (Z.ZZ%)` under the gross amount (requirement #20 surface).
+4. **Tests (NEW, all green):**
+   - `TaxReportPanel.test.tsx` — 5 tests: default-period fetch + payload-only rendering;
+     period switch re-fetch + CSV link update; stale-response abort; error + working Retry;
+     empty-period row.
+   - `withdrawals.test.ts` — +2 tests: ledger-join fields surface per withdrawal; SQL shape
+     pins (FILTER per kind, GREATEST floor, tenant scoping on `twl.*`).
+5. **Gates:** `tsc -p tsconfig.typecheck.json` → **EXIT 0**; targeted suites green
+   (withdrawals 35/35, panel 5/5); full-suite regression run launched for the final gate and
+   recorded below when it completes.
+
+Still deliberately NOT claimed: browser E2E / production verification of any of this (no
+authenticated session available in this environment); no claim that rates/jurisdictions are
+business-correct (they remain configuration, not code decisions).
+
+## 35. Session 7 gate state — security choke points + dependency upgrades
+
+Two security defects found and fixed this session, both in
+`docs/superpowers/PRODUCTION-HARDENING-STATUS.md` with root-cause detail:
+
+- **Defect #28 — CSRF.** `validateCsrf` existed but only 9 of ~274 routes called
+  it, while the session cookie is `sameSite: 'none'` (mobile iframes) and
+  CORS-"simple" `text/plain`/form POSTs reach `request.json()` with no preflight.
+  Fixed with `crossSiteRejection()` as the first statement of `middleware()`.
+- **Defect #29 — reversible secret in a client component.**
+  `CANSPAMFooter.tsx` produced `base64(contactId:EMAIL_UNSUB_SECRET)`; base64 is
+  not a MAC, so any recipient could read the secret. Dead code (the live path is
+  `withCanSpamFooter`), removed, with a ratchet including a self-check that the
+  detector still flags the original line.
+
+**Dependency/supply chain moved off UNVERIFIED.** `yarn npm audit` found **28**
+advisories (2 critical). Declared minimums were raised and the lockfile bumped:
+better-auth 1.5.6→1.7.6, next 16.2.6→16.3.6, nodemailer 9.0.3→9.1.1,
+ws 8.20.0→8.22.0. Re-audit: **1 advisory**, dev-only. Evidence:
+`docs/superpowers/evidence/audit-before-upgrade.json` and
+`audit-after-upgrade.json`. The single remaining advisory needs a vitest 3→4
+major bump; that was **attempted and measured** (30 failures across 33 files) and
+**reverted** rather than shipping a broken gate — documented, not hidden.
+
+**Final gates on this exact tree (last change → fresh run, no reuse of older runs):**
+
+| gate | command | result |
+|---|---|---|
+| Types | `yarn typecheck` (`tsc -p tsconfig.typecheck.json --noEmit`) | **PASS — exit 0** |
+| Full suite | `yarn test` | **PASS — 231 files (230 passed, 1 skipped), 2597 passed / 23 skipped / 30 todo, 0 failed, exit 0** |
+| Targeted | `csrfOrigin` + `middleware` + `client-secret-scan` | **PASS — 26/26** |
+| Targeted | `TaxReportPanel` + `Shell` + `withdrawals` | **PASS — 5 + 3 + 35** |
+
+Test-count arithmetic for this session's additions: 2559 (session baseline) →
+2561 (+2 withdrawals ledger-join) → 2566 (+5 `TaxReportPanel`) → 2595 (+17
+CSRF, +4 middleware, +5 guard) → 2597 (+2 CORS ratchet) → 2597 after the
+dependency upgrade and the vitest revert. No pre-existing test was lost at any
+step; the only suite that ever failed was the deliberate vitest-4 experiment,
+which was reverted and re-verified.
+
+**Gate-configuration fix worth noting:** `yarn test` runs
+`--config src/app/api/vitest.config.ts`, whose `include` matched only
+`*.test.ts` in a `node` environment. The repo had no `.test.tsx` files, so the
+new component tests would have been silently outside the merge-blocking gate.
+`include` now also matches `*.test.tsx`; each such file opts into jsdom with its
+own `// @vitest-environment jsdom` docblock.
+
+**Still UNVERIFIED / externally blocked (unchanged, not silently resolved):**
+browser E2E and authenticated user/admin journeys (no credentials in env),
+production Stripe/Apollo verification, Neon production schema application,
+`AI security` (no dedicated assessment performed yet), and Shopify (not
+implemented — a product decision, not a technical blocker).
+
+
 
