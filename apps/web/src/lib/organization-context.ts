@@ -187,14 +187,72 @@ export function hasRole(userRole: string | null, requiredRole: string): boolean 
 }
 
 /**
- * Get effective organization ID from various sources.
- * Priority: explicit orgId > session context > default
+ * Get effective organization ID, AUTHORIZED.
+ *
+ * SECURITY FIX (2026-09-26 adversarial review): this function previously read
+ *
+ *     if (explicitOrgId) return explicitOrgId;
+ *
+ * with NO membership check at all, and its docstring advertised exactly that
+ * ("Priority: explicit orgId > session context"). Any route passing a
+ * request-controlled value into it would therefore have been a textbook IDOR:
+ * a caller could read or write another organization's data simply by
+ * supplying its id.
+ *
+ * It had no callers, so nothing was exploitable today - but it was a loaded
+ * gun with the safety off, and the next developer to use it would have
+ * inherited a cross-tenant data leak.
+ *
+ * An explicit org id is now a REQUEST FOR ACCESS, not an answer: it is
+ * honoured only when the session user is genuinely a member of that org (or
+ * is a platform ADMIN). Anything else falls back to the session's own org.
  */
 export async function getEffectiveOrganizationId(
   explicitOrgId?: string | null
 ): Promise<string | null> {
-  if (explicitOrgId) return explicitOrgId;
-  
-  const org = await getOrganization();
-  return org?.id || null;
+  const sessionOrg = await getOrganization();
+  if (explicitOrgId) {
+    const userId = await getSessionUserId();
+    if (userId && (await isMemberOf(userId, explicitOrgId) || (await isPlatformAdmin(userId)))) {
+      return explicitOrgId;
+    }
+    // Not entitled: refuse the explicit id rather than silently widening
+    // access. The caller receives the org it actually belongs to.
+  }
+
+  return sessionOrg?.id || null;
+}
+
+/** The session user id, or null when unauthenticated. */
+async function getSessionUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** True only on a confirmed membership row. */
+async function isMemberOf(userId: string, orgId: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT 1 FROM organization_members
+      WHERE user_id = ${userId} AND organization_id = ${orgId}
+      LIMIT 1
+    `;
+    return rows.length > 0;
+  } catch {
+    // Fail CLOSED: a database error must never be read as "is a member".
+    return false;
+  }
+}
+
+async function isPlatformAdmin(userId: string): Promise<boolean> {
+  try {
+    const rows = await sql`SELECT role FROM "user" WHERE id = ${userId} LIMIT 1`;
+    return rows[0]?.role === 'ADMIN';
+  } catch {
+    return false;
+  }
 }

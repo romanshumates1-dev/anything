@@ -595,6 +595,37 @@ copies, plus a provably-sound whole-file prefilter in secret-compare (a file con
 |---|---|---|
 | 3 guards, isolated | 2.79 s | **1.58–1.81 s** (repeat runs) |
 | 3 guards, concurrent with `tsc` | **3 x `Test timed out in 5000ms`** | **PASS, 2.23 s** |
+
+## 24. Adversarial review: latent IDOR in `getEffectiveOrganizationId` (FIXED)
+
+`src/lib/organization-context.ts` exported:
+
+```ts
+export async function getEffectiveOrganizationId(explicitOrgId?: string | null) {
+  if (explicitOrgId) return explicitOrgId;      // <-- no membership check
+  const org = await getOrganization();
+  return org?.id || null;
+}
+```
+
+Its own docstring advertised the behaviour — *"Priority: explicit orgId > session context"* —
+so any route passing a request-controlled value straight in would have been a textbook IDOR: a
+caller could read or write another organization's data by simply supplying its id. The id was
+returned as an **answer**, when it should only ever be treated as a **request for access**.
+
+**Blast radius at discovery: zero.** A repo-wide search found no callers outside the definition
+itself, so nothing was exploitable today. It was, however, a loaded gun with the safety off, and
+the next developer to reach for a "get the org id" helper would have inherited a cross-tenant
+data leak with a reassuring name and a helpful docstring.
+
+**Fix:** an explicit org id is now honoured only when the session user is genuinely a member of
+that organization, or is a platform `ADMIN`. Anything else falls back to the org the session is
+actually entitled to. Both new helpers **fail closed** on a database error — a query failure must
+never be misread as "is a member" or "is an admin", which would silently re-open the hole.
+
+**Verified:** typecheck 0 errors; the 4 pre-existing tenant-isolation suites (analytics/advanced,
+regions/estimate, leadPhone, admin/organizations) still pass — 28 tests.
+
 | all 6 guards | — | **PASS, 23 tests, 3.09 s** |
 | FULL suite + `tsc` + `build`, all 3 concurrent | 3 failures | **214 files / 2434 passed / 0 failed** |
 
