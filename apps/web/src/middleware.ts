@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
+import { crossSiteRejection } from '@/app/api/utils/csrfProtection';
 import {
   hasRequiredRole,
 } from '@/app/api/utils/access-control';
@@ -329,6 +330,26 @@ export async function enforceAccessGate(req: NextRequest): Promise<NextResponse>
 }
 
 export function middleware(req: NextRequest): Promise<NextResponse> {
+  // Cross-site gate (CSRF). Session cookies are SameSite=None (load-bearing
+  // for mobile iframes — see lib/auth.ts), so a cross-site `text/plain` fetch
+  // would otherwise ride the victim's cookie into ANY state-changing /api/*
+  // route with no CORS preflight to stop it. This is the single choke point:
+  // it covers every route, including ones added later. Safe methods, webhooks
+  // (no Origin header) and Bearer-key callers are explicitly exempt — see
+  // crossSiteRejection() for the full compatibility rationale.
+  const rejection = crossSiteRejection(req);
+  if (rejection) {
+    // crossSiteRejection returns a runtime-agnostic Response (it is shared with
+    // node route handlers); middleware must hand back a NextResponse, so the
+    // status, headers and body are carried across verbatim.
+    return Promise.resolve(
+      new NextResponse(rejection.body, {
+        status: rejection.status,
+        headers: rejection.headers,
+      })
+    );
+  }
+
   // Public monitoring endpoint - bypass all auth
   if (req.nextUrl.pathname === '/api/campaigns/monitor') {
     return Promise.resolve(NextResponse.next());
