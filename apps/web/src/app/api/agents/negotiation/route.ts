@@ -209,6 +209,8 @@ const OPT_OUT_TRIGGERS = [
   'piss off',
 ];
 
+const MAX_SELLER_REPLY_CHARS = 4000;
+
 function checkOptOut(reply: string): boolean {
   const lower = reply.toLowerCase().trim();
   return OPT_OUT_TRIGGERS.some(trigger => lower.includes(trigger));
@@ -539,6 +541,17 @@ export async function POST(req: NextRequest) {
 
   if (!leadId || !sellerReply) {
     return Response.json({ error: 'leadId and sellerReply required' }, { status: 400 });
+  }
+
+  // AI INPUT BOUND (2026-09-26). `sellerReply` is caller-supplied free text that
+  // is classified and then written alongside the negotiation analysis, so an
+  // unbounded value is both a storage-growth vector and a cost/latency risk on
+  // the AI path. A real lead reply is an SMS; 4k characters is far beyond it.
+  if (typeof sellerReply !== 'string' || sellerReply.length > MAX_SELLER_REPLY_CHARS) {
+    return Response.json(
+      { error: `sellerReply must be at most ${MAX_SELLER_REPLY_CHARS} characters` },
+      { status: 400 }
+    );
   }
 
   // TENANT ISOLATION (2026-09-26 re-review): leadId is caller-supplied. Without

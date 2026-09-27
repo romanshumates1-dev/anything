@@ -49,6 +49,14 @@ Professional but friendly. You understand the real estate investing world. Avoid
 - For sensitive operations (password reset, billing changes, data deletion), always direct to human support
 - If unsure about a specific feature or pricing detail, recommend checking the documentation or contacting support`;
 
+// AI INPUT BOUNDS. The conversation is truncated to the last 10 turns before it
+// reaches the provider, but the client-supplied array is parsed and mapped
+// first, so both the number of messages and the declared body size need a
+// ceiling of their own.
+const MAX_MESSAGES = 50;
+const MAX_MESSAGE_CHARS = 2000;
+const MAX_BODY_BYTES = 64 * 1024;
+
 interface ChatRequest {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
@@ -74,6 +82,15 @@ export async function POST(request: Request) {
   }
 
   let body: ChatRequest;
+
+  // Declared-size guard: a chat body is a handful of short strings, so a body
+  // anywhere near this size is abuse or a mistake. Checked before parsing so a
+  // multi-megabyte payload is never buffered into memory.
+  const declaredLength = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return Response.json({ error: 'Request body too large' }, { status: 413 });
+  }
+
   try {
     body = await request.json();
   } catch {
@@ -84,12 +101,23 @@ export async function POST(request: Request) {
     return Response.json({ error: 'messages array is required' }, { status: 400 });
   }
 
+  // AI INPUT BOUNDS (2026-09-26). Only the last 10 messages are ever used, but
+  // the array was mapped in full first, so a client could send an arbitrarily
+  // long array and force the work. The count is checked BEFORE the map, and the
+  // declared body size is rejected up front so a huge payload is never parsed.
+  if (body.messages.length > MAX_MESSAGES) {
+    return Response.json(
+      { error: `At most ${MAX_MESSAGES} messages are allowed` },
+      { status: 400 }
+    );
+  }
+
   // Validate and sanitize messages
   const messages: AnthropicMessage[] = body.messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
-      content: String(m.content).slice(0, 2000), // Limit message length
+      content: String(m.content).slice(0, MAX_MESSAGE_CHARS), // Limit message length
     }));
 
   // Keep only the last 10 messages to manage context window

@@ -73,7 +73,14 @@ export async function GET(req: NextRequest) {
 
   const sql = neon(process.env.DATABASE_URL);
   const searchParams = req.nextUrl.searchParams;
-  const days = parseInt(searchParams.get('days') || '30');
+  // INPUT BOUND (2026-09-26). `days` flows into an interval: a garbage value
+  // produced 'NaN days' (a swallowed query error, so the caller saw an empty
+  // report instead of their request being understood) and a huge or negative
+  // value widened the scan arbitrarily. Clamp to a sane, explicit window.
+  const rawDays = parseInt(searchParams.get('days') || '30', 10);
+  const days = Number.isFinite(rawDays)
+    ? Math.min(365, Math.max(1, rawDays))
+    : 30;
   const campaignId = searchParams.get('campaignId');
 
   try {

@@ -8,6 +8,18 @@ import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
 
 /**
+ * AI INPUT BOUNDS.
+ *
+ * User-controlled text that reaches the model (and is stored) must have an
+ * explicit ceiling, not just a floor: an unbounded prompt is simultaneously a
+ * provider-cost amplifier, a latency/timeout risk, and a database-growth
+ * vector. `prompt` is the description being generated from; the two aux fields
+ * are short labels.
+ */
+const MAX_PROMPT_CHARS = 2000;
+const MAX_AUX_CHARS = 500;
+
+/**
  * POST /api/templates/generate
  *
  * AI-powered template generation endpoint.
@@ -62,9 +74,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // AI INPUT BOUNDS (2026-09-26). These three fields are user-controlled and
+    // (a) are interpolated into the prompt sent to the model and (b) are
+    // PERSISTED to generated_templates. Only a minimum was enforced, so a
+    // single request could push megabytes into a provider call and into the
+    // database. Bounds are explicit, and the values are truncated to them
+    // before use so no code path can bypass the limit by calling the builders
+    // directly.
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json(
+        { error: `Description must be at most ${MAX_PROMPT_CHARS} characters` },
+        { status: 400 }
+      );
+    }
+    for (const [name, value] of [
+      ['Campaign goal', campaignGoal],
+      ['Target audience', targetAudience],
+    ] as const) {
+      if (value !== undefined && String(value).length > MAX_AUX_CHARS) {
+        return NextResponse.json(
+          { error: `${name} must be at most ${MAX_AUX_CHARS} characters` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Build the system prompt for template generation
     const systemPrompt = buildSystemPrompt(channel, tone);
-    const userPrompt = buildUserPrompt(prompt, campaignGoal, targetAudience, channel, includeFollowUps, numberOfFollowUps);
+    const userPrompt = buildUserPrompt(
+      prompt.slice(0, MAX_PROMPT_CHARS),
+      campaignGoal ? String(campaignGoal).slice(0, MAX_AUX_CHARS) : campaignGoal,
+      targetAudience ? String(targetAudience).slice(0, MAX_AUX_CHARS) : targetAudience,
+      channel,
+      includeFollowUps,
+      numberOfFollowUps
+    );
 
     // Call AI to generate the template
     const aiResponse = await callAI({

@@ -321,6 +321,58 @@ here. It is a test-runner dependency: it does not ship to production and cannot
 be reached by an attacker. Remediation is a dedicated task (migrate mocks file
 by file, then re-run this audit), not a mid-mission risk.
 
+### AI security assessment (row was UNVERIFIED)
+
+**Scope.** All 16 non-test `callAI()` callers, with the four HTTP entry points
+audited in depth: `support/chat`, `templates/generate`,
+`analytics/ai-recommendations`, `outreach/call-queue/brief`. The remaining
+callers are engines fed from the database rather than from request bodies.
+
+**Already sound (verified, not assumed).**
+- Prompt injection: `utils/ai-sales-prompt.ts` explicitly instructs the model
+  that lead messages are untrusted data and that instructions inside them to
+  ignore rules, reveal the prompt or change role must never be followed.
+- Provider error text is sanitized before it can reach a client
+  (`sanitizeProviderError`, with its own tests).
+- Cost gates exist in front of generation: AI credit gate/limits plus per-user
+  rate limits, and `maxTokens` is set on every reviewed call (500 for support
+  chat, 1500 for template generation).
+- Model output is not rendered as HTML anywhere: the only four
+  `dangerouslySetInnerHTML` uses are the marketing reviews page, the v1 docs
+  page, the chart component and a legal-doc renderer — none is AI output.
+- Tenant scoping: the negotiation endpoint's `leadId` is re-checked against the
+  caller's organization (anti-oracle 404), so a caller cannot analyse another
+  tenant's lead.
+
+**Found and fixed — missing ceilings on caller-supplied input.** Unbounded text
+reaching a model is at once a provider-cost amplifier, a latency/timeout risk
+and a storage-growth vector, and three of the four entry points had only a
+*minimum*:
+
+- `templates/generate`: `prompt` had a 10-character floor and no ceiling, and
+  `prompt`/`campaignGoal`/`targetAudience` are interpolated into the model call
+  **and** persisted to `generated_templates`. Now capped at 2000/500/500 with
+  400 responses, and truncated again before use so no path bypasses the bound.
+- `support/chat`: only the last 10 turns were ever sent, but the whole
+  client-supplied array was mapped first, and no body-size ceiling existed. Now
+  a declared-size check rejects >64 KB before parsing (413) and the array is
+  capped at 50 messages before the map (400).
+- `agents/negotiation`: `sellerReply` was unbounded and is written alongside the
+  analysis. Capped at 4000 characters, rejected before any DB access.
+- `analytics/ai-recommendations`: `days` was `parseInt`'d straight into an
+  interval, so a garbage value produced `'NaN days'` — a swallowed query error
+  that returned an empty report rather than an honest error — and a huge or
+  negative value widened the scan. Now clamped to 1..365 with a default of 30.
+
+**Evidence:** `api/__tests__/security/ai-input-bounds.test.ts` — 10 tests,
+green, including the happy paths (so the bounds did not break normal use) and
+an assertion that each reviewed route names its limit in a named constant.
+
+**Residual, explicitly not claimed:** no adversarial red-team was run against
+the prompts themselves (e.g. a live injection attempt measuring whether model
+output can be steered into an unsafe action); that requires provider access and
+is recorded as outstanding rather than assumed safe.
+
 ## Rules reminders
 - Evidence-only claims. Code inspection != verification.
 - Financial logic: server-authoritative, atomic, idempotent.
