@@ -5,6 +5,7 @@ import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
+import { TaxReportPanel } from '@/components/payouts/TaxReportPanel';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { MetricValue } from '@/components/ui/MetricValue';
 import { Badge } from '@/components/ui/badge';
@@ -90,6 +91,12 @@ interface WithdrawalData {
   failed_at: string | null;
   failure_reason: string | null;
   estimated_arrival_at: string | null;
+  /** Gross tax withheld for this withdrawal (from the append-only ledger). */
+  tax_withheld_cents?: number | string | null;
+  /** Withheld minus any released adjustment, floored at 0. */
+  tax_net_withheld_cents?: number | string | null;
+  /** Withholding rate in basis points; null when no withholding applied. */
+  tax_rate_bps?: number | string | null;
 }
 
 interface BalanceSummary {
@@ -397,7 +404,7 @@ export default function PayoutsPage() {
   const [earningFilter, setEarningFilter] = useState<EarningFilter>('all');
   const [payoutMode, setPayoutMode] = useState<'full' | 'custom'>('full');
   const [customAmount, setCustomAmount] = useState('');
-  const [activeTab, setActiveTab] = useState<'earnings' | 'withdrawals'>('earnings');
+  const [activeTab, setActiveTab] = useState<'earnings' | 'withdrawals' | 'tax'>('earnings');
 
   // Fetch earnings and balance data
   const { data: earningsData, isLoading: earningsLoading, refetch: refetchEarnings } = useQuery({
@@ -830,7 +837,21 @@ export default function PayoutsPage() {
         >
           Withdrawal History
         </button>
+        <button
+          onClick={() => setActiveTab('tax')}
+          className={cn(
+            'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+            activeTab === 'tax'
+              ? 'border-[var(--accent-blue)] text-[var(--accent-blue)]'
+              : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+          )}
+        >
+          Tax Report
+        </button>
       </div>
+
+      {/* Tax & earnings report (period-granular, server-bucketed) */}
+      {activeTab === 'tax' && <TaxReportPanel />}
 
       {/* Earnings History */}
       {activeTab === 'earnings' && (
@@ -1089,9 +1110,27 @@ export default function PayoutsPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className="font-semibold font-mono text-[var(--text-primary)]">
-                            {formatCurrency(withdrawal.amount_cents)}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold font-mono text-[var(--text-primary)]">
+                              {formatCurrency(withdrawal.amount_cents)}
+                            </span>
+                            {(() => {
+                              // bigint columns arrive as strings from some
+                              // drivers; normalize once before comparing.
+                              const withheld =
+                                Number(withdrawal.tax_net_withheld_cents ?? 0) || 0;
+                              if (withheld <= 0) return null;
+                              const rateBps = Number(withdrawal.tax_rate_bps ?? 0) || 0;
+                              return (
+                                <span className="text-xs text-[var(--text-muted)] font-mono">
+                                  Net {formatCurrency(withdrawal.amount_cents - withheld)}
+                                  {' · '}
+                                  {formatCurrency(withheld)}
+                                  {rateBps > 0 ? ` withheld (${(rateBps / 100).toFixed(2)}%)` : ' withheld'}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

@@ -51,24 +51,49 @@ export async function GET() {
     const userId = session.user.id;
     const orgId = organization.id;
 
+    // Tax withholding is stored in the append-only ledger keyed by
+    // withdrawal_id. Each row is aggregated here so a withdrawal renders its
+    // NET payout (what actually lands in the bank) alongside the gross, and a
+    // release reduces the withheld figure instead of being double-counted.
+    // Subquery: aggregates ALL ledger rows for this withdrawal (withheld and
+    // released counted separately), so even a future multi-row history cannot
+    // duplicate the withdrawal in the outer result or double-count money.
     const withdrawals = await sql`
       SELECT
-        id,
-        amount_cents,
-        status,
-        payout_method,
-        payout_reference,
-        requested_at,
-        processing_started_at,
-        completed_at,
-        failed_at,
-        failure_reason,
-        estimated_arrival_at,
-        metadata
-      FROM withdrawals
-      WHERE user_id = ${userId}
-        AND organization_id = ${orgId}
-      ORDER BY requested_at DESC
+        w.id,
+        w.amount_cents,
+        w.status,
+        w.payout_method,
+        w.payout_reference,
+        w.requested_at,
+        w.processing_started_at,
+        w.completed_at,
+        w.failed_at,
+        w.failure_reason,
+        w.estimated_arrival_at,
+        w.metadata,
+        COALESCE(l.withheld_cents, 0)::bigint AS tax_withheld_cents,
+        GREATEST(
+          COALESCE(l.withheld_cents, 0) - COALESCE(l.released_cents, 0),
+          0
+        )::bigint AS tax_net_withheld_cents,
+        l.tax_rate_bps
+      FROM withdrawals w
+      LEFT JOIN LATERAL (
+        SELECT
+          SUM(twl.amount_cents) FILTER (WHERE twl.kind = 'WITHHELD')
+            AS withheld_cents,
+          SUM(twl.amount_cents) FILTER (WHERE twl.kind = 'RELEASED')
+            AS released_cents,
+          MAX(twl.rate_bps) AS tax_rate_bps
+        FROM tax_withholding_ledger twl
+        WHERE twl.withdrawal_id = w.id
+          AND twl.user_id = w.user_id
+          AND twl.organization_id = w.organization_id
+      ) l ON true
+      WHERE w.user_id = ${userId}
+        AND w.organization_id = ${orgId}
+      ORDER BY w.requested_at DESC
       LIMIT 50
     `;
 

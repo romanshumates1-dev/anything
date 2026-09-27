@@ -14,7 +14,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: [],
-    include: ['**/*.test.ts'],
+    // `.tsx` included so component tests (e.g. TaxReportPanel) join the gate;
+    // the only `.test.tsx` files are jsdom tests carrying their own
+    // `@vitest-environment jsdom` docblock, so node stays the default here.
+    include: ['**/*.test.ts', '**/*.test.tsx'],
     // Live-DB suites (flows-live, sla, numberPoolStore) drive dozens of
     // SEQUENTIAL HTTP round-trips to a real Neon branch. Vitest's 5s default is
     // budgeted for in-process mocked work and is far too tight for that: CI run

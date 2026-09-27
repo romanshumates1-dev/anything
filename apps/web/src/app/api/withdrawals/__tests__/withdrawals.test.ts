@@ -223,6 +223,87 @@ describe('Withdrawals API', () => {
       expect(data.withdrawals[1].status).toBe('PENDING');
     });
 
+    it('joins the withholding ledger so each withdrawal reports its NET payout', async () => {
+      const mockWithdrawals = [
+        {
+          id: 'wdr_tax',
+          amount_cents: 100000,
+          status: 'COMPLETED',
+          payout_method: 'bank_transfer',
+          payout_reference: 'TRF-TAX-1',
+          requested_at: '2026-09-01T10:00:00Z',
+          processing_started_at: null,
+          completed_at: '2026-09-03T10:00:00Z',
+          failed_at: null,
+          failure_reason: null,
+          estimated_arrival_at: null,
+          metadata: {},
+          tax_withheld_cents: 5000,
+          tax_net_withheld_cents: 5000,
+          tax_rate_bps: 500,
+        },
+        {
+          id: 'wdr_plain',
+          amount_cents: 20000,
+          status: 'PENDING',
+          payout_method: 'bank_transfer',
+          payout_reference: 'TRF-PLAIN-1',
+          requested_at: '2026-09-02T10:00:00Z',
+          processing_started_at: null,
+          completed_at: null,
+          failed_at: null,
+          failure_reason: null,
+          estimated_arrival_at: null,
+          metadata: {},
+          tax_withheld_cents: 0,
+          tax_net_withheld_cents: 0,
+          tax_rate_bps: null,
+        },
+      ];
+
+      mockSql.mockResolvedValueOnce(mockWithdrawals);
+
+      const { GET } = await import('../route');
+      const response = await GET();
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      // The query must aggregate the append-only ledger per withdrawal, not
+      // just return the withdrawal row: this is how requirement #20
+      // (withheld amounts appear in earnings/payouts) gets its data.
+      const listQuery = sqlTexts.find((t) => /FROM\s+withdrawals/i.test(t));
+      expect(listQuery).toBeDefined();
+      expect(listQuery).toMatch(/tax_withholding_ledger/i);
+      expect(listQuery).toMatch(/LEFT\s+JOIN\s+LATERAL/i);
+
+      // Withheld withdrawal: both gross-withheld and net-of-release surfaces.
+      expect(data.withdrawals[0].tax_withheld_cents).toBe(5000);
+      expect(data.withdrawals[0].tax_net_withheld_cents).toBe(5000);
+      expect(data.withdrawals[0].tax_rate_bps).toBe(500);
+      // No-withholding withdrawal: zeros/nulls, never a fabricated rate.
+      expect(data.withdrawals[1].tax_withheld_cents).toBe(0);
+      expect(data.withdrawals[1].tax_rate_bps).toBeNull();
+    });
+
+    it('aggregates releases so a release can never double-count withheld money', async () => {
+      // The SQL aggregates WITHHELD and RELEASED separately and floors the
+      // net at zero (GREATEST(..., 0)). This test pins the SQL shape that
+      // guarantees it: a release reduces the figure, never inverts it.
+      mockSql.mockResolvedValueOnce([]);
+
+      const { GET } = await import('../route');
+      await GET();
+
+      const listQuery = sqlTexts.find((t) => /FROM\s+withdrawals/i.test(t));
+      expect(listQuery).toBeDefined();
+      expect(listQuery).toMatch(/FILTER\s*\(\s*WHERE\s+twl\.kind\s*=\s*'WITHHELD'/i);
+      expect(listQuery).toMatch(/FILTER\s*\(\s*WHERE\s+twl\.kind\s*=\s*'RELEASED'/i);
+      expect(listQuery).toMatch(/GREATEST/i);
+      // Tenant scoping must still apply to the ledger rows themselves.
+      expect(listQuery).toMatch(/twl\.user_id\s*=\s*w\.user_id/i);
+      expect(listQuery).toMatch(/twl\.organization_id\s*=\s*w\.organization_id/i);
+    });
+
     it('filters by status (implied by query)', async () => {
       // The current implementation returns all statuses,
       // but the SQL query could easily be extended to filter
