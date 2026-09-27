@@ -7,9 +7,13 @@
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
+import { sanitizeProviderError, logProviderError } from '@/app/api/utils/sanitizeProviderError';
+
+const PROVIDER_NAME = 'email provider';
 // Rate limiting is done via audit_logs for test-specific daily limits
 import sql from '@/app/api/utils/sql';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
+
 
 interface TestEmailRequest {
   to: string;

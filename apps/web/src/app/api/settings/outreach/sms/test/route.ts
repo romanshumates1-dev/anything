@@ -7,9 +7,13 @@
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { logEvent } from '@/app/api/utils/logger';
+import { sanitizeProviderError, logProviderError } from '@/app/api/utils/sanitizeProviderError';
+
+const PROVIDER_NAME = 'SMS provider';
 // Rate limiting is done via audit_logs for test-specific daily limits
 import sql from '@/app/api/utils/sql';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
+
 
 interface TestSmsRequest {
   to: string;
@@ -70,7 +74,7 @@ async function sendTestWithTwilio(config: TestSmsRequest['config'], to: string):
     if (response.ok) {
       return { success: true, messageId: data.sid };
     } else {
-      return { success: false, error: data.message || `Twilio error: ${response.status}` };
+      return { success: false, error: sanitizeProviderError(data, 'Twilio') };
     }
   } catch (error: any) {
     return { success: false, error: error.message };
