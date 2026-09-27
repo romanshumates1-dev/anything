@@ -1416,7 +1416,9 @@ export default function CampaignWizardPage() {
     );
   }
 
-  if (!session) return null;
+  if (!session) {
+    redirect('/account/signin');
+  }
 
   return (
     <div className="min-h-screen bg-[var(--bg-primary)] py-8 px-4">

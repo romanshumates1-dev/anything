@@ -1,5 +1,7 @@
 'use client';
 
+import { redirect } from 'next/navigation';
+
 import { useState, useMemo } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -167,7 +169,9 @@ export default function CampaignPlannerPage() {
   }, [inputs.conversionRate, totalDepthTouches]);
 
   if (isPending) return null;
-  if (!session) return null;
+  if (!session) {
+    redirect('/account/signin');
+  }
 
   const isMeasured = inputs.measuredN !== null && inputs.measuredN > 0;
 

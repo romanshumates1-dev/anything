@@ -1,5 +1,7 @@
 'use client';
 
+import { redirect } from 'next/navigation';
+
 import { useState } from 'react';
 import { useSession } from '@/lib/auth-client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,7 +52,9 @@ export default function CrmPage() {
   };
 
   if (authLoading) return <div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" /></div>;
-  if (!session) return null;
+  if (!session) {
+    redirect('/account/signin');
+  }
 
   return (
     <div className="space-y-6 max-w-6xl">

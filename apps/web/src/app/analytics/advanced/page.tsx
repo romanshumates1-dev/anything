@@ -1,5 +1,7 @@
 'use client';
 
+import { redirect } from 'next/navigation';
+
 import { useSession } from '@/lib/auth-client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -174,7 +176,9 @@ export default function AdvancedAnalyticsPage() {
       </div>
     );
   }
-  if (!session) return null;
+  if (!session) {
+    redirect('/account/signin');
+  }
 
   const regional: RegionalMetrics[] = advanced?.regional || [];
   const hourly: HourlyMetrics[] = advanced?.hourly || [];
