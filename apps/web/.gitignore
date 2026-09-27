@@ -32,3 +32,6 @@ cloudflare-env.d.ts
 
 # Wrangler's local build cache
 /.wrangler/tmp/
+
+# Browser-QA screenshots and raw results (generated, not source)
+artifacts/

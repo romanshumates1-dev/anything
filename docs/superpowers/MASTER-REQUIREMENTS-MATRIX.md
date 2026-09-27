@@ -626,6 +626,58 @@ never be misread as "is a member" or "is an admin", which would silently re-open
 **Verified:** typecheck 0 errors; the 4 pre-existing tenant-isolation suites (analytics/advanced,
 regions/estimate, leadPhone, admin/organizations) still pass — 28 tests.
 
+## 25. Real-browser QA established and executed (browser WAS available)
+
+`npx playwright install chromium` fails here (CDN download blocked, `code=1`) and no Chrome is
+installed — but **Microsoft Edge is present** (`C:\Program Files (x86)\Microsoft\Edge\Application\
+msedge.exe`) and is Chromium-based, so Playwright drives it via `executablePath`. Browser QA was
+therefore possible and was performed, rather than being deferred as "no browser available".
+
+`apps/web/scripts/browser-qa.mjs` — 35 real routes x 2 viewports (1440x900, 390x844), against the
+**production** server (`next start`, port 3111). Per route it asserts HTTP status, real rendered
+bytes AND visible-text length, title, console errors, failed/4xx network requests, and whether an
+**unauthenticated visitor is correctly bounced off protected routes**.
+
+### Results
+
+| class | routes | outcome |
+|---|---|---|
+| Public / marketing | 13 (`/`, `/pricing`, `/features`, `/about`, `/contact`, `/privacy`, `/terms`, `/faq`, `/reviews`, `/trust`, `/how-it-works`, `/cash-offer`, `/compliance`) | **ALL PASS** — 200, 42–183 KB, 1202–10028 chars visible, **zero console errors, zero real network failures** |
+| Protected, guard working | 19 (incl. `/dashboard`, `/campaigns`, `/leads`, `/contracts`, `/inbox`, `/analytics`, `/payouts`, `/settings`, `/admin`, `/admin/users`, `/admin/billing`, `/lead-finder`, `/templates`, `/approvals`, `/profile`) | Correctly render the sign-in shell (245 chars) — **auth guard confirmed working** |
+| **Protected, BLANK** | **4: `/crm`, `/reports`, `/buyers`, `/funnel`** | **DEFECT** — see below |
+
+Warm desktop timings on the production build: **~880–1650 ms** (home 4655 ms on first hit, then
+~930 ms warm). No page exceeded the earlier 5–10 s complaint, confirming that was a dev-mode
+Turbopack artifact, not production behaviour.
+
+### DEFECT: 4 protected routes render a blank page for an unauthenticated visitor
+
+`/crm`, `/reports`, `/buyers`, `/funnel` return **HTTP 200 with 28 KB of HTML containing only the
+Next.js RSC streaming payload and no visible UI**. A direct probe showed `bodyText` of 10 693
+chars consisting **entirely** of `self.__next_f.push([...])` flight data — the user sees a white
+screen with no message, no sign-in redirect, and no error.
+
+Every other protected route (19 of them) correctly renders the sign-in shell. These four are
+inconsistent with their peers, which points at a **missing or mis-ordered auth guard** in those
+specific pages rather than a product-wide failure.
+
+Severity: **MEDIUM** — no data is exposed (the pages are empty, and the APIs behind them are
+separately protected), but a user navigating to four real, linked surfaces gets a silent blank
+page, which reads as a crash. Needs investigation of those four `page.tsx` files' auth handling.
+
+### Two harness bugs found and corrected (recorded because they nearly became false findings)
+
+1. **`/contacts` 404 was MY test's error, not an app defect.** The harness assumed a `/contacts`
+   route; this product has `/leads`. A route list must be derived from the real `src/app` tree, not
+   from assumed product vocabulary — otherwise the harness manufactures findings. Corrected, and
+   the route list now carries a comment saying so.
+2. **`net::ERR_ABORTED` on `?_rsc=` prefetches was being reported as a network failure.** Those are
+   Next.js App Router prefetch cancellations, which are normal by design; flagging them made all 32
+   pages fail. Now filtered, while genuine 4xx/5xx responses are still caught.
+
+Both were caught only because the harness reports *why* a route failed rather than just a count.
+
+
 | all 6 guards | — | **PASS, 23 tests, 3.09 s** |
 | FULL suite + `tsc` + `build`, all 3 concurrent | 3 failures | **214 files / 2434 passed / 0 failed** |
 
