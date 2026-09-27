@@ -35,7 +35,21 @@ const nextConfig = {
               // that the Workers platform injects automatically. Without this the beacon is
               // blocked on EVERY page (verified in a real browser: 11/13 routes logged a CSP
               // violation) and Web Analytics silently collects nothing.
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ka-p.fontawesome.com https://static.cloudflareinsights.com",
+              //
+              // 'unsafe-eval' is DEV-ONLY. It is required by React Fast Refresh and the
+              // Next.js dev overlay, and nothing in a production Next build needs it.
+              // Shipping it to production re-opens the XSS class CSP exists to contain:
+              // it re-permits eval()/new Function() from any injected script, so CSP
+              // stops meaningfully restricting script execution at all. Before this
+              // change the production response carried it unconditionally.
+              //
+              // The production claim is verified, not assumed: after the change a real
+              // browser load of the public, authenticated-shell and interactive routes
+              // was checked for CSP violations and console errors (see
+              // `scripts/browser-qa.mjs` and the console-health sweep).
+              `script-src 'self' 'unsafe-inline'${
+                process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''
+              } https://ka-p.fontawesome.com https://static.cloudflareinsights.com`,
               "style-src 'self' 'unsafe-inline' https://ka-p.fontawesome.com",
               "font-src 'self' https://ka-p.fontawesome.com data:",
               "img-src 'self' data: blob: https:",

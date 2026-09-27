@@ -24,6 +24,65 @@ import { scanSource, readSource, SRC_ROOT } from './_sourceScan';
 const APP = join(SRC_ROOT, 'app');
 const MARKETING = join(APP, '(marketing)');
 
+/**
+ * CSP PRODUCTION RATCHET (2026-09-27).
+ *
+ * A live sweep of the production build showed the shipped Content-Security-
+ * Policy carried `'unsafe-eval'` on `script-src` - unconditionally, in
+ * production. That directive re-permits `eval()` and `new Function()`, which
+ * means any injected script regains arbitrary execution and CSP stops
+ * meaningfully restricting script execution at all. It is the XSS class CSP
+ * exists to contain, shipped in the header meant to contain it.
+ *
+ * It is genuinely required in DEVELOPMENT: React Fast Refresh and the Next dev
+ * overlay use eval. So the fix is to scope it to development rather than delete
+ * it outright.
+ *
+ * Verified, not assumed: after the change, a real browser (Edge via Playwright)
+ * loaded six script-executing routes - public marketing, pricing, the
+ * 'use client' consent form, and both auth screens - and reported 0 CSP
+ * violations and 0 console errors. `scripts/csp-health.mjs` reproduces that.
+ */
+import { describe, it, expect } from 'vitest';
+import { join } from 'node:path';
+import { readSource, SRC_ROOT } from './_sourceScan';
+
+// SRC_ROOT is `<web>/src`, so the Next config sits one level up - not two.
+const config = readSource(join(SRC_ROOT, '..', 'next.config.js'));
+
+describe('CSP production ratchet', () => {
+  it("'unsafe-eval' is scoped to development, not shipped to production", () => {
+    // The literal must be gated, never a bare string in a production header.
+    expect(
+      config,
+      "'unsafe-eval' must be conditionally gated on NODE_ENV, not unconditional"
+    ).toMatch(/NODE_ENV\s*===\s*'development'[\s\S]{0,80}unsafe-eval/);
+  });
+
+  it('the script-src directive is built dynamically so the gate takes effect', () => {
+    // A static string with a conditional elsewhere would be a no-op fix: the
+    // header would still ship 'unsafe-eval' regardless of NODE_ENV.
+    expect(
+      config,
+      'script-src must be a template expression, otherwise the NODE_ENV gate cannot apply'
+    ).toMatch(/`script-src[^`]*\$\{/);
+  });
+
+  it('the genuinely-required third-party script sources are preserved', () => {
+    // Removing unsafe-eval must not silently break the Cloudflare Web Analytics
+    // beacon or FontAwesome, which a previous investigation found blocked on
+    // 11/13 routes when absent.
+    expect(config).toContain('static.cloudflareinsights.com');
+    expect(config).toContain('ka-p.fontawesome.com');
+  });
+
+  it('retains the other load-bearing directives', () => {
+    for (const d of ["default-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'"]) {
+      expect(config, `missing ${d}`).toContain(d);
+    }
+  });
+});
+
 describe('SEO ratchet', () => {
   it('the public marketing group opts IN to indexing explicitly', () => {
     const src = readSource(join(MARKETING, 'layout.tsx'));
