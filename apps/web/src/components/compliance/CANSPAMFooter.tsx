@@ -5,7 +5,12 @@ import { Mail, MapPin, ExternalLink } from 'lucide-react';
 
 interface CANSPAMFooterProps {
   variant?: 'email' | 'preview' | 'component';
+  /**
+   * @deprecated Accepted for API compatibility only. Tokens are minted
+   * server-side; this component never builds one from a contact id.
+   */
   contactId?: string;
+  /** Server-minted, already-signed one-click unsubscribe URL. */
   unsubscribeUrl?: string;
   className?: string;
 }
@@ -23,18 +28,17 @@ interface CANSPAMFooterProps {
  */
 export function CANSPAMFooter({
   variant = 'component',
-  contactId,
   unsubscribeUrl,
   className = '',
 }: CANSPAMFooterProps) {
-  const legalEntity = process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME || 'DealFlow AI';
   const physicalAddress = process.env.NEXT_PUBLIC_COMPANY_ADDRESS || '123 Main St, Dover, DE 19901';
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4000';
 
-  // Generate unsubscribe URL if contactId provided
-  const unsub = unsubscribeUrl || (contactId
-    ? `${appUrl}/api/email/unsubscribe?token=${Buffer.from(`${contactId}:placeholder`).toString('base64url')}`
-    : '#');
+  // The unsubscribe link MUST be minted server-side (`withCanSpamFooter` in
+  // api/utils/emailDriver.ts) and passed in. A previous version built a token
+  // here from `${contactId}:placeholder`, which is base64 — not an HMAC — and
+  // would have exposed the unsubscribe secret to every recipient. There is
+  // deliberately no token construction left in this client component.
+  const unsub = unsubscribeUrl || '#';
 
   // Email variant - return info about what gets injected
   if (variant === 'email') {
@@ -130,26 +134,3 @@ export function CANSPAMFooter({
   );
 }
 
-/**
- * Generate raw HTML for CAN-SPAM footer (for use in email templates)
- * This is what emailDriver.ts uses internally.
- */
-export function generateCANSPAMFooterHTML(contactId: string): string {
-  const physicalAddress = process.env.COMPANY_POSTAL_ADDRESS ||
-    process.env.LEGAL_PHYSICAL_ADDRESS ||
-    '123 Main St, Dover, DE 19901';
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:4000';
-
-  // Generate unsubscribe token
-  const payload = `${contactId}:${process.env.EMAIL_UNSUB_SECRET || 'dev-secret'}`;
-  const unsubscribeToken = Buffer.from(payload).toString('base64url');
-  const unsubscribeUrl = `${appUrl}/api/email/unsubscribe?token=${unsubscribeToken}`;
-
-  return `
-    <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-family: sans-serif; font-size: 12px; color: #64748b; text-align: center;">
-      <p style="margin: 0 0 8px 0;">You are receiving this email as part of a real estate investment inquiry.</p>
-      <p style="margin: 0 0 8px 0;">${physicalAddress}</p>
-      <p style="margin: 0;"><a href="${unsubscribeUrl}" style="color: #3B82F6; text-decoration: underline;">Unsubscribe</a></p>
-    </div>
-  `.trim();
-}
