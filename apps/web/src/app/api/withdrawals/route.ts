@@ -11,7 +11,7 @@
  * - Daily withdrawal limit enforcement
  * - Audit logging for compliance
  */
-import sql from '@/app/api/utils/sql';
+import sql, { type SqlQuery } from '@/app/api/utils/sql';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
 import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
@@ -20,7 +20,8 @@ import { randomUUID } from 'crypto';
 import { splitWithholding } from '@/app/api/utils/taxWithholding';
 import {
   getWithholdingSettings,
-  recordWithholding,
+  prepareWithholdingInsert,
+  readWithholdingResult,
 } from '@/app/api/utils/taxWithholdingStore';
 
 const MINIMUM_PAYOUT_CENTS = 10000; // $100 minimum
@@ -251,153 +252,218 @@ export async function POST(request: Request) {
     const estimatedArrival = new Date(now.getTime() + ESTIMATED_DAYS * 24 * 60 * 60 * 1000);
     const reference = `TRF-${now.toISOString().slice(0, 10).replace(/-/g, '')}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
-    // SECURITY FIX: Use atomic UPDATE to prevent race conditions
-    // Lock earnings and mark as PENDING_WITHDRAWAL in one atomic operation
-    // This prevents double-spend by ensuring concurrent requests can't select same earnings
+    // ---------------------------------------------------------------
+    // ATOMIC MONEY MOVEMENT
+    // ---------------------------------------------------------------
+    // The reservation, the withdrawal record, the earnings finalisation, the
+    // withholding row and the audit row are submitted as ONE
+    // `sql.transaction([...])` batch, so they commit together or not at all.
+    //
+    // Previously these ran as separate statements. A failure part-way left
+    // earnings stranded in PENDING_WITHDRAWAL with no withdrawal to release
+    // them, and the withholding row was written AFTER the money had already
+    // moved with its failure deliberately swallowed - so a seller could be paid
+    // gross with no tax recorded and nothing to detect it from.
+    //
+    // WHY THE GATES LIVE IN SQL
+    // -------------------------
+    // The driver requires the transaction callback to be SYNCHRONOUS, so a
+    // later statement cannot be built from an earlier statement's rows.
+    // Instead each dependent statement is gated by an `EXISTS` over the
+    // withdrawal row. A row inserted earlier in the SAME transaction is already
+    // visible to the statements that follow, so each gate sees the true
+    // mid-flight state:
+    //
+    //   reserved   claim the chosen earnings for this withdrawal id
+    //   created    insert the withdrawal ONLY if the claim covers the request
+    //   reverted   hand the claim back if `created` was a no-op, so a rejected
+    //              request strands nothing
+    //   finalized  mark the claim WITHDRAWN if `created` succeeded
+    //   taxed      withholding row, ONLY if the withdrawal exists
+    //   audited    audit row, ONLY if the withdrawal exists
+    //
+    // `reverted` and `finalized` test the same condition, so exactly one of
+    // them is ever effective and the two can never fight.
 
-    // First, atomically mark earnings as reserved for this withdrawal
-    const reservedEarnings = await sql`
-      UPDATE earnings
-      SET
-        status = 'PENDING_WITHDRAWAL',
-        withdrawal_id = ${withdrawalId},
-        updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM earnings
-        WHERE user_id = ${userId}
-          AND organization_id = ${orgId}
-          AND status = 'AVAILABLE'
-        ORDER BY available_at ASC
-        FOR UPDATE SKIP LOCKED
-        LIMIT (
-          SELECT COUNT(*) FROM (
-            SELECT id, amount_cents,
-              SUM(amount_cents) OVER (ORDER BY available_at ASC) as running_total
-            FROM earnings
+    // Resolve the withholding policy BEFORE the batch: the ledger row is part
+    // of the same commit, so its parameters must be known up front.
+    const taxSettings = await getWithholdingSettings(userId, orgId);
+    const split = splitWithholding(amountCents, taxSettings);
+    // `split.applied` implies `withheldCents > 0`, which is what the ledger's
+    // `amount_cents > 0` CHECK requires - so a zero-rate setting writes no row
+    // at all rather than violating the constraint.
+    const preparedTax = split.applied
+      ? prepareWithholdingInsert(
+          {
+            userId,
+            organizationId: orgId,
+            kind: 'WITHHELD',
+            amountCents: split.withheldCents,
+            rateBps: split.rateBps,
+            // The withdrawal id is the idempotency scope, so a retried request
+            // for the same withdrawal can never withhold twice.
+            scope: withdrawalId,
+            withdrawalId,
+            note: `Withholding on withdrawal ${reference}`,
+            occurredAt: now,
+          },
+          { gateOnWithdrawalId: withdrawalId }
+        )
+      : null;
+
+    // SECURITY: the claim is a single atomic UPDATE ... FOR UPDATE SKIP LOCKED,
+    // so two concurrent withdrawals can never select the same earnings.
+    const statements: Array<{ key: string; query: SqlQuery }> = [
+      {
+        key: 'reserved',
+        query: sql`
+          UPDATE earnings
+          SET
+            status = 'PENDING_WITHDRAWAL',
+            withdrawal_id = ${withdrawalId},
+            updated_at = NOW()
+          WHERE id IN (
+            SELECT id FROM earnings
             WHERE user_id = ${userId}
               AND organization_id = ${orgId}
               AND status = 'AVAILABLE'
-          ) sub
-          WHERE running_total <= ${amountCents} OR
-                running_total - amount_cents < ${amountCents}
-        )
-      )
-      RETURNING id, amount_cents
-    `;
+            ORDER BY available_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT (
+              SELECT COUNT(*) FROM (
+                SELECT id, amount_cents,
+                  SUM(amount_cents) OVER (ORDER BY available_at ASC) as running_total
+                FROM earnings
+                WHERE user_id = ${userId}
+                  AND organization_id = ${orgId}
+                  AND status = 'AVAILABLE'
+              ) sub
+              WHERE running_total <= ${amountCents} OR
+                    running_total - amount_cents < ${amountCents}
+            )
+          )
+          RETURNING id, amount_cents
+        `,
+      },
+    ];
 
-    // Verify we got enough
-    const reservedTotal = reservedEarnings.reduce((sum: number, e: any) => sum + Number(e.amount_cents), 0);
-    if (reservedTotal < amountCents) {
-      // Rollback - mark earnings back as available
-      if (reservedEarnings.length > 0) {
-        const reservedIds = reservedEarnings.map((e: any) => e.id);
-        await sql`
-          UPDATE earnings
-          SET status = 'AVAILABLE', withdrawal_id = NULL, updated_at = NOW()
-          WHERE id = ANY(${reservedIds})
-        `;
-      }
+    // The withdrawal row is written only when the claim covers the request.
+    // The balance check is evaluated INSIDE the transaction, so a concurrent
+    // request cannot slip in between the check and the write.
+    statements.push({
+      key: 'created',
+      query: sql`
+        INSERT INTO withdrawals (
+          id, user_id, organization_id, amount_cents, status,
+          payout_method, payout_reference, requested_at, estimated_arrival_at
+        )
+        SELECT
+          ${withdrawalId}::text, ${userId}::text, ${orgId}::text,
+          ${amountCents}::bigint, 'PENDING', 'bank_transfer',
+          ${reference}::text, ${now}::timestamptz, ${estimatedArrival}::timestamptz
+        WHERE (
+          SELECT COALESCE(SUM(amount_cents), 0) FROM earnings
+          WHERE withdrawal_id = ${withdrawalId} AND status = 'PENDING_WITHDRAWAL'
+        ) >= ${amountCents}
+        RETURNING id
+      `,
+    });
+
+    // Rejected request: hand the claim back. Guarded by NOT EXISTS, so this is
+    // a no-op on the success path.
+    statements.push({
+      key: 'reverted',
+      query: sql`
+        UPDATE earnings
+        SET status = 'AVAILABLE', withdrawal_id = NULL, updated_at = NOW()
+        WHERE withdrawal_id = ${withdrawalId}
+          AND status = 'PENDING_WITHDRAWAL'
+          AND NOT EXISTS (SELECT 1 FROM withdrawals WHERE id = ${withdrawalId})
+      `,
+    });
+
+    // Accepted request: the claim becomes a completed withdrawal. Guarded by
+    // EXISTS, so this is a no-op on the rejected path.
+    statements.push({
+      key: 'finalized',
+      query: sql`
+        UPDATE earnings
+        SET status = 'WITHDRAWN', updated_at = NOW()
+        WHERE withdrawal_id = ${withdrawalId}
+          AND status = 'PENDING_WITHDRAWAL'
+          AND EXISTS (SELECT 1 FROM withdrawals WHERE id = ${withdrawalId})
+      `,
+    });
+
+    // The withholding row rides in the same commit as the money movement, so a
+    // withdrawal can never be paid gross with no tax recorded.
+    if (preparedTax) statements.push({ key: 'taxed', query: preparedTax.query });
+
+    // `earnings_count` is read from the rows this batch just finalised, not
+    // from JavaScript, which cannot see them until after the commit.
+    statements.push({
+      key: 'audited',
+      query: sql`
+        INSERT INTO audit_logs (user_id, action, target_type, target_id, payload)
+        SELECT
+          ${userId}::text, 'withdrawal_requested', 'withdrawal', ${withdrawalId}::text,
+          jsonb_build_object(
+            'amount_cents', ${amountCents}::bigint,
+            'earnings_count',
+              (SELECT COUNT(*) FROM earnings
+               WHERE withdrawal_id = ${withdrawalId}
+                 AND organization_id = ${orgId}
+                 AND status = 'WITHDRAWN'),
+            'reference', ${reference}::text
+          )
+        WHERE EXISTS (SELECT 1 FROM withdrawals WHERE id = ${withdrawalId})
+      `,
+    });
+
+    const results = await sql.transaction(statements.map((s) => s.query));
+    const byKey = new Map<string, unknown[]>(
+      statements.map((s, i) => [s.key, (results[i] ?? []) as unknown[]])
+    );
+
+    const reservedRows = (byKey.get('reserved') ?? []) as Array<{
+      id: string;
+      amount_cents: unknown;
+    }>;
+    const withdrawalCreated = (byKey.get('created') ?? []).length > 0;
+
+    // Nothing was committed for this request: the claim did not cover the
+    // amount. The batch already handed the claim back, so there is no stranded
+    // state to clean up and nothing was withheld.
+    if (!withdrawalCreated) {
       return Response.json(
         { error: 'Insufficient balance. Another withdrawal may be in progress.' },
         { status: 400 }
       );
     }
 
-    const earningIds = reservedEarnings.map((e: any) => e.id);
+    const earningIds = reservedRows.map((e) => e.id);
 
-    // Create the withdrawal record
-    await sql`
-      INSERT INTO withdrawals (
-        id, user_id, organization_id, amount_cents, status,
-        payout_method, payout_reference, requested_at, estimated_arrival_at
-      )
-      VALUES (
-        ${withdrawalId}, ${userId}, ${orgId}, ${amountCents}, 'PENDING',
-        'bank_transfer', ${reference}, ${now}, ${estimatedArrival}
-      )
-    `;
-
-    // Now mark earnings as fully WITHDRAWN
-    await sql`
-      UPDATE earnings
-      SET status = 'WITHDRAWN', updated_at = NOW()
-      WHERE id = ANY(${earningIds})
-    `;
-
-    // Log the withdrawal request
-    await sql`
-      INSERT INTO audit_logs (user_id, action, target_type, target_id, payload)
-      VALUES (
-        ${userId},
-        'withdrawal_requested',
-        'withdrawal',
-        ${withdrawalId},
-        ${JSON.stringify({
-          amount_cents: amountCents,
-          earnings_count: earningIds.length,
-          reference,
-        })}
-      )
-    `;
+    // Only report withholding that is actually IN the ledger. `inserted: false`
+    // means an earlier attempt already wrote this exact row (same idempotency
+    // key), so counting it again would double-report tax the seller has already
+    // been charged once.
+    let taxWithheldCents = 0;
+    if (preparedTax) {
+      const written = readWithholdingResult(
+        preparedTax,
+        (byKey.get('taxed') ?? []) as ReadonlyArray<{ id?: string }>
+      );
+      if (written.inserted) taxWithheldCents = preparedTax.amountCents;
+    }
 
     // ---------------------------------------------------------------
     // TAX WITHHOLDING
     // ---------------------------------------------------------------
-    // Withholding is applied to the GROSS withdrawal amount and reduces what
-    // the seller actually receives; the retained portion stays in the
-    // append-only ledger until it is released.
-    //
-    // IDEMPOTENCY: the ledger key is scoped to `withdrawalId`, which is unique
-    // per withdrawal, so a retried request for the SAME withdrawal cannot
-    // double-withhold. A brand-new withdrawal gets a new id and therefore a new
-    // key - which is correct, because that is genuinely a second withdrawal.
-    //
-    // FAILURE MODE: if the ledger write fails we do NOT fail the withdrawal.
-    // The money has already moved into a PENDING withdrawal; rejecting it here
-    // would strand the seller's funds behind a 500 and create a withdrawal the
-    // user believes failed but which actually exists. Instead the failure is
-    // logged for reconciliation and the withdrawal proceeds un-withheld, which
-    // is the safe direction: the seller is under-paid rather than over-paid,
-    // and the ledger's balance is derived from rows rather than from a cached
-    // total, so nothing downstream can drift.
-    let taxWithheldCents = 0;
-    let taxRateBps = 0;
-    try {
-      const taxSettings = await getWithholdingSettings(userId, orgId);
-      const split = splitWithholding(amountCents, taxSettings);
-      if (split.applied) {
-        const write = await recordWithholding({
-          userId,
-          organizationId: orgId,
-          kind: 'WITHHELD',
-          amountCents: split.withheldCents,
-          rateBps: split.rateBps,
-          scope: withdrawalId,
-          withdrawalId,
-          note: `Withholding on withdrawal ${reference}`,
-          occurredAt: now,
-        });
-        // Only report a withholding that actually exists in the ledger.
-        // `inserted: false` means a previous attempt already wrote this exact
-        // row (same idempotency key), so counting it again would double-report
-        // a withholding the seller was already billed for once.
-        if (write.inserted) {
-          taxWithheldCents = split.withheldCents;
-          taxRateBps = split.rateBps;
-        }
-      }
-    } catch (taxError) {
-      // Reset defensively: these must describe what is IN THE LEDGER, and a
-      // failed write means nothing is. Leaving the computed figure here would
-      // tell the seller tax was withheld when it was not, and would report a
-      // net payout smaller than the money they actually receive.
-      taxWithheldCents = 0;
-      taxRateBps = 0;
-      console.error(
-        '[WITHDRAWALS] tax withholding write failed; proceeding un-withheld for reconciliation',
-        { withdrawalId, userId, organizationId: orgId, taxError }
-      );
-    }
+    // The withholding row is written INSIDE the transaction above, gated on the
+    // withdrawal existing, so it can neither be lost after the money has moved
+    // nor be recorded for a withdrawal that was rejected. `taxWithheldCents`
+    // comes from that statement's RETURNING rows, so it always describes what
+    // is actually in the ledger.
 
     return Response.json({
       success: true,
@@ -406,7 +472,9 @@ export async function POST(request: Request) {
       // What the seller is actually paid, after any withholding.
       netPayoutCents: amountCents - taxWithheldCents,
       taxWithheldCents,
-      taxRateBps,
+      // A rate alongside a zero withholding would imply tax was taken when none
+      // was, so the rate is only reported when a ledger row exists.
+      taxRateBps: taxWithheldCents > 0 ? split.rateBps : 0,
       status: 'PENDING',
       reference,
       estimatedArrival: estimatedArrival.toISOString(),

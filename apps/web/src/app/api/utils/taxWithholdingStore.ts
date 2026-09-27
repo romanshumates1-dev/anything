@@ -19,8 +19,9 @@
  * "already withheld" without a second query.
  */
 import { randomUUID } from 'node:crypto';
-import sql from '@/app/api/utils/sql';
+import sql, { type SqlQuery } from '@/app/api/utils/sql';
 import {
+  buildIdempotencyKey,
   normalizeSettings,
   quarterOf,
   type LedgerEntry,
@@ -102,46 +103,147 @@ export async function saveWithholdingSettings(
 }
 
 
+/** The lazy query object a tagged template returns, as the driver types it. */
+type SqlTaggedQuery = SqlQuery;
+
+export interface PreparedWithholding {
+  /** Un-awaited insert, ready to be spliced into a `sql.transaction([...])` batch. */
+  query: SqlTaggedQuery;
+  kind: WithholdingKind;
+  amountCents: number;
+  rateBps: number;
+  periodQualified: string;
+  createdAt: string;
+  idempotencyKey: string;
+  /** Local id, used only when the insert returned no row (replay). */
+  id: string;
+}
+
 /**
- * Append one ledger row, idempotently.
+ * Build (but do NOT execute) the idempotent ledger insert.
+ *
+ * WHY NOT JUST `recordWithholding`
+ * -------------------------------
+ * On the withdrawal path the ledger row must commit in the SAME transaction as
+ * the money movement. If the withholding write can commit independently, a
+ * failure leaves an irreversible payout that was never withheld -- the failure
+ * mode this module now refuses to allow. The withdrawal route therefore needs
+ * the query itself, to batch it with the rest, rather than a pre-awaited call.
+ *
+ * The key comes from `buildIdempotencyKey` in the policy module so the ledger
+ * key can never drift from the documented `tax:<kind>:<scope>:<amount>` shape.
+ */
+export interface PrepareOptions {
+  /**
+   * Write the row only when this withdrawal row exists.
+   *
+   * The withdrawal route needs the ledger row to commit in the SAME
+   * transaction as the money movement, AND to be skipped entirely when that
+   * movement did not happen. Without the gate, a REJECTED withdrawal (the
+   * reservation did not cover the request) would still record withholding for
+   * money that never left the platform, inflating the seller's withheld
+   * balance and understating their net receipts in the tax report.
+   *
+   * The check is expressed in SQL because the driver's transaction callback
+   * must be synchronous: a statement cannot be built from an earlier
+   * statement's result. Inside a transaction the earlier insert is already
+   * visible, so `EXISTS` sees the true mid-flight state.
+   */
+  gateOnWithdrawalId?: string | null;
+}
+
+export function prepareWithholdingInsert(
+  write: LedgerWrite,
+  options: PrepareOptions = {}
+): PreparedWithholding {
+  const occurredAt = write.occurredAt ?? new Date();
+  const idempotencyKey = buildIdempotencyKey(write.scope, write.kind, write.amountCents);
+  const periodQualified = quarterOf(occurredAt);
+  const id = `txw_${randomUUID()}`;
+  const gate = options.gateOnWithdrawalId;
+
+  // Two statement shapes, deliberately. `VALUES (...)` cannot carry a WHERE, so
+  // the gated form selects the literals instead. The casts are explicit because
+  // Postgres cannot infer a parameter type from a bare `SELECT $1` inside an
+  // INSERT ... SELECT, and would otherwise reject the batch.
+  const query = gate
+    ? sql`
+        INSERT INTO tax_withholding_ledger
+          (id, user_id, organization_id, earning_id, withdrawal_id,
+           idempotency_key, kind, amount_cents, rate_bps, period_qualified, note)
+        SELECT
+          ${id}::text, ${write.userId}::text, ${write.organizationId}::text,
+          ${write.earningId ?? null}::text, ${write.withdrawalId ?? null}::text,
+          ${idempotencyKey}::text, ${write.kind}::text, ${write.amountCents}::bigint,
+          ${write.rateBps}::integer, ${periodQualified}::text, ${write.note ?? null}::text
+        WHERE EXISTS (SELECT 1 FROM withdrawals WHERE id = ${gate})
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id
+      `
+    : sql`
+        INSERT INTO tax_withholding_ledger
+          (id, user_id, organization_id, earning_id, withdrawal_id,
+           idempotency_key, kind, amount_cents, rate_bps, period_qualified, note)
+        VALUES (
+          ${id}, ${write.userId}, ${write.organizationId}, ${write.earningId ?? null},
+          ${write.withdrawalId ?? null}, ${idempotencyKey}, ${write.kind}, ${write.amountCents},
+          ${write.rateBps}, ${periodQualified}, ${write.note ?? null}
+        )
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id
+      `;
+
+  return {
+    query,
+    kind: write.kind,
+    amountCents: write.amountCents,
+    rateBps: write.rateBps,
+    periodQualified,
+    createdAt: occurredAt.toISOString(),
+    idempotencyKey,
+    id,
+  };
+}
+
+/**
+ * Interpret the rows a prepared insert returned. `ON CONFLICT DO NOTHING`
+ * yields zero rows for a replay, which is how a caller can tell "withheld" from
+ * "already withheld" without a second query.
+ */
+export function readWithholdingResult(
+  prepared: PreparedWithholding,
+  rows: ReadonlyArray<{ id?: string }>
+): WriteResult {
+  return {
+    inserted: rows.length > 0,
+    entry: {
+      id: rows[0]?.id ?? prepared.id,
+      kind: prepared.kind,
+      amountCents: prepared.amountCents,
+      rateBps: prepared.rateBps,
+      periodQualified: prepared.periodQualified,
+      createdAt: prepared.createdAt,
+      idempotencyKey: prepared.idempotencyKey,
+    },
+  };
+}
+
+/**
+ * Append one ledger row, idempotently, as its own statement.
  *
  * `ON CONFLICT (idempotency_key) DO NOTHING` is the whole replay story: the
  * unique index rejects the duplicate, and `RETURNING` yields zero rows, so we
  * can report `inserted: false` without a follow-up SELECT. The returned entry
  * describes the row that exists either way, so callers can build a consistent
  * response for a first write and a replay alike.
+ *
+ * Callers that need atomicity with other writes must use
+ * `prepareWithholdingInsert` inside a transaction instead.
  */
 export async function recordWithholding(write: LedgerWrite): Promise<WriteResult> {
-  const { userId, organizationId, kind, amountCents, rateBps, scope } = write;
-  const occurredAt = write.occurredAt ?? new Date();
-  const idempotencyKey = `tax:${kind.toLowerCase()}:${scope}:${amountCents}`;
-  const id = `txw_${randomUUID()}`;
-
-  const rows = await sql`
-    INSERT INTO tax_withholding_ledger
-      (id, user_id, organization_id, earning_id, withdrawal_id,
-       idempotency_key, kind, amount_cents, rate_bps, period_qualified, note)
-    VALUES (
-      ${id}, ${userId}, ${organizationId}, ${write.earningId ?? null},
-      ${write.withdrawalId ?? null}, ${idempotencyKey}, ${kind}, ${amountCents},
-      ${rateBps}, ${quarterOf(occurredAt)}, ${write.note ?? null}
-    )
-    ON CONFLICT (idempotency_key) DO NOTHING
-    RETURNING id
-  `;
-
-  return {
-    inserted: rows.length > 0,
-    entry: {
-      id: rows[0]?.id ?? id,
-      kind,
-      amountCents,
-      rateBps,
-      periodQualified: quarterOf(occurredAt),
-      createdAt: occurredAt.toISOString(),
-      idempotencyKey,
-    },
-  };
+  const prepared = prepareWithholdingInsert(write);
+  const rows = (await prepared.query) as Array<{ id?: string }>;
+  return readWithholdingResult(prepared, rows);
 }
 
 /**

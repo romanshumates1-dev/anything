@@ -67,7 +67,15 @@ CREATE INDEX IF NOT EXISTS idx_withdrawals_user_id ON public.withdrawals (user_i
 CREATE INDEX IF NOT EXISTS idx_withdrawals_org_id ON public.withdrawals (organization_id);
 CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON public.withdrawals (status);
 
--- Add foreign key from earnings to withdrawals
+-- Add foreign key from earnings to withdrawals.
+--
+-- DROP ... IF EXISTS first: `ADD CONSTRAINT` has no `IF NOT EXISTS` form, so
+-- without this guard a second `migrate.mjs` run fails with
+--   constraint "fk_earnings_withdrawal" for relation "earnings" already exists
+-- and the apply path aborts, leaving the database half-migrated.
+ALTER TABLE public.earnings
+  DROP CONSTRAINT IF EXISTS fk_earnings_withdrawal;
+
 ALTER TABLE public.earnings
   ADD CONSTRAINT fk_earnings_withdrawal
   FOREIGN KEY (withdrawal_id) REFERENCES public.withdrawals(id) ON DELETE SET NULL;

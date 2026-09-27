@@ -10,10 +10,73 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock sql module
-const mockSql = vi.fn();
+// ---------------------------------------------------------------------------
+// Driver mock.
+//
+// The withdrawal route writes through `sql.transaction([...])`: it builds the
+// whole statement batch first and commits it as one unit, then reads each
+// statement's result back by key. The mock below models that driver contract:
+//
+//   * tagged-template reads (daily total, balance, pending, bank, withholding
+//     settings) resolve from the positional queue staged with
+//     `mockSql.mockResolvedValueOnce(...)`, exactly as before; and
+//   * the six write statements of the batch are answered from `mockBatch`,
+//     which stands in for the rows those statements would have written.
+//
+// Keeping the batch out of the positional queue means each test stages exactly
+// the reads the route performs and declares the rows the transaction produced;
+// the assertions then describe money outcomes rather than internal statement
+// order.
+// ---------------------------------------------------------------------------
+const { mockSql, mockBatch, sqlTexts } = vi.hoisted(() => {
+  const mockSql = vi.fn();
+  const sqlTexts: string[] = [];
+  const mockBatch: {
+    reserved: unknown[];
+    created: unknown[];
+    reverted: unknown[];
+    finalized: unknown[];
+    taxed: unknown[];
+    audited: unknown[];
+  } = {
+    reserved: [],
+    created: [],
+    reverted: [],
+    finalized: [],
+    taxed: [],
+    audited: [],
+  };
+  return { mockSql, mockBatch, sqlTexts };
+});
+
+/** Rows a batch statement would return, keyed by the statement's role. */
+function batchRowsFor(text: string): unknown[] | null {
+  if (/UPDATE\s+earnings[\s\S]*RETURNING\s+id,\s*amount_cents/i.test(text)) {
+    return mockBatch.reserved; // FIFO claim (FOR UPDATE SKIP LOCKED)
+  }
+  if (/INSERT\s+INTO\s+withdrawals/i.test(text)) return mockBatch.created;
+  if (/UPDATE\s+earnings[\s\S]*NOT\s+EXISTS/i.test(text)) return mockBatch.reverted;
+  if (/UPDATE\s+earnings[\s\S]*status\s*=\s*'WITHDRAWN'/i.test(text)) {
+    return mockBatch.finalized;
+  }
+  if (/INSERT\s+INTO\s+tax_withholding_ledger/i.test(text)) return mockBatch.taxed;
+  if (/INSERT\s+INTO\s+audit_logs/i.test(text)) return mockBatch.audited;
+  return null;
+}
+
+const sqlDriver: any = (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const text = Array.isArray(strings) ? strings.join('?') : String(strings);
+  sqlTexts.push(text);
+  const rows = batchRowsFor(text);
+  if (rows) return Promise.resolve(rows);
+  return mockSql(strings, ...values);
+};
+// The SQL-tag family executes a statement batch as one transaction and
+// resolves with the per-statement results in statement order.
+sqlDriver.transaction = (queries: Array<Promise<unknown>>) => Promise.all(queries);
+
 vi.mock('@/app/api/utils/sql', () => ({
-  default: mockSql,
+  default: sqlDriver,
 }));
 
 // Mock rate limiter - always allow in tests
@@ -65,6 +128,13 @@ describe('Withdrawals API', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSql.mockReset();
+    mockBatch.reserved = [];
+    mockBatch.created = [];
+    mockBatch.reverted = [];
+    mockBatch.finalized = [];
+    mockBatch.taxed = [];
+    mockBatch.audited = [];
+    sqlTexts.length = 0;
     mockGetSession.mockResolvedValue({ user: mockUser });
     mockGetOrganization.mockResolvedValue(mockOrganization);
   });
@@ -232,17 +302,15 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([]);
       // Mock: verify bank account
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Mock: get earnings to mark
-      mockSql.mockResolvedValueOnce([
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: the FIFO claim reserves both earnings and the withdrawal
+      // insert succeeds because they cover $150.
+      mockBatch.reserved = [
         { id: 'earn_1', amount_cents: 25000 },
         { id: 'earn_2', amount_cents: 25000 },
-      ]);
-      // Mock: insert withdrawal
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: update earnings
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: audit log
-      mockSql.mockResolvedValueOnce([]);
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST(createRequest({ amountCents: 15000 }));
@@ -370,18 +438,16 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([]);
       // Mock: verify bank account
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Mock: atomic UPDATE with FIFO selection returns only earnings needed
-      // SQL selects oldest earnings first until amount is covered (30k + 40k = 70k >= 50k)
-      mockSql.mockResolvedValueOnce([
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: the SKIP LOCKED claim takes the oldest earnings first and
+      // returns them; the withdrawal insert commits because they cover $500
+      // (30k + 40k = 70k >= 50k).
+      mockBatch.reserved = [
         { id: 'earn_oldest', amount_cents: 30000 }, // oldest first
         { id: 'earn_middle', amount_cents: 40000 },
-      ]);
-      // Mock: insert withdrawal
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: update earnings to WITHDRAWN
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: audit log
-      mockSql.mockResolvedValueOnce([]);
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST(createRequest({ amountCents: 50000 })); // $500
@@ -492,10 +558,9 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([{ available: 50000 }]); // balance check
       mockSql.mockResolvedValueOnce([]); // no pending withdrawal
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]); // bank verified
-      mockSql.mockResolvedValueOnce([{ id: 'earn_1', amount_cents: 50000 }]); // earnings
-      mockSql.mockResolvedValueOnce([]); // insert withdrawal
-      mockSql.mockResolvedValueOnce([]); // update earnings
-      mockSql.mockResolvedValueOnce([]); // audit log
+      mockSql.mockResolvedValueOnce([]); // no withholding settings
+      mockBatch.reserved = [{ id: 'earn_1', amount_cents: 50000 }];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response1 = await POST({
@@ -507,6 +572,8 @@ describe('Withdrawals API', () => {
       // Reset mocks for second request
       vi.resetModules();
       mockSql.mockReset();
+      mockBatch.reserved = [];
+      mockBatch.created = [];
 
       // Second request - should find pending withdrawal
       mockSql.mockResolvedValueOnce([{ total: 15000 }]); // daily limit check (from first withdrawal)
@@ -534,16 +601,11 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([]);
       // Mock: verify bank account
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Mock: get earnings to mark (exact amount)
-      mockSql.mockResolvedValueOnce([
-        { id: 'earn_1', amount_cents: 25000 },
-      ]);
-      // Mock: insert withdrawal
+      // Mock: no withholding settings configured
       mockSql.mockResolvedValueOnce([]);
-      // Mock: update earnings
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: audit log
-      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: one exact-balance earning is claimed in full.
+      mockBatch.reserved = [{ id: 'earn_1', amount_cents: 25000 }];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST({
@@ -569,18 +631,15 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([]);
       // Mock: verify bank account
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Mock: get AVAILABLE earnings to mark
-      mockSql.mockResolvedValueOnce([
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: the claim returns only the AVAILABLE earnings
+      // (PENDING earnings are in hold and are never selectable).
+      mockBatch.reserved = [
         { id: 'earn_available_1', amount_cents: 10000 },
         { id: 'earn_available_2', amount_cents: 10000 },
-        // Note: PENDING earnings are not included in this query
-      ]);
-      // Mock: insert withdrawal
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: update earnings
-      mockSql.mockResolvedValueOnce([]);
-      // Mock: audit log
-      mockSql.mockResolvedValueOnce([]);
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST({
@@ -654,16 +713,16 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([{ available: 100000 }]); // $1000 available
       mockSql.mockResolvedValueOnce([]); // no pending
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Atomic UPDATE returns only earnings needed via SQL FIFO selection
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: the SQL FIFO claim returns exactly the earnings needed.
       // $450 needs earn_1 ($150) + earn_2 ($250) + earn_3 ($350) = $750 >= $450
-      mockSql.mockResolvedValueOnce([
+      mockBatch.reserved = [
         { id: 'earn_1', amount_cents: 15000 }, // $150 - oldest
         { id: 'earn_2', amount_cents: 25000 }, // $250
         { id: 'earn_3', amount_cents: 35000 }, // $350
-      ]);
-      mockSql.mockResolvedValueOnce([]); // insert
-      mockSql.mockResolvedValueOnce([]); // update
-      mockSql.mockResolvedValueOnce([]); // audit
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST({
@@ -684,16 +743,16 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([{ available: 200000 }]);
       mockSql.mockResolvedValueOnce([]);
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      // Atomic UPDATE returns only earnings needed via SQL FIFO selection
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: three $100 earnings cover the $250 request in FIFO order.
       // $250 needs 3 earnings of $100 each = $300 >= $250
-      mockSql.mockResolvedValueOnce([
+      mockBatch.reserved = [
         { id: 'earn_1', amount_cents: 10000 }, // $100
         { id: 'earn_2', amount_cents: 10000 }, // $100
         { id: 'earn_3', amount_cents: 10000 }, // $100
-      ]);
-      mockSql.mockResolvedValueOnce([]);
-      mockSql.mockResolvedValueOnce([]);
-      mockSql.mockResolvedValueOnce([]);
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST({
@@ -711,12 +770,13 @@ describe('Withdrawals API', () => {
       mockSql.mockResolvedValueOnce([{ available: 100000 }]);
       mockSql.mockResolvedValueOnce([]);
       mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
-      mockSql.mockResolvedValueOnce([
+      // Mock: no withholding settings configured
+      mockSql.mockResolvedValueOnce([]);
+      // Batch rows: a single large earning covers the whole request.
+      mockBatch.reserved = [
         { id: 'earn_large', amount_cents: 100000 }, // $1000
-      ]);
-      mockSql.mockResolvedValueOnce([]);
-      mockSql.mockResolvedValueOnce([]);
-      mockSql.mockResolvedValueOnce([]);
+      ];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
 
       const { POST } = await import('../route');
       const response = await POST({
@@ -725,6 +785,32 @@ describe('Withdrawals API', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
+      expect(data.earningsWithdrawn).toBe(1);
+    });
+
+    it('writes the money movement as one atomic sql.transaction batch', async () => {
+      mockSql.mockResolvedValueOnce([{ total: 0 }]);
+      mockSql.mockResolvedValueOnce([{ available: 20000 }]);
+      mockSql.mockResolvedValueOnce([]);
+      mockSql.mockResolvedValueOnce([{ id: 'bank_1', verified: true }]);
+      mockSql.mockResolvedValueOnce([]); // no withholding settings
+      mockBatch.reserved = [{ id: 'earn_1', amount_cents: 10000 }];
+      mockBatch.created = [{ id: 'wdr_test-uuid-1234' }];
+
+      const { POST } = await import('../route');
+      const response = await POST({
+        json: () => Promise.resolve({ amountCents: 10000 }), // exact minimum
+      } as Request);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      // The claim is the SKIP LOCKED FIFO update, and the audit row rides in
+      // the same batch - the route issues no loose writes outside it.
+      expect(
+        sqlTexts.some((t) => /UPDATE\s+earnings[\s\S]*FOR UPDATE SKIP LOCKED/i.test(t))
+      ).toBe(true);
+      expect(sqlTexts.some((t) => /INSERT\s+INTO\s+withdrawals/i.test(t))).toBe(true);
+      expect(sqlTexts.some((t) => /INSERT\s+INTO\s+audit_logs/i.test(t))).toBe(true);
       expect(data.earningsWithdrawn).toBe(1);
     });
   });

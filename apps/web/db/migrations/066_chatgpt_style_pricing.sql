@@ -205,11 +205,27 @@ CREATE TABLE IF NOT EXISTS credit_packs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO credit_packs (id, name, credits, price_cents, savings_percent) VALUES
-('pack_100', '100 AI Credits', 100, 500, 0),
-('pack_500', '500 AI Credits', 500, 2000, 20),
-('pack_1000', '1,000 AI Credits', 1000, 3500, 30),
-('pack_5000', '5,000 AI Credits', 5000, 15000, 40)
+-- Seed the one-time credit packs.
+--
+-- `WHERE NOT EXISTS` is load-bearing rather than redundant with the conflict
+-- clause: migration 071 later adds NOT NULL `type` and `margin_percent` columns
+-- to this table. A candidate row that omits them violates NOT NULL *before*
+-- conflict resolution is ever reached, because NOT NULL is not an eligible
+-- conflict target - `ON CONFLICT` cannot absorb it. Without this guard a second
+-- `migrate.mjs` run fails here with
+--   null value in column "type" of relation "credit_packs" violates not-null
+-- and, because the apply path aborts on the first failing statement, leaves the
+-- database half-migrated (which is how this repo's schema drifted before).
+-- Existing rows are still UPDATEd by the conflict clause below.
+INSERT INTO credit_packs (id, name, credits, price_cents, savings_percent)
+SELECT v.id, v.name, v.credits, v.price_cents, v.savings_percent
+FROM (VALUES
+  ('pack_100', '100 AI Credits', 100, 500, 0),
+  ('pack_500', '500 AI Credits', 500, 2000, 20),
+  ('pack_1000', '1,000 AI Credits', 1000, 3500, 30),
+  ('pack_5000', '5,000 AI Credits', 5000, 15000, 40)
+) AS v(id, name, credits, price_cents, savings_percent)
+WHERE NOT EXISTS (SELECT 1 FROM credit_packs cp WHERE cp.id = v.id)
 ON CONFLICT (id) DO UPDATE
   SET name = EXCLUDED.name, credits = EXCLUDED.credits,
       price_cents = EXCLUDED.price_cents, savings_percent = EXCLUDED.savings_percent;

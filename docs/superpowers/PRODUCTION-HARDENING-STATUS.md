@@ -125,6 +125,8 @@ fabricated data, and caller-controlled money — and found 8 more defects.
 | 25 | **HIGH** | Same class, second instance: `/api/outreach/keyword-inbound` (the $0-acquisition inbound SMS funnel) inserted leads without `organization_id` — every keyword enrollment failed. | `outreach/keyword-inbound/route.ts` | **Y** — same attribution; ratchet added (below). |
 
 | 26 | **HIGH** | **Fabricated inventory, class #20 re-opened.** Two more simulator consumers wrote invented owners/properties into `sourced_leads` with no flag check: `/api/campaigns/mega-launch` (3 INSERTs; every "lead" produced by `simulateBySourceType`) and `/api/lead-finder/scraper` (simulator is the DEFAULT mode — `USE_SIMULATOR_DEFAULT = true` — and the real-scraper path also fell back to the simulator whenever a scraper was missing, returned nothing, or threw). | 2 routes | **Y** — `mega-launch` 503s with `SIMULATED_LEADS_DISABLED` unless `ALLOW_SIMULATED_LEADS`; `scraper` degrades to real scraping only (`useSimulatorEffective`), and simulator fallbacks return a failure result instead of invented rows. New ratchet guards the class (below). |
+| 27 | **CRITICAL** | **Driver transaction failure & mock desynchronization.** `src/app/api/utils/sql.ts` wrapped queries in an async function returning standard Promises, breaking Neon's strict `transaction()` requirement for `[Symbol.toStringTag] === 'NeonQueryPromise'`. Multi-statement batches threw in production while 116 tests mocked the utility wholesale. Simultaneously, `POST /api/withdrawals` reserved funds with undeclared `PENDING_WITHDRAWAL` status (violating check constraints), and legacy unit tests asserted sequential loose writes instead of the unified batch transaction contract. | `utils/sql.ts`, `withdrawals/route.ts`, `withdrawals.test.ts`, migration 091 | **Y** — Driver query wrapper preserves tag & parameters with lazy execution; added migration 091 widening check constraint; restaged withdrawal route and test suite to run as one atomic `sql.transaction` batch with pre-batch tax reads. Ratchet added: `sqlTransactionShape.test.ts`. |
+
 
 Ratchet for #24/#25: `src/app/api/__tests__/security/lead-insert-org-guard.test.ts` statically
 walks shipped source and fails the build if ANY `INSERT INTO leads` omits `organization_id`,
@@ -181,6 +183,19 @@ the charge-assignment edit referenced `amount` inside `catch` where it is out of
 - Verified Browser QA artifacts (`browser-qa-artifacts/`) and headless Edge execution against 13 routes and 3 viewports.
 - Security ratchet suites: **12 files, 123 tests, 0 failures, EXIT=0**.
 - Typecheck: `tsc -p tsconfig.typecheck.json --noEmit` → **EXIT=0**.
+
+
+**Verification (session 7 — database driver & withdrawal atomic transaction semantics):**
+- Restored Neon driver tagged-query contract in `src/app/api/utils/sql.ts`: preserved `[Symbol.toStringTag] = 'NeonQueryPromise'` and `parameterizedQuery` while retaining bounded retry for transient errors.
+- Added migration `091_earnings_pending_withdrawal_status.sql` allowing legal status transition to `PENDING_WITHDRAWAL`.
+- Fixed schema migration gap idempotency (`066_chatgpt_style_pricing.sql` and `073_earnings_escrow.sql`).
+- Gated audit logging inside `withdrawals/route.ts` with `organization_id` bound to avoid aggregate oracle leakage.
+- Restaged legacy tests in `withdrawals.test.ts` to mock pre-batch withholding queries and route batch queries via `mockBatch`.
+- Added ratchet test: `sqlTransactionShape.test.ts` (4/4 passed).
+- Test suites: `tax` + `withdrawals` + `earnings` + `sql` (7 files, 100 passed, 0 failed, EXIT=0).
+- Security ratchet suites: 16 files, 157 passed, 0 failed, EXIT=0.
+- Full Vitest suite: 225 test files passed, 1 skipped (2559 passed, 0 failed, EXIT=0).
+- Typecheck: `tsc -p tsconfig.typecheck.json --noEmit` clean, EXIT=0.
 
 Accepted residual (documented, not silently ignored): `closings.portal_access_token` rows
 with `portal_token_expires_at IS NULL` never expire; token is random + DB-bound, but rotation

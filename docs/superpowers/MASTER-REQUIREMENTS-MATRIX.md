@@ -350,6 +350,29 @@ New accepted residual: DB-stored `closings.portal_access_token` rows with
 
 ---
 
+## 12. SESSION-7 SWEEP — database driver contracts, atomic batches, & Defect #27 (2026-09-26)
+
+- **Defect #27 (Neon Driver Transaction Shape & Withdrawal Mock Alignment)**:
+  - Background: Investigation of `src/app/api/utils/sql.ts` revealed that wrapping tagged template literals in an `async` function caused all queries to return native JavaScript `Promise` objects (`[Symbol.toStringTag] === 'Promise'`). Neon's driver strictly requires `[Symbol.toStringTag] === 'NeonQueryPromise'` for queries submitted to `sql.transaction([...])`. This caused all 11 production call sites of `sql.transaction` to fail at runtime with `transaction() expects an array of queries...`, which remained undetected because unit tests mocked `sql` directly without executing driver validation.
+  - Money Reservation & Status Constraint: In `POST /api/withdrawals`, earnings were reserved using `status = 'PENDING_WITHDRAWAL'`. However, `db/migrations/073_earnings_escrow.sql` restricted status to `('PENDING', 'AVAILABLE', 'WITHDRAWN', 'REFUNDED')`. Any real PostgreSQL check constraint evaluation failed, rendering withdrawals inoperable.
+  - Fix:
+    1. Updated `sql.ts` to preserve `[Symbol.toStringTag] = 'NeonQueryPromise'` and `parameterizedQuery` while retaining bounded retry logic on awaited paths.
+    2. Added migration `091_earnings_pending_withdrawal_status.sql` allowing `PENDING_WITHDRAWAL` status and creating a partial index for pending withdrawal lookups.
+    3. Fixed migration idempotency gaps in `066_chatgpt_style_pricing.sql` and `073_earnings_escrow.sql`.
+    4. Refactored `POST /api/withdrawals` to execute withdrawal creation, earnings status transition, tax withholding ledger append, and audit log generation as one atomic `sql.transaction` batch.
+    5. Re-aligned legacy unit tests in `apps/web/src/app/api/withdrawals/__tests__/withdrawals.test.ts` to mock pre-batch withholding queries and route batch writes through `mockBatch`. Added an explicit atomic transaction batch test.
+    6. Bound audit log earnings count query in `withdrawals/route.ts` with `organization_id` to satisfy the `aggregate-oracle-guard` security invariant.
+  - Ratchet: Added `apps/web/src/app/api/utils/__tests__/sqlTransactionShape.test.ts` verifying Neon driver query tagging, parameter retention, and retry execution without mocking.
+  - Evidence:
+    - `yarn test src/app/api/utils/__tests__/sqlTransactionShape.test.ts`: **4/4 passed**.
+    - `yarn test src/app/api/withdrawals/__tests__/withdrawals.test.ts`: **33/33 passed**.
+    - Security ratchet suites (16 test files): **157/157 passed**.
+    - Full Vitest test suite: **225 test files passed, 1 skipped (2559 passed, 0 failed)**.
+    - TypeScript compilation (`tsc -p tsconfig.typecheck.json --noEmit`): **clean, EXIT=0**.
+
+
+---
+
 # PART 2 — ORIGINAL PRODUCT REQUIREMENTS TRACEABILITY (final release gate, 2026-09-26)
 
 The earlier §0 scope note recorded that the "17 original product tasks" were **not present in git

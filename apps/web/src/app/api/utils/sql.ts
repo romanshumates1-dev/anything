@@ -1,4 +1,4 @@
-import { neon, NeonQueryFunction } from '@neondatabase/serverless';
+import { neon, NeonQueryFunction, type NeonQueryPromise } from '@neondatabase/serverless';
 
 import { runWithDbRetry } from './dbRetry';
 
@@ -10,6 +10,16 @@ type SqlQueryFunction = NeonQueryFunction<false, false> & {
    */
   unsafe: (sql: string) => { __unsafeSql: string };
 };
+
+/**
+ * A tagged-template query: lazy, and never executed until awaited or handed to
+ * `sql.transaction([...])`. The driver's `transaction()` only accepts queries
+ * typed with its default `false, false` generics, so `ReturnType<typeof sql>`
+ * (which widens the generics to `boolean, boolean`) must NOT be used for the
+ * statements of a batch - it fails to compile and, before that, the widened
+ * type described nothing real.
+ */
+export type SqlQuery = NeonQueryPromise<false, false>;
 
 const NullishQueryFunction = (() => {
   throw new Error(
@@ -29,17 +39,67 @@ const base = (
 ) as SqlQueryFunction;
 
 /**
- * RANDOM SIGN-OUT FIX: every tagged-template query (`sql`...`) now runs
- * through a strictly bounded retry for transient connection-class errors
- * only (see ./dbRetry). This covers the middleware session lookup and all
- * route-level queries. Non-transient errors (syntax, unique violations,
- * permission denied) are rethrown immediately — no behavior change for
- * real query bugs.
+ * TAG-PRESERVING RETRY WRAPPER.
+ *
+ * WHY THE SHAPE MATTERS, NOT JUST THE RETRY
+ * -----------------------------------------
+ * The Neon driver's `transaction()` validates every element BEFORE it does any
+ * network work:
+ *
+ *     A.forEach(k => { if (k[Symbol.toStringTag] !== 'NeonQueryPromise')
+ *                        throw new Error(...) })
+ *
+ * An `async` function ALWAYS returns a native Promise, which is tagged
+ * "Promise". The previous implementation wrapped this module's tagged template
+ * in an `async` function, so `sql.transaction([sql`...`])` threw
+ * "transaction() expects an array of queries, or a function returning an array
+ * of queries" at EVERY call site -- 11 of them, including /api/dashboard/stats,
+ * /api/deals/complete and /api/esign/webhook.
+ *
+ * It went unnoticed because 116 test files mock this module wholesale, so no
+ * test ever executed the driver's validation. It was proven by running the real
+ * driver against the real database:
+ *
+ *     [1] element Symbol.toStringTag = "Promise"  (driver requires "NeonQueryPromise")
+ *     [2] sql.transaction([...])     = THREW -> transaction() expects an array of queries...
+ *     [3] sequential statements      = OK -> [[{"one":1}],[{"two":2}]]
+ *
+ * Returning an object that keeps BOTH the driver's tag and its
+ * `parameterizedQuery` restores `transaction()` while preserving:
+ *
+ *  - LAZINESS. The driver reads only `parameterizedQuery`/`opts` and never
+ *    awaits the elements it is handed, so nothing fires twice and a batch costs
+ *    one round trip.
+ *  - RETRY on the awaited path. `runWithDbRetry` re-awaiting the underlying
+ *    query promise re-executes it (the driver's `then` calls `execute` afresh),
+ *    so a transient connection blip is still retried exactly as before.
+ *  - NO RETRY inside a transaction, which stays deliberate: re-running a
+ *    partially committed batch is unsafe.
  */
-const sql = (async (...args: unknown[]) => {
-  return runWithDbRetry(() =>
-    (base as unknown as (...a: unknown[]) => Promise<unknown>)(...args)
-  );
+function createRetryingQuery(promise: any): any {
+  const run = () => runWithDbRetry(() => promise as Promise<unknown>);
+  return {
+    [Symbol.toStringTag]: 'NeonQueryPromise',
+    parameterizedQuery: promise?.parameterizedQuery,
+    opts: promise?.opts,
+    then: (onFulfilled?: any, onRejected?: any) => run().then(onFulfilled, onRejected),
+    catch: (onRejected?: any) => run().catch(onRejected),
+    finally: (onFinally?: any) => run().finally(onFinally),
+  };
+}
+
+/**
+ * Every tagged-template query (`sql`...`) runs through a strictly bounded
+ * retry for transient connection-class errors only (see ./dbRetry). This covers
+ * the middleware session lookup and all route-level queries. Non-transient
+ * errors (syntax, unique violations, permission denied) are rethrown
+ * immediately -- no behavior change for real query bugs.
+ */
+const sql = ((...args: unknown[]) => {
+  const promise = (base as unknown as (...a: unknown[]) => any)(...args);
+  // Non-query call forms fall through untouched.
+  if (!promise || typeof promise.then !== 'function') return promise;
+  return createRetryingQuery(promise);
 }) as unknown as SqlQueryFunction;
 sql.query = sql;
 
