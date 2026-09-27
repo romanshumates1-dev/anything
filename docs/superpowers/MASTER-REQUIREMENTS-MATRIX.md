@@ -678,6 +678,92 @@ page, which reads as a crash. Needs investigation of those four `page.tsx` files
 Both were caught only because the harness reports *why* a route failed rather than just a count.
 
 
+---
+
+# PART 5 — RELEASE GATE ROUND 4 (2026-09-26)
+
+## 26. BLANK ROUTES — FIXED (7 pages, not 4)
+
+**Root cause.** These client components gated themselves with `if (!session) return null;`. A
+client component returning `null` renders **nothing**, so an unauthenticated visitor received
+HTTP 200, a well-formed RSC payload, and a white screen — no sign-in page, no message, no error.
+The other 32 protected pages use `redirect('/account/signin')`, which is the established
+convention here. The defect was presentation only; the APIs behind these pages were already
+authorized server-side, so **no data was exposed**.
+
+| fixed | found by | note |
+|---|---|---|
+| `/crm` `/reports` `/buyers` `/funnel` | browser QA | the 4 originally reported |
+| `/analytics/advanced` `/campaigns/planner` `/campaigns/wizard` | **static sweep** | browser QA could not see them |
+
+That gap is itself a finding: **the browser harness only probes routes it already knows about**,
+so a static sweep is required to establish completeness. Both are now used together.
+
+**Verified in real Edge against a fresh production build:** all 8 probed routes land on
+`/account/signin` rendering 10.8–11.5 KB of real sign-in UI (was 48 chars of RSC payload), zero
+console errors.
+
+**Ratchet added:** `blank-page-guard.test.ts` fails if any page binds a null-return to the session
+without redirecting. It deliberately permits **both** redirect forms, because `/welcome` uses
+`router.push` from a `useEffect` where `return null` is a correct "will redirect" transient —
+flagging that would be a false positive that teaches people to ignore the guard. Minimum scan
+count included so it cannot pass vacuously.
+
+## 27. CRITICAL: unauthenticated payment fraud via dev-only mock checkout (FIXED)
+
+Found by an audit of every `NODE_ENV === 'production'` guard in the 274 route handlers.
+
+`POST /api/payments/mock-checkout/complete` had **no authentication of any kind** — no session,
+no admin check, no secret. It took a caller-supplied `pi` and `contractId` from a form body and
+executed:
+
+```sql
+UPDATE payments_ledger SET status = 'paid' WHERE stripe_payment_intent_id = ? AND status = 'sent'
+```
+
+Its only barrier was `if (process.env.NODE_ENV === 'production')`. That is not a boundary: a
+staging box serving real customers, a `next start` without `NODE_ENV` set, or any misspelt value
+all open the door to flipping real payments to paid with no money changing hands.
+`/api/esign/mock-sign` is the same shape — it forges a `signed` webhook event that would mark
+arbitrary contracts as signed.
+
+The repository already documented the correct pattern in `lib/organization-context.ts`:
+*"SECURITY: Never rely on NODE_ENV alone as it could be misconfigured"*, paired with a
+constant-time-compared shared secret. The dev routes had **drifted from that convention**, so the
+fix restores it centrally rather than patching three routes differently.
+
+`utils/devOnlyRoute.ts` now requires **all** of: (1) `NODE_ENV` exactly `'development'` — an
+**allow-list**, so staging/preview/test/unset are all refused; (2) `LOCAL_DEV_SECRET` configured,
+failing **closed** when unset; (3) a matching `x-local-dev` header via `timingSafeSecretEqual`.
+A misconfigured `NODE_ENV` alone is no longer sufficient and a leaked URL is not enough either.
+
+11 tests cover the equivalence classes that matter (production, staging, preview, test, unset,
+missing/empty/wrong/prefix/suffix secret, absent header, genuine developer), plus a static
+ratchet that fails if any dev route regains a bare `NODE_ENV` check.
+
+**No existing behaviour broken:** payments webhook tests set `NODE_ENV` `testing`/`production` and
+none reference these routes.
+
+## 28. `error.message` audit finding CLOSED
+
+`settings/outreach/{sms,email}/test` no longer return raw provider text. New
+`utils/sanitizeProviderError.ts` classifies an error into a canned actionable message (credentials
+/ destination number / timeout / not-found / quota / generic) while the real error is still logged
+server-side. This generalizes the pattern `outreach/verify/email/dns` already used — the audit
+called that "the best pattern in the codebase"; it is now the shared one. 11 tests, including a
+hostile-input pass asserting the output never contains a phone number, AWS key id, account id, or
+internal hostname.
+
+## 29. Gate state after round 4
+
+| Gate | Result |
+|---|---|
+| Full suite | **220 files, all passed, 0 failed** |
+| Typecheck | **0 errors** |
+| Production build | **OK** |
+| New this round | 7-page UI fix + ratchet · dev-route auth fix + 11 tests · provider-error sanitization + 11 tests |
+
+
 | all 6 guards | — | **PASS, 23 tests, 3.09 s** |
 | FULL suite + `tsc` + `build`, all 3 concurrent | 3 failures | **214 files / 2434 passed / 0 failed** |
 
