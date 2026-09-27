@@ -377,3 +377,78 @@ is recorded as outstanding rather than assumed safe.
 - Evidence-only claims. Code inspection != verification.
 - Financial logic: server-authoritative, atomic, idempotent.
 - Smallest safe change; preserve all infrastructure.
+
+## Session 8 (2026-09-27) - release-candidate phase: running the real system
+
+The rule for this session: **stop reading code, start running it.** The
+authenticated E2E suite, a real database and a real browser were available all
+along; earlier reports had concluded they were not. Once they were actually
+executed, six critical defects surfaced that no unit test could have found,
+because every unit test mocked the very layer that was broken.
+
+### Environment reality check (what was true, contrary to earlier reports)
+
+| assumed blocked | actual |
+|---|---|
+| "no test credentials" | credentials are GENERATED: `e2e/global-setup.ts` registers a real account against the real database and saves the session |
+| "no browser available" | system Edge is driven directly by Playwright (`channel: msedge` / executablePath) |
+| "migrations unverified, no test DB" | PGlite (real Postgres in WASM) can replay the whole chain on an empty database |
+| "database access unavailable" | `DATABASE_URL` is configured; the app runs against a real Neon database |
+
+### Defects #30-#35 (all fixed, all verified live)
+
+- **#30 sign-up was impossible.** `session.create.before` read the user through a
+  separate pool, so a row created in the same request was invisible, the hook
+  returned false, and every signup failed `FAILED_TO_CREATE_SESSION`. Fixed by
+  resolving through better-auth's own `internalAdapter` (same transaction).
+- **#31 new users had no organization.** The auto-create INSERT omitted the NOT
+  NULL `owner_user_id` and a `catch` swallowed the error, so every org-scoped
+  API answered 403. Fixed; the error can no longer fail silently unnoticed.
+- **#32 `/api/actions` 500 for every signed-in user** (the sidebar badge calls
+  it on every page). The pinned neon driver maps EVERY template interpolation to
+  a positional parameter, so the "accumulated" WHERE fragment was sent as JSON.
+- **#33 `contracts.metadata` never existed**; three routes selected it, so
+  Contracts list, contract detail and Earnings all 500'd. Migration 092.
+- **#34 the rate-limit subsystem typed `organization_id` as `uuid`** while org ids
+  are `org_<hex>` text, 500-ing every rate-limited endpoint (AI support chat,
+  template generation, AI analytics). Migration 093.
+- **#35 prompt-injection markers were absent from the human-review net**, so an
+  injected "do not require review" decided its own review policy and auto-sent.
+
+### Database release gate (was: UNVERIFIED)
+
+`scripts/migration-gate.mjs` replays the **whole** chain on a throwaway PGlite
+database: baseline (`db/schema.sql` + `db/campaign-pipeline-schema.sql`) then
+all migrations, one transaction per statement so a single failure cannot poison
+the rest, then a full idempotent re-run, then a schema-fact check, then an
+optional read-only live comparison.
+
+Result: **baseline + 93 migrations apply cleanly to an empty database, the chain
+re-applies with 0 failures, and the repo schema matches the live database
+exactly (160 tables, zero drift in either direction).** The withholding
+ledger's `idempotency_key` UNIQUE and `kind` CHECK, and `organizations.
+owner_user_id NOT NULL`, are asserted rather than assumed.
+
+Two structural findings fell out of this: the chain is NOT a fresh-install path
+on its own (migration 001 alters tables only `db/schema.sql` creates), and each
+statement needs its own transaction or one failure masquerades as eighty.
+
+### Verification tooling added (all re-runnable)
+
+| script | what it proves |
+|---|---|
+| `scripts/migration-gate.mjs` | fresh-DB build, idempotency, schema facts, live drift |
+| `scripts/apply-specific.mjs` | applies only named, reviewed migrations (no blind full re-run) |
+| `scripts/api-probe.mjs` | real HTTP with real synthetic users: authed 2xx, unauthenticated 401, cross-tenant 404, secret-leak scan of responses |
+| `scripts/browser-qa.mjs` | 36 routes x 2 viewports, `--auth` mode for real sessions, `--warm` so dev-compile latency is not measured as app latency |
+| `scripts/inspect-route.mjs` | one route, full console/page/network capture - used to separate "the page is broken" from "my assertion was wrong" |
+| `scripts/verify-plans.mts` | plan-tier canonicalization against live data, using the real `planCatalog` module |
+
+### Stale tests corrected (the tests had drifted, not the product)
+
+Three E2E assertions no longer matched the shipped UI (headline copy, the
+sign-in heading, and a wizard field that lost its `id`); one more failed strict
+mode because the same string appears in Next's route announcer. All were fixed
+against verified real copy. The long `journey.spec.ts` encodes the OLD
+single-step wizard and is now `test.fixme` with the exact drift recorded - it is
+not deleted, and not silently "made green" by removing assertions.

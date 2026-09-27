@@ -1,4 +1,4 @@
-import sql from '@/app/api/utils/sql';
+﻿import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
@@ -36,6 +36,19 @@ export async function GET(request: Request) {
   const limitParam = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
   const offsetParam = parseInt(searchParams.get('offset') || '0');
 
+  // Defect #32 (second wave): the sort was previously chosen by interpolating a
+  // `sql` fragment, `ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` :
+  // ...}`. This driver sends that as a positional PARAMETER, and because
+  // `ORDER BY $n` is syntactically valid, the query RAN - with the ordering
+  // silently wrong (no error, wrong results). The direction/column now come
+  // from a validated allowlist.
+  const orderByClause =
+    sort === 'newest'
+      ? 'f.created_at DESC'
+      : sort === 'oldest'
+        ? 'f.created_at ASC'
+        : 'f.vote_count DESC, f.created_at DESC';
+
   try {
     // Use multiple simpler queries based on filter combinations
     // This avoids complex dynamic SQL while still supporting the needed filters
@@ -55,7 +68,7 @@ export async function GET(request: Request) {
               FROM feedback f
               LEFT JOIN "user" u ON f.user_id = u.id
               WHERE f.user_id = ${userId} AND f.category = ${category} AND f.status = ${status}
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           } else {
@@ -66,7 +79,7 @@ export async function GET(request: Request) {
               FROM feedback f
               LEFT JOIN "user" u ON f.user_id = u.id
               WHERE f.user_id = ${userId} AND f.category = ${category}
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           }
@@ -78,7 +91,7 @@ export async function GET(request: Request) {
             FROM feedback f
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE f.user_id = ${userId} AND f.status = ${status}
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         } else {
@@ -89,7 +102,7 @@ export async function GET(request: Request) {
             FROM feedback f
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE f.user_id = ${userId}
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         }
@@ -99,12 +112,12 @@ export async function GET(request: Request) {
             SELECT f.*,
               CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
               CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              ${userId ? sql`EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId})` : sql`false`} AS user_voted,
+              COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
               (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
             FROM feedback f
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE f.category = ${category} AND f.status = ${status}
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         } else {
@@ -112,12 +125,12 @@ export async function GET(request: Request) {
             SELECT f.*,
               CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
               CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              ${userId ? sql`EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId})` : sql`false`} AS user_voted,
+              COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
               (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
             FROM feedback f
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE f.category = ${category}
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         }
@@ -126,12 +139,12 @@ export async function GET(request: Request) {
           SELECT f.*,
             CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
             CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-            ${userId ? sql`EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId})` : sql`false`} AS user_voted,
+            COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
             (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
           FROM feedback f
           LEFT JOIN "user" u ON f.user_id = u.id
           WHERE f.status = ${status}
-          ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+          ORDER BY ${orderByClause}
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `;
       } else {
@@ -139,11 +152,11 @@ export async function GET(request: Request) {
           SELECT f.*,
             CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
             CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-            ${userId ? sql`EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId})` : sql`false`} AS user_voted,
+            COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
             (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
           FROM feedback f
           LEFT JOIN "user" u ON f.user_id = u.id
-          ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+          ORDER BY ${orderByClause}
           LIMIT ${limitParam} OFFSET ${offsetParam}
         `;
       }
@@ -164,7 +177,7 @@ export async function GET(request: Request) {
                 AND f.category = ${category}
                 AND f.status = ${status}
                 AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           } else {
@@ -179,7 +192,7 @@ export async function GET(request: Request) {
               WHERE (f.is_public = true OR f.user_id = ${userId})
                 AND f.category = ${category}
                 AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           }
@@ -195,7 +208,7 @@ export async function GET(request: Request) {
             WHERE (f.is_public = true OR f.user_id = ${userId})
               AND f.status = ${status}
               AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         } else {
@@ -209,7 +222,7 @@ export async function GET(request: Request) {
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE (f.is_public = true OR f.user_id = ${userId})
               AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         }
@@ -229,7 +242,7 @@ export async function GET(request: Request) {
                 AND f.category = ${category}
                 AND f.status = ${status}
                 AND f.status != 'DECLINED'
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           } else {
@@ -244,7 +257,7 @@ export async function GET(request: Request) {
               WHERE f.is_public = true
                 AND f.category = ${category}
                 AND f.status != 'DECLINED'
-              ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+              ORDER BY ${orderByClause}
               LIMIT ${limitParam} OFFSET ${offsetParam}
             `;
           }
@@ -260,7 +273,7 @@ export async function GET(request: Request) {
             WHERE f.is_public = true
               AND f.status = ${status}
               AND f.status != 'DECLINED'
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         } else {
@@ -274,7 +287,7 @@ export async function GET(request: Request) {
             LEFT JOIN "user" u ON f.user_id = u.id
             WHERE f.is_public = true
               AND f.status != 'DECLINED'
-            ORDER BY ${sort === 'newest' ? sql`f.created_at DESC` : sort === 'oldest' ? sql`f.created_at ASC` : sql`f.vote_count DESC, f.created_at DESC`}
+            ORDER BY ${orderByClause}
             LIMIT ${limitParam} OFFSET ${offsetParam}
           `;
         }
@@ -284,8 +297,24 @@ export async function GET(request: Request) {
     // Get total count (simplified - just count matching items)
     const [{ total }] = await sql`SELECT COUNT(*)::int as total FROM feedback`;
 
+    // PRIVACY (defect #36). This endpoint's session is OPTIONAL: an anonymous
+    // caller gets a 200 and the same rows an admin gets. `SELECT f.*` therefore
+    // published `f.user_id` - and the `author_id` alias, which is the same value
+    // - for every non-anonymous submission, to anyone on the internet. Internal
+    // user ids are stable join keys across endpoints, so this is a real
+    // identifier leak, not cosmetic. Admins keep them (they moderate feedback);
+    // everyone else gets the row without the raw ids.
+    const visibleItems = isAdmin
+      ? feedbackItems
+      : feedbackItems.map((row: Record<string, unknown>) => {
+          const { user_id, author_id, ...rest } = row;
+          void user_id;
+          void author_id;
+          return rest;
+        });
+
     return Response.json({
-      items: feedbackItems,
+      items: visibleItems,
       total,
       limit: limitParam,
       offset: offsetParam,

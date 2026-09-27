@@ -163,6 +163,9 @@ for (const vp of VIEWPORTS) {
     let textLen = 0;
     let title = '';
     let error = null;
+    // Hoisted: two checks below need the rendered DOM, and calling
+    // page.content() twice can throw while the page is navigating.
+    let html = '';
     const t0 = Date.now();
 
     try {
@@ -173,7 +176,7 @@ for (const vp of VIEWPORTS) {
       status = resp?.status() ?? 0;
       // Wait for hydration so we exercise the real client, not just SSR HTML.
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      const html = await page.content();
+      html = await page.content();
       bytes = html.length;
       textLen = extract(html).length;
       title = (await page.title()) || '';
@@ -188,7 +191,7 @@ for (const vp of VIEWPORTS) {
     // would otherwise look like a pass).
     let authGuardOk = null;
     if (kind === 'protected') {
-      const body = extract(await page.content()).toLowerCase();
+      const body = extract(html).toLowerCase();
       const onLogin = /signin|login|unauthorized|forbidden/i.test(page.url());
       const looksProtected =
         /sign in|log in|unauthorized|access denied|authentication required/.test(body);
@@ -200,9 +203,11 @@ for (const vp of VIEWPORTS) {
     // phantom failures; the requirement is that the GUARD fired, not that the
     // login page be verbose. In authenticated mode the same routes must render
     // real content instead.
+    // Uses the HTML already captured above: a second page.content() can throw
+    // when the page is mid-navigation, which crashed this harness.
     const isLoginPage =
       /\/account\/signin|signin|login/i.test(page.url()) ||
-      /sign in|log in/i.test(extract(await page.content()));
+      /sign in|log in/i.test(extract(html));
     const realContent =
       bytes > 5000 && (textLen > 400 || (kind === 'protected' && !AUTH_MODE && isLoginPage));
     results.push({

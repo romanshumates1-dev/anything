@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import crypto from 'crypto';
 
 /**
@@ -27,9 +28,44 @@ export async function GET(request: NextRequest) {
   const channel = searchParams.get('channel');
   const favoritesOnly = searchParams.get('favorites') === 'true';
 
+  // `category` and `channel` are Postgres ENUMs (template_category,
+  // template_channel). Passing a value outside the enum used to surface as a
+  // 500 from Postgres ("invalid input value for enum template_category"), which
+  // is both wrong (the caller sent a bad filter, not a server fault) and an
+  // unnecessary information leak. Validate up front and answer 400.
+  const CATEGORIES = ['cold_outreach', 'follow_up'] as const;
+  const CHANNELS = ['sms', 'email', 'both'] as const;
+  if (category && !(CATEGORIES as readonly string[]).includes(category)) {
+    return NextResponse.json(
+      { error: `Invalid category. Expected one of: ${CATEGORIES.join(', ')}` },
+      { status: 400 }
+    );
+  }
+  if (channel && !(CHANNELS as readonly string[]).includes(channel)) {
+    return NextResponse.json(
+      { error: `Invalid channel. Expected one of: ${CHANNELS.join(', ')}` },
+      { status: 400 }
+    );
+  }
+
   try {
+    // Defect #32: the filters below used to be interpolated `sql` fragments
+    // (`${category ? sql`AND category = ${category}` : sql``}`). This driver
+    // sends every interpolation as a positional parameter, so the endpoint 500'd
+    // with `syntax error at or near "$2"` as soon as a filter was present. The
+    // same broken shape is what made /api/actions fail. Dynamic conditions now
+    // go through buildWhere() and the driver's string form; values stay bound.
+    const userWhere = buildWhere()
+      .eq('organization_id', organization.id)
+      .eq('is_active', true)
+      .when(category, (w) => w.eq('category', category))
+      .when(channel, (w) => w.eq('channel', channel))
+      .when(favoritesOnly, (w) => w.eq('is_favorite', true))
+      .build();
+
     // Build query for user templates
-    let userTemplates = await sql`
+    const userTemplates = await sql(
+      `
       SELECT
         id,
         name,
@@ -53,17 +89,21 @@ export async function GET(request: NextRequest) {
         updated_at,
         'user' as source
       FROM user_templates
-      WHERE organization_id = ${organization.id}
-        AND is_active = true
-        ${category ? sql`AND category = ${category}` : sql``}
-        ${channel ? sql`AND channel = ${channel}` : sql``}
-        ${favoritesOnly ? sql`AND is_favorite = true` : sql``}
+      WHERE ${userWhere.text}
       ORDER BY is_favorite DESC, use_count DESC, created_at DESC
-    `;
+    `,
+      userWhere.params
+    );
 
     let libraryTemplates: any[] = [];
     if (includeLibrary) {
-      libraryTemplates = await sql`
+      const libraryWhere = buildWhere()
+        .eq('is_active', true)
+        .when(category, (w) => w.eq('category', category))
+        .when(channel, (w) => w.eq('channel', channel))
+        .build();
+      libraryTemplates = await sql(
+        `
         SELECT
           id,
           name,
@@ -85,11 +125,11 @@ export async function GET(request: NextRequest) {
           is_featured,
           'library' as source
         FROM template_library
-        WHERE is_active = true
-          ${category ? sql`AND category = ${category}` : sql``}
-          ${channel ? sql`AND channel = ${channel}` : sql``}
+        WHERE ${libraryWhere.text}
         ORDER BY is_featured DESC, sort_order ASC, use_count DESC
-      `;
+      `,
+        libraryWhere.params
+      );
     }
 
     return NextResponse.json({

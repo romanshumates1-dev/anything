@@ -83,6 +83,13 @@ const READ_ENDPOINTS = [
   '/api/analytics/ai-recommendations?days=7',
   '/api/bank-accounts',
   '/api/tax/report?period=quarter',
+  '/api/templates?includeLibrary=true',
+  '/api/templates?includeLibrary=true&category=follow_up&channel=sms',
+  '/api/templates?includeLibrary=true&category=sms',
+  '/api/duplicates',
+  '/api/feedback?sort=newest',
+  '/api/compliance/audit',
+  '/api/achievements',
   '/api/admin/users',
   '/api/v1/leads',
 ];
