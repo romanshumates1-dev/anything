@@ -29,5 +29,23 @@ export default defineConfig({
     ...(process.env.RUN_LIVE_FLOWS === '1'
       ? { testTimeout: 60_000, hookTimeout: 60_000 }
       : {}),
+
+    // hookTimeout is deliberately separate from testTimeout above.
+    //
+    // The 5s rule exists to catch a HANGING TEST BODY. It was never intended to
+    // bound SETUP, and applying it to hooks breaks any suite whose setup does
+    // irreducible real work. Five suites here boot PGlite - a WASM build of
+    // PostgreSQL - and run a multi-table DDL script in beforeAll
+    // (aiCreditGate, aiCreditLimits, tenantIsolation, authz.e2e, and
+    // multitenant-matrix). Measured on this machine, PGlite startup alone
+    // exceeded 90s under load, so a 10s hook budget fails intermittently and
+    // silently skips the ENTIRE file's tests: multitenant-matrix's 16 tenant
+    // authorization tests were skipped this way, which is precisely the
+    // coverage that must never quietly disappear.
+    //
+    // No test body timeout is relaxed. A hook that hangs is a far rarer and
+    // more obvious failure than a test body that hangs, and 60s is still well
+    // short of vitest's own 30s-per-1000-lines default for slow files.
+    hookTimeout: 60_000,
   },
 });
