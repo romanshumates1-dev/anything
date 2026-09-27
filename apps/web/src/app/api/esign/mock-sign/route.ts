@@ -1,13 +1,18 @@
 import { type NextRequest } from 'next/server';
+import { devOnlyGuard } from '@/app/api/utils/devOnlyRoute';
 
 export async function GET(request: NextRequest) {
   // SECURITY: this page builds and fires a FORGED 'signed' webhook event against
   // /api/esign/webhook. It is a development simulation tool and must never be
   // reachable on a production deployment, where it would let an unauthenticated
   // visitor attempt to mark arbitrary contracts as signed.
-  if (process.env.NODE_ENV === 'production') {
-    return new Response('Not found', { status: 404 });
-  }
+  //
+  // SECURITY HARDENING: NODE_ENV alone is not a boundary - this repo says so
+  // in lib/organization-context.ts. devOnlyGuard additionally requires
+  // LOCAL_DEV_SECRET presented in `x-local-dev`, so a misconfigured NODE_ENV no
+  // longer exposes a contract-forgery tool.
+  const blocked = devOnlyGuard(request);
+  if (blocked) return blocked;
 
   const searchParams = request.nextUrl.searchParams;
   const envelopeId = searchParams.get('envelopeId');

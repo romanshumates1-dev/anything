@@ -6,6 +6,7 @@
  * payment, which fires the same webhook path production would.
  */
 import { escapeHtml } from '@/app/api/utils/escapeHtml';
+import { devOnlyGuard } from '@/app/api/utils/devOnlyRoute';
 
 export async function GET(request: Request) {
   // Hard production gate (BREAKAGE_TABLE #34): STRIPE_PROVIDER defaults to
@@ -13,12 +14,13 @@ export async function GET(request: Request) {
   // flip a payment to paid — in a production deploy that hadn't explicitly
   // configured live Stripe. The pi_mock_ prefix check alone is not a real
   // gate once mock is the default provider.
-  if (process.env.NODE_ENV === 'production') {
-    return new Response(JSON.stringify({ error: 'Not available in production' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  //
+  // SECURITY HARDENING: NODE_ENV alone is not a boundary (this repo says so in
+  // lib/organization-context.ts). devOnlyGuard additionally requires
+  // LOCAL_DEV_SECRET to be configured and presented in `x-local-dev`, so a
+  // deploy with a wrong NODE_ENV no longer exposes the flow.
+  const blocked = devOnlyGuard(request);
+  if (blocked) return blocked;
 
   const { searchParams } = new URL(request.url);
   const paymentIntentId = searchParams.get('pi');

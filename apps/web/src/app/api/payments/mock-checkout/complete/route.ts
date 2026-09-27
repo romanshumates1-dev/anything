@@ -7,16 +7,19 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { escapeHtml } from '@/app/api/utils/escapeHtml';
+import { devOnlyGuard } from '@/app/api/utils/devOnlyRoute';
 
 export async function POST(request: Request) {
   // Hard production gate (BREAKAGE_TABLE #34) — see mock-checkout/route.ts
   // for why the pi_mock_ prefix alone was never a real safety boundary.
-  if (process.env.NODE_ENV === 'production') {
-    return new Response(JSON.stringify({ error: 'Not available in production' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  //
+  // SECURITY HARDENING: this endpoint is the most dangerous dev-only route in
+  // the app — it flips a ledger row to 'paid' and had NO authentication at all,
+  // only the NODE_ENV check. devOnlyGuard now also requires LOCAL_DEV_SECRET
+  // presented in `x-local-dev`, so a misconfigured NODE_ENV alone no longer
+  // permits unauthenticated payment fraud.
+  const blocked = devOnlyGuard(request);
+  if (blocked) return blocked;
 
   try {
     const formData = await request.formData();
