@@ -384,3 +384,31 @@ exercised. Scoring only what has evidence:
 passes completely, but the security addendum, the financial lifecycle, most of
 the 17 original items, and the data-leak/performance audits remain unexercised.
 Those are the next sessions' work, enumerated in the master manifest.
+
+---
+
+## CORRECTION - financial readiness was scored wrong
+
+I previously scored financial readiness 3/10 "no lifecycle testing this
+session". That was unfair: I did not look. Corrected from evidence:
+
+Existing and PASSING (inside the 2645):
+- idempotency 90 references, duplicate-event 81, race 35, concurrency 33,
+  insufficient-funds 28, replay 24, atomicity 21 across
+  src/app/api/{billing,payments,withdrawals,tax,esign} and utils, including
+  real PGlite-backed concurrency tests (`taxLedgerConcurrency.pglite.test.ts`,
+  `aiCreditLimits.pglite.test.ts`). None of these are skipped.
+- Credit gates, tax withholding, withdrawal rules, tax report and tax settings
+  all have dedicated suites.
+
+REAL GAP FOUND WHILE CHECKING:
+- `src/app/api/bank-accounts/__tests__/bank-accounts.test.ts` - **31 tests, all
+  31 skipped**. Bank accounts are the payout DESTINATION, so this is a
+  financial code path with zero active coverage. Highest-value financial work
+  remaining.
+- `sla.test.ts` 9/10 skipped, `numberPoolStore.test.ts` 8/9 skipped,
+  `flows-live.test.ts` 3/4 skipped.
+
+Corrected financial readiness: **6/10** (was wrongly 3/10). Not higher because
+bank-account/payout-destination logic is unexercised and live Stripe flows
+remain BLOCKED on credentials.
