@@ -1,0 +1,2 @@
+import { neon } from '@neondatabase/serverless';import { readFileSync } from 'node:fs';const env = Object.fromEntries(readFileSync('.env', 'utf8').split(/\r?\n/).filter((l) => l.includes('=')).map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; }));const sql = neon(env.DATABASE_URL);const q = await sql`SELECT column_name, data_type FROM information_schema.columns WHERE table_name='contracts' AND column_name IN ('seller_lead_id','buyer_id','id')`;
+console.log('CONTRACTS:', JSON.stringify(q));

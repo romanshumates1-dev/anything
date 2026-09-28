@@ -126,3 +126,58 @@ Not 10/10. The dashboard - the landing page of the product - has 5 endpoints
 returning 500 and 2 more silently returning empty data. Scores on record:
 security 8, engineering 8.5, testing 8.5, overall 8 - all now superseded downward
 because the browser gate regressed to 61/70 with 9 failures.
+
+---
+
+## UPDATE (latest session) - dashboard cluster partially closed
+
+Commit `8a10166` fixed 6 of the 8 schema-broken endpoints. Verified by live
+HTTP against a signed-up user, not by inspection:
+
+| endpoint | before | after |
+|---|---|---|
+| /api/dashboard/quick-stats | 500 | **200** |
+| /api/dashboard/stats | 500 | **200** |
+| /api/dashboard/engagements | 500 | **200** |
+| /api/dashboard/funnel | 500 | **200** |
+| /api/dashboard/activity | 500 silently -> [] | **200** |
+| /api/dashboard/weekly-progress | 200 but zeros | **200** |
+| /api/dashboard/next-actions | 500 | **UNVERIFIED** - last edit not re-probed |
+| /api/admin/stats | 500 | **UNVERIFIED** - last edit not re-probed |
+
+### IMMEDIATE NEXT ACTION - do this first
+The last api-probe run failed at synthetic-user creation:
+`POST /api/auth/sign-up/email -> 500` (HTML error page, dev log shows a ~98s
+compile then a fast 500). Until that is resolved the probe cannot authenticate,
+so NO authenticated endpoint can be verified. Two hypotheses to check in order:
+1. Signup rate-limiting after many probe runs (the probe creates 2 users per
+   run; it has run many times). Check for a 429 or a rate-limit log line.
+2. A genuine regression from the last next-actions edit. Check with:
+   `Select-String -Path dev4000.log -Pattern 'sign-up' -Context 0,10`
+Restart the dev server first if the log looks stale:
+   kill the node process holding port 4000, then
+   `node node_modules/next/dist/bin/next dev -p 4000`
+
+Once signup works: re-run `node scripts/api-probe.mjs` and confirm
+next-actions + admin/stats are 200.
+
+### THEN
+1. Re-run the gates for the 6 changed files: typecheck, unit suite, build, e2e.
+   They have NOT been re-run since commit 8a10166.
+2. Defect #41 `/buyers` - `TypeError: buyers.map is not a function`. Find the
+   endpoint the page calls and make its real response match what the page
+   expects. Do not fake an array.
+3. Defect #42 `/pricing` and `/funnel` console errors, `/funnel` text=48
+   (near-empty render).
+4. Re-run browser QA: `node scripts/browser-qa.mjs http://localhost:4000 --auth --warm`
+   Target 70/70.
+5. Then restart the FULL acceptance cycle: browser audit, console/network,
+   security, data-leak, payment, database, performance, adversarial review - and
+   keep fixing whatever that finds. The mission is not complete.
+
+### Remaining silent-failure risk to audit for
+Several routes still wrap queries in `.catch(...)` and return empty/zero
+payloads (activity and weekly-progress were two). A 500 that renders as "no
+data" is worse than a visible error. Sweep the api directory for
+`.catch(() => [])` / `.catch(() => [{}])` / `.catch(() => ({` and decide, per
+site, whether an empty result is genuinely the intended product behaviour.

@@ -1,16 +1,38 @@
 import { neon } from '@neondatabase/serverless';
 import { readFileSync } from 'node:fs';
-
 const env = Object.fromEntries(
   readFileSync('.env', 'utf8')
     .split(/\r?\n/)
-    .filter((l) => l.includes('=') && !l.startsWith('#'))
+    .filter((l) => l.includes('='))
     .map((l) => {
       const i = l.indexOf('=');
       return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
     })
 );
 const sql = neon(env.DATABASE_URL);
+
+const tables = [
+  'leads', 'campaigns', 'campaign_leads', 'ai_conversations', 'contracts',
+  'jobs', 'audit_logs', 'admin_audit_log', 'api_keys', 'app_settings',
+  'inbound_messages', 'outreach_log', 'daily_activity', 'messages',
+  'user', 'organizations', 'action_items', 'next_steps',
+];
+
+for (const t of tables) {
+  const exists = await sql`SELECT 1 FROM information_schema.tables WHERE table_name = ${t} LIMIT 1`;
+  if (!exists.length) {
+    console.log(`\n### ${t}: *** TABLE DOES NOT EXIST ***`);
+    continue;
+  }
+  const cols = await sql`
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = ${t}
+    ORDER BY ordinal_position`;
+  console.log(`\n### ${t} (${cols.length} cols)`);
+  console.log('  ' + cols.map((c) => c.column_name).join(', '));
+}
+
 
 
 const t = async (label, fn) => {
