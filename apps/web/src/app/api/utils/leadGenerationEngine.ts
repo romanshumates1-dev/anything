@@ -22,6 +22,7 @@
  */
 
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { SELLER_SOURCES, BUYER_SOURCES } from '@/app/api/lead-finder/public-sources/config';
 
@@ -66,16 +67,27 @@ export async function generateSellerLeads(params: GenerateLeadsParams): Promise<
   ];
 
   // Check for existing sourced leads first
-  const existingLeads = await sql`
-    SELECT * FROM sourced_leads
-    WHERE status = 'new'
-      AND category = 'seller'
-      AND (
-        ${regions.length > 0 ? sql`state = ANY(${regions}) OR county = ANY(${regions})` : sql`true`}
-      )
-    ORDER BY distress_score DESC
-    LIMIT ${count}
-  `.catch(() => []);
+  // Defect #32, ninth wave. The false branch was `sql`true``, a fragment in a
+  // boolean position, so "no region filter" - the default call - 500'd. Lead
+  // generation with no region filter is the primary path.
+  const regionScope = buildWhere()
+    .when(regions.length > 0, (w) =>
+      w.raw('(state = ANY($1) OR county = ANY($1))', regions)
+    )
+    .build();
+
+  const existingLeads = await sql(
+    `SELECT * FROM sourced_leads
+     WHERE status = 'new'
+       AND category = 'seller'
+       AND ${regionScope.text}
+     ORDER BY distress_score DESC
+     LIMIT $1`,
+    [count, ...regionScope.params] as never[]
+  ).catch((e) => {
+    console.error('leadGeneration existing-sourced-leads lookup failed:', e);
+    return [];
+  });
 
   // Import existing sourced leads
   for (const lead of existingLeads as any[]) {
@@ -171,16 +183,26 @@ export async function generateBuyerLeads(params: GenerateLeadsParams): Promise<G
   const sources: string[] = [];
 
   // Check for existing sourced buyer leads
-  const existingLeads = await sql`
-    SELECT * FROM sourced_leads
-    WHERE status = 'new'
-      AND category = 'buyer'
-      AND (
-        ${regions.length > 0 ? sql`state = ANY(${regions}) OR county = ANY(${regions})` : sql`true`}
-      )
-    ORDER BY distress_score DESC
-    LIMIT ${count}
-  `.catch(() => []);
+  // Same defect as the seller path above: the `sql`true`` false branch made the
+  // default (no region filter) call a 500, swallowed into an empty list.
+  const buyerRegionScope = buildWhere()
+    .when(regions.length > 0, (w) =>
+      w.raw('(state = ANY($1) OR county = ANY($1))', regions)
+    )
+    .build();
+
+  const existingLeads = await sql(
+    `SELECT * FROM sourced_leads
+     WHERE status = 'new'
+       AND category = 'buyer'
+       AND ${buyerRegionScope.text}
+     ORDER BY distress_score DESC
+     LIMIT $1`,
+    [count, ...buyerRegionScope.params] as never[]
+  ).catch((e) => {
+    console.error('leadGeneration existing-buyer-leads lookup failed:', e);
+    return [];
+  });
 
   for (const lead of existingLeads as any[]) {
     const existing = await sql`

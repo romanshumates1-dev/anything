@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
@@ -20,13 +21,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const campaignId = searchParams.get('campaignId');
 
-    const rows = await sql`
-      SELECT * FROM compliance_audit
-      WHERE organization_id = ${organizationId}
-      ${campaignId ? sql`AND campaign_id = ${campaignId}` : sql`AND campaign_id IS NULL`}
-      ORDER BY created_at DESC
-      LIMIT 100
-    `;
+    // Defect #32: this branch was `${sql`AND campaign_id = $n`} : sql`AND campaign_id IS NULL`}`.
+    // Both branches are boolean-position fragments, so GET /api/compliance/audit
+    // returned 500 for EVERY caller - observed failing in a real browser, not just
+    // in review. The compliance audit page was entirely unreachable.
+    const scope = buildWhere()
+      .eq('organization_id', organizationId)
+      .when(campaignId, (w) => w.eq('campaign_id', campaignId))
+      .raw(campaignId ? 'TRUE' : 'campaign_id IS NULL')
+      .build();
+
+    const rows = await sql(
+      `SELECT * FROM compliance_audit
+       WHERE ${scope.text}
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      scope.params as never[]
+    );
 
     return NextResponse.json(rows);
   } catch (error: any) {

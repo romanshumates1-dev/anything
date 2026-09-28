@@ -23,7 +23,7 @@ for (const line of readFileSync('.env', 'utf8').split(/\r?\n/)) {
   const i = t.indexOf('=');
   if (i > 0) env[t.slice(0, i)] = t.slice(i + 1);
 }
-const BASE = 'http://localhost:4000';
+const BASE = process.env.PROBE_BASE || 'http://localhost:4000';
 const { neon } = await import('@neondatabase/serverless');
 const sql = neon(env.DATABASE_URL);
 
@@ -87,8 +87,15 @@ const READ_ENDPOINTS = [
   '/api/templates?includeLibrary=true&category=follow_up&channel=sms',
   '/api/templates?includeLibrary=true&category=sms',
   '/api/duplicates',
-  '/api/feedback?sort=newest',
   '/api/compliance/audit',
+  '/api/compliance/audit?campaignId=camp_nonexistent',
+  '/api/templates/library?category=EMAIL',
+  '/api/templates/library?channel=sms',
+  '/api/templates/library?featured=true',
+  '/api/templates/library?search=follow',
+  '/api/analytics/advanced?days=7',
+  '/api/analytics/advanced?days=7&campaignId=camp_nonexistent',
+  '/api/analytics/ai-recommendations?days=7&campaignId=camp_nonexistent',
   '/api/achievements',
   '/api/admin/users',
   '/api/v1/leads',
@@ -119,10 +126,48 @@ for (const ep of READ_ENDPOINTS) {
 console.log('\n--- unauthenticated (expect 401/403, NEVER 200) ---');
 let authFailures = 0;
 for (const ep of READ_ENDPOINTS) {
+  // 405 is also a refusal: these endpoints simply do not implement GET, so the
+  // route is not even entered. Treating it as a leak produced a false positive
+  // on /api/duplicates, which is POST-only. The POST is exercised separately.
   const res = await fetch(`${BASE}${ep}`, { headers: { Origin: BASE } });
+  const ok = res.status === 401 || res.status === 403 || res.status === 405;
+  if (!ok) authFailures++;
+  console.log(`  ${res.status} ${ep}${ok ? '' : '   <<< UNEXPECTED (must be 401/403/405)'}`);
+}
+
+// A POST-only endpoint must still refuse an unauthenticated caller.
+{
+  const res = await fetch(`${BASE}/api/duplicates`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Origin: BASE },
+    body: JSON.stringify({ email: 'probe@example.invalid' }),
+  });
   const ok = res.status === 401 || res.status === 403;
   if (!ok) authFailures++;
-  console.log(`  ${res.status} ${ep}${ok ? '' : '   <<< UNEXPECTED (must be 401/403)'}`);
+  console.log(
+    `  ${res.status} POST /api/duplicates${ok ? '' : '   <<< UNEXPECTED (must be 401/403)'}`
+  );
+}
+
+/**
+ * GET /api/feedback is INTENTIONALLY readable without a session - it is the
+ * public feedback wall. The requirement is therefore not "401" but "no internal
+ * identifiers". Defect #36 published `user_id`/`author_id` to anyone on the
+ * internet; these assertions are the regression test for that, executed against
+ * the running system rather than a mock.
+ */
+console.log('\n--- public feedback endpoint must not expose internal ids ---');
+{
+  const res = await fetch(`${BASE}/api/feedback?sort=newest`, { headers: { Origin: BASE } });
+  const text = await res.text();
+  const leaks = ['user_id', 'author_id', 'userId', 'authorId'].filter((k) => text.includes(k));
+  if (leaks.length) authFailures++;
+  console.log(
+    `  ${res.status} GET /api/feedback (public by design) ` +
+      (leaks.length
+        ? `<<< LEAKS ${leaks.join(', ')}`
+        : '- no user_id/author_id in payload')
+  );
 }
 
 // Cross-tenant: B asks for a lead id that belongs to A's organization.

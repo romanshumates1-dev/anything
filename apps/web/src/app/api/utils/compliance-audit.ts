@@ -1,4 +1,5 @@
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { logEvent } from './logger';
 
 export interface ComplianceAuditRecord {
@@ -33,13 +34,21 @@ export async function getCampaignComplianceAudit(
   organizationId: string,
   campaignId?: string
 ): Promise<ComplianceAuditRecord[]> {
-  const query = sql`
-    SELECT * FROM compliance_audit
-    WHERE organization_id = ${organizationId}
-    ${campaignId ? sql`AND campaign_id = ${campaignId}` : sql`AND campaign_id IS NULL`}
-    ORDER BY created_at DESC
-    LIMIT 100
-  `;
-  const rows = await query;
+  // Defect #32, eighth wave: `AND ${...}` is a boolean-position fragment, so this
+  // 500'd whenever a campaign filter was supplied. Thrown here (unlike the route
+  // copy) so a compliance failure surfaces instead of returning a blank audit.
+  const scope = buildWhere()
+    .eq('organization_id', organizationId)
+    .when(campaignId, (w) => w.eq('campaign_id', campaignId))
+    .raw(campaignId ? 'TRUE' : 'campaign_id IS NULL')
+    .build();
+
+  const rows = await sql(
+    `SELECT * FROM compliance_audit
+     WHERE ${scope.text}
+     ORDER BY created_at DESC
+     LIMIT 100`,
+    scope.params as never[]
+  );
   return rows as ComplianceAuditRecord[];
 }

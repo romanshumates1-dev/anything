@@ -15,6 +15,7 @@ import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { safeErrorResponse } from '@/app/api/utils/safeError';
 
 export const dynamic = 'force-dynamic';
@@ -242,8 +243,12 @@ export async function GET(req: NextRequest) {
 
   try {
     // 1. Overall Campaign Metrics
-    const [overallMetrics] = await sql`
-      SELECT
+    // Defect #32, sixth wave. `.catch(() => [{}])` turned this 500 into a silent
+    // all-zeros payload, so a campaign-filtered analytics view reported "no
+    // activity" rather than an error - a wrong number is worse than a missing page.
+    const perfScope = buildWhere(2).eq('clq.campaign_id', campaignId).build();
+    const [overallMetrics] = await sql(
+      `SELECT
         COUNT(DISTINCT clq.lead_id)::int as total_leads,
         COUNT(*) FILTER (WHERE clq.status = 'sent')::int as total_contacted,
         COUNT(*) FILTER (WHERE clq.status = 'replied')::int as total_replied,
@@ -255,10 +260,14 @@ export async function GET(req: NextRequest) {
         COUNT(DISTINCT clq.campaign_id)::int as active_campaigns,
         AVG(clq.touch_number)::numeric(4,2) as avg_touches
       FROM campaign_lead_queue clq
-      WHERE clq.organization_id = ${orgId}
-        AND clq.created_at > now() - (${days} || ' days')::interval
-        ${campaignId ? sql`AND clq.campaign_id = ${campaignId}` : sql``}
-    `.catch(() => [{}]) as any[];
+      WHERE clq.organization_id = $1
+        AND clq.created_at > now() - ($2 || ' days')::interval
+        AND ${perfScope.text}`,
+      [orgId, days, ...perfScope.params] as never[]
+    ).catch((e) => {
+      console.error('advanced analytics overall metrics failed:', e);
+      return [{}];
+    }) as any[];
 
     // 2. Regional Performance Breakdown (basic state level)
     const regionalData = await sql`

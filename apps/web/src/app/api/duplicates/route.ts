@@ -10,6 +10,7 @@
  */
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 
@@ -64,21 +65,36 @@ async function checkPhoneDuplicates(phone: string, excludeLeadId?: string, orgId
   const normalized = normalizePhone(phone);
   if (normalized.length < 10) return [];
 
-  const matches = await sql`
-    SELECT id, name, status, phone, email,
-           metadata->>'last_contacted_at' as last_contacted_at,
-           metadata->>'campaign_id' as campaign_id
-    FROM leads
-    WHERE (
-      phone = ${normalized} OR
-      phone = ${'+1' + normalized} OR
-      phone = ${'1' + normalized} OR
-      REPLACE(REPLACE(REPLACE(phone, '-', ''), '(', ''), ')', '') LIKE ${'%' + normalized}
-    )
-    ${excludeLeadId ? sql`AND id != ${excludeLeadId}` : sql``}
-    ${orgId ? sql`AND organization_id = ${orgId}` : sql``}
-    LIMIT 10
-  `.catch(() => []);
+  // Defect #32, fourth wave. `AND ${sql`...`}` / `${sql``}` both reach Postgres
+  // as bound parameters in a boolean position and fail with `invalid input
+  // syntax for type boolean`. The `.catch(() => [])` below swallowed that 500,
+  // so the route answered 200 with an EMPTY list: duplicate detection silently
+  // never matched anything, in both ternary branches. The tenant filter is not
+  // optional polish - without it this query scans every organization's leads.
+  const scope = buildWhere(4)
+    .when(excludeLeadId, (w) => w.neq('id', excludeLeadId))
+    .when(orgId, (w) => w.eq('organization_id', orgId))
+    .build();
+
+  const matches = await sql(
+    `SELECT id, name, status, phone, email,
+            metadata->>'last_contacted_at' as last_contacted_at,
+            metadata->>'campaign_id' as campaign_id
+     FROM leads
+     WHERE (
+       phone = $1 OR
+       phone = $2 OR
+       phone = $3 OR
+       REPLACE(REPLACE(REPLACE(phone, '-', ''), '(', ''), ')', '') LIKE $4
+     )
+     AND ${scope.text}
+     LIMIT 10`,
+    [normalized, '+1' + normalized, '1' + normalized, '%' + normalized, ...scope.params] as never[]
+  ).catch((e) => {
+    // Surface the cause instead of returning a silent empty list.
+    console.error('checkPhoneDuplicates failed:', e);
+    return [];
+  });
 
   return (matches as any[]).map(m => ({
     leadId: m.id,
@@ -97,16 +113,24 @@ async function checkEmailDuplicates(email: string, excludeLeadId?: string, orgId
   const normalized = normalizeEmail(email);
   if (!normalized.includes('@')) return [];
 
-  const matches = await sql`
-    SELECT id, name, status, phone, email,
-           metadata->>'last_contacted_at' as last_contacted_at,
-           metadata->>'campaign_id' as campaign_id
-    FROM leads
-    WHERE LOWER(email) = ${normalized}
-    ${excludeLeadId ? sql`AND id != ${excludeLeadId}` : sql``}
-    ${orgId ? sql`AND organization_id = ${orgId}` : sql``}
-    LIMIT 10
-  `.catch(() => []);
+  const scope = buildWhere(4)
+    .when(excludeLeadId, (w) => w.neq('id', excludeLeadId))
+    .when(orgId, (w) => w.eq('organization_id', orgId))
+    .build();
+
+  const matches = await sql(
+    `SELECT id, name, status, phone, email,
+            metadata->>'last_contacted_at' as last_contacted_at,
+            metadata->>'campaign_id' as campaign_id
+     FROM leads
+     WHERE LOWER(email) = $1
+     AND ${scope.text}
+     LIMIT 10`,
+    [normalized, ...scope.params] as never[]
+  ).catch((e) => {
+    console.error('checkEmailDuplicates failed:', e);
+    return [];
+  });
 
   return (matches as any[]).map(m => ({
     leadId: m.id,
@@ -131,18 +155,26 @@ async function checkAddressDuplicates(address: string, excludeLeadId?: string, o
 
   const [, streetNum, streetName] = streetMatch;
 
-  const matches = await sql`
-    SELECT id, name, status, phone, email,
-           metadata->>'address' as address,
-           metadata->>'last_contacted_at' as last_contacted_at,
-           metadata->>'campaign_id' as campaign_id
-    FROM leads
-    WHERE metadata->>'address' IS NOT NULL
-    AND metadata->>'address' ILIKE ${streetNum + '%' + streetName.substring(0, 10) + '%'}
-    ${excludeLeadId ? sql`AND id != ${excludeLeadId}` : sql``}
-    ${orgId ? sql`AND organization_id = ${orgId}` : sql``}
-    LIMIT 10
-  `.catch(() => []);
+  const scope = buildWhere(4)
+    .when(excludeLeadId, (w) => w.neq('id', excludeLeadId))
+    .when(orgId, (w) => w.eq('organization_id', orgId))
+    .build();
+
+  const matches = await sql(
+    `SELECT id, name, status, phone, email,
+            metadata->>'address' as address,
+            metadata->>'last_contacted_at' as last_contacted_at,
+            metadata->>'campaign_id' as campaign_id
+     FROM leads
+     WHERE metadata->>'address' IS NOT NULL
+     AND metadata->>'address' ILIKE $1
+     AND ${scope.text}
+     LIMIT 10`,
+    [streetNum + '%' + streetName.substring(0, 10) + '%', ...scope.params] as never[]
+  ).catch((e) => {
+    console.error('checkAddressDuplicates failed:', e);
+    return [];
+  });
 
   return (matches as any[]).map(m => ({
     leadId: m.id,
@@ -163,16 +195,17 @@ async function checkRecentContact(phone?: string, email?: string, orgId?: string
   const normalizedPhone = phone ? normalizePhone(phone) : null;
   const normalizedEmail = email ? normalizeEmail(email) : null;
 
-  const [recent] = await sql`
-    SELECT 1 FROM contact_log
-    WHERE (
-      (${normalizedPhone}::text IS NOT NULL AND phone = ${normalizedPhone}) OR
-      (${normalizedEmail}::text IS NOT NULL AND LOWER(email) = ${normalizedEmail})
-    )
-    AND created_at > NOW() - INTERVAL '7 days'
-    ${orgId ? sql`AND organization_id = ${orgId}` : sql``}
-    LIMIT 1
-  `.catch(() => [null]);
+  const orgScope = buildWhere().when(orgId, (w) => w.eq('organization_id', orgId)).build();
+  const [recent] = await sql(
+    `SELECT 1 FROM contact_log
+     WHERE (
+       ($1::text IS NOT NULL AND phone = $1) OR
+       ($2::text IS NOT NULL AND LOWER(email) = $2)
+     )
+     AND created_at > NOW() - INTERVAL '7 days'
+     AND ${orgScope.text}`,
+    [normalizedPhone, normalizedEmail, ...orgScope.params] as never[]
+  );
 
   return !!recent;
 }

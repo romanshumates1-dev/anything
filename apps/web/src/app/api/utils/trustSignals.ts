@@ -16,6 +16,7 @@
  */
 
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 
 export type TrustSignalType =
   | 'deal_count'
@@ -249,14 +250,20 @@ export async function getDynamicDealCount(
   state?: string
 ): Promise<{ count: number; area: string; timeframe: string } | null> {
   try {
-    const [result] = await sql`
-      SELECT COUNT(DISTINCT c.id) as count
-      FROM contracts c
-      WHERE c.organization_id = ${organizationId}
-        AND c.esign_status = 'signed'
-        ${state ? sql`AND c.metadata->>'property_state' = ${state}` : sql``}
-        AND c.created_at > now() - interval '12 months'
-    `;
+    // Defect #32, eighth wave: boolean-position fragment -> 500 whenever a state
+    // filter was supplied, i.e. every social-proof lookup scoped to a state.
+    const stateScope = buildWhere(1)
+      .when(state, (w) => w.expr("c.metadata->>'property_state' = ?", state))
+      .build();
+    const [result] = await sql(
+      `SELECT COUNT(DISTINCT c.id) as count
+       FROM contracts c
+       WHERE c.organization_id = $1
+         AND c.esign_status = 'signed'
+         AND ${stateScope.text}
+         AND c.created_at > now() - interval '12 months'`,
+      [organizationId, ...stateScope.params] as never[]
+    );
 
     const count = parseInt(result?.count || '0', 10);
     if (count < 5) return null; // Don't show if too few

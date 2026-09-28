@@ -80,41 +80,25 @@ function fragmentInterpolations(lines: string[]): string[] {
 const INLINE_NESTED_RE = /\$\{[^}]*\bsql`/;
 
 /**
- * RATCHET, not a hard zero — but an EXPLICIT, per-file one.
+ * HARD ZERO — the ratchet is retired.
  *
- * 66 sites remain across 19 files. Each was found by executing the real driver
- * (`scripts/probe-fragments.mjs` shows an interpolated fragment either 500s or
- * silently returns wrong rows), and the ones a user can reach from the UI are
- * fixed: `templates/route` (verified 500 in the browser) plus `actions` in the
- * previous wave. The rest are baselined here so the number can only go DOWN:
- * fixing a site requires lowering its count in this table, and a new site in a
- * new file fails the test immediately.
+ * It began at 66 sites / 19 files and every one has been migrated. The last 46
+ * were each triaged and fixed, not baselined: every reachable site turned out to
+ * be a real 500 or a silently wrong result, so there was nothing safe to leave
+ * behind. Notably, `campaignEngine` and `pipelineOrchestrator` had their fragment
+ * in an INSERT COLUMN LIST, which is a syntax error in BOTH ternary branches —
+ * adding any lead to a campaign always threw.
  *
- * Track progress with `node scripts/scan-fragments.mjs`.
+ * The last four (`user/questionnaire`, `achievements`) were the subtle ones:
+ * `${cond ? sql`now()` : null}` inside a VALUES list. `null` binds fine, but the
+ * `sql`now()`` branch is still a fragment, so it bound the marker JSON into a
+ * timestamptz column — questionnaire completion and achievement unlocking both
+ * 500'd. They now bind a `Date`.
+ *
+ * Reintroducing ANY site fails this test. Track with
+ * `node scripts/scan-fragments.mjs`, which must print 0.
  */
-const REMAINING_NESTED_SITES: Record<string, number> = {
-  'api/achievements/route.ts': 1,
-  'api/analytics/advanced/route.ts': 1,
-  'api/analytics/ai-recommendations/route.ts': 1,
-  'api/compliance/audit/route.ts': 1,
-  'api/consent/capture/route.ts': 2,
-  'api/duplicates/route.ts': 7,
-  'api/portal/offer/route.ts': 2,
-  'api/regions/estimate/route.ts': 12,
-  'api/templates/library/route.ts': 4,
-  'api/user/questionnaire/route.ts': 3,
-  'api/utils/buyerDiscoveryEngine.ts': 3,
-  'api/utils/campaignEngine.ts': 1,
-  'api/utils/compliance-audit.ts': 1,
-  'api/utils/leadGenerationEngine.ts': 2,
-  'api/utils/outreachVerification.ts': 2,
-  'api/utils/pipelineOrchestrator.ts': 1,
-  'api/utils/smsGuards.ts': 1,
-  'api/utils/trustSignals.ts': 1,
-  // `api/feedback/route.ts` and `api/templates/route.ts` are intentionally
-  // absent: both were migrated to buildWhere()/validated clauses, and the test
-  // below asserts they contain no nested fragment at all.
-};
+const REMAINING_NESTED_SITES: Record<string, number> = {};
 
 /** Maps an absolute path to the same `api/...` key the table uses. */
 function relKey(file: string): string {
@@ -210,6 +194,52 @@ describe('SQL fragment composition guard', () => {
       readSource(join(process.cwd(), 'src', 'app', 'api', 'services', 'rateLimiter.ts'))
     ).join('\n');
     expect(code).not.toMatch(/organizationId\}\s*::uuid/);
+  });
+
+  /**
+   * GUARD: `sql.unsafe()` must never be interpolated into a tagged template
+   * (defect #37).
+   *
+   * `utils/sql.ts` implements `unsafe` as `() => ({ __unsafeSql: text })`, but
+   * the pinned driver has no knowledge of that marker. Executed against the live
+   * database (scripts/verify-sql-fixes.mjs, case 4), the marker is sent as a
+   * VALUE:
+   *
+   *     SELECT $1  ->  {"__unsafeSql":"1"}
+   *
+   * so `SET ${sql.unsafe(clauses)}` became `SET $1, updated_at = NOW()` - a
+   * syntax error. That silently broke PATCH on both the pipeline config and the
+   * negotiation config: saving either one always returned 500. The API is a
+   * trap, so it is banned rather than merely unused.
+   */
+  it('no shipped file interpolates sql.unsafe() into a tagged template', () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const line of codeLines(readSource(file))) {
+        if (/\$\{[^}]*\bsql\.unsafe\(/.test(line)) {
+          offenders.push(`${file}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      `sql.unsafe() returns a marker object the driver binds as a VALUE, so it ` +
+        `cannot splice text inside a tagged template (it becomes SET $1). Use the ` +
+        `driver's sql(text, params) string form instead:\n${offenders.join('\n')}`
+    ).toEqual([]);
+  });
+
+  it('the two config PATCH routes build their SET clause with the string form', () => {
+    for (const rel of [
+      'app/api/utils/pipelineOrchestrator.ts',
+      'app/api/negotiation/config/route.ts',
+    ]) {
+      const code = codeLines(readSource(join(process.cwd(), 'src', rel))).join('\n');
+      expect(code, `${rel} must not use sql.unsafe`).not.toMatch(/sql\.unsafe\(/);
+      expect(code, `${rel} must bind values via the string form`).toMatch(
+        /\$\{values\.length \+ 1\}/
+      );
+    }
   });
 });
 

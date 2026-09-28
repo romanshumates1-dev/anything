@@ -1,4 +1,5 @@
 import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { resolvePlatformOrganizationId } from '@/app/api/utils/platformOrg';
 
@@ -126,14 +127,23 @@ async function ensureLead(opts: {
     return inserted.id as number;
   }
 
-  const [existing] = await sql`
-    SELECT id FROM leads
-    WHERE organization_id = ${organizationId}
-      ${key.email ? sql`AND LOWER(email) = ${opts.email!.toLowerCase()}` : sql`AND 1=1`}
-      ${key.phone ? sql`AND phone = ${opts.phone}` : sql`AND 1=1`}
-    ORDER BY id DESC
-    LIMIT 1
-  `;
+  // Defect #32, fifth wave: both ternary branches are boolean-position
+  // fragments, so this 500'd for any caller that passed an email or a phone -
+  // i.e. the normal path. Consent capture is the GDPR record, so failing
+  // silently is worse than failing loudly: the capture was never recorded.
+  const identity = buildWhere(1)
+    .when(key.email, (w) => w.expr('LOWER(email) = ?', opts.email!.toLowerCase()))
+    .when(key.phone, (w) => w.eq('phone', opts.phone))
+    .build();
+
+  const [existing] = await sql(
+    `SELECT id FROM leads
+     WHERE organization_id = $1
+       AND ${identity.text}
+     ORDER BY id DESC
+     LIMIT 1`,
+    [organizationId, ...identity.params] as never[]
+  );
 
   if (existing?.id) {
     await sql`

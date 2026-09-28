@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWhere, buildOrderBy, safeIdentifier } from '../sqlFragments';
+import { buildWhere, buildOrderBy, safeIdentifier, combine } from '../sqlFragments';
 
 /**
  * The builder that replaces nested `sql` fragments. It is security-relevant:
@@ -96,5 +96,65 @@ describe('sqlFragments builder', () => {
       { column: 'f.id', direction: 'ASC' }
     );
     expect(bad.clause).toBe('f.created_at ASC');
+  });
+
+  /**
+   * Offset support. This is not hypothetical: the live-DB harness
+   * (scripts/verify-sql-fixes.mjs case 7) produced
+   *   "bind message supplies 2 parameters, but prepared statement requires 1"
+   * for `WHERE LOWER(email) = $1 AND ${scope.text}`, because the fragment
+   * restarted its own numbering at $1. The offset continues the statement's.
+   */
+  describe('placeholder numbering with an offset', () => {
+    it('continues the enclosing numbering instead of restarting at $1', () => {
+      const scope = buildWhere(1).eq('organization_id', 'org_1').build();
+      expect(scope.text).toBe('organization_id = $2');
+      expect(scope.params).toEqual(['org_1']);
+    });
+
+    it('numbers several predicates sequentially under an offset', () => {
+      const w = buildWhere(2).eq('organization_id', 'org_1').eq('status', 'active').build();
+      expect(w.text).toBe('organization_id = $3 AND status = $4');
+      expect(w.params).toEqual(['org_1', 'active']);
+    });
+
+    it('expr placeholders are offset too', () => {
+      const w = buildWhere(1).expr('a = ? OR b = ?', 1, 2).build();
+      expect(w.text).toBe('a = $2 OR b = $3');
+      expect(w.params).toEqual([1, 2]);
+    });
+
+    it('anyOf is offset too', () => {
+      const w = buildWhere(3).anyOf('zip', ['33101']).build();
+      expect(w.text).toBe('zip = ANY($4)');
+    });
+
+    it('eqOrNull is offset too', () => {
+      const w = buildWhere(1).eqOrNull('owner', 'u1').build();
+      expect(w.text).toBe('(owner IS NULL OR owner = $2)');
+    });
+
+    it('every emitted placeholder maps 1:1 onto a param, in order', () => {
+      const w = buildWhere(2)
+        .eq('organization_id', 'org_1')
+        .when(true, (b) => b.expr('x = ? OR y = ?', 7, 8))
+        .build();
+      const nums = [...w.text.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+      expect(nums).toEqual([3, 4, 5]);
+      expect(nums).toHaveLength(w.params.length);
+    });
+
+    it('combine can be offset past an already-bound parameter', () => {
+      const c = combine(
+        [
+          { text: 'l.zip = ANY($1)', params: [['33101']] },
+          { text: 'l.state = ANY($1)', params: [['FL']] },
+        ],
+        'OR',
+        1
+      );
+      expect(c.text).toBe('l.zip = ANY($2) OR l.state = ANY($3)');
+      expect(c.params).toEqual([['33101'], ['FL']]);
+    });
   });
 });

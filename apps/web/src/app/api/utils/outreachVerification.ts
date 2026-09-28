@@ -10,6 +10,7 @@
  */
 
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { encryptSensitive, decryptSensitive, isEncrypted } from '@/app/api/utils/encryption';
 import { randomBytes } from 'crypto';
 
@@ -735,13 +736,17 @@ export async function checkEmailDns(
   const allVerified = spfVerified && dkimVerified && dmarcVerified;
   const newStatus = allVerified ? 'ACTIVE' : 'DNS_PENDING';
 
+  // Defect #32, ninth wave: `${cond ? sql`NOW()` : sql`verified_at`}` in a SET
+  // clause binds the fragment JSON to $1, so `verified_at = $1` failed to cast
+  // whenever the condition was false. A bound boolean in a CASE keeps every value
+  // parameterised - no `unsafe`, no identifier interpolation at all.
   await sql`
     UPDATE outreach_verifications
     SET
       status = ${newStatus},
       metadata = ${JSON.stringify(metadata)}::jsonb,
-      verified_at = ${allVerified ? sql`NOW()` : sql`verified_at`},
-      last_verified_at = ${allVerified ? sql`NOW()` : sql`last_verified_at`}
+      verified_at = CASE WHEN ${allVerified} THEN NOW() ELSE verified_at END,
+      last_verified_at = CASE WHEN ${allVerified} THEN NOW() ELSE last_verified_at END
     WHERE id = ${verification.id}::uuid
   `;
 

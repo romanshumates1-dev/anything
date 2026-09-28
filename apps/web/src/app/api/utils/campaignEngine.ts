@@ -12,6 +12,7 @@
  * - No response after X touches -> Mark unresponsive
  */
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
 import { callAI } from '@/app/api/utils/ai-provider';
@@ -175,12 +176,24 @@ export async function processNewLeads(campaignId: string): Promise<{
     const contactId = crypto.randomUUID();
     const stateId = crypto.randomUUID();
 
+    // Defect #32, ninth wave. The fragment sat in an INSERT COLUMN LIST, so the
+    // statement was `INSERT INTO campaign_contacts (..., $1)` - a syntax error in
+    // BOTH branches, not just one. Adding any lead to a campaign therefore threw
+    // every time, for sellers and buyers alike.
+    //
+    // Both columns are named explicitly and the unused one is bound to NULL, so
+    // no identifier is ever interpolated. (The wrapper's `sql.unsafe()` marker was
+    // tried here and REJECTED by measurement: the driver binds the marker object
+    // as a value rather than splicing its text, so it cannot be used inside a
+    // tagged template - see scripts/verify-sql-fixes.mjs case 4.)
+    const isSeller = campaign.direction === 'SELLER';
+
     await sql.transaction([
       sql`
         INSERT INTO campaign_contacts (
           id, campaign_id, organization_id, name, phone, email,
           property_address, property_type, estimated_value, region,
-          status, ${campaign.direction === 'SELLER' ? sql`seller_lead_id` : sql`buyer_lead_id`}
+          status, seller_lead_id, buyer_lead_id
         )
         VALUES (
           ${contactId}, ${campaignId}, ${campaign.organization_id},
@@ -190,7 +203,7 @@ export async function processNewLeads(campaignId: string): Promise<{
           ${lead.metadata?.property_type || null},
           ${lead.metadata?.estimated_value || null},
           ${JSON.stringify({ zip: lead.metadata?.zip, county: lead.metadata?.county, state: lead.metadata?.state })},
-          'QUEUED', ${lead.id.toString()}
+          'QUEUED', ${isSeller ? lead.id.toString() : null}, ${isSeller ? null : lead.id.toString()}
         )
       `,
       sql`

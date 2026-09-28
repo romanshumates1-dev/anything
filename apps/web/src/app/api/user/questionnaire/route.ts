@@ -189,9 +189,9 @@ export async function POST(request: Request) {
           ${howHeardAboutUs || null},
           ${budgetRange || null},
           ${sanitizedGoals},
-          ${isComplete ? sql`now()` : null},
-          ${isSkipped ? sql`now()` : null},
-          ${dismissReminder ? sql`now()` : null}
+          ${isComplete ? new Date() : null},
+          ${isSkipped ? new Date() : null},
+          ${dismissReminder ? new Date() : null}
         )
       `;
     }

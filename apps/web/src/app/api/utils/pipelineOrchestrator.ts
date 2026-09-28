@@ -14,6 +14,7 @@
  */
 
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
 
@@ -176,11 +177,17 @@ export async function updatePipelineConfig(
   // ... additional fields would follow the same pattern
 
   if (setClauses.length > 0) {
-    await sql`
-      UPDATE pipeline_config
-      SET ${sql.unsafe(setClauses.join(', '))}, updated_at = NOW()
-      WHERE organization_id = ${organizationId}
-    `;
+    // Defect #37. `SET ${sql.unsafe(...)}` bound the wrapper's marker object as a
+    // positional parameter, producing `SET $1, updated_at = NOW()` - a syntax
+    // error, so saving pipeline config always 500'd. The string form is the
+    // driver's supported dynamic-text API; column names are code-level literals
+    // and every value remains a bound $n.
+    await sql(
+      `UPDATE pipeline_config
+       SET ${setClauses.join(', ')}, updated_at = NOW()
+       WHERE organization_id = $${values.length + 1}`,
+      [...values, organizationId] as never[]
+    );
   }
 
   return getPipelineConfig(organizationId);
@@ -629,14 +636,21 @@ async function assignLeadToCampaign(leadId: number | string, organizationId: str
   `;
 
   if (campaign && lead.phone) {
-    // Add to campaign
+    // Defect #32, ninth wave. The fragment sat in an INSERT COLUMN LIST, making
+    // the statement `INSERT INTO campaign_contacts (..., $1, ...)` - a syntax
+    // error in both branches, so this threw on every pipeline import. Both column
+    // names are now written out and the unused one binds NULL; nothing is
+    // interpolated as an identifier.
+    const isBuyer = lead.type === 'buyer';
     await sql`
       INSERT INTO campaign_contacts (
         campaign_id, phone,
-        ${lead.type === 'buyer' ? sql`buyer_lead_id` : sql`seller_lead_id`},
+        buyer_lead_id, seller_lead_id,
         status, created_at
       ) VALUES (
-        ${campaign.id}, ${lead.phone}, ${leadId}, 'PENDING', NOW()
+        ${campaign.id}, ${lead.phone},
+        ${isBuyer ? leadId : null}, ${isBuyer ? null : leadId},
+        'PENDING', NOW()
       )
       ON CONFLICT DO NOTHING
     `;

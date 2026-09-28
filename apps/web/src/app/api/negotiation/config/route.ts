@@ -98,11 +98,21 @@ export async function PATCH(request: Request) {
 
   if (updates.length > 0) {
     updates.push('updated_at = NOW()');
-    await sql`
-      UPDATE pipeline_config
-      SET ${sql.unsafe(updates.join(', '))}
-      WHERE organization_id = ${organization.id}
-    `;
+    // Defect #37. This used to be `SET ${sql.unsafe(updates.join(', '))}` inside a
+    // tagged template. The wrapper's `unsafe` returns a marker OBJECT, and the
+    // driver binds it as a positional parameter, so the statement reached
+    // Postgres as `SET $1, updated_at = NOW()` - a syntax error. Measured, not
+    // assumed: scripts/verify-sql-fixes.mjs case 4.
+    //
+    // The string form is the driver's supported way to send dynamic text with
+    // bound parameters. Column names below are code-level literals (never
+    // request data) and every VALUE stays a bound $n.
+    await sql(
+      `UPDATE pipeline_config
+       SET ${updates.join(', ')}
+       WHERE organization_id = $${values.length + 1}`,
+      [...values, organization.id] as never[]
+    );
   }
 
   // Return updated config

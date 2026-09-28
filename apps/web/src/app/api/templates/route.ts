@@ -4,6 +4,12 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import sql from '@/app/api/utils/sql';
 import { buildWhere } from '@/app/api/utils/sqlFragments';
+import {
+  TEMPLATE_CATEGORIES,
+  TEMPLATE_CHANNELS,
+  isTemplateCategory,
+  isTemplateChannel,
+} from '@/lib/templateEnums';
 import crypto from 'crypto';
 
 /**
@@ -29,21 +35,24 @@ export async function GET(request: NextRequest) {
   const favoritesOnly = searchParams.get('favorites') === 'true';
 
   // `category` and `channel` are Postgres ENUMs (template_category,
-  // template_channel). Passing a value outside the enum used to surface as a
-  // 500 from Postgres ("invalid input value for enum template_category"), which
-  // is both wrong (the caller sent a bad filter, not a server fault) and an
-  // unnecessary information leak. Validate up front and answer 400.
-  const CATEGORIES = ['cold_outreach', 'follow_up'] as const;
-  const CHANNELS = ['sms', 'email', 'both'] as const;
-  if (category && !(CATEGORIES as readonly string[]).includes(category)) {
+  // template_channel). An out-of-enum value reaches the server as
+  // "invalid input value for enum" and surfaces as a 500, which is both wrong
+  // (the caller sent a bad filter, not a server fault) and a needless leak of
+  // internals. Validate up front and answer 400.
+  //
+  // The allowlists now come from lib/templateEnums, which is derived from the
+  // live enum definitions. The previous local list held only 2 of the 6 real
+  // categories, so `closing`, `reengagement`, `buyer_outreach` and `custom` were
+  // wrongly rejected with a 400 - the mirror image of the same bug.
+  if (category && !isTemplateCategory(category)) {
     return NextResponse.json(
-      { error: `Invalid category. Expected one of: ${CATEGORIES.join(', ')}` },
+      { error: `Invalid category. Expected one of: ${TEMPLATE_CATEGORIES.join(', ')}` },
       { status: 400 }
     );
   }
-  if (channel && !(CHANNELS as readonly string[]).includes(channel)) {
+  if (channel && !isTemplateChannel(channel)) {
     return NextResponse.json(
-      { error: `Invalid channel. Expected one of: ${CHANNELS.join(', ')}` },
+      { error: `Invalid channel. Expected one of: ${TEMPLATE_CHANNELS.join(', ')}` },
       { status: 400 }
     );
   }

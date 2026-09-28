@@ -20,6 +20,7 @@
  * All thresholds are env-configurable so the owner can tune without a deploy.
  */
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { createHash } from 'node:crypto';
 
 // ─── 1. SINGLE-SEGMENT ENFORCEMENT ──────────────────────────────────────────
@@ -132,20 +133,28 @@ export async function isDuplicateSend(opts: {
   const hash = textHash(opts.text);
   const since = new Date(Date.now() - DEDUP_WINDOW_MS);
 
-  const rows = await sql`
-    SELECT 1 FROM message_events
-    WHERE direction = 'outbound'
-      AND metadata->>'textHash' = ${hash}
-      AND (
-        contact_id::text IN (
-          SELECT id::text FROM leads WHERE phone = ${opts.phone} LIMIT 10
-        )
-        OR metadata->>'to' = ${opts.phone}
-      )
-      AND created_at > ${since}
-      ${opts.campaignId ? sql`AND campaign_id = ${opts.campaignId}` : sql``}
-    LIMIT 1
-  `;
+  // Defect #32, eighth wave: boolean-position fragment -> 500 whenever a campaign
+  // filter was present. This is the SMS dedupe guard: a throw here would be
+  // swallowed upstream and the message would be re-sent, so it must return a
+  // real answer rather than fail.
+  const campaignScope = buildWhere(3)
+    .when(opts.campaignId, (w) => w.eq('campaign_id', opts.campaignId))
+    .build();
+  const rows = await sql(
+    `SELECT 1 FROM message_events
+     WHERE direction = 'outbound'
+       AND metadata->>'textHash' = $1
+       AND (
+         contact_id::text IN (
+           SELECT id::text FROM leads WHERE phone = $2 LIMIT 10
+         )
+         OR metadata->>'to' = $2
+       )
+       AND created_at > $3
+       AND ${campaignScope.text}
+     LIMIT 1`,
+    [hash, opts.phone, since, ...campaignScope.params] as never[]
+  );
   return rows.length > 0;
 }
 

@@ -9,6 +9,7 @@
  */
 import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
 import { verifyPortalToken } from '@/app/api/utils/portalToken';
@@ -83,8 +84,15 @@ export async function GET(req: NextRequest) {
 
   try {
     // Get lead and offer details
-    const [lead] = await sql`
-      SELECT
+    // Defect #32, seventh wave. `viaSession` is TRUE for every authenticated
+    // caller, so this query 500'd and `.catch(() => [null])` reported the lead as
+    // "not found" - an offer quote for a visible lead silently became a 404. This
+    // predicate is also the tenant-isolation boundary for the quote.
+    const tenant = viaSession
+      ? buildWhere(1).eq('l.organization_id', sessionOrganization!.id).build()
+      : buildWhere().build();
+    const [lead] = await sql(
+      `SELECT
         l.id,
         l.name as owner_name,
         l.address as property_address,
@@ -97,16 +105,23 @@ export async function GET(req: NextRequest) {
       FROM leads l
       LEFT JOIN lead_scores ls ON ls.lead_id = l.id
       LEFT JOIN property_valuations v ON v.lead_id = l.id
-      WHERE l.id = ${resolvedLeadId}
-        ${viaSession ? sql`AND l.organization_id = ${sessionOrganization!.id}` : sql``}
+      WHERE l.id = $1
+        AND ${tenant.text}
       ORDER BY v.created_at DESC NULLS LAST
-      LIMIT 1
-    `.catch(() => [null]);
+      LIMIT 1`,
+      [resolvedLeadId, ...tenant.params] as never[]
+    ).catch((e) => {
+      console.error('portal/offer lead lookup failed:', e);
+      return [null];
+    });
 
     if (!lead) {
       // Try sourced_leads
-      const [sourced] = await sql`
-        SELECT
+      const sourceScope = viaSession
+        ? buildWhere(2).raw('source_id IN (SELECT id FROM lead_sources WHERE organization_id = $1 OR organization_id IS NULL)', sessionOrganization!.id).build()
+        : buildWhere().build();
+      const [sourced] = await sql(
+        `SELECT
           id,
           owner_name,
           property_address,
@@ -114,10 +129,14 @@ export async function GET(req: NextRequest) {
           assessed_value_cents,
           created_at
         FROM sourced_leads
-        WHERE (id::text = ${resolvedLeadId} OR source_id = ${resolvedLeadId})
-          ${viaSession ? sql`AND source_id IN (SELECT id FROM lead_sources WHERE organization_id = ${sessionOrganization!.id} OR organization_id IS NULL)` : sql``}
-        LIMIT 1
-      `.catch(() => [null]);
+        WHERE (id::text = $1 OR source_id = $2)
+          AND ${sourceScope.text}
+        LIMIT 1`,
+        [resolvedLeadId, resolvedLeadId, ...sourceScope.params] as never[]
+      ).catch((e) => {
+        console.error('portal/offer sourced_leads lookup failed:', e);
+        return [null];
+      });
 
       if (!sourced) {
         return Response.json({ error: 'Lead not found' }, { status: 404 });

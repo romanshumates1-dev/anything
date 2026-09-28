@@ -8,6 +8,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
 import sql from '@/app/api/utils/sql';
+import { buildWhere, combine, type Fragment } from '@/app/api/utils/sqlFragments';
 
 interface Region {
   type: 'ZIP' | 'COUNTY' | 'STATE' | 'CITY' | 'MSA';
@@ -86,59 +87,88 @@ export async function POST(request: NextRequest) {
     // Build conditions
     const hasIncludes = includeZips.length > 0 || includeStates.length > 0 || includeCounties.length > 0;
 
-    if (hasIncludes) {
-      // If we have includes, we need to match at least one
-      const [result] = await sql`
-        SELECT COUNT(*) as count
-        FROM leads l
-        WHERE l.organization_id = ${organization.id}
-        AND (
-          ${includeZips.length > 0 ? sql`l.zip = ANY(${includeZips})` : sql`FALSE`}
-          OR ${includeStates.length > 0 ? sql`l.state = ANY(${includeStates})` : sql`FALSE`}
-          OR ${includeCounties.length > 0 ? sql`(l.state || '_' || l.county) = ANY(${includeCounties})` : sql`FALSE`}
-        )
-        AND (
-          ${excludeZips.length > 0 ? sql`(l.zip IS NULL OR l.zip != ALL(${excludeZips}))` : sql`TRUE`}
-          AND ${excludeStates.length > 0 ? sql`(l.state IS NULL OR l.state != ALL(${excludeStates}))` : sql`TRUE`}
-          AND ${excludeCounties.length > 0 ? sql`((l.state || '_' || l.county) IS NULL OR (l.state || '_' || l.county) != ALL(${excludeCounties}))` : sql`TRUE`}
-        )
-      `;
-      leadsCount = Number(result.count);
-    } else if (excludeZips.length > 0 || excludeStates.length > 0 || excludeCounties.length > 0) {
-      // Only excludes - count all leads NOT in excluded regions
-      const [result] = await sql`
-        SELECT COUNT(*) as count
-        FROM leads l
-        WHERE l.organization_id = ${organization.id}
-        AND (
-          ${excludeZips.length > 0 ? sql`(l.zip IS NULL OR l.zip != ALL(${excludeZips}))` : sql`TRUE`}
-          AND ${excludeStates.length > 0 ? sql`(l.state IS NULL OR l.state != ALL(${excludeStates}))` : sql`TRUE`}
-          AND ${excludeCounties.length > 0 ? sql`((l.state || '_' || l.county) IS NULL OR (l.state || '_' || l.county) != ALL(${excludeCounties}))` : sql`TRUE`}
-        )
-      `;
-      leadsCount = Number(result.count);
-    } else {
-      // No filters
-      const [result] = await sql`
-        SELECT COUNT(*) as count FROM leads WHERE organization_id = ${organization.id}
-      `;
-      leadsCount = Number(result.count);
+    // Defect #32, third wave. The old form interpolated nested `sql` fragments
+    // into a boolean position. The pinned driver binds EVERY interpolation to a
+    // positional $n, so `AND ${sql`...`}` reached Postgres as `AND $3` and failed
+    // with `invalid input syntax for type boolean` - verified against the live
+    // database. Empty fragments fail the same way, so both ternary branches were
+    // a 500. This route is the region-targeting lead-count estimate, called from
+    // the campaign builder, so it is production-reachable.
+    //
+    // The whole predicate is now built as text+params and every user-supplied
+    // array is BOUND, never interpolated as text.
+    const includeFrag: Fragment[] = [];
+    if (includeZips.length > 0) {
+      includeFrag.push({ text: 'l.zip = ANY($1)', params: [includeZips] });
     }
+    if (includeStates.length > 0) {
+      includeFrag.push({ text: 'l.state = ANY($1)', params: [includeStates] });
+    }
+    if (includeCounties.length > 0) {
+      includeFrag.push({
+        text: "(l.state || '_' || l.county) = ANY($1)",
+        params: [includeCounties],
+      });
+    }
+
+    const excludeFrag: Fragment[] = [];
+    if (excludeZips.length > 0) {
+      excludeFrag.push({ text: '(l.zip IS NULL OR l.zip != ALL($1))', params: [excludeZips] });
+    }
+    if (excludeStates.length > 0) {
+      excludeFrag.push({
+        text: '(l.state IS NULL OR l.state != ALL($1))',
+        params: [excludeStates],
+      });
+    }
+    if (excludeCounties.length > 0) {
+      excludeFrag.push({
+        text:
+          "((l.state || '_' || l.county) IS NULL OR (l.state || '_' || l.county) != ALL($1))",
+        params: [excludeCounties],
+      });
+    }
+
+    const regionWhere = buildWhere()
+      .eq('l.organization_id', organization.id)
+      .when(hasIncludes, (w) => w.nest(combine(includeFrag, 'OR')))
+      .when(excludeFrag.length > 0, (w) => w.nest(combine(excludeFrag, 'AND')))
+      .build();
+
+    const [result] = await sql(
+      `SELECT COUNT(*) as count
+       FROM leads l
+       WHERE ${regionWhere.text}`,
+      regionWhere.params as never[]
+    );
+    leadsCount = Number(result.count);
 
     // Also get estimate from campaign_contacts for context
     let contactsCount = 0;
     try {
       if (hasIncludes) {
-        const [result] = await sql`
-          SELECT COUNT(*) as count
-          FROM campaign_contacts cc
-          WHERE cc.organization_id = ${organization.id}
-          AND (
-            ${includeZips.length > 0 ? sql`cc.zip = ANY(${includeZips})` : sql`FALSE`}
-            OR ${includeStates.length > 0 ? sql`cc.state = ANY(${includeStates})` : sql`FALSE`}
-            OR ${includeCounties.length > 0 ? sql`(cc.state || '_' || cc.county) = ANY(${includeCounties})` : sql`FALSE`}
-          )
-        `;
+        const contactIncludeFrag: Fragment[] = [];
+        if (includeZips.length > 0) {
+          contactIncludeFrag.push({ text: 'cc.zip = ANY($1)', params: [includeZips] });
+        }
+        if (includeStates.length > 0) {
+          contactIncludeFrag.push({ text: 'cc.state = ANY($1)', params: [includeStates] });
+        }
+        if (includeCounties.length > 0) {
+          contactIncludeFrag.push({
+            text: "(cc.state || '_' || cc.county) = ANY($1)",
+            params: [includeCounties],
+          });
+        }
+        // organization_id is already $1, so the OR group must start at $2.
+        const contactInclude = combine(contactIncludeFrag, 'OR', 1);
+        const [result] = await sql(
+          `SELECT COUNT(*) as count
+           FROM campaign_contacts cc
+           WHERE cc.organization_id = $1
+           AND (${contactInclude.text})`,
+          [organization.id, ...contactInclude.params] as never[]
+        );
         contactsCount = Number(result.count);
       } else {
         const [result] = await sql`

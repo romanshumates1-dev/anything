@@ -67,6 +67,25 @@ export type CompareOp = keyof typeof OPERATORS;
 export class WhereBuilder {
   private readonly parts: string[] = [];
   private readonly values: unknown[] = [];
+  /**
+   * Number of parameters already bound by the enclosing statement. A query like
+   * `WHERE l.id = $1 AND ${scope.text}` needs the fragment to start at $2, or both
+   * halves bind $1 and the driver rejects the statement. Verified against the
+   * live DB: "bind message supplies 2 parameters, but prepared statement requires 1".
+   */
+  private readonly offset: number;
+
+  constructor(offset = 0) {
+    this.offset = offset;
+  }
+
+  /**
+   * The number of the placeholder that the NEXT pushed value occupies. Call this
+   * AFTER pushing the value: the first value in a zero-offset builder is $1.
+   */
+  private get nextIndex(): number {
+    return this.values.length + this.offset;
+  }
 
   private push(text: string, ...values: unknown[]): this {
     for (const v of values) this.values.push(v);
@@ -81,7 +100,7 @@ export class WhereBuilder {
       return this.push(`${prefix}${col} IS ${op === 'neq' ? 'NOT ' : ''}NULL`);
     }
     this.values.push(value);
-    return this.push(`${prefix}${col} ${sqlOp} $${this.values.length}`);
+    return this.push(`${prefix}${col} ${sqlOp} $${this.nextIndex}`);
   }
 
   eq(column: string, value: unknown, prefix = ''): this {
@@ -109,6 +128,35 @@ export class WhereBuilder {
     return this.add(column, 'ilike', value, prefix);
   }
 
+  /** `column = ANY($n)` / `column != ALL($n)`, for array-valued filters. */
+  anyOf(column: string, values: unknown[], negate = false): this {
+    const col = safeIdentifier(column);
+    this.values.push(values);
+    return this.push(`${col} ${negate ? '!=' : '='} ANY($${this.nextIndex})`);
+  }
+
+  /** Build a sub-fragment whose own `$n` numbering is rebased onto this builder. */
+  nest(fragment: Fragment, prefix = ''): this {
+    this.values.push(...fragment.params);
+    const offset = this.values.length - fragment.params.length;
+    const text = fragment.text.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + offset}`);
+    return this.push(`${prefix}${text}`);
+  }
+
+  /**
+   * Predicate from a template containing `?` placeholders, e.g.
+   * `expr('(l.zip = ANY(?))', zips)`. Each `?` becomes the next `$n` and the
+   * value is bound. The surrounding text is a STATIC literal (it is code, never
+   * a request value), so this stays injection-free while keeping the array
+   * predicates that the region/estimate filters need readable.
+   */
+  expr(template: string, ...values: unknown[]): this {
+    let i = 0;
+    const text = template.replace(/\?/g, () => `$${this.values.length + this.offset + ++i}`);
+    this.values.push(...values);
+    return this.push(text);
+  }
+
   /** Append a raw boolean predicate; `text` must be a static literal. */
   raw(text: string, ...values: unknown[]): this {
     return this.push(text, ...values);
@@ -125,7 +173,7 @@ export class WhereBuilder {
     const col = safeIdentifier(column);
     if (value === null || value === undefined) return this.push(`${col} IS NULL`);
     this.values.push(value);
-    const n = this.values.length;
+    const n = this.nextIndex;
     return this.push(`(${col} IS NULL OR ${col} = $${n})`);
   }
 
@@ -137,8 +185,37 @@ export class WhereBuilder {
   }
 }
 
-export function buildWhere(): WhereBuilder {
-  return new WhereBuilder();
+export function buildWhere(): WhereBuilder;
+export function buildWhere(offset: number): WhereBuilder;
+/**
+ * `offset` = how many `$n` the enclosing statement already consumed. Required
+ * whenever the fragment is appended to text that binds its own parameters.
+ */
+export function buildWhere(offset = 0): WhereBuilder {
+  return new WhereBuilder(offset);
+}
+
+/**
+ * Join sub-fragments with `AND`/`OR`, renumbering each fragment's `$n` onto the
+ * combined sequence. Needed for the region/estimate shape, which is an OR of
+ * per-field tests each of which is itself an AND (`(a OR b) AND (c AND d)`).
+ * Used with `nest()` to splice the result into a larger WHERE.
+ */
+export function combine(
+  fragments: Fragment[],
+  operator: 'AND' | 'OR' = 'AND',
+  offset = 0
+): Fragment {
+  const params: unknown[] = [];
+  const parts = fragments.map((f) => {
+    const base = params.length + offset;
+    params.push(...f.params);
+    return f.text.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + base}`);
+  });
+  return {
+    text: parts.length ? parts.join(` ${operator} `) : 'TRUE',
+    params,
+  };
 }
 
 const DIRECTIONS = new Set(['ASC', 'DESC']);

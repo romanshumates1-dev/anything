@@ -116,7 +116,7 @@ export async function POST(request: Request) {
         ${achievement.id},
         ${progress || 0},
         ${shouldUnlock || false},
-        ${shouldUnlock ? sql`NOW()` : null}
+        ${shouldUnlock ? new Date() : null}
       )
       ON CONFLICT (user_id, achievement_id) DO UPDATE SET
         progress = GREATEST(user_achievements.progress, EXCLUDED.progress),

@@ -22,6 +22,7 @@
  */
 
 import sql from '@/app/api/utils/sql';
+import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { BUYER_SOURCES, type PublicDataSource } from '@/app/api/lead-finder/public-sources/config';
@@ -359,11 +360,19 @@ async function queryCashBuyers(params: QueryParams): Promise<DiscoveredBuyer[]> 
   const { zips, county, state, monthsBack = 24, limit } = params;
 
   // Check if we have cached/imported buyer data
-  const cached = await sql`
-    SELECT DISTINCT ON (name)
+  // Defect #32, eighth wave: boolean-position fragment -> 500 whenever a ZIP
+  // filter was supplied, and `.catch(() => [])` turned that into an empty buyer
+  // list - the discovery engine silently stopped finding buyers in a region.
+  const zipScope = buildWhere(2).when(zips && zips.length > 0, (w) =>
+    w.expr("metadata->>'zip' = ANY(?)", zips)
+  );
+  const zipWhere = zipScope.build();
+
+  const cached = await sql(
+    `SELECT DISTINCT ON (name)
       name, email, phone, mailing_address,
       CASE
-        WHEN name ~* '(llc|l\.l\.c)' THEN 'llc'
+        WHEN name ~* '(llc|l\\.l\\.c)' THEN 'llc'
         WHEN name ~* '(inc|corp|corporation)' THEN 'corp'
         WHEN name ~* 'trust' THEN 'trust'
         ELSE 'individual'
@@ -373,11 +382,15 @@ async function queryCashBuyers(params: QueryParams): Promise<DiscoveredBuyer[]> 
     WHERE type = 'buyer'
       AND organization_id IS NOT NULL
       AND (metadata->>'cash_buyer')::boolean = true
-      AND created_at > NOW() - INTERVAL '${monthsBack} months'
-      ${zips && zips.length > 0 ? sql`AND metadata->>'zip' = ANY(${zips})` : sql``}
+      AND created_at > NOW() - ($1 || ' months')::interval
+      AND ${zipWhere.text}
     ORDER BY name, created_at DESC
-    LIMIT ${limit}
-  `.catch(() => []);
+    LIMIT $2`,
+    [monthsBack, limit, ...zipWhere.params] as never[]
+  ).catch((e) => {
+    console.error('buyerDiscovery cached lookup failed:', e);
+    return [];
+  });
 
   return (cached as any[]).map(row => ({
     name: row.name,
@@ -398,18 +411,29 @@ async function queryEntityBuyers(params: QueryParams): Promise<DiscoveredBuyer[]
   // Query for LLC/Corp/Trust buyers
   const { zips, county, state, monthsBack = 36, limit } = params;
 
-  const cached = await sql`
-    SELECT DISTINCT ON (name)
+  // Defect #32, tenth wave: `.catch(() => [])` made this 500 into an empty
+  // entity-buyer list, so entity/LLC/corp/trust buyers were never discovered.
+  const entityZipScope = buildWhere(2).when(zips && zips.length > 0, (w) =>
+    w.expr("metadata->>'zip' = ANY(?)", zips)
+  );
+  const entityWhere = entityZipScope.build();
+
+  const cached = await sql(
+    `SELECT DISTINCT ON (name)
       name, email, phone, mailing_address, metadata
     FROM leads
     WHERE type = 'buyer'
       AND organization_id IS NOT NULL
-      AND name ~* '(llc|l\.l\.c|inc|corp|corporation|trust)'
-      AND created_at > NOW() - INTERVAL '${monthsBack} months'
-      ${zips && zips.length > 0 ? sql`AND metadata->>'zip' = ANY(${zips})` : sql``}
+      AND name ~* '(llc|l\\.l\\.c|inc|corp|corporation|trust)'
+      AND created_at > NOW() - ($1 || ' months')::interval
+      AND ${entityWhere.text}
     ORDER BY name, created_at DESC
-    LIMIT ${limit}
-  `.catch(() => []);
+    LIMIT $2`,
+    [monthsBack, limit, ...entityWhere.params] as never[]
+  ).catch((e) => {
+    console.error('buyerDiscovery entity lookup failed:', e);
+    return [];
+  });
 
   return (cached as any[]).map(row => {
     let entityType: 'llc' | 'corp' | 'trust' | 'individual' = 'individual';
@@ -481,21 +505,31 @@ async function queryFlipActivity(params: QueryParams): Promise<DiscoveredBuyer[]
 
   // This would query recorder for same grantee→grantor within 12mo
   // Simplified: check leads with flip signals
-  const flippers = await sql`
-    SELECT DISTINCT ON (name)
+  // Defect #32, tenth wave: same swallowed 500 - flip-signal buyers came back empty.
+  const flipZipScope = buildWhere(1).when(zips && zips.length > 0, (w) =>
+    w.expr("metadata->>'zip' = ANY(?)", zips)
+  );
+  const flipWhere = flipZipScope.build();
+
+  const flippers = await sql(
+    `SELECT DISTINCT ON (name)
       name, email, phone, mailing_address,
       CASE
-        WHEN name ~* '(llc|l\.l\.c)' THEN 'llc'
+        WHEN name ~* '(llc|l\\.l\\.c)' THEN 'llc'
         WHEN name ~* '(inc|corp)' THEN 'corp'
         ELSE 'individual'
       END as entity_type
     FROM leads
     WHERE type = 'buyer'
       AND metadata->>'flipper' = 'true'
-      ${zips && zips.length > 0 ? sql`AND metadata->>'zip' = ANY(${zips})` : sql``}
+      AND ${flipWhere.text}
     ORDER BY name, created_at DESC
-    LIMIT ${limit}
-  `.catch(() => []);
+    LIMIT $1`,
+    [limit, ...flipWhere.params] as never[]
+  ).catch((e) => {
+    console.error('buyerDiscovery flip-signal lookup failed:', e);
+    return [];
+  });
 
   return (flippers as any[]).map(row => ({
     name: row.name,

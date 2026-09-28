@@ -16,6 +16,7 @@ import { callAI } from '@/app/api/utils/ai-provider';
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
 
 export const dynamic = 'force-dynamic';
@@ -85,8 +86,11 @@ export async function GET(req: NextRequest) {
 
   try {
     // 1. Gather comprehensive campaign data
-    const [overallMetrics] = await sql`
-      SELECT
+    // Defect #32, sixth wave: `.catch(() => [{}])` turned this 500 into a silent
+    // all-zeros payload, so filtered AI recommendations reported "no data".
+    const perfScope = buildWhere(2).eq('clq.campaign_id', campaignId).build();
+    const [overallMetrics] = await sql(
+      `SELECT
         COUNT(DISTINCT clq.lead_id)::int as total_leads,
         COUNT(*) FILTER (WHERE clq.status = 'sent')::int as total_contacted,
         COUNT(*) FILTER (WHERE clq.status = 'replied')::int as total_replied,
@@ -95,10 +99,14 @@ export async function GET(req: NextRequest) {
         COALESCE(AVG(clq.touch_number) FILTER (WHERE clq.status = 'interested'), 0)::numeric(4,2) as avg_touches_to_interest,
         COALESCE(AVG(clq.expected_value) FILTER (WHERE clq.status = 'interested'), 0)::int as avg_deal_value
       FROM campaign_lead_queue clq
-      WHERE clq.organization_id = ${organization.id}
-        AND clq.created_at > now() - (${days} || ' days')::interval
-        ${campaignId ? sql`AND clq.campaign_id = ${campaignId}` : sql``}
-    `.catch(() => [{}]) as any[];
+      WHERE clq.organization_id = $1
+        AND clq.created_at > now() - ($2 || ' days')::interval
+        AND ${perfScope.text}`,
+      [organization.id, days, ...perfScope.params] as never[]
+    ).catch((e) => {
+      console.error('ai-recommendations overall metrics failed:', e);
+      return [{}];
+    }) as any[];
 
     // 2. Message template performance
     const templatePerformance = await sql`
