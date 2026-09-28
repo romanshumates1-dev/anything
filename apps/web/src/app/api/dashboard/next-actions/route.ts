@@ -123,9 +123,9 @@ export async function GET() {
         l.name as lead_name,
         l.metadata->>'address' as property_address
       FROM contracts c
-      -- Defect #45 (cont): `contracts.seller_lead_id` is TEXT while `leads.id`
-      -- is INTEGER, so joining them directly raised
-      -- `operator does not exist: integer = text`. Verified via
+      -- Defect #45 (cont): contracts.seller_lead_id is TEXT while leads.id is
+      -- INTEGER, so joining them directly raised
+      -- "operator does not exist: integer = text". Verified via
       -- information_schema rather than guessed. The cast is explicit and the
       -- non-matching case simply produces no join row.
       JOIN leads l ON l.id = c.seller_lead_id::int

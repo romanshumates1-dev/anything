@@ -113,7 +113,7 @@ async function checkEmailDuplicates(email: string, excludeLeadId?: string, orgId
   const normalized = normalizeEmail(email);
   if (!normalized.includes('@')) return [];
 
-  const scope = buildWhere(4)
+  const scope = buildWhere(1)   // WHERE LOWER(email) = $1 precedes the scope
     .when(excludeLeadId, (w) => w.neq('id', excludeLeadId))
     .when(orgId, (w) => w.eq('organization_id', orgId))
     .build();
@@ -155,7 +155,7 @@ async function checkAddressDuplicates(address: string, excludeLeadId?: string, o
 
   const [, streetNum, streetName] = streetMatch;
 
-  const scope = buildWhere(4)
+  const scope = buildWhere(1)   // ILIKE $1 precedes the scope
     .when(excludeLeadId, (w) => w.neq('id', excludeLeadId))
     .when(orgId, (w) => w.eq('organization_id', orgId))
     .build();
@@ -195,7 +195,7 @@ async function checkRecentContact(phone?: string, email?: string, orgId?: string
   const normalizedPhone = phone ? normalizePhone(phone) : null;
   const normalizedEmail = email ? normalizeEmail(email) : null;
 
-  const orgScope = buildWhere().when(orgId, (w) => w.eq('organization_id', orgId)).build();
+  const orgScope = buildWhere(3).when(orgId, (w) => w.eq('organization_id', orgId)).build();
   const [recent] = await sql(
     `SELECT 1 FROM contact_log
      WHERE (

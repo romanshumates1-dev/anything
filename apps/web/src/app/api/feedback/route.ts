@@ -1,4 +1,5 @@
-﻿import sql from '@/app/api/utils/sql';
+import sql from '@/app/api/utils/sql';
+import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
@@ -53,246 +54,81 @@ export async function GET(request: Request) {
     // Use multiple simpler queries based on filter combinations
     // This avoids complex dynamic SQL while still supporting the needed filters
 
-    let feedbackItems: any[];
+    // ONE query instead of the previous nine near-identical blocks.
+    //
+    // Two defects are fixed together here:
+    //  1. Every block ended with `ORDER BY ${orderByClause}`. orderByClause is a
+    //     STRING, and this driver binds every interpolation to a positional $n -
+    //     so it became `ORDER BY $9` and the endpoint answered 500 for everyone.
+    //     (A fragment in ORDER BY is worse still: it runs and sorts wrongly.)
+    //  2. Nine copies of the same access-control rules is nine places for the
+    //     rules to drift. The rules now exist once, below.
+    //
+    // Access rules, preserved exactly:
+    //   admin                     -> everything
+    //   member                    -> public OR own, minus DECLINED unless own
+    //   anonymous                 -> public, minus DECLINED
+    const scope = buildWhere();
+
+    if (isAdmin) {
+      if (mine && userId) scope.eq('f.user_id', userId);
+    } else if (userId) {
+      scope.raw('(f.is_public = true OR f.user_id = $1)', userId);
+      scope.raw('(f.status != \'DECLINED\' OR f.user_id = $1)', userId);
+    } else {
+      scope.raw('f.is_public = true').raw("f.status != 'DECLINED'");
+    }
+    // An invalid enum value must be a 400, not a Postgres 500.
+    if (category) {
+      if (!VALID_CATEGORIES.includes(category)) {
+        return Response.json(
+          { error: `Invalid category. Expected one of: ${VALID_CATEGORIES.join(', ')}` },
+          { status: 400 }
+        );
+      }
+      scope.eq('f.category', category);
+    }
+    if (status) {
+      if (!VALID_STATUSES.includes(status)) {
+        return Response.json(
+          { error: `Invalid status. Expected one of: ${VALID_STATUSES.join(', ')}` },
+          { status: 400 }
+        );
+      }
+      scope.eq('f.status', status);
+    }
+
+    const where = scope.build();
+    // `mine` is only meaningful for a signed-in member; an admin asking for
+    // "mine" is the same as asking for their own rows, which scope.eq covers.
+    if (mine && !userId) {
+      return Response.json({ items: [], total: 0, limit: limitParam, offset: offsetParam });
+    }
+
+    const votedColumn = userId
+      ? `EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = $${where.params.length + 1})`
+      : 'false';
+    const authorColumns = isAdmin
+      ? 'f.user_id AS author_id,'
+      : "CASE WHEN f.is_anonymous THEN NULL ELSE NULL END AS author_id,";
+
+    const voteParam = userId ? [userId] : [];
+    const rows = await sql(
+      `SELECT f.*, ${authorColumns}
+              u.name AS author_name,
+              ${votedColumn} AS user_voted,
+              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
+       FROM feedback f
+       LEFT JOIN "user" u ON f.user_id = u.id
+       WHERE ${where.text}
+       ORDER BY ${orderByClause}
+       LIMIT $${where.params.length + 1 + voteParam.length} OFFSET $${where.params.length + 2 + voteParam.length}`,
+      [...where.params, ...voteParam, limitParam, offsetParam] as never[]
+    );
+
+    const feedbackItems: any[] = rows;
 
     // Build query based on access level and filters
-    if (isAdmin) {
-      // Admins see everything
-      if (mine && userId) {
-        if (category && VALID_CATEGORIES.includes(category)) {
-          if (status && VALID_STATUSES.includes(status)) {
-            feedbackItems = await sql`
-              SELECT f.*, u.name AS author_name,
-                EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE f.user_id = ${userId} AND f.category = ${category} AND f.status = ${status}
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          } else {
-            feedbackItems = await sql`
-              SELECT f.*, u.name AS author_name,
-                EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE f.user_id = ${userId} AND f.category = ${category}
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          }
-        } else if (status && VALID_STATUSES.includes(status)) {
-          feedbackItems = await sql`
-            SELECT f.*, u.name AS author_name,
-              EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.user_id = ${userId} AND f.status = ${status}
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        } else {
-          feedbackItems = await sql`
-            SELECT f.*, u.name AS author_name,
-              EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.user_id = ${userId}
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        }
-      } else if (category && VALID_CATEGORIES.includes(category)) {
-        if (status && VALID_STATUSES.includes(status)) {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.category = ${category} AND f.status = ${status}
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        } else {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.category = ${category}
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        }
-      } else if (status && VALID_STATUSES.includes(status)) {
-        feedbackItems = await sql`
-          SELECT f.*,
-            CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-            CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-            COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
-            (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-          FROM feedback f
-          LEFT JOIN "user" u ON f.user_id = u.id
-          WHERE f.status = ${status}
-          ORDER BY ${orderByClause}
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `;
-      } else {
-        feedbackItems = await sql`
-          SELECT f.*,
-            CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-            CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-            COALESCE(EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId ?? ''}), false) AS user_voted,
-            (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-          FROM feedback f
-          LEFT JOIN "user" u ON f.user_id = u.id
-          ORDER BY ${orderByClause}
-          LIMIT ${limitParam} OFFSET ${offsetParam}
-        `;
-      }
-    } else {
-      // Non-admins: see public items + their own, exclude DECLINED unless own
-      if (userId) {
-        if (category && VALID_CATEGORIES.includes(category)) {
-          if (status && VALID_STATUSES.includes(status)) {
-            feedbackItems = await sql`
-              SELECT f.*,
-                CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-                CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-                EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE (f.is_public = true OR f.user_id = ${userId})
-                AND f.category = ${category}
-                AND f.status = ${status}
-                AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          } else {
-            feedbackItems = await sql`
-              SELECT f.*,
-                CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-                CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-                EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE (f.is_public = true OR f.user_id = ${userId})
-                AND f.category = ${category}
-                AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          }
-        } else if (status && VALID_STATUSES.includes(status)) {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE (f.is_public = true OR f.user_id = ${userId})
-              AND f.status = ${status}
-              AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        } else {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              EXISTS(SELECT 1 FROM feedback_votes fv WHERE fv.feedback_id = f.id AND fv.user_id = ${userId}) AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE (f.is_public = true OR f.user_id = ${userId})
-              AND (f.status != 'DECLINED' OR f.user_id = ${userId})
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        }
-      } else {
-        // Anonymous users: only public, non-declined
-        if (category && VALID_CATEGORIES.includes(category)) {
-          if (status && VALID_STATUSES.includes(status)) {
-            feedbackItems = await sql`
-              SELECT f.*,
-                CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-                CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-                false AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE f.is_public = true
-                AND f.category = ${category}
-                AND f.status = ${status}
-                AND f.status != 'DECLINED'
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          } else {
-            feedbackItems = await sql`
-              SELECT f.*,
-                CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-                CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-                false AS user_voted,
-                (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-              FROM feedback f
-              LEFT JOIN "user" u ON f.user_id = u.id
-              WHERE f.is_public = true
-                AND f.category = ${category}
-                AND f.status != 'DECLINED'
-              ORDER BY ${orderByClause}
-              LIMIT ${limitParam} OFFSET ${offsetParam}
-            `;
-          }
-        } else if (status && VALID_STATUSES.includes(status)) {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              false AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.is_public = true
-              AND f.status = ${status}
-              AND f.status != 'DECLINED'
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        } else {
-          feedbackItems = await sql`
-            SELECT f.*,
-              CASE WHEN f.is_anonymous THEN NULL ELSE u.name END AS author_name,
-              CASE WHEN f.is_anonymous THEN NULL ELSE f.user_id END AS author_id,
-              false AS user_voted,
-              (SELECT COUNT(*)::int FROM feedback_responses fr WHERE fr.feedback_id = f.id AND fr.is_public = true) AS response_count
-            FROM feedback f
-            LEFT JOIN "user" u ON f.user_id = u.id
-            WHERE f.is_public = true
-              AND f.status != 'DECLINED'
-            ORDER BY ${orderByClause}
-            LIMIT ${limitParam} OFFSET ${offsetParam}
-          `;
-        }
-      }
-    }
 
     // Get total count (simplified - just count matching items)
     const [{ total }] = await sql`SELECT COUNT(*)::int as total FROM feedback`;

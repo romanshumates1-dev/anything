@@ -162,6 +162,47 @@ console.log('=== 7. duplicates + consent: tenant scope composes with an offset =
   await check('leads tenant scope (offset)', text, params);
 }
 
+console.log('=== 8. per-call-site offsets in duplicates (regression) ===');
+{
+  // A blanket `buildWhere()` -> `buildWhere(4)` once hit all four helpers in
+  // duplicates/route.ts, but each has a different number of preceding params.
+  // Three of them then produced colliding $n and the endpoint 500'd. The
+  // assertions below pin each helper's real offset.
+  const phone = buildWhere(4).when(true, (w) => w.neq('id', 'x')).build();
+  const phoneText = `... LIKE $4 AND ${phone.text}`;
+  const email = buildWhere(1).when(true, (w) => w.neq('id', 'x')).build();
+  const emailText = `WHERE LOWER(email) = $1 AND ${email.text}`;
+  const address = buildWhere(1).when(true, (w) => w.neq('id', 'x')).build();
+  const addressText = `ILIKE $1 AND ${address.text}`;
+  const recent = buildWhere(3).when(true, (w) => w.eq('organization_id', 'o')).build();
+  const recentText = `created_at > $3 AND ${recent.text}`;
+
+  // buildWhere(offset) means the ENCLOSING statement already consumed `offset`
+  // placeholders, so the fragment's first placeholder is $(offset+1). The cases
+  // below mirror the real call sites in duplicates/route.ts:
+  //   phone   4 bound params (phone variants + LIKE) -> buildWhere(4) -> starts $5
+  //   email   1 bound param (normalized email)       -> buildWhere(1) -> starts $2
+  //   address 1 bound param (ILIKE pattern)          -> buildWhere(1) -> starts $2
+  //   recent  3 bound params (phone, email, since)  -> buildWhere(3) -> starts $4
+  const cases = [
+    ['phone', buildWhere(4), 5],
+    ['email', buildWhere(1), 2],
+    ['address', buildWhere(1), 2],
+    ['recent', buildWhere(3), 4],
+  ];
+  for (const [name, offset, first] of cases) {
+    const frag = offset.when(true, (w) => w.neq('id', 'x')).build();
+    const nums = [...frag.text.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+    // Must start at first, ascend with no gaps or repeats, and be 1:1 with params.
+    const ok =
+      nums.every((n, i) => n === first + i) && nums.length === frag.params.length;
+    console.log(
+      `  ${ok ? 'PASS' : 'FAIL'}  ${name} "${frag.text}" first=$${first} (${frag.params.length} params)`
+    );
+    ok ? pass++ : fail++;
+  }
+}
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
 
