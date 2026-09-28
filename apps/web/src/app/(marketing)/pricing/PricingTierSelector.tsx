@@ -1,6 +1,6 @@
-"use client";
+'use client';
+import { Fragment, useState, useMemo } from "react";
 
-import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Check, X, Star, ArrowRight, Zap, Users, Shield, Sparkles, Building2, Crown, Rocket, TrendingUp, Calculator } from "lucide-react";
 import {
@@ -565,8 +565,17 @@ export default function PricingTierSelector() {
               </tr>
 
               {FEATURE_CATEGORIES.map((category, catIdx) => (
-                <>
-                  <tr key={`cat-${catIdx}`} className="bg-[#1E293B]/30">
+                // Defect #42. The map returned a bare fragment, so the `key` sat
+                // on the inner <tr> where React ignores it. React therefore saw
+                // a list whose children had no keys and logged
+                //   "Each child in a list should have a unique key prop ...
+                //    Check the render method of `tbody`"
+                // on the public /pricing page. The key must be on the OUTERMOST
+                // element the callback returns, i.e. the fragment itself. Keying
+                // by index also risks reusing DOM state if a category is
+                // reordered, so the category name is used where it is stable.
+                <Fragment key={category.name || `cat-${catIdx}`}>
+                  <tr className="bg-[#1E293B]/30">
                     <td colSpan={(showComparison ? tiers.length : 4) + 1} className="p-3 text-sm font-semibold text-white border-t border-white/10">
                       {category.name}
                     </td>
@@ -610,7 +619,7 @@ export default function PricingTierSelector() {
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               ))}
 
               {/* CTA Row at Bottom */}
