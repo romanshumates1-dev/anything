@@ -61,7 +61,6 @@ const BASELINE: Record<string, number> = {
   'app/admin/users/UsersAdmin.tsx': 1,
   'app/api/admin/bans/route.ts': 1,
   'app/api/admin/users/[id]/route.ts': 2,
-  'app/api/analytics/advanced/route.ts': 16,
   'app/api/analytics/ai-recommendations/route.ts': 5,
   'app/api/approvals/[id]/route.ts': 1,
   'app/api/billing/subscribe/route.ts': 1,

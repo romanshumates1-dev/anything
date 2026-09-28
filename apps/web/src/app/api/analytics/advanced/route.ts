@@ -12,6 +12,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { logFallback } from '@/app/api/utils/queryFallback';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
@@ -243,7 +244,7 @@ export async function GET(req: NextRequest) {
 
   try {
     // 1. Overall Campaign Metrics
-    // Defect #32, sixth wave. `.catch(() => [{}])` turned this 500 into a silent
+    // Defect #32, sixth wave. A bare `.catch(() => [{}])` turned this 500 into a silent
     // all-zeros payload, so a campaign-filtered analytics view reported "no
     // activity" rather than an error - a wrong number is worse than a missing page.
     const perfScope = buildWhere(2).eq('clq.campaign_id', campaignId).build();
@@ -288,7 +289,7 @@ export async function GET(req: NextRequest) {
       GROUP BY COALESCE(l.state, 'Unknown')
       ORDER BY COUNT(DISTINCT clq.lead_id) DESC
       LIMIT 20
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#2', []));
 
     // 2b. Hierarchical Geographic Analytics (state -> county -> zip)
     // Uses GROUPING SETS for efficient single-scan aggregation
@@ -341,7 +342,7 @@ export async function GET(req: NextRequest) {
         county,
         COUNT(DISTINCT lead_id) DESC
       LIMIT 200
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#3', []));
 
     // Process regional data with calculated metrics
     const regionalMetrics: RegionalMetrics[] = regionalData.map((r: any) => {
@@ -383,7 +384,7 @@ export async function GET(req: NextRequest) {
         AND clq.created_at > now() - (${days} || ' days')::interval
       GROUP BY DATE(clq.created_at)
       ORDER BY DATE(clq.created_at) DESC
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#4', []));
 
     // 4. Message Performance by Template/Type
     const messagePerformance = await sql`
@@ -401,7 +402,7 @@ export async function GET(req: NextRequest) {
       GROUP BY COALESCE(me.metadata->>'template', 'default')
       ORDER BY COUNT(*) DESC
       LIMIT 10
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#5', []));
 
     // 5. Lead Source Performance
     const sourcePerformance = await sql`
@@ -418,7 +419,7 @@ export async function GET(req: NextRequest) {
         AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown')
       ORDER BY COUNT(DISTINCT l.id) DESC
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#6', []));
 
     // 6. Conversion Funnel Timing
     const funnelTiming = await sql`
@@ -432,7 +433,7 @@ export async function GET(req: NextRequest) {
       FROM campaign_lead_queue clq
       WHERE clq.organization_id = ${orgId}
         AND clq.created_at > now() - (${days} || ' days')::interval
-    `.catch(() => [{}]) as any[];
+    `.catch(logFallback('advanced-analytics-row#1', [{}])) as any[];
 
     // 7. Hourly Performance Breakdown
     const hourlyData = await sql`
@@ -453,7 +454,7 @@ export async function GET(req: NextRequest) {
         AND me.direction = 'outbound'
       GROUP BY EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')
       ORDER BY hour
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#7', []));
 
     // Process hourly data with metrics
     const hourlyMetrics: HourlyMetrics[] = hourlyData.map((h: any) => {
@@ -501,7 +502,7 @@ export async function GET(req: NextRequest) {
         AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown'), l.metadata->>'acquisition_cost_cents'
       ORDER BY COUNT(DISTINCT l.id) DESC
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#8', []));
 
     // Process source ROI with full calculations
     const sourceROI: SourceROI[] = sourceROIData.map((s: any) => {
@@ -566,7 +567,7 @@ export async function GET(req: NextRequest) {
         COALESCE(me.metadata->>'ab_variant', 'control')
       HAVING COUNT(*) >= 50
       ORDER BY test_id, variant
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#9', []));
 
     // 10. Cross-Dimensional Time Analysis (day-of-week x hour)
     const crossDimensionalTime = await sql`
@@ -586,7 +587,7 @@ export async function GET(req: NextRequest) {
         EXTRACT(HOUR FROM me.created_at AT TIME ZONE 'America/New_York')
       HAVING COUNT(*) >= 10
       ORDER BY day_num, hour
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#10', []));
 
     // 11. Consent-to-Conversion Funnel
     const consentConversionData = await sql`
@@ -606,7 +607,7 @@ export async function GET(req: NextRequest) {
       GROUP BY COALESCE(cr.metadata->>'consentMethod', 'unknown')
       HAVING COUNT(DISTINCT l.id) >= 5
       ORDER BY COUNT(DISTINCT l.id) DESC
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#11', []));
 
     // 12. Buyer Pipeline Metrics
     const buyerMetricsData = await sql`
@@ -626,7 +627,7 @@ export async function GET(req: NextRequest) {
           b.created_at > now() - (${days} || ' days')::interval
           OR ba.created_at > now() - (${days} || ' days')::interval
         )
-    `.catch(() => [{}]) as any[];
+    `.catch(logFallback('advanced-analytics-row#2', [{}])) as any[];
 
     // 13. Seller Pipeline Metrics
     const sellerMetricsData = await sql`
@@ -643,7 +644,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN contracts c ON c.lead_id = l.id
       WHERE l.organization_id = ${orgId}
         AND l.created_at > now() - (${days} || ' days')::interval
-    `.catch(() => [{}]) as any[];
+    `.catch(logFallback('advanced-analytics-row#3', [{}])) as any[];
 
     // 14. Top Lead Sources for Seller Pipeline
     const topSourcesData = await sql`
@@ -661,7 +662,7 @@ export async function GET(req: NextRequest) {
       HAVING COUNT(DISTINCT l.id) >= 10
       ORDER BY contract_rate DESC NULLS LAST
       LIMIT 5
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#12', []));
 
     // 15. Visual Funnel with Drop-off Analysis
     const funnelData = await sql`
@@ -696,7 +697,7 @@ export async function GET(req: NextRequest) {
       UNION ALL
       SELECT * FROM contract_stage
       ORDER BY stage_order
-    `.catch(() => []);
+    `.catch(logFallback('advanced-analytics#13', []));
 
     // Process A/B test results with statistical significance AND Thompson Sampling
     const abTestResults = processABTestResults(abTestData);
