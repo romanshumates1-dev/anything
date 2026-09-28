@@ -142,6 +142,13 @@ console.log('\n--- security headers present on a public response ---');
     if (!present) failures++;
     console.log(`  ${present ? 'OK  ' : 'MISS'} ${h}`);
   }
+  // The framework must not be advertised to unauthenticated scanners.
+  checks++;
+  const poweredBy = res.headers.get('x-powered-by');
+  if (poweredBy) failures++;
+  console.log(
+    `  ${poweredBy ? 'LEAK' : 'OK  '} x-powered-by${poweredBy ? ` (${poweredBy})` : ''}`
+  );
 }
 
 console.log(`\nRESULT: ${checks} checks, ${failures} failure(s)`);

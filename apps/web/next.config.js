@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   devIndicators: false,
+  // Do not advertise the framework in every response. `X-Powered-By: Next.js`
+  // tells an unauthenticated scanner exactly which stack and version family is
+  // running, which shortens reconnaissance for no benefit to us. Found by the
+  // data-leak audit (scripts/security-probe.mjs checks the header set).
+  poweredByHeader: false,
   // Security headers for production readiness
   async headers() {
     return [

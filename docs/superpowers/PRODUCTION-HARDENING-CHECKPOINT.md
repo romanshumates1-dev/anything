@@ -623,3 +623,51 @@ check, bank-accounts, analytics/advanced.
 Still **7/10**. This session closed a ranked class defect and the highest
 financial-coverage gap, but the security addendum and data-leak audit - the two
 largest gates - are untouched. 10/10 remains unjustified.
+
+---
+
+## SESSION 7 - SECURITY ADDENDUM + DATA-LEAK AUDIT (partial but real)
+
+### Executed security verification (was: asserted from code review)
+`scripts/security-probe.mjs` against the PRODUCTION build: **17 checks, 0
+failures** (16 before the header addition).
+- CSRF: hostile `Origin: https://evil.example.com` -> 403
+- path traversal: 401/404 across 5 payloads incl. encoded %2e%2e and
+  /static/../../.env - no filesystem disclosure
+- webhook forgery: unsigned payloads to payments + esign webhooks -> 503, i.e.
+  FAIL CLOSED rather than processing an unverified event
+- XSS: `<script>alert(1)</script>` in a filter is not reflected raw
+- open redirect: `callbackUrl=https://evil.example.com` resolves to a LOCAL
+  error page, not the attacker's origin
+- security headers: CSP, X-Content-Type-Options, X-Frame-Options,
+  Referrer-Policy all present
+
+Together with `tenant-isolation-probe.mjs` (15 checks, 0 leaks) the authz,
+tenant, CSRF, traversal, forgery, XSS, redirect and header classes now have
+executed evidence rather than review-based confidence.
+
+### Data-leak audit (partial)
+- Client bundles: 104 assets scanned for 8 exact secret values -> **0 found**
+- Source maps shipped: **0** `.map` files under `.next/static`
+- Error disclosure: 500/401 bodies are generic; no neon/postgres/stack text
+  reaches the client
+- Debug endpoints: `/api/debug`, `/api/health`, `/api/env` -> 404;
+  `/api/system/health` is intentionally public and returns only
+  `{ok,status,timestamp}` - verified no internals
+- **FIXED (LOW):** `X-Powered-By: Next.js` was advertising the stack to any
+  unauthenticated scanner. `poweredByHeader: false` added, and the security
+  probe now asserts its absence so it cannot regress.
+
+### STILL NOT EXERCISED (do not claim these)
+- SSRF (only matters where the server fetches user-supplied URLs)
+- upload / file-handling abuse
+- rate-limit BYPASS specifically (limits are enforced and 429s observed, but no
+  bypass attempt was made)
+- AI prompt injection / indirect injection / context leakage end-to-end
+- cookies / localStorage / log-output content audit
+- downloadable-file authorization
+
+### Remaining silent-failure work
+`utils/pipeline-health-engine` (7), `api/campaigns/monitor` (7),
+`utils/trustSignals` (6), then ~90 single-site files. `logFallback` exists and
+the pattern is established; this is mechanical.
