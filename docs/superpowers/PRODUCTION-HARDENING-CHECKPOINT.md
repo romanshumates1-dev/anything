@@ -412,3 +412,53 @@ REAL GAP FOUND WHILE CHECKING:
 Corrected financial readiness: **6/10** (was wrongly 3/10). Not higher because
 bank-account/payout-destination logic is unexercised and live Stripe flows
 remain BLOCKED on credentials.
+
+---
+
+## SESSION 4 CLOSE - STATE AT CHECKPOINT
+
+Commit: e8e62e8 (branch `feat/cloudflare-workers`, clean tree).
+
+### Achieved this session (all evidence-backed)
+- Authenticated browser QA: **60/70 -> 70/70**. Defect #42 (React key on a bare
+  fragment) was the last failure.
+- Dashboard/admin 500 cluster: all 8 endpoints 200 (was 8 broken).
+- Defect #41 /buyers: response shape + surfaced error state.
+- Defect #37 sql.unsafe; auth 5xx observability; fragment hard-zero guard.
+- New `scripts/tenant-isolation-probe.mjs`: 15 checks, 0 leaks.
+- Performance answered: 5-10s claim NOT reproducible on production build
+  (warm 37-95ms, cold 445-1490ms). The old numbers were dev-mode JIT.
+- Full sequential regression green: typecheck 0, 2645/0 unit, build 0, E2E 2/0.
+
+### Highest-value UNBLOCKED work remaining, in order
+1. **bank-accounts: 31 tests, all skipped.** Payout destination with zero active
+   coverage. Un-skip or write real tests. Highest financial risk found.
+2. **Silent-failure audit**: sweep `src/app/api` for
+   `.catch(() => [])` / `.catch(() => [{}])` / `.catch(() => ({` and decide per
+   site whether an empty result is genuinely intended. A 500 that renders as
+   "no data" is how defects #46/#47 hid. The dashboard work fixed 2 instances;
+   the class is unaudited.
+3. **Security addendum not yet exercised this session**: AI prompt injection,
+   indirect injection, SSRF, XSS, CSRF, webhook replay/forgery, rate-limit
+   bypass, file/upload abuse, path traversal, security headers, open redirect.
+   Tenant isolation / IDOR / admin escalation IS done (15/0).
+4. **Data-leak audit**: client bundles, source maps, cookies, localStorage, log
+   output, error messages, downloadable files. Only the secret-VALUE scan in
+   104 client assets has been run.
+5. **48 orphaned users** (no organization_members row) - cleanup or explicit
+   decision; they 403 on every org-scoped API.
+6. **Original 17 items** 1,2,4,8,9,10,12,13,14,15,16,17: independent
+   re-verification, several with real browser workflows.
+7. **Mutation / property / fuzz testing** - none exist. Listed as a
+   professional-QA principle but never applied.
+8. Re-run the full regression after whatever changes next.
+
+### Do NOT redo
+Dashboard/schema work, fragment sweep, browser QA, perf measurement, tenant
+isolation probe. All verified green at e8e62e8.
+
+### Score
+OVERALL 7/10. Not 10/10. Reasons are enumerated in
+PRODUCTION-HARDENING-MASTER-STATUS.md section C/E and in the SESSION 4 score
+table above. The single largest gap is item 2 + 3 above: unexercised security
+addendum plus an unaudited silent-failure class.
