@@ -682,3 +682,56 @@ the pattern is established; this is mechanical.
 
 The fix is confirmed by a request to the rebuilt server, not by reading the
 config. The probe now fails the build if the header ever returns.
+
+---
+
+## SESSION 7 CLOSE - STATE AT CHECKPOINT
+
+Commit: 5577263 (branch `feat/cloudflare-workers`, clean tree).
+
+Gates: unit suite **2658 passed / 0 failed (237 files)** exit 0; typecheck exit
+0; `next build` exit 0; api-probe PASS; security-probe **17 checks, 0
+failures**; tenant-isolation **15 checks, 0 leaks**. Browser QA 70/70 and
+tenant-isolation predate the last two commits - re-run before any completion
+claim.
+
+### Done this session
+- `analytics/advanced`: 16 silent catches -> 0 via shared `logFallback`.
+- `dncRegistry.hasSmsConsent` made visible (fails closed, no longer silent).
+- `bank-accounts` (payout destination) given 10 real security tests, replacing
+  31 `it.todo` placeholders whose "routes not implemented" reason was stale.
+- `security-probe.mjs`: 17 executed checks - CSRF, traversal, forgery, XSS,
+  open redirect, headers.
+- Data-leak audit: 0 secrets in 104 client assets, 0 source maps, generic
+  error bodies, no debug endpoints.
+- `X-Powered-By` removed and **verified absent** on a rebuilt production
+  server, with a guard assertion.
+
+### Next work, ranked, all UNBLOCKED
+1. **Security classes still unexercised**: SSRF (where the server fetches
+   user URLs), upload/file abuse, rate-limit BYPASS attempt, AI prompt and
+   indirect injection / context leakage end-to-end, cookie + localStorage +
+   log-content audit, downloadable-file authorization.
+2. **48 orphaned users** (no `organization_members` row) - establish why, decide
+   repair vs leave, check for security implication. Do not delete data.
+3. Remaining silent-failure files: `utils/pipeline-health-engine` (7),
+   `api/campaigns/monitor` (7), `utils/trustSignals` (6), then ~90 singles.
+   `logFallback` and the pattern already exist; mechanical.
+4. **Original 17 items** 1,2,4,8,9,10,12,13,14,15,16,17 - independent
+   re-verification with real browser workflows.
+5. **Mutation / property testing**: none exist. Apply to financial calculation,
+   limits, state machines, authorization.
+6. Full regression after whatever changes next, including a fresh browser QA and
+   tenant-isolation run.
+
+### Do NOT redo
+Browser QA (70/70), tenant isolation (15/0), dashboard/schema repair, fragment
+sweep (0), production performance measurement, financial invariant coverage
+check, bank-accounts, analytics/advanced, security-probe (17/0), data-leak
+secret scan.
+
+### Score
+**7/10, unchanged.** This session converted two large gates from
+review-asserted to executed-verified (security web/API classes, data-leak
+surfaces) and closed the highest financial-coverage gap, but items 1, 2, 4 and
+5 above are untouched. 10/10 remains unjustified.
