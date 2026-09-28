@@ -1,11 +1,11 @@
 vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
 /**
- * TENANT ISOLATION — GET /api/regions/estimate
+ * TENANT ISOLATION ï¿½ GET /api/regions/estimate
  *
  * This route counts leads. The campaign_contacts queries were scoped to the caller's
  * organization, but the four `leads` queries were NOT, so any authenticated tenant
- * received the total number of leads belonging to EVERY other tenant, and — because the
- * route accepts region filters — could use it as a counting oracle to infer where other
+ * received the total number of leads belonging to EVERY other tenant, and ï¿½ because the
+ * route accepts region filters ï¿½ could use it as a counting oracle to infer where other
  * tenants' leads are located (query by ZIP/state and observe the count change).
  *
  * These tests assert the count is bounded by the caller's own leads in every branch:
@@ -29,12 +29,33 @@ vi.mock("@/lib/organization-context", () => ({
   getOrganization: vi.fn(async () => ({ id: currentOrg })),
 }));
 vi.mock("@/app/api/utils/sql", () => {
-  const run = async (strings: TemplateStringsArray, ...values: unknown[]) => {
-    const text = strings.reduce((a, s, i) => a + s + (i < values.length ? ` $${i + 1} ` : ""), "");
+  // The driver supports two call shapes and this route uses both now:
+  //   tagged  -> sql`SELECT ... WHERE a = ${x}`
+  //   string  -> sql(text, params)   <- required for dynamic predicates
+  // The nested-fragment fix (defect #32) moved the region filters to the string
+  // form, so the mock has to understand it or the test would pass vacuously.
+  const run = async (
+    stringsOrText: TemplateStringsArray | string,
+    ...rest: unknown[]
+  ) => {
+    let text: string;
+    let params: unknown[];
+
+    if (typeof stringsOrText === "string") {
+      text = stringsOrText;
+      params = Array.isArray(rest[0]) ? (rest[0] as unknown[]) : [];
+    } else {
+      const strings = stringsOrText;
+      text = strings.reduce(
+        (a, s, i) => a + s + (i < rest.length ? ` $${i + 1} ` : ""),
+        ""
+      );
+      params = rest;
+    }
+
     queries.push(text);
-    const params = values as any[];
     const orgIdx = params.findIndex((v) => v === ORG_A || v === ORG_B);
-    const org = orgIdx === -1 ? null : params[orgIdx];
+    const org = orgIdx === -1 ? null : (params[orgIdx] as string);
     // 3 rows for A, 7 for B -> a global count would be 10.
     const table = /FROM\s+leads/i.test(text) ? "leads" : "campaign_contacts";
     const scoped = org !== null && new RegExp(`${table}[\\s\\S]*?organization_id`, "i").test(text);
@@ -60,7 +81,7 @@ function lastLeadsQuery(): string {
   return [...queries].reverse().find((q) => /FROM\s+leads/i.test(q)) ?? "";
 }
 
-describe("regions/estimate — tenant isolation", () => {
+describe("regions/estimate ï¿½ tenant isolation", () => {
   beforeEach(() => {
     currentOrg = ORG_A;
     queries.length = 0;

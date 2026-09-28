@@ -183,3 +183,79 @@ Details and proof in `PRODUCTION-HARDENING-STATUS.md` session 8.
 | Testing / QA | **8.5/10** | 2631 unit tests, real E2E, real browser, migration gate, live API probe; new tests this session were written to FIND misses and found 7 defects |
 | Performance | **7/10** | measured 175 ms - 16 s (dev-mode compile dominates); production-build timings not yet captured |
 | **Overall** | **8/10** | Not 10/10: a known defect class (46 SQL sites) and a production build/browser pass on the deployed domain are outstanding |
+
+---
+
+## H. Defect #32 - nested SQL fragments: 66 to ZERO
+
+Session 8 left 46 sites baselined in 18 files and reported that as acceptable
+debt. That was wrong, and re-measuring proved why. `scripts/probe-fragments.mjs`
+executes the real driver instead of reasoning about it:
+
+| expression | result |
+|---|---|
+| `AND ${sql`TRUE`}` | `invalid input syntax for type boolean` |
+| `AND ${sql``}` (the "false" branch) | `invalid input syntax for type boolean` |
+| `INSERT INTO t (..., $1)` | syntax error |
+
+Fragments are never spliced; they are bound as a JSON value. Two consequences
+that the earlier analysis missed:
+
+1. The empty `sql`` ` false branch fails identically, so `cond ? sql`A` : sql``}`
+   was a 500 in **both** branches, not conditionally.
+2. A fragment in an **INSERT column list** is a syntax error regardless of
+   branch, so it fails 100% of the time.
+
+### Triage outcome - nothing was safe to leave behind
+
+| metric | value |
+|---|---|
+| STARTING COUNT | **66** (19 files) |
+| CURRENT COUNT | **0** (0 files) |
+| Reachable defects found | 46 |
+| Intentionally-safe remainders | **0** |
+| Ratchet | retired, replaced by a hard-zero guard |
+
+Every one of the 46 was a real 500 or a silently wrong result:
+
+- `compliance/audit` - both branches broken, 500 for every caller
+- `templates/library` - every FILTERED view 500'd; the unfiltered list loaded
+  fine, which is exactly why review missed it
+- `duplicates` - `.catch(() => [])` turned the 500 into an empty list, so
+  duplicate detection never matched anything
+- `campaignEngine`, `pipelineOrchestrator` - fragment in an INSERT column list:
+  adding any lead to a campaign always threw
+- `leadGenerationEngine` - false branch was `sql`true``, so the DEFAULT call
+  (no region filter) 500'd
+- `questionnaire`, `achievements` - `${cond ? sql`now()` : null}` in a VALUES
+  list. `null` binds, but `now()` is still a fragment, so questionnaire
+  completion and achievement unlocking both 500'd
+- `analytics/advanced`, `analytics/ai-recommendations` -
+  `.catch(() => [{}])` turned the 500 into ALL ZEROS: a filtered analytics view
+  reported "no activity" instead of an error
+
+### Defect #37 - a second defect class found by the same measurement
+
+`utils/sql.ts` exposes `unsafe: () => ({ __unsafeSql: text })`. The driver has
+no knowledge of that marker; executed live, it is sent as a value:
+
+    SELECT $1  ->  {"__unsafeSql":"1"}
+
+So `SET ${sql.unsafe(clauses)}` reached Postgres as `SET $1, updated_at =
+NOW()` - a syntax error. Saving the **pipeline config** and the **negotiation
+config** each returned 500 on every PATCH. Both now use the driver's
+`sql(text, params)` form, and a guard bans `sql.unsafe` inside a template.
+
+### A third bug, caught in my own fix by the live harness
+
+Appending a fragment to text that had already bound `$1` made both halves use
+`$1`: *"bind message supplies 2 parameters, but prepared statement requires
+1"*. `buildWhere(n)` and `combine(..., n)` now take the offset the enclosing
+statement already consumed; 7 tests pin it.
+
+### Evidence
+
+- `node scripts/scan-fragments.mjs` -> **0 sites across 0 files**
+- `npx tsx scripts/verify-sql-fixes.mjs` -> **9/9**, executing every rewritten
+  statement against the live database, including placeholder-numbering checks
+- `node scripts/api-probe.mjs` -> **PASS, exit 0** against a real signed-up user
