@@ -181,3 +181,81 @@ payloads (activity and weekly-progress were two). A 500 that renders as "no
 data" is worse than a visible error. Sweep the api directory for
 `.catch(() => [])` / `.catch(() => [{}])` / `.catch(() => ({` and decide, per
 site, whether an empty result is genuinely the intended product behaviour.
+
+---
+
+## SESSION 3 UPDATE - dashboard cluster CLOSED, buyers fixed
+
+Commit `21fabc7` (after `99705e2`, `8a10166`).
+
+### The signup 500 was NOT an application bug - important distinction
+Both hypotheses in the previous checkpoint were wrong. The cause was a corrupted
+dev-server build cache: after `Remove-Item .next -Recurse` and a restart, signup
+returns 200 and always has. Do not "fix" signup again. What the investigation DID
+produce is a real defect: `api/auth/[...all]` logged nothing, because
+`toNextJsHandler` reports upstream failures as a 5xx RESPONSE rather than a
+throw. A silent 500 on sign-up is undiagnosable; it now logs any >=500 with its
+body and still returns a generic message to the client.
+
+### All 8 dashboard/admin endpoints now 200 (live, authenticated)
+quick-stats, stats, engagements, funnel, activity, weekly-progress,
+next-actions, admin/stats. All previously 500.
+
+Two more found and fixed while closing this:
+- `feedback`: `ORDER BY ${orderByClause}` bound a STRING as $n -> 500 for
+  everyone. This is the SAME defect class I had previously "fixed" in that file,
+  reintroduced. Nine duplicated query blocks are now ONE buildWhere query, so
+  the access-control rules exist once. Invalid category/status is now 400.
+- `duplicates`: a blanket `buildWhere()` -> `buildWhere(4)` had hit all four
+  helpers; three had wrong offsets and 500'd. Now 4/1/1/3, each pinned by
+  `verify-sql-fixes.mjs` case 8.
+
+### Gates GREEN after commit 99705e2 / 21fabc7
+- typecheck exit 0
+- unit suite: 2645 passed / 0 failed (235 files), exit 0
+- next build: exit 0 (compiled successfully)
+- E2E: 2 passed, exit 0
+- api-probe: PASS, exit 0 (incl. all 8 dashboard endpoints; POST /api/duplicates
+  401 anonymous; public feedback has no user_id/author_id)
+- verify-sql-fixes: 13/13 against the live database
+- scan-fragments: 0 sites
+
+### Test-suite flakiness fixed
+`client-secret-scan` and `sql-fragment-composition` guards scan every file under
+src/ and sat at vitest's 5s default; under load they timed out (2643/2645) while
+the same 12 tests passed 12/12 in isolation. Both `describe` blocks now have a
+30s timeout. A flaky guard is worse than a slow one.
+
+### STILL OPEN
+- Defect #42: `/pricing` and `/funnel` produce console errors; `/funnel` renders
+  text=48 (near-empty). NOT yet investigated or fixed.
+- Browser QA has NOT been re-run to completion since the buyers fix. The last
+  complete run (before these fixes) was 61/70. Target is 70/70.
+- Defect #41 (buyers) is fixed in code and typechecks, but is NOT yet
+  browser-verified - confirm /buyers renders without the TypeError.
+
+### NEXT ACTIONS, IN ORDER
+1. `node scripts/browser-qa.mjs http://localhost:4000 --auth --warm`
+   (needs the dev server on :4000 - the CSRF origin gate only trusts that port)
+   Confirm /buyers, /pricing, /funnel. Record the TOTAL line.
+2. Fix defect #42 (/pricing, /funnel console errors + near-empty /funnel).
+3. Re-run the full gate after that change: typecheck, suite, build, e2e, probe.
+4. THEN continue the original 17-item mission and the security addendum. Large
+   parts of both remain unre-verified in this session.
+
+### ENVIRONMENT GOTCHAS (cost real time - do not rediscover)
+- Long jobs MUST run via a background .cmd + log polling. Foreground calls time
+  out at 30s and leave ~1GB stuck node processes. Kill them by PID if so.
+- Never run the unit suite concurrently with browser QA or the build: the
+  whole-tree scan guards will time out and you will misread it as a failure.
+- Do not use `yarn` inside .cmd; call
+  `node node_modules/typescript/bin/tsc -p tsconfig.typecheck.json --noEmit`,
+  `node node_modules/vitest/vitest.mjs run --config src/app/api/vitest.config.ts`,
+  `node node_modules/next/dist/bin/next build`,
+  `node node_modules/@playwright/test/cli.js test`.
+- browser-qa takes the base URL as a POSITIONAL arg, not an env var.
+- PowerShell `-replace` on .ts files is risky: it once inserted a comment
+  containing a BACKTICK inside a SQL template literal, which terminated the
+  literal ("Error: Expected a semicolon"). Prefer the editor tool.
+- `buildWhere(offset)`: offset = how many placeholders the ENCLOSING statement
+  already consumed, so the fragment's first placeholder is $(offset+1).
