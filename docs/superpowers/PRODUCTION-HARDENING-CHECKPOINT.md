@@ -332,3 +332,55 @@ for any optimization actually applied. The 5-10s claim is now answered
 Also noted: `/contacts` and `/earnings` return 404. These are NOT defects -
 contacts live under `/crm` and `/leads`, earnings under `/payouts` and
 `/reports`. Recording so a later session does not "fix" them.
+
+---
+
+## SESSION 4 - FINAL REGRESSION AFTER THE PRICING FIX (all green)
+
+Run after the last code change, in one sequential pass:
+
+| gate | command | result |
+|---|---|---|
+| typecheck | tsc -p tsconfig.typecheck.json --noEmit | **exit 0** |
+| unit suite | vitest run --config src/app/api/vitest.config.ts | **2645 passed / 0 failed** (235 files), exit 0 |
+| production build | next build | **exit 0**, compiled successfully |
+| E2E | playwright test | **2 passed**, exit 0 |
+| browser QA | browser-qa.mjs --auth --warm | **70/70** |
+| tenant isolation | tenant-isolation-probe.mjs | **15 checks, 0 leaks**, exit 0 |
+| api-probe | api-probe.mjs | **PASS**, exit 0 |
+| live SQL | verify-sql-fixes.mjs | **13/13** |
+| fragments | scan-fragments.mjs | **0** |
+
+Run them SEQUENTIALLY, never concurrently - concurrent runs starve the
+whole-tree scan guards and produce false failures.
+
+## SCORE (honest, and NOT 10/10)
+
+The regression is fully green and the browser gate that was 60/70 is now 70/70.
+But 10/10 requires the whole acceptance scope, and much of it has still not been
+exercised. Scoring only what has evidence:
+
+- Original 17 tasks: **6/10** - item 11 (restricted signup) COMPLETE with both
+  branches proven; item 6 (performance) measured and answered; items 1,2,4,8,9,
+  10,12,13,14,15,16,17 not independently re-verified this session.
+- Security: **7/10** - CSRF/CORS/IDOR/tenant isolation/admin escalation/secret
+  exposure all verified by execution, but no fresh AI-injection, SSRF, XSS,
+  webhook-replay or rate-limit-bypass pass was run this session.
+- Engineering quality: **8/10** - shared SQL builder, per-file ratchets replaced
+  by hard zero, real schema verification, honest treatment of un-derivable data.
+  The `.catch(() => [])` silent-failure pattern still needs a full audit.
+- Testing/QA: **8/10** - 2645 unit tests, 70/70 browser, 15-check isolation
+  probe, live SQL harness, migration gate. Mutation/property/fuzz testing absent.
+- Performance readiness: **6/10** - the 5-10s claim is answered and not
+  reproducible (37-95ms warm), but authenticated loads, API latency under load,
+  N+1 and bundle analysis are not done.
+- Financial readiness: **3/10** - no lifecycle testing this session; Stripe
+  credentials absent. Atomicity/idempotency/concurrency of credits, payouts and
+  tax withholding are UNVERIFIED.
+- Database: **8/10** - 93 migrations gated, schema verified against reality.
+  48 orphaned users (no org membership) still need cleanup.
+
+**OVERALL: 7/10** - not 10/10. The gate that was failing (browser QA) now
+passes completely, but the security addendum, the financial lifecycle, most of
+the 17 original items, and the data-leak/performance audits remain unexercised.
+Those are the next sessions' work, enumerated in the master manifest.
