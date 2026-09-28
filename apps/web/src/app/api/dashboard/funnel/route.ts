@@ -92,12 +92,16 @@ export async function GET() {
     };
 
     // Get average deal value
+    // Defect #44: `leads.deal_value` has never existed, so this 500'd and the
+    // funnel page could not render. The real value lives in `leads.metadata` as
+    // `propertyValue` (verified against the live rows), which is the assessed
+    // property value - the honest basis for an average deal size here.
     const [avgDealResult] = await sql`
-      SELECT COALESCE(AVG(deal_value), 8500) as avg_value
+      SELECT COALESCE(AVG(NULLIF(metadata->>'propertyValue', '')::numeric), 8500) as avg_value
       FROM leads
       WHERE organization_id = ${org.id}
         AND status = 'closed'
-        AND deal_value > 0
+        AND NULLIF(metadata->>'propertyValue', '') ~ '^[0-9.]+$'
     `;
 
     const avgDealValue = Math.round(parseFloat(avgDealResult?.avg_value || '8500'));

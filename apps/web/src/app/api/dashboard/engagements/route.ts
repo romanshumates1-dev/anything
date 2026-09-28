@@ -37,28 +37,41 @@ export async function GET() {
   try {
     // SECURITY: All queries scoped to organization
     // Get recent AI conversations with lead info
+    //
+    // Defect #40: this selected c.message_type, c.content, c.classification,
+    // l.first_name, l.last_name, l.property_address, l.property_city and
+    // l.property_state - NONE of which exist. ai_conversations really has
+    // (id, lead_id, channel, history jsonb, status, confidence_score,
+    // requires_human, last_message_at, created_at) and `leads` stores person and
+    // property detail inside `metadata` (tier, phase, state, propertyValue, ...),
+    // not in dedicated columns. The whole endpoint 500'd.
+    //
+    // Rewritten against the real columns. Inbound-ness is taken from the
+    // conversation's own state rather than an invented message_type: a
+    // conversation that is awaiting us is exactly the engagement being surfaced.
     const recentResponses = await sql`
       SELECT
         c.id,
         c.lead_id,
-        c.message_type,
-        c.content,
-        c.classification,
+        c.channel,
+        c.status,
+        c.requires_human,
+        c.confidence_score,
+        c.last_message_at,
         c.created_at,
-        l.first_name,
-        l.last_name,
-        l.property_address,
-        l.property_city,
-        l.property_state,
+        l.name as lead_name,
+        l.metadata->>'state' as property_state,
+        l.metadata->>'tier' as lead_tier,
+        l.metadata->>'phase' as lead_phase,
         camp.name as campaign_name
       FROM ai_conversations c
       JOIN leads l ON l.id = c.lead_id
       LEFT JOIN campaign_leads cl ON cl.lead_id = l.id
       LEFT JOIN campaigns camp ON camp.id = cl.campaign_id
       WHERE l.organization_id = ${org.id}
-        AND c.message_type = 'inbound'
-        AND c.created_at >= NOW() - INTERVAL '7 days'
-      ORDER BY c.created_at DESC
+        AND c.last_message_at IS NOT NULL
+        AND c.last_message_at >= NOW() - INTERVAL '7 days'
+      ORDER BY c.last_message_at DESC
       LIMIT 20
     `;
 
