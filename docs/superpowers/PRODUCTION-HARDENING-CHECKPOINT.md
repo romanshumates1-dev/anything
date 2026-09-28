@@ -462,3 +462,65 @@ OVERALL 7/10. Not 10/10. Reasons are enumerated in
 PRODUCTION-HARDENING-MASTER-STATUS.md section C/E and in the SESSION 4 score
 table above. The single largest gap is item 2 + 3 above: unexercised security
 addendum plus an unaudited silent-failure class.
+
+---
+
+## SESSION 5 - SILENT-FAILURE CLASS AUDIT (the #1 ranked item)
+
+Requirement was: "one `.catch(() => [])` -> search for ALL swallowed-error
+patterns". Done, and it was much larger than a handful.
+
+### Scope found
+**99 files, ~155 sites.** My earlier estimate of "182" counted per-line matches
+including comment lines; the guard's authoritative count strips comments.
+
+Notably NOT only analytics: financially and compliance critical paths were
+affected, including `api/payments/refund`, `api/payments/mark-paid`,
+`api/billing/subscribe`, `api/lead-finder/apollo`, `api/esign/self-hosted`, and
+`api/utils/dncRegistry`.
+
+### Triage - most are benign, and saying so matters
+- `await request.json().catch(() => ({}))` in `payments/refund`,
+  `payments/mark-paid`, `billing/subscribe` - this tolerates an EMPTY or
+  malformed request body. It is not swallowing a database failure. It is
+  acceptable ONLY because those routes validate the body afterwards; that
+  validation is what must be confirmed, not the catch.
+- Genuine DB-error swallows: the rest, and `dncRegistry` was the worst.
+
+### Fixed: dncRegistry.hasSmsConsent
+The `contact_list_members` consent lookup used `.catch(() => [])` while the
+`compliance_records` read directly above it THREW. Two defects in one function:
+inconsistent failure behaviour, and a swallowed database error that is
+indistinguishable from "no consent on file" - so a database outage would look
+exactly like an absence of consent records and would never be noticed.
+
+It fails CLOSED (no rows => no consent => do not contact), so it was not a
+consent bypass, and it is deliberately still not a throw: consent lookups run
+inside send loops and failing closed is correct. The failure is now LOGGED, so
+the outage is visible. This is the shape every site in this class should end at:
+fail in the safe direction, but never silently.
+
+### Enforced going forward
+`src/app/api/__tests__/security/swallowed-error.guard.test.ts` (3 tests, passing):
+1. A silent catch in a file with no baseline entry FAILS immediately.
+2. A baselined file may not exceed its recorded count, so the total can only
+   fall; fixing a site means lowering its number deliberately.
+3. `api/feedback/route.ts` and `api/duplicates/route.ts` are asserted at ZERO, so
+   the two already-fixed routes cannot regress.
+
+The guard is the deliverable here, not the count. The count cannot drop by 155
+edits in one session, but it can now never rise again silently.
+
+### Next in this class
+Ranked by risk:
+1. `api/analytics/advanced/route.ts` - 16 sites, the single worst file.
+2. `api/utils/pipeline-health-engine.ts` and `api/campaigns/monitor/route.ts` -
+   7 each.
+3. `api/utils/trustSignals.ts` (6), `api/system/cron` (5),
+   `api/utils/buyerDiscoveryEngine` (5), `api/debrief` (5),
+   `api/analytics/ai-recommendations` (5).
+4. Sweep the remaining ~90 single-site files.
+
+Note for whoever continues: some baseline entries are deliberately higher than
+the true count (the ratchet permits baseline >= actual). That is safe, but do
+not read the baseline total as the exact number of remaining defects.

@@ -244,6 +244,18 @@ export async function hasSmsConsent(phone: string | null | undefined): Promise<b
   // Also check contact_lists with consent_mode as documented
   // 'inbound' = lead initiated contact, 'consented' = explicit opt-in
   // 'unverified' does NOT count
+  //
+  // Class audit (defect: silent failure). This was `.catch(() => [])`. Two
+  // problems: the `compliance_records` read above THROWS on failure while this
+  // one did not, so the function had two different failure behaviours; and a
+  // swallowed database error is indistinguishable from "nothing on file", so a
+  // database outage would silently look like an absence of consent records and
+  // would never be noticed.
+  //
+  // The fallback is FAIL-CLOSED (no rows => no consent => do not contact),
+  // which is the safe direction, and the failure is now logged so the outage is
+  // visible. It is deliberately not turned into a throw: consent lookups run
+  // inside send loops, and failing closed on consent is correct behaviour.
   const listRows = await sql`
     SELECT 1
     FROM contact_list_members clm
@@ -251,7 +263,14 @@ export async function hasSmsConsent(phone: string | null | undefined): Promise<b
     WHERE clm.phone = ${key}
     AND cl.consent_mode IN ('inbound', 'consented')
     LIMIT 1
-  `.catch(() => []);
+  `
+    .catch((error) => {
+      console.error(
+        `[dnc] consent lookup failed for ${key}; treating as NO CONSENT (fail-closed):`,
+        error
+      );
+      return [];
+    });
 
   return listRows.length > 0;
 }
