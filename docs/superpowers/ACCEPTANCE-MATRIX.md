@@ -259,3 +259,37 @@ statement already consumed; 7 tests pin it.
 - `npx tsx scripts/verify-sql-fixes.mjs` -> **9/9**, executing every rewritten
   statement against the live database, including placeholder-numbering checks
 - `node scripts/api-probe.mjs` -> **PASS, exit 0** against a real signed-up user
+
+---
+
+## I. OPEN DEFECTS found by the final browser pass (NOT yet fixed)
+
+Authenticated browser QA, 70 route-viewports, real signed-up user,
+`node scripts/browser-qa.mjs http://localhost:4000 --auth --warm`.
+Result: **61 pass / 9 fail**. The 9 failures are 4 distinct defects, and two of
+them are 500s that the API probe did not cover because the probe does not call
+those paths.
+
+| # | defect | evidence | status |
+|---|---|---|---|
+| 38 | `GET /api/dashboard/quick-stats` 500 | `net: 500 .../api/dashboard/quick-stats` on `/` (desktop + mobile) | OPEN |
+| 39 | `GET /api/admin/stats` 500 | `net: 500 .../api/admin/stats` on `/admin` (desktop + mobile) | OPEN |
+| 40 | `GET /api/dashboard/engagements` 500 | `net: 500 .../api/dashboard/engagements` on `/` (mobile) | OPEN |
+| 41 | `/buyers` crashes client-side: `TypeError: buyers.map is not a function` | console error on `/buyers` (desktop + mobile) | OPEN |
+| 42 | `/pricing` and `/funnel` render console errors / near-empty text | console:1, `THIN bytes=32254 text=48` | OPEN |
+
+Defect 41 is a data-shape mismatch: the page assumes the response is an array
+and the endpoint is not returning one. That is a correctness bug, not a styling
+issue - the buyers table never renders.
+
+These are NOT counted as complete. The 10/10 gate is not met while 38-42 are
+open, and the honest current state is:
+
+- typecheck: PASS (exit 0)
+- unit suite: PASS - 2645 passed / 0 failed (235 files)
+- production build: PASS (exit 0)
+- E2E: PASS - 2 passed, exit 0
+- api-probe (live, authenticated): PASS, exit 0
+- verify-sql-fixes (live SQL): 9/9
+- nested-fragment sites: 0 (was 66)
+- authenticated browser QA: 61/70 - 5 distinct defects open
