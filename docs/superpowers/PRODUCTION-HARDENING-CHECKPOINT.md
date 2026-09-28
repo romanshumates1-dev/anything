@@ -524,3 +524,48 @@ Ranked by risk:
 Note for whoever continues: some baseline entries are deliberately higher than
 the true count (the ratchet permits baseline >= actual). That is safe, but do
 not read the baseline total as the exact number of remaining defects.
+
+---
+
+## SESSION 5 CLOSE - STATE AT CHECKPOINT
+
+Commit: 5261678 (branch `feat/cloudflare-workers`, clean tree).
+Gates after this change: typecheck exit 0; **2648 passed / 0 failed (236
+files)**, exit 0. Browser QA 70/70 and tenant isolation 15/0 were verified
+before it and are not re-run for a docs+guard+dnc change, but MUST be re-run
+before any completion claim.
+
+### Done this session
+- Silent-failure CLASS audit (the #1 ranked item): 99 files / ~155 sites found,
+  triaged, one safety-critical fix (dncRegistry consent lookup), and the class is
+  now enforced by a ratchet guard that can only tighten.
+
+### Next work, ranked, all UNBLOCKED
+1. `api/analytics/advanced/route.ts` - **16 silent catches in one file**, the
+   worst remaining cluster. Then `utils/pipeline-health-engine` (7) and
+   `api/campaigns/monitor` (7).
+2. **bank-accounts: 31 tests, all skipped** - payout destination, zero active
+   coverage. Highest financial risk.
+3. **Security addendum still unexercised**: AI prompt/indirect injection, SSRF,
+   XSS, CSRF, webhook forgery, rate-limit bypass, upload abuse, path traversal,
+   open redirect, security headers. Tenant isolation / IDOR / admin escalation
+   IS done (15 checks, 0 leaks).
+4. **Data-leak audit**: bundles, source maps, cookies, localStorage, logs, error
+   messages, downloads. Only the secret-VALUE scan across 104 client assets has
+   been run.
+5. **48 orphaned users** (no organization_members row) - establish why, decide
+   repair vs leave, and check for any security implication. Do not delete data.
+6. **Original 17 items** 1,2,4,8,9,10,12,13,14,15,16,17: independent
+   re-verification with real browser workflows.
+7. **Mutation / property testing**: none exist. Apply to financial calculation,
+   limits, state machines and authorization.
+8. Full regression after whatever changes next.
+
+### Do NOT redo
+Browser QA (70/70), tenant-isolation probe (15/0), dashboard/schema repair,
+fragment sweep (0), production performance measurement, financial invariant
+coverage check (idempotency/concurrency/replay all present and passing).
+
+### Score
+Still **7/10**. Unchanged by this session: the class is now enforced rather than
+closed, and the ranked items above are untouched. 10/10 remains unjustified.
