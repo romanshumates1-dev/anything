@@ -671,3 +671,14 @@ executed evidence rather than review-based confidence.
 `utils/pipeline-health-engine` (7), `api/campaigns/monitor` (7),
 `utils/trustSignals` (6), then ~90 single-site files. `logFallback` exists and
 the pattern is established; this is mechanical.
+
+---
+
+## X-POWERED-BY FIX VERIFIED (not just applied)
+
+- `next build` after `poweredByHeader: false` -> **exit 0**
+- production server restarted, `scripts/security-probe.mjs` re-run against it:
+  **17 checks, 0 failures**, with `OK x-powered-by` (header absent)
+
+The fix is confirmed by a request to the rebuilt server, not by reading the
+config. The probe now fails the build if the header ever returns.
