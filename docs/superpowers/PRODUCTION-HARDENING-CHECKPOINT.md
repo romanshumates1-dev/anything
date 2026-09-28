@@ -259,3 +259,39 @@ the same 12 tests passed 12/12 in isolation. Both `describe` blocks now have a
   literal ("Error: Expected a semicolon"). Prefer the editor tool.
 - `buildWhere(offset)`: offset = how many placeholders the ENCLOSING statement
   already consumed, so the fragment's first placeholder is $(offset+1).
+
+---
+
+## SESSION 4 - BROWSER QA 70/70 ACHIEVED
+
+**Authenticated browser QA: 70 pass, 0 fail (of 70 route-viewports).**
+Command: `node scripts/browser-qa.mjs http://localhost:4000 --auth --warm`
+Real signed-up user, real Edge, desktop + mobile viewports, console and network
+errors captured.
+
+Progression across sessions (the number is the point, not any single run):
+- 60/70 -> 61/70 -> 68/70 -> 69/70 -> **70/70**
+
+Defects closed in this session:
+- #42 /pricing React key warning (key was on the inner `tr` of a bare fragment).
+  This was the last remaining browser failure.
+- `/templates` mobile "text=48" was NOT an app defect: the first pass caught the
+  page mid-compile. A warm re-run renders 98650B / text=3369, identical to
+  desktop. Confirmed rather than assumed.
+
+Browser tooling notes for the next session:
+- The harness LOG IS BUFFERED. `Get-Content bqa.log` can return an empty file
+  while the run is still going, which previously looked like a hung tool. Poll
+  for the literal `TOTAL:` line, do not conclude the harness is broken.
+- Start it alone. Running the unit suite or build concurrently starves it.
+- If the dev server was restarted after a `use client` mistake, EVERY marketing
+  route 500s - that is a fast global signal that a client component lost its
+  directive.
+
+### Still NOT done (unchanged, and the reason there is no final score)
+- Original 17 items 1,2,4,6,8,9,10,12,13,14,15,16,17: not independently
+  re-verified this session.
+- Security addendum: no new adversarial pass this session.
+- Data-leak audit, performance measurement, financial lifecycle tests: not run.
+- 48 users have no org membership (historical orphans) - cleanup not done.
+- Final full regression has NOT been re-run since the pricing fix.
