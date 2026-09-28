@@ -1,4 +1,4 @@
-﻿# PRODUCTION HARDENING - MASTER STATUS MANIFEST
+# PRODUCTION HARDENING - MASTER STATUS MANIFEST
 
 **This is the persistent source of truth for the mission.** Read this first,
 then `PRODUCTION-HARDENING-CHECKPOINT.md`, then `ACCEPTANCE-MATRIX.md`.
@@ -6,7 +6,7 @@ then `PRODUCTION-HARDENING-CHECKPOINT.md`, then `ACCEPTANCE-MATRIX.md`.
 Status values: NOT_STARTED | IN_PROGRESS | PARTIAL | BLOCKED | UNVERIFIED | COMPLETE
 COMPLETE requires evidence. Code existing is NOT completion.
 
-Last updated: 2026-09-27. Branch `feat/cloudflare-workers`.
+Last updated: 2026-09-27 (session 4). Branch `feat/cloudflare-workers`.`nHeadline: **Browser QA is 70/70. Tenant isolation probe: 15 checks, 0 leaks.**
 
 ## A. ORIGINAL 17 REQUESTED ITEMS
 
@@ -62,7 +62,7 @@ Last updated: 2026-09-27. Branch `feat/cloudflare-workers`.
 | api-probe | PASS exit 0 |
 | verify-sql-fixes | 13/13 |
 | scan-fragments | 0 |
-| browser QA | 68/70 BEFORE the #42 fix. 70/70 NOT yet confirmed. |
+| browser QA | **70/70 PASS** (session 4) |`n| tenant-isolation/IDOR probe | **15 checks, 0 leaks, exit 0** |`n| production perf | warm 37-95ms; cold 445-1490ms; 5-10s claim NOT reproducible |
 
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
