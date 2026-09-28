@@ -569,3 +569,57 @@ coverage check (idempotency/concurrency/replay all present and passing).
 ### Score
 Still **7/10**. Unchanged by this session: the class is now enforced rather than
 closed, and the ranked items above are untouched. 10/10 remains unjustified.
+
+---
+
+## SESSION 6 CLOSE - STATE AT CHECKPOINT
+
+Commit: 233bdea (branch `feat/cloudflare-workers`, clean tree).
+Gates after these changes: typecheck exit 0; **2658 passed / 0 failed (237
+files)**, exit 0; api-probe PASS. Browser QA 70/70 and tenant isolation 15/0
+predate them - re-run before any completion claim.
+
+### Done this session
+1. **Silent-failure class**: worst file closed. `api/analytics/advanced` went
+   16 -> 0 silent catches via a new shared `utils/queryFallback.logFallback`
+   helper (observability only, behaviour unchanged; verified the endpoint still
+   returns 200 with and without a campaign filter). Guard baseline for that file
+   removed, so any reappearance fails the build.
+2. **dncRegistry.hasSmsConsent** fixed: was `.catch(() => [])` beside a query
+   that THREW, so a DB outage was indistinguishable from "no consent on file".
+   Fails closed (correct) but is no longer silent.
+3. **bank-accounts given real coverage** (was 31 `it.todo` placeholders under a
+   stale "routes not implemented" comment, on the payout path). New 10-test
+   security suite: public shape leaks nothing, encryption produces real
+   ciphertext, fingerprint is per-user and non-reversible, ABA checksum and
+   4-17 digit boundaries.
+
+### Next work, ranked, all UNBLOCKED
+1. **Security addendum - the largest remaining gap.** Unexercised: AI prompt
+   and indirect injection, SSRF, XSS, CSRF, webhook forgery/replay,
+   rate-limit bypass, upload abuse, path traversal, open redirect, security
+   headers, CORS. (Tenant isolation / IDOR / admin escalation IS done: 15
+   checks, 0 leaks.)
+2. **Data-leak audit**: client bundles, source maps, cookies, localStorage, log
+   output, error messages, downloads. Only the secret-VALUE scan across 104
+   client assets has been run.
+3. **48 orphaned users** (no organization_members row) - establish why, decide
+   repair vs leave, check for security implication. Do not delete data.
+4. Remaining silent-failure files: `utils/pipeline-health-engine` (7),
+   `api/campaigns/monitor` (7), `utils/trustSignals` (6), then ~90 single-site
+   files. The helper and pattern already exist; this is mechanical.
+5. **Original 17 items** 1,2,4,8,9,10,12,13,14,15,16,17 - independent
+   re-verification with real browser workflows.
+6. **Mutation / property testing**: none exist. Apply to financial calculation,
+   limits, state machines, authorization.
+7. Full regression after whatever changes next.
+
+### Do NOT redo
+Browser QA (70/70), tenant isolation (15/0), dashboard/schema repair, fragment
+sweep (0), production performance measurement, financial invariant coverage
+check, bank-accounts, analytics/advanced.
+
+### Score
+Still **7/10**. This session closed a ranked class defect and the highest
+financial-coverage gap, but the security addendum and data-leak audit - the two
+largest gates - are untouched. 10/10 remains unjustified.
