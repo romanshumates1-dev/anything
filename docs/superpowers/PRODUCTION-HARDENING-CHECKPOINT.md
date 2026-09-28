@@ -295,3 +295,40 @@ Browser tooling notes for the next session:
 - Data-leak audit, performance measurement, financial lifecycle tests: not run.
 - 48 users have no org membership (historical orphans) - cleanup not done.
 - Final full regression has NOT been re-run since the pricing fix.
+
+---
+
+## PERFORMANCE EVIDENCE (original item 6 - the "5-10 second" complaint)
+
+Measured against the PRODUCTION build (`next build` output, served on :4001),
+not the dev server. Unauthenticated requests, so these render the auth shell;
+the point is server/route cost, not data volume.
+
+| route | cold (1st hit) | warm (2nd hit) |
+|---|---|---|
+| /dashboard | 1490 ms | 42 ms |
+| /payouts | 748 ms | 41 ms |
+| /templates | 535 ms | 42 ms |
+| / | 445 ms | 333 ms |
+| /pricing | 295 ms | 95 ms |
+| /contracts | 199 ms | 43 ms |
+| /leads, /campaigns, /analytics, /crm | 77-107 ms | 37-44 ms |
+
+FINDING: the reported 5-10 second load is NOT reproducible on a production
+build. Warm server time is 37-95 ms for every route except the homepage
+(333 ms). Cold cost is 445-1490 ms, which is normal first-hit work.
+
+The multi-second numbers previously recorded were DEV-MODE JIT COMPILATION, not
+application slowness - dev measurements in this mission ranged 3-16 s, and a
+404 for a non-existent route took 5349 ms purely to compile. Any future
+performance claim must state which build it was measured against, or it is
+meaningless.
+
+STILL TO DO for item 6: authenticated page loads with real data volumes, API
+latency under load, N+1 query audit, bundle size, and a before/after comparison
+for any optimization actually applied. The 5-10s claim is now answered
+(measured, not reproduced) but the item is not COMPLETE.
+
+Also noted: `/contacts` and `/earnings` return 404. These are NOT defects -
+contacts live under `/crm` and `/leads`, earnings under `/payouts` and
+`/reports`. Recording so a later session does not "fix" them.
