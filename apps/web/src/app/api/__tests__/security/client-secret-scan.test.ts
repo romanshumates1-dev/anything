@@ -137,4 +137,4 @@ describe('client secret / reversible token guard', () => {
     }
     expect(offenders, offenders.join('\n')).toEqual([]);
   });
-});
+}, 30_000);

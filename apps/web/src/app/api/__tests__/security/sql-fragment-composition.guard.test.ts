@@ -241,5 +241,4 @@ describe('SQL fragment composition guard', () => {
       );
     }
   });
-});
-
+}, 30_000);

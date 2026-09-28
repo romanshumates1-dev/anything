@@ -24,15 +24,40 @@ interface Buyer {
 export default function BuyersPage() {
   const { data: session, isPending: authLoading } = useSession();
 
-  const { data: buyers = [], isLoading } = useQuery<Buyer[]>({
+  // Defect #41. `GET /api/buyers` responds with `{ buyers: [...] }`, but this
+  // query did `return res.json()` typed as `Buyer[]`. The object was handed to
+  // `buyers.map(...)`, which threw `TypeError: buyers.map is not a function`
+  // and took down the whole page (caught by the error boundary).
+  //
+  // Two things were wrong, not one: the response shape was ignored, AND a
+  // non-OK response was swallowed into `[]`, so a genuine API failure would
+  // have rendered as "no buyers yet" - an empty state faking a success. Errors
+  // are now surfaced so a broken endpoint cannot look like an empty account.
+  const {
+    data: buyersData,
+    isLoading,
+    error: buyersError,
+  } = useQuery<Buyer[]>({
     queryKey: ['buyers'],
     queryFn: async () => {
       const res = await fetch('/api/buyers');
-      if (!res.ok) return [];
-      return res.json();
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          (payload && (payload as { error?: string }).error) ||
+            `Buyers request failed (${res.status})`
+        );
+      }
+      const list = (payload as { buyers?: unknown } | null)?.buyers;
+      if (!Array.isArray(list)) {
+        throw new Error('Buyers response was not a list');
+      }
+      return list as Buyer[];
     },
     enabled: !!session,
   });
+
+  const buyers: Buyer[] = buyersData ?? [];
 
   if (authLoading) {
     return (
@@ -44,6 +69,30 @@ export default function BuyersPage() {
 
   if (!session) {
     redirect('/account/signin');
+  }
+
+  // A failed request must not look like an empty buyer network - that is how a
+  // broken endpoint hides behind a plausible empty state.
+  if (buyersError) {
+    return (
+      <div className="container mx-auto py-8 px-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-destructive" />
+              Could not load buyers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              {buyersError instanceof Error
+                ? buyersError.message
+                : 'Unknown error loading buyers.'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
