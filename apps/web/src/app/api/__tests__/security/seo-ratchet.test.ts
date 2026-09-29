@@ -43,9 +43,6 @@ const MARKETING = join(APP, '(marketing)');
  * 'use client' consent form, and both auth screens - and reported 0 CSP
  * violations and 0 console errors. `scripts/csp-health.mjs` reproduces that.
  */
-import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
-import { readSource, SRC_ROOT } from './_sourceScan';
 
 // SRC_ROOT is `<web>/src`, so the Next config sits one level up - not two.
 const config = readSource(join(SRC_ROOT, '..', 'next.config.js'));

@@ -151,7 +151,7 @@ beforeEach(async () => {
   asAnonymous();
 });
 
-describe("authenticated E2E — identity resolution", () => {
+describe("authenticated E2E â€“ identity resolution", () => {
   it("anonymous callers have no organization", async () => {
     asAnonymous();
     expect(await getOrganization()).toBeNull();
@@ -170,7 +170,7 @@ describe("authenticated E2E — identity resolution", () => {
   });
 });
 
-describe("authenticated E2E — admin authorization matrix", () => {
+describe("authenticated E2E â€“ admin authorization matrix", () => {
   it("ADMIN is allowed", async () => {
     asAdminA();
     expect((await requireAdmin()).ok).toBe(true);
@@ -196,7 +196,7 @@ describe("authenticated E2E — admin authorization matrix", () => {
   });
 });
 
-describe("authenticated E2E — the local dev bypass is not reachable in production", () => {
+describe("authenticated E2E â€“ the local dev bypass is not reachable in production", () => {
   it("does not fire when NODE_ENV is production even with the secret presented", async () => {
     process.env.NODE_ENV = "production";
     process.env.LOCAL_DEV_SECRET = "super-secret";
