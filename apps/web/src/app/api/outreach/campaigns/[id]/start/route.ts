@@ -46,7 +46,9 @@ export async function POST(
 
     // Validate contacts exist
     const contactCount = await sql`
-      SELECT COUNT(*)::int AS cnt FROM campaign_contacts WHERE campaign_id = ${campaignId}
+      SELECT COUNT(*)::int AS cnt FROM campaign_contacts
+      WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organizationId}
     `;
     if ((contactCount[0]?.cnt ?? 0) === 0) {
       return NextResponse.json({ error: 'Cannot start campaign with zero contacts' }, { status: 400 });
@@ -73,6 +75,7 @@ export async function POST(
       UPDATE outreach_campaigns
       SET status = ${targetStatus}, start_date = COALESCE(start_date, ${now}), end_date = ${endDate}, updated_at = now()
       WHERE id = ${campaignId}
+        AND organization_id = ${organizationId}
     `;
 
     await logEvent('campaign_started', 'campaign', campaignId, { status: targetStatus, startDate, endDate, dncScrubEnabled: campaign.dnc_scrub_enabled }, session.user.id);

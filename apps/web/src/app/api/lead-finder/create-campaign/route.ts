@@ -176,8 +176,13 @@ export async function POST(request: Request) {
       // or retry can't double-hand-off the same lead. If we don't claim it,
       // someone else already did — skip.
       const claim = await sql`
-        UPDATE sourced_leads SET status = 'handed_off', handed_off_at = now(), updated_at = now()
+        UPDATE sourced_leads
+        SET status = 'handed_off', handed_off_at = now(), updated_at = now()
         WHERE id = ${sl.id} AND status = 'new'
+          AND source_id IN (
+            SELECT id FROM lead_sources
+            WHERE organization_id = ${organization.id} OR organization_id IS NULL
+          )
         RETURNING id
       `;
       if (claim.length === 0) continue;
@@ -218,7 +223,13 @@ export async function POST(request: Request) {
         RETURNING id
       `;
       await sql`
-        UPDATE sourced_leads SET handed_off_lead_id = ${lead.id} WHERE id = ${sl.id}
+        UPDATE sourced_leads
+        SET handed_off_lead_id = ${lead.id}
+        WHERE id = ${sl.id}
+          AND source_id IN (
+            SELECT id FROM lead_sources
+            WHERE organization_id = ${organization.id} OR organization_id IS NULL
+          )
       `;
       // Funnel analytics (P4): a handed-off lead-finder segment enters the
       // funnel at NEW, same as any other lead. Best-effort.

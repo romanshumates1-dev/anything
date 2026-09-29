@@ -169,7 +169,11 @@ export async function DELETE(
 
     // Clean up related data
     await sql`
-      DELETE FROM campaign_leads WHERE lead_id = ${id}
+      DELETE FROM campaign_leads
+      WHERE lead_id = ${id}
+        AND campaign_id IN (
+          SELECT id FROM campaigns WHERE organization_id = ${organization.id}
+        )
     `.catch(() => {});
 
     await logEvent('lead_deleted', 'lead', id, {

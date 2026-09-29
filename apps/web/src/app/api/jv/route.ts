@@ -94,7 +94,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     // If contract was created but JV insert failed, clean up the orphan
     if (contractId) {
-      await sql`DELETE FROM contracts WHERE id = ${contractId}`.catch(() => {});
+      await sql`DELETE FROM contracts WHERE id = ${contractId} AND organization_id = ${organization.id}`.catch(() => {});
     }
     console.error('JV intake transaction failed', error);
     return Response.json({ error: 'Failed to create JV deal' }, { status: 500 });

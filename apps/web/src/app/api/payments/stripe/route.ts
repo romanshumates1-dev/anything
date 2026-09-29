@@ -244,7 +244,8 @@ export async function GET(req: NextRequest) {
             SET status = 'paid', paid_at = NOW(), updated_at = NOW(),
                 stripe_charge_id = ${intent.latest_charge}
             WHERE id = ${payment.id}
-          `;
+              AND organization_id = ${organization.id}
+          `; // FIX (DEFENSE-IN-DEPTH #45): payment was fetched org-scoped, bind the write too.
           payment.status = 'paid';
           payment.paid_at = new Date().toISOString();
 
@@ -254,7 +255,8 @@ export async function GET(req: NextRequest) {
             UPDATE payments SET status = 'failed', updated_at = NOW(),
             failure_reason = 'Payment canceled'
             WHERE id = ${payment.id}
-          `;
+              AND organization_id = ${organization.id}
+          `; // FIX (DEFENSE-IN-DEPTH #45): same org-bound guarantee as the paid path.
           payment.status = 'failed';
         }
       } catch (stripeErr: any) {

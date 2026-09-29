@@ -11,7 +11,10 @@ const ROOT=path.join(process.cwd(),"src","app");
 const SKIP=new Set(["node_modules","__tests__",".next",".open-next"]);
 const BT=String.fromCharCode(96);
 // Tables that legitimately carry no organization_id.
-const GLOBAL_OK=/^(organizations|organization_members|organization_subscriptions|plans|subscription_plans|app_settings|schema_migrations|audit_logs|jobs|credit_transactions|billing_events|rate_limit_log|ai_credit_period_usage|usage_ledger|contact_lock|regions|zip_codes|states|counties|properties|property_comps|test_phone_numbers|suppression_list|email_domain_policies|webhook_events|number_pool)$/i;
+// `imports` (leads/bulk): no tenant column exists; the row is created and
+// finalised in the same request and the finalising write is additionally bound
+// by `created_by = session.user.id`.
+const GLOBAL_OK=/^(organizations|organization_members|organization_subscriptions|plans|subscription_plans|app_settings|schema_migrations|audit_logs|jobs|imports|credit_transactions|billing_events|rate_limit_log|ai_credit_period_usage|usage_ledger|contact_lock|regions|zip_codes|states|counties|properties|property_comps|test_phone_numbers|suppression_list|email_domain_policies|webhook_events|number_pool)$/i;
 function walk(d,o=[]){for(const e of fs.readdirSync(d,{withFileTypes:true})){if(SKIP.has(e.name))continue;const p=path.join(d,e.name);if(e.isDirectory())walk(p,o);else if(/\.tsx?$/.test(e.name))o.push(p);}return o;}
 function tpl(src){const L=src.split(/\r?\n/);const o=[];let i=0;while(i<L.length){const x=L[i].indexOf("sql"+BT);if(x===-1){i++;continue;}let b=L[i].slice(x+4);let j=i;while(j<L.length-1&&b.indexOf(BT)===-1){j++;b+="\n"+L[j];}const e=b.indexOf(BT);o.push(e===-1?b:b.slice(0,e));i=j+1;}return o;}
 const MUT=/^\s*(UPDATE|DELETE\s+FROM)\s+([a-z_][a-z0-9_]*)/i;
@@ -23,7 +26,8 @@ for(const f of walk(ROOT)){
     const m=t.match(MUT); if(!m)return;
     const [,verb,table]=m;
     if(GLOBAL_OK.test(table))return;
-    if(/organization_id\s*=/i.test(t))return;
+    // A tenant predicate may compare directly or through a cast (`organization_id::text = ...`)
+    if(/organization_id\s*(::\s*[a-z_]+)?\s*=/i.test(t))return;
     // Is the handler even aware of a tenant? If not, it may still be an internal job.
     const tenantAware=/organization|orgId/.test(s);
     if(!tenantAware)return;

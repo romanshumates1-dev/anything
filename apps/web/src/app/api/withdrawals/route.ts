@@ -402,6 +402,7 @@ export async function POST(request: Request) {
         UPDATE earnings
         SET status = 'AVAILABLE', withdrawal_id = NULL, updated_at = NOW()
         WHERE withdrawal_id = ${withdrawalId}
+          AND organization_id = ${orgId}
           AND status = 'PENDING_WITHDRAWAL'
           AND NOT EXISTS (SELECT 1 FROM withdrawals WHERE id = ${withdrawalId})
       `,
@@ -415,6 +416,7 @@ export async function POST(request: Request) {
         UPDATE earnings
         SET status = 'WITHDRAWN', updated_at = NOW()
         WHERE withdrawal_id = ${withdrawalId}
+          AND organization_id = ${orgId}
           AND status = 'PENDING_WITHDRAWAL'
           AND EXISTS (SELECT 1 FROM withdrawals WHERE id = ${withdrawalId})
       `,

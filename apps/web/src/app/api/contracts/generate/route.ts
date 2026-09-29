@@ -81,11 +81,14 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Deal not found' }, { status: 404 });
     }
 
-    // Fetch negotiation record (if exists)
+    // Fetch negotiation record (if exists) — FIX (DEFENSE-IN-DEPTH #51b): join the
+    // org-scoped lead so a foreign tenant's negotiation for the same deal id can never
+    // supply this org's contract variables.
     const [negotiation] = await sql`
-      SELECT * FROM negotiations
-      WHERE deal_id = ${dealId}
-      ORDER BY created_at DESC
+      SELECT n.* FROM negotiations n
+      JOIN leads l ON l.id = n.deal_id AND l.organization_id = ${organization.id}
+      WHERE n.deal_id = ${dealId}
+      ORDER BY n.created_at DESC
       LIMIT 1
     `.catch(() => [null]); // Table may not exist yet
 
@@ -276,11 +279,14 @@ export async function POST(req: NextRequest) {
             ${contract.generatedAt}
           )
         `,
+        // FIX (HIGH #51): deal was fetched org-scoped — bind the status flip to the
+        // same org so the atomic insert+update can never touch a foreign tenant's lead.
         sql`
           UPDATE leads
           SET status = ${type === 'ASSIGNMENT' ? 'CONTRACT_GENERATED_ASSIGNMENT' : 'CONTRACT_GENERATED'},
               updated_at = now()
           WHERE id = ${dealId}
+            AND organization_id = ${organization.id}
         `,
       ]);
     } catch (err: any) {

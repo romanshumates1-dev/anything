@@ -235,6 +235,7 @@ ${postalAddress}
                 last_sent_at = now(),
                 updated_at = now()
             WHERE id = ${lead.queue_id}
+              AND organization_id = ${organization.id}
           `;
 
           // Increment daily send count
@@ -253,6 +254,7 @@ ${postalAddress}
             SET status = 'dead',
                 updated_at = now()
             WHERE id = ${lead.queue_id}
+              AND organization_id = ${organization.id}
           `;
 
           results.failed.push({

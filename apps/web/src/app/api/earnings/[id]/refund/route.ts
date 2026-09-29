@@ -61,7 +61,7 @@ export async function POST(
     // Check user permission (must be ADMIN or the earning owner)
     const userRole = (session.user as { role?: string }).role;
     const [earningOwner] = await sql`
-      SELECT user_id FROM earnings WHERE id = ${earningId}
+      SELECT user_id FROM earnings WHERE id = ${earningId} AND organization_id = ${orgId}
     `;
 
     if (userRole !== 'ADMIN' && earningOwner?.user_id !== userId) {
@@ -76,6 +76,7 @@ export async function POST(
           refund_reason = ${reason},
           updated_at = NOW()
       WHERE id = ${earningId}
+        AND organization_id = ${orgId}
     `;
 
     // Log the refund in audit_logs

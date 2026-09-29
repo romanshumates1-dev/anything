@@ -145,6 +145,7 @@ export async function POST(request: Request) {
           failed_rows = ${failures.length},
           status = 'completed'
       WHERE id = ${imp.id}
+        AND (created_by IS NULL OR created_by = ${session.user.id})
     `;
 
     await logEvent(

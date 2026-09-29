@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
             UPDATE campaign_contacts
             SET status = 'ENGAGED', updated_at = now()
             WHERE id = ${result.contactId}
+              AND organization_id = ${organizationId}
           `;
 
           // Funnel analytics (P4): an affirmative reply is the real "engaged"

@@ -810,8 +810,8 @@ exercised). "Prod Verified" is a separate column and is **never** inferred from 
 | area | evidence | status |
 |---|---|---|
 | Authentication | session/admin/api-key/secret guards swept; `requireAdmin`, `authenticateApiKey`, `timingSafeSecretEqual` | **COMPLETE** |
-| Authorization / IDOR | `getEffectiveOrganizationId` IDOR fixed; 34 isolation tests incl. 18 real-Postgres | **PARTIAL** — matrix expanded, not exhaustive |
-| Tenant isolation | ORG-A/ORG-B on earnings, withdrawals, bank accounts, tax, leads, campaigns, territories, actions, portal | **PARTIAL** |
+| Authorization / IDOR | `getEffectiveOrganizationId` IDOR fixed; 34 isolation tests incl. 18 real-Postgres; **write-path sweep now mechanical: `scan-unscoped-mutations.cjs` = 0 findings on the shipped tree** (session 9, §36) | **PARTIAL** — write path CLOSED; read-path matrix expanded but not exhaustive |
+| Tenant isolation | ORG-A/ORG-B on earnings, withdrawals, bank accounts, tax, leads, campaigns, territories, actions, portal; **aggregate-oracle sweep = 0 unbound aggregates** (one labelled by-design TCPA exemption, §36) | **PARTIAL** — write path + aggregates CLOSED |
 | Dev/mock production escapes | 3 dev routes found unguarded → `devOnlyGuard` (allow-list + secret) | **COMPLETE** for those found |
 | SSRF | stored-webhook URL guard, 30 evasion tests | **PARTIAL** — DNS rebinding documented as unsolved |
 | Data leakage | `error.message` audit closed; provider errors sanitized; **Defect #29 fixed** (client component encoded `EMAIL_UNSUB_SECRET` into an unsubscribe "token") with a new ratchet `client-secret-scan.test.ts` | **PARTIAL** — no full source-map/bundle sweep |
@@ -1122,6 +1122,33 @@ browser E2E and authenticated user/admin journeys (no credentials in env),
 production Stripe/Apollo verification, Neon production schema application,
 `AI security` (no dedicated assessment performed yet), and Shopify (not
 implemented — a product decision, not a technical blocker).
+
+## 36. Session 9 (2026-09-29) — IDOR write-path sweep CLOSED (mechanical evidence)
+
+The "not exhaustive" qualification on the IDOR rows in §B above now has a mechanical answer: two
+source scanners, revised this session and re-run on the shipped tree, report **zero** findings.
+
+| gate | command | result |
+|---|---|---|
+| Write-path scanner | `node scripts/scan-unscoped-mutations.cjs` | **0 unscoped mutations** (34 → 0 this batch) |
+| Aggregate-oracle scanner | `node scripts/scan-aggregate-oracles.cjs` | **0 unbound aggregates** (5 → 0) |
+| Types | `yarn typecheck` | **EXIT=0** |
+| Security ratchets | `npx vitest run --config src/app/api/vitest.config.ts __tests__/security` | **23 files / 200 tests / 0 failed** |
+| Full suite | `npx vitest run --config src/app/api/vitest.config.ts` | **239 passed + 1 skipped (240 files); 2686 passed / 23 skipped / 30 todo / 0 failed** |
+
+Every mutation in a tenant-aware handler now carries a tenant predicate — the org column directly
+(`outreach_campaigns`, `campaign_contacts`, `campaign_regions`, `campaign_settings`,
+`campaign_lead_queue`, `earnings`, `lead_sources`, `message_events`, `esign_envelopes`, `leads`,
+`campaigns`, `contracts`) or a structural binding through an org-scoped parent (`ai_conversations`
+→ leads; `campaign_leads` → campaigns; `campaign_daily_send_logs` → campaigns; `sourced_leads` →
+lead_sources; `closings` → leads). Three routes resolve the owning organization from the database
+and bind writes to it instead of trusting request bodies or stored metadata: `esign/self-hosted`,
+`portal/offer`, `portal/closing`.
+
+The single unbound aggregate left is labelled in-source as intentional: the TCPA per-phone weekly
+frequency counter (`compliance/tcpa`) must span tenants to protect the consumer; its exemption
+carries the reason in the statement itself. Mechanism table + fix ledger (#52–#80):
+`docs/superpowers/PRODUCTION-HARDENING-STATUS.md`, session 9.
 
 
 

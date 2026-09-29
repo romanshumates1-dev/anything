@@ -140,6 +140,9 @@ export async function POST(request: Request) {
             requires_human = true,
             last_message_at = NOW()
         WHERE id = ${conv.id}
+          AND lead_id IN (
+            SELECT id FROM leads WHERE organization_id = ${organization.id}
+          )
       `;
       negotiationJobId = await enqueueJob('ai_reply', {
         leadId: lead.id,

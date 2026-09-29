@@ -244,11 +244,15 @@ export async function POST(req: NextRequest) {
         documentContent,
       });
 
+      // FIX (DEFENSE-IN-DEPTH #48): contractId was created by this request, but bind
+      // the write to the validated org anyway so a future refactor can never turn this
+      // into a bare-id write primitive.
       await sql`
         UPDATE contracts
         SET esign_envelope_id = ${signingResult.envelopeId},
             esign_expires_at = ${signingResult.expiresAt}
         WHERE id = ${contractId}
+          AND organization_id = ${organization.id}
       `;
 
       // Record stage as CONTRACT_SENT (not SIGNED - that happens when esign completes)
@@ -337,12 +341,14 @@ export async function POST(req: NextRequest) {
         documentContent: combinedContent,
       });
 
+      // FIX (DEFENSE-IN-DEPTH #48): same org-bound guarantee as the seller path.
       await sql`
         UPDATE contracts
         SET esign_envelope_id = ${signingResult.envelopeId},
             esign_expires_at = ${signingResult.expiresAt},
             assigned_at = now()
         WHERE id = ${contractId}
+          AND organization_id = ${organization.id}
       `;
 
       await logEvent('contract_sent', 'contract', contractId, {

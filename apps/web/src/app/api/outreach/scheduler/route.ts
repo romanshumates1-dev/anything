@@ -108,8 +108,13 @@ export async function POST(_request: NextRequest) {
           );
           if (!jobId) continue;
 
+          // (#77) Tenant binding: the contact id comes from a batch enqueued in an
+          // earlier run — only this org's contact row may flip to SENT.
           await sql`
-            UPDATE campaign_contacts SET status = 'SENT', last_message_at = now(), updated_at = now() WHERE id = ${contact.id}
+            UPDATE campaign_contacts
+            SET status = 'SENT', last_message_at = now(), updated_at = now()
+            WHERE id = ${contact.id}
+              AND organization_id = ${organizationId}
           `;
 
           // Funnel analytics (P4): QUEUED -> SENT is the real "contacted" event.
@@ -140,6 +145,10 @@ export async function POST(_request: NextRequest) {
               UPDATE campaign_daily_send_logs
               SET sent_count = sent_count + ${queued}
               WHERE id = ${log.id}
+                AND campaign_id IN (
+                  SELECT id FROM outreach_campaigns
+                  WHERE organization_id = ${organizationId}
+                )
             `;
           }
         }

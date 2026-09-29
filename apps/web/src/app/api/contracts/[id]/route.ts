@@ -155,7 +155,10 @@ export async function PATCH(
       return Response.json({ error: 'No updates provided' }, { status: 400 });
     }
 
-    // Perform update
+    // Perform update — FIX (HIGH/IDOR #49): the pre-check validated this contract under
+    // (id, organization_id), so the writes must carry the same predicate. The raw
+    // scanner shape (bare `WHERE id =`) looked exploitable, but the fetch gates first;
+    // the org predicate below makes that guarantee structural instead of temporal.
     if (status) {
       await sql`
         UPDATE contracts
@@ -164,6 +167,7 @@ export async function PATCH(
             metadata = COALESCE(${metadata ? JSON.stringify(metadata) : null}::jsonb, metadata),
             updated_at = NOW()
         WHERE id = ${id}
+          AND organization_id = ${orgId}
       `;
     } else {
       await sql`
@@ -172,6 +176,7 @@ export async function PATCH(
             metadata = COALESCE(${metadata ? JSON.stringify(metadata) : null}::jsonb, metadata),
             updated_at = NOW()
         WHERE id = ${id}
+          AND organization_id = ${orgId}
       `;
     }
 

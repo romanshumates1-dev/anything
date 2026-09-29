@@ -452,3 +452,70 @@ mode because the same string appears in Next's route announcer. All were fixed
 against verified real copy. The long `journey.spec.ts` encodes the OLD
 single-step wizard and is now `test.fixme` with the exact drift recorded - it is
 not deleted, and not silently "made green" by removing assertions.
+
+## Session 9 (2026-09-29) — IDOR write-path sweep CLOSED (scanner 0 findings) + aggregate-oracle sweep CLOSED
+
+Sessions 3–5 listed "remaining route-level `... WHERE id = ${...}` mutations" by hand and reasoned
+about each one. This session replaced the reasoning with a mechanical ledger and closed the class:
+every mutation in a tenant-aware handler is extracted from source and must carry an org predicate
+(directly, through a cast, or via an org-scoped parent), and every aggregate read must carry one too.
+
+**Gate results (this tree, fresh runs):**
+
+| gate | command | result |
+|---|---|---|
+| Write-path scanner | `node scripts/scan-unscoped-mutations.cjs` | **0 unscoped mutations** (was 34) |
+| Aggregate-oracle scanner | `node scripts/scan-aggregate-oracles.cjs` | **0 unbound aggregates** (was 5) |
+| Types | `yarn typecheck` (`tsc -p tsconfig.typecheck.json --noEmit`) | **EXIT=0** |
+| Targeted route suites | `npx vitest run --config src/app/api/vitest.config.ts outreach/campaigns outreach/call-queue/outcome outreach/inbound campaigns/[id]/launch lead-finder leads/bulk earnings contracts withdrawals multitenant-matrix tenant-isolation aggregate-oracle-guard portal esign` | **43 files / 456 tests passed / 0 failed** |
+| Security ratchets | `npx vitest run --config src/app/api/vitest.config.ts __tests__/security` | **23 files / 200 tests passed / 0 failed** |
+| Full suite | `npx vitest run --config src/app/api/vitest.config.ts` | **239 passed + 1 skipped (240 files); 2686 passed / 23 skipped / 30 todo / 0 failed** |
+
+**Bindings applied (ledger IDs #52–#80; the four non-obvious mechanisms carry inline
+`TENANT BINDING (#NN)` comments in code: #62 esign, #77 scheduler, #78 closing, #79 offer).**
+
+1. **Direct org predicate added** — the id was already org-verified in the handler, so this removes
+   the temporal window between check and write: `agents/negotiation` (OPTED_OUT flip); the five
+   `outreach/campaigns/[id]/{cancel,complete,pause,resume,start}` status flips; `outreach/campaigns`
+   and `outreach/campaigns/[id]/contacts` lead-id backfill; `outreach/inbound` reply flip;
+   `outreach/scheduler` contact flip; `campaigns/orchestrator/execute-sends` sent/dead;
+   `campaigns/[id]/launch` `campaigns.status`; `campaigns/[id]/regions` (two deletes + settings
+   clear); `earnings/[id]/refund` (owner read + update); `withdrawals` claim hand-back and
+   finalisation; `jv` orphan-contract cleanup; `duplicates` `message_events`;
+   `lead-finder/apollo` + `lead-finder/sources/[id]/fetch` source refresh; `leads/[id]`;
+   `esign/self-hosted` envelope write.
+2. **Child rows bound through an org-scoped parent** (these tables legitimately have no
+   `organization_id`): `ai_conversations` writes in `conversations/message`,
+   `campaigns/[id]/launch` and `outreach/call-queue/outcome` →
+   `lead_id IN (SELECT id FROM leads WHERE organization_id = …)`; `campaign_leads` in
+   `campaigns/[id]/launch` and `leads/[id]` → `campaign_id IN (SELECT id FROM campaigns WHERE
+   organization_id = …)`; `campaign_daily_send_logs` in the scheduler → campaign subquery;
+   `sourced_leads` in `lead-finder/create-campaign` → `source_id IN (SELECT id FROM lead_sources
+   WHERE organization_id = … OR organization_id IS NULL)`.
+3. **Owning org resolved from the database, never from the payload** — `esign/self-hosted` reads the
+   envelope's own `organization_id` and binds BOTH the envelope write and the `leads` deal-status
+   write to it, so tampered stored metadata can no longer redirect a status flip into another
+   tenant's lead. `portal/offer` and `portal/closing` resolve the lead's owning org once (the signed
+   token authorises exactly one lead; the session path has already proven ownership) and bind every
+   status / document / payment / notary write to it, with an `IS NULL` guard so legacy NULL-org rows
+   keep working (`closings` and `sourced_leads` carry no org column of their own).
+4. **Legacy-NULL tolerant comparisons** — `duplicates` `contact_log` uses
+   `organization_id::text = … OR organization_id IS NULL` (that ledger pre-dates the org column).
+5. **Provably tenant-free** — `leads/bulk` finalises `imports` (no tenant column exists; the row is
+   created and finalised in the same request); the write is additionally bound by
+   `created_by = session.user.id`, and the scanner documents `imports` in `GLOBAL_OK`.
+6. **Scanner fidelity, not loosening** — the write-path scanner now accepts a casted predicate
+   (`organization_id::text = …`); the aggregate scanner gained a *statement-level* exemption marker
+   (`-- scanner-allow: platform-wide …`) so the ONE deliberately global counter is exempt **with its
+   reason written next to it**: the TCPA per-phone frequency limit in `compliance/tcpa`, where a
+   tenant-bound count would let every org contact the same person 3×/week.
+7. **Aggregate sweep** — four `campaign_contacts` counts in `outreach/campaigns/[id]/{complete,
+   contacts,start,stats}` sat behind an org-verified campaign but counted by `campaign_id` alone;
+   all four are now org-bound as well.
+
+**Harness finding caught by the ratchet (recorded for honesty):** `ai-adversarial.test.ts`'s
+hand-rolled `sql` router dispatched on `/FROM leads WHERE/` BEFORE checking for an `UPDATE`, so the
+new tenant-binding subquery in `conversations/message` made it misroute the conversation UPDATE into
+the lead-read branch — 2 security tests failed. The mock now dispatches on statement type first (an
+UPDATE containing a `leads` subquery is still a conversation write); the security assertions are
+unchanged. Root-caused and fixed in the harness, not silenced.

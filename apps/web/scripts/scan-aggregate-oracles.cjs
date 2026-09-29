@@ -57,6 +57,11 @@ for (const f of walk(ROOT)) {
     const tables = [...t.matchAll(TABLES)].map((m) => m[1]);
     const tenantTables = tables.filter((x) => !NON_TENANT.test(x));
     if (tenantTables.length === 0) return;
+    // Explicit, statement-level exemption: a platform-wide counter that must NOT
+    // be tenant-bound (e.g. the TCPA per-phone frequency limit, which protects the
+    // consumer no matter which tenant dialed). The marker is a SQL comment inside
+    // the statement, so the reason sits next to the exemption it justifies.
+    if (/scanner-allow:\s*platform-wide/.test(t)) return;
     const bound = /organization_id\s*=/i.test(t) || /\$\{\s*(orgId|organizationId|organization\.id)\s*\}/.test(t);
     if (bound) return;
     const rel = path.relative(process.cwd(), f).replace(/\\/g, "/");

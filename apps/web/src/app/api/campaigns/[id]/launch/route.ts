@@ -211,7 +211,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     for (const m of members) {
       if (!m.phone) {
         skipped++;
-        await sql`UPDATE campaign_leads SET status = 'failed' WHERE id = ${m.campaign_lead_id}`;
+        await sql`UPDATE campaign_leads SET status = 'failed'
+        WHERE id = ${m.campaign_lead_id}
+          AND campaign_id IN (
+            SELECT id FROM campaigns WHERE organization_id = ${organization.id}
+          )`;
         await logEvent('campaign_member_skipped', 'campaign', campaignId.toString(), {
           leadId: m.lead_id,
           reason: 'no_phone',
@@ -233,6 +237,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         SET history = history || ${JSON.stringify([{ role: 'assistant', content: text }])}::jsonb,
             last_message_at = NOW()
         WHERE id = ${conv.id}
+          AND lead_id IN (
+            SELECT id FROM leads WHERE organization_id = ${organization.id}
+          )
       `;
 
       // Compute optimal send time based on lead's timezone for maximum response rates.
@@ -275,6 +282,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       UPDATE campaigns
       SET status = 'launched', updated_at = NOW()
       WHERE id = ${campaignId}
+        AND organization_id = ${organization.id}
     `;
 
     await logEvent(

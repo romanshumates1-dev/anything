@@ -236,6 +236,7 @@ export async function POST(request: Request) {
     SET last_refreshed_at = now(),
         last_record_count = (SELECT COUNT(*)::int FROM sourced_leads WHERE source_id = ${source.id})
     WHERE id = ${source.id}
+      AND (organization_id = ${organization.id} OR organization_id IS NULL)
   `;
 
   await logEvent(

@@ -159,6 +159,7 @@ export async function POST(
       await sql`
         DELETE FROM campaign_regions
         WHERE campaign_id = ${campaignId}
+          AND organization_id = ${organization.id}
       `;
     }
 
@@ -251,6 +252,7 @@ export async function DELETE(
     const result = await sql`
       DELETE FROM campaign_regions
       WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organization.id}
       RETURNING id
     `;
 
@@ -259,6 +261,7 @@ export async function DELETE(
       UPDATE campaign_settings
       SET target_regions = '[]'::jsonb, updated_at = NOW()
       WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organization.id}
     `;
 
     await logEvent('campaign_regions_cleared', 'campaign', campaignId, {

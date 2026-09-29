@@ -75,9 +75,12 @@ export async function GET(req: NextRequest) {
       return Response.json({ error: 'Deal not found' }, { status: 404 });
     }
 
-    // Check payment status
+    // Check payment status — FIX (HIGH/FIN #46): the pre-check validated the org-scoped
+    // lead, so the payment lookup must be bound to the same org; otherwise tenant B's
+    // payment for the same deal id authenticates tenant A's signing flow.
     const [payment] = await sql`
       SELECT * FROM payments WHERE deal_id = ${dealId}
+        AND organization_id = ${organization.id}
       ORDER BY created_at DESC LIMIT 1
     `.catch(() => [null]);
 
@@ -134,9 +137,12 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: 'Deal not found' }, { status: 404 });
     }
 
-    // CRITICAL: Check payment before allowing any action
+    // CRITICAL: Check payment before allowing any action — FIX (HIGH/FIN #46b): same
+    // org-bound guarantee as the GET gate; a foreign tenant's payment row must never
+    // satisfy this tenant's payment gate.
     const [payment] = await sql`
       SELECT * FROM payments WHERE deal_id = ${dealId}
+        AND organization_id = ${organization.id}
       ORDER BY created_at DESC LIMIT 1
     `.catch(() => [null]);
 
@@ -165,9 +171,11 @@ export async function POST(req: NextRequest) {
     if (action === 'sign') {
       const assignmentId = crypto.randomUUID();
 
-      // Use transaction for atomicity
+      // Use transaction for atomicity — FIX (HIGH #47): every write binds the validated
+      // org (deal was fetched org-scoped at POST entry), so a bare id can never flip
+      // another tenant's lead or confirm another tenant's assignment.
       await sql.transaction([
-        sql`UPDATE leads SET status = 'ASSIGNED', updated_at = NOW() WHERE id = ${dealId}`,
+        sql`UPDATE leads SET status = 'ASSIGNED', updated_at = NOW() WHERE id = ${dealId} AND organization_id = ${organization.id}`,
         ...(buyerId ? [sql`
           INSERT INTO buyer_assignments (id, organization_id, lead_id, buyer_id, status, created_at)
           VALUES (${assignmentId}, ${organization.id}, ${dealId}, ${buyerId}, 'signed', NOW())
@@ -196,10 +204,10 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Deal must be signed before confirming' }, { status: 400 });
       }
 
-      // Use transaction for atomicity
+      // Use transaction for atomicity — FIX (HIGH #47): same org-bound guarantee as sign.
       await sql.transaction([
-        sql`UPDATE leads SET status = 'CLOSED_WON', updated_at = NOW() WHERE id = ${dealId}`,
-        sql`UPDATE buyer_assignments SET status = 'confirmed', updated_at = NOW() WHERE lead_id = ${dealId}`,
+        sql`UPDATE leads SET status = 'CLOSED_WON', updated_at = NOW() WHERE id = ${dealId} AND organization_id = ${organization.id}`,
+        sql`UPDATE buyer_assignments SET status = 'confirmed', updated_at = NOW() WHERE lead_id = ${dealId} AND organization_id = ${organization.id}`,
       ]);
 
       // Record stage transition (best-effort, outside transaction)

@@ -299,6 +299,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // TENANT BINDING (#78): closings carries no organization_id of its own, so
+    // every write is bound to the organization that owns the lead this closing
+    // belongs to — resolved from the database, never from the request body.
+    const [closingLeadScope] = await sql`
+      SELECT organization_id FROM leads WHERE id = ${leadId} LIMIT 1
+    `.catch(() => [null]);
+    const closingOrganizationId: string | null = closingLeadScope?.organization_id ?? null;
+
     // Ensure closing record exists
     await sql`
       INSERT INTO closings (lead_id, status, created_at)
@@ -323,6 +331,12 @@ export async function POST(req: NextRequest) {
               }])}::jsonb,
               updated_at = NOW()
           WHERE lead_id = ${leadId}
+            AND (
+              ${closingOrganizationId}::text IS NULL
+              OR lead_id::text IN (
+                SELECT id::text FROM leads WHERE organization_id = ${closingOrganizationId}
+              )
+            )
         `;
 
         await logEvent('closing_docs_uploaded', 'lead', leadId, { documentType: data.documentType });
@@ -351,6 +365,12 @@ export async function POST(req: NextRequest) {
               })}::jsonb,
               updated_at = NOW()
           WHERE lead_id = ${leadId}
+            AND (
+              ${closingOrganizationId}::text IS NULL
+              OR lead_id::text IN (
+                SELECT id::text FROM leads WHERE organization_id = ${closingOrganizationId}
+              )
+            )
         `;
 
         await logEvent('closing_payment_set', 'lead', leadId, { method: data.paymentMethod });
@@ -377,6 +397,12 @@ export async function POST(req: NextRequest) {
               notary_address = ${data.address || null},
               updated_at = NOW()
           WHERE lead_id = ${leadId}
+            AND (
+              ${closingOrganizationId}::text IS NULL
+              OR lead_id::text IN (
+                SELECT id::text FROM leads WHERE organization_id = ${closingOrganizationId}
+              )
+            )
         `;
 
         await logEvent('closing_notary_scheduled', 'lead', leadId, {

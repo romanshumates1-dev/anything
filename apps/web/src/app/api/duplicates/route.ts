@@ -368,12 +368,14 @@ export async function PUT(req: NextRequest) {
       await sql`
         UPDATE message_events SET lead_id = ${primaryLeadId}
         WHERE lead_id = ${dupId}
+          AND organization_id = ${organization.id}
       `.catch(() => {});
 
       // Update contact log
       await sql`
         UPDATE contact_log SET lead_id = ${primaryLeadId}
         WHERE lead_id = ${dupId}
+          AND (organization_id::text = ${organization.id} OR organization_id IS NULL)
       `.catch(() => {});
 
       // Mark duplicate as merged

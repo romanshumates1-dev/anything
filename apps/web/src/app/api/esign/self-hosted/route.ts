@@ -413,6 +413,16 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: 'Document not found' }, { status: 404 });
   }
 
+  // TENANT BINDING (#62): resolve the envelope's owning organization from the
+  // database row itself (never from session state or stored metadata), so the
+  // deal-status write below can never touch another tenant's lead even if the
+  // stored metadata is tampered with. NULL-org legacy envelopes keep working.
+  const [envelopeOrgRow] = await sql`
+    SELECT organization_id FROM esign_envelopes WHERE id = ${documentId}
+  `.catch(() => [null]);
+  const envelopeOrganizationId: string | null =
+    (envelopeOrgRow?.organization_id as string | null) ?? null;
+
   // Get IP and user agent from request
   // Proxy-resolved IP and user agent. The old leftmost-x-forwarded-for read
   // let the signer choose the address recorded against their signature.
@@ -436,6 +446,7 @@ export async function PUT(req: NextRequest) {
         envelope_data = ${JSON.stringify(result.document)},
         updated_at = NOW()
     WHERE id = ${documentId}
+      AND (${envelopeOrganizationId}::text IS NULL OR organization_id::text = ${envelopeOrganizationId})
   `.catch(console.error);
 
   // If completed, send notifications
@@ -453,6 +464,7 @@ export async function PUT(req: NextRequest) {
       await sql`
         UPDATE leads SET status = ${newStatus}, updated_at = NOW()
         WHERE id = ${dealId}
+          AND (${envelopeOrganizationId}::text IS NULL OR organization_id = ${envelopeOrganizationId})
       `.catch(console.error);
 
       // AUTO-TRIGGER: When seller signs purchase agreement, automatically match and notify buyers

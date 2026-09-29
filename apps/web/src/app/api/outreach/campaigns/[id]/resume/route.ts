@@ -43,7 +43,10 @@ export async function POST(
     }
 
     await sql`
-      UPDATE outreach_campaigns SET status = ${targetStatus}, updated_at = now() WHERE id = ${campaignId}
+      UPDATE outreach_campaigns
+      SET status = ${targetStatus}, updated_at = now()
+      WHERE id = ${campaignId}
+        AND organization_id = ${organizationId}
     `;
 
     await logEvent('campaign_resumed', 'campaign', campaignId, { status: targetStatus }, session.user.id);

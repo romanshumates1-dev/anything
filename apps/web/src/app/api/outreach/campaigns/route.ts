@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
             UPDATE campaign_contacts
             SET ${sql(leadIdColumn)} = ${leadId}, updated_at = now()
             WHERE campaign_id = ${campaignId} AND phone = ${c.phone}
+              AND organization_id = ${organizationId}
           `;
         }
       } catch {

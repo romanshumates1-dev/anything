@@ -43,7 +43,12 @@ const mockSql = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
   sqlCalls.push(text.replace(/\s+/g, ' ').trim());
   const currentLeadId = String(lead?.id ?? 'lead_mine');
   const rows = (): unknown[] => {
-    if (/FROM leads WHERE/i.test(text)) return lead ? [lead] : [];
+    // Dispatch on the statement TYPE first, not on a substring. The conversation
+    // UPDATEs carry a tenant-binding predicate that is a `leads` subquery, so the
+    // previous substring-first order misrouted those writes into the lead-read
+    // branch — the mocked conversation then never received the appended message.
+    const isSelect = /^\s*SELECT/i.test(text);
+    if (isSelect && /FROM leads WHERE/i.test(text)) return lead ? [lead] : [];
     if (/INSERT INTO ai_conversations/i.test(text)) {
       return [
         { ...insertedConversation, history: histories.get(currentLeadId) ?? [] },

@@ -210,6 +210,8 @@ export async function POST(req: NextRequest) {
       const vipWindowEndTime = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours from now
 
       // Store VIP window end time and schedule job to notify non-VIP buyers after window expires
+      // FIX (DEFENSE-IN-DEPTH #50): deal was fetched org-scoped — bind the write so the
+      // VIP window can never land on another tenant's row.
       if (vipBuyers.length > 0 && otherBuyers.length > 0) {
         await sql`
           UPDATE leads SET
@@ -220,6 +222,7 @@ export async function POST(req: NextRequest) {
             ),
             updated_at = NOW()
           WHERE id = ${dealId}
+            AND organization_id = ${organization.id}
         `.catch(console.error);
 
         // [REVENUE OPTIMIZATION] Schedule job to notify non-VIP buyers after 2hr VIP window

@@ -122,6 +122,10 @@ async function checkFrequency(phone: string, channel: string): Promise<boolean> 
 
   // Max 3 contacts per 7 days per channel
   const [count] = await sql`
+    -- scanner-allow: platform-wide frequency counter (TCPA). The 3-per-7-days
+    -- limit protects the consumer no matter which tenant dialed, so this count
+    -- MUST span all tenants. Binding it to organization_id would let every org
+    -- contact the same person three times a week.
     SELECT COUNT(*) as cnt FROM contact_log
     WHERE phone = ${cleaned}
     AND channel = ${channel}

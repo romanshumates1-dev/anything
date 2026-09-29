@@ -190,10 +190,15 @@ export async function POST(req: NextRequest) {
       const bestMatch = matches[0];
 
       if (contractId) {
+        // FIX (HIGH/IDOR #43): the update must not trust the bare client-supplied
+        // contractId — the pre-check validated the org-scoped lead, so tie the
+        // write to that ownership proof (validated surrogate).
         await sql`
           UPDATE contracts
           SET buyer_id = ${bestMatch.id}, assigned_at = now(), status = 'BUYER_ASSIGNED'
           WHERE id = ${contractId}
+            AND organization_id = ${organization.id}
+            AND seller_lead_id = ${lead.id}
         `;
       }
 

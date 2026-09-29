@@ -304,6 +304,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // TENANT BINDING (#79): resolve the lead's owning organization from the DB and
+  // bind every write below to it. The signed token authorises exactly one lead;
+  // the session path has already proven ownership. The IS NULL guard keeps legacy
+  // NULL-org rows working while blocking any cross-tenant write.
+  const [offerLeadScope] = await sql`
+    SELECT organization_id FROM leads WHERE id = ${leadId} LIMIT 1
+  `.catch(() => [null]);
+  const offerOrganizationId: string | null = offerLeadScope?.organization_id ?? null;
+
   try {
     switch (action) {
       case 'accept': {
@@ -316,12 +325,21 @@ export async function POST(req: NextRequest) {
                 acceptedVia: 'web_portal',
               })}::jsonb
           WHERE id = ${leadId}
+            AND (${offerOrganizationId}::text IS NULL OR organization_id = ${offerOrganizationId})
         `.catch(() => {});
 
         await sql`
           UPDATE sourced_leads
           SET status = 'accepted'
-          WHERE id::text = ${leadId} OR source_id = ${leadId}
+          WHERE (id::text = ${leadId} OR source_id = ${leadId})
+            AND (
+              ${offerOrganizationId}::text IS NULL
+              OR source_id IS NULL
+              OR source_id IN (
+                SELECT id FROM lead_sources
+                WHERE organization_id = ${offerOrganizationId} OR organization_id IS NULL
+              )
+            )
         `.catch(() => {});
 
         await logEvent('offer_accepted', 'lead', leadId, { via: 'portal' });
@@ -353,6 +371,7 @@ export async function POST(req: NextRequest) {
                 counterVia: 'web_portal',
               })}::jsonb
           WHERE id = ${leadId}
+            AND (${offerOrganizationId}::text IS NULL OR organization_id = ${offerOrganizationId})
         `.catch(() => {});
 
         await sql`
@@ -385,12 +404,21 @@ export async function POST(req: NextRequest) {
                 declinedVia: 'web_portal',
               })}::jsonb
           WHERE id = ${leadId}
+            AND (${offerOrganizationId}::text IS NULL OR organization_id = ${offerOrganizationId})
         `.catch(() => {});
 
         await sql`
           UPDATE sourced_leads
           SET status = 'declined'
-          WHERE id::text = ${leadId} OR source_id = ${leadId}
+          WHERE (id::text = ${leadId} OR source_id = ${leadId})
+            AND (
+              ${offerOrganizationId}::text IS NULL
+              OR source_id IS NULL
+              OR source_id IN (
+                SELECT id FROM lead_sources
+                WHERE organization_id = ${offerOrganizationId} OR organization_id IS NULL
+              )
+            )
         `.catch(() => {});
 
         await logEvent('offer_declined', 'lead', leadId, { via: 'portal' });

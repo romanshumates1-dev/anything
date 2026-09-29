@@ -231,6 +231,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       SET last_refreshed_at = now(),
           last_record_count = (SELECT COUNT(*)::int FROM sourced_leads WHERE source_id = ${sourceId})
       WHERE id = ${sourceId}
+        AND organization_id = ${organization.id}
     `;
 
     await logEvent(

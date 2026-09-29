@@ -95,7 +95,9 @@ export async function POST(
 
     // Count total contacts now in campaign
     const countRow = await sql`
-      SELECT COUNT(*)::int AS total FROM campaign_contacts WHERE campaign_id = ${campaignId}
+      SELECT COUNT(*)::int AS total FROM campaign_contacts
+      WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organization.id}
     `;
 
     // Populate seller_lead_id/buyer_lead_id based on campaign direction (best-effort, non-blocking)
@@ -109,6 +111,7 @@ export async function POST(
             UPDATE campaign_contacts
             SET ${sql(leadIdColumn)} = ${leadId}, updated_at = now()
             WHERE campaign_id = ${campaignId} AND phone = ${c.phone}
+              AND organization_id = ${organization.id}
           `;
         }
       } catch {

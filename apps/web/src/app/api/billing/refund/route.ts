@@ -176,10 +176,15 @@ export async function POST(req: NextRequest) {
     } catch (stripeError: any) {
       console.error('[REFUND] Stripe refund failed:', stripeError);
       // Update request as failed but don't block the flow
+      // FIX (HIGH/FIN #44): the failure update must be bound to the refund request
+      // this org just created — without the org predicate an attacker supplying
+      // another tenant's Stripe error path could rewrite foreign refund state,
+      // and Stripe's raw message must never reach the client verbatim.
       await sql`
         UPDATE subscription_refund_requests
-        SET status = 'failed', rejection_reason = ${stripeError.message}
+        SET status = 'failed', rejection_reason = 'payment_processor_error'
         WHERE id = ${refundRequest.id}
+          AND organization_id = ${organization.id}
       `;
 
       return NextResponse.json(
@@ -193,6 +198,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Update refund request with Stripe details
+    // Update refund request with Stripe details — same org-bound guarantee: only
+    // this tenant's own request row can transition.
     await sql`
       UPDATE subscription_refund_requests
       SET
@@ -200,6 +207,7 @@ export async function POST(req: NextRequest) {
         stripe_refund_id = ${stripeRefundId},
         processed_at = NOW()
       WHERE id = ${refundRequest.id}
+        AND organization_id = ${organization.id}
     `;
 
     // Mark organization subscription as refunded

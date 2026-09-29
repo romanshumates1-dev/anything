@@ -32,6 +32,7 @@ export async function GET(
       SELECT status, COUNT(*)::int AS cnt
       FROM campaign_contacts
       WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organizationId}
       GROUP BY status
     `;
 

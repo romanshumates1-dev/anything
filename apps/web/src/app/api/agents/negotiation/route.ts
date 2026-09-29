@@ -576,8 +576,10 @@ export async function POST(req: NextRequest) {
     if (classification === 'OPT_OUT') {
       // Suppress lead in database
       await sql`
-        UPDATE leads SET status = 'OPTED_OUT', updated_at = NOW()
+        UPDATE leads
+        SET status = 'OPTED_OUT', updated_at = NOW()
         WHERE id = ${leadId}
+          AND organization_id = ${organization.id}
       `.catch(console.error);
 
       // Add to suppression list

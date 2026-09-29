@@ -76,6 +76,9 @@ export async function POST(request: Request) {
       SET history = history || ${JSON.stringify([{ role: 'user', content: message }])}::jsonb,
           last_message_at = NOW()
       WHERE id = ${conv.id}
+        AND lead_id IN (
+          SELECT id FROM leads WHERE organization_id = ${org.id}
+        )
       RETURNING history
     `;
     const history = appended.history || [];
@@ -98,6 +101,9 @@ export async function POST(request: Request) {
           status = ${requiresHuman ? 'needs_review' : 'active'},
           last_message_at = NOW()
       WHERE id = ${conv.id}
+        AND lead_id IN (
+          SELECT id FROM leads WHERE organization_id = ${org.id}
+        )
     `;
 
     // 8. Only auto-send when no human approval is required. Otherwise the draft

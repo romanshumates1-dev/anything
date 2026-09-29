@@ -54,16 +54,15 @@ export async function POST(
       UPDATE outreach_campaigns
       SET status = 'COMPLETED', completed_at = now(), updated_at = now()
       WHERE id = ${campaignId}
+        AND organization_id = ${organizationId}
     `;
 
     // Get final stats
     const [stats] = await sql`
-      SELECT
-        COUNT(*) as total_contacts,
-        COUNT(*) FILTER (WHERE status = 'REPLIED') as replies,
-        COUNT(*) FILTER (WHERE status = 'CONVERTED') as conversions
+      SELECT COUNT(*) as total_contacts, COUNT(*) FILTER (WHERE status = 'REPLIED') as replies, COUNT(*) FILTER (WHERE status = 'CONVERTED') as conversions
       FROM campaign_contacts
       WHERE campaign_id = ${campaignId}
+        AND organization_id = ${organizationId}
     `;
 
     await logEvent('campaign_completed', 'campaign', campaignId, {
