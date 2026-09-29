@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { resolvePlatformOrganizationId } from '@/app/api/utils/platformOrg';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 /**
  * POST /api/consent/capture — public inbound consent capture.
@@ -25,10 +26,9 @@ import { resolvePlatformOrganizationId } from '@/app/api/utils/platformOrg';
 
 export async function POST(request: Request) {
   try {
-    const ip =
-      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      request.headers.get('x-real-ip') ||
-      null;
+    // Proxy-resolved client IP. The previous leftmost-x-forwarded-for read
+    // let the caller choose the value recorded in this consent audit row.
+    const ip = getClientIp(request);
 
     const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : null;

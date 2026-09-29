@@ -18,6 +18,7 @@ import { NextRequest } from 'next/server';
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 // Rate limits for public closing portal actions
 const CLOSING_VIEW_LIMIT = 20; // 20 views per hour per IP
@@ -51,7 +52,7 @@ interface ClosingStatus {
 
 export async function GET(req: NextRequest) {
   // Rate limit to prevent enumeration attacks
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const clientIp = getClientIp(req);
   const rateCheck = await rateLimitByUser(clientIp, 'closing_view', CLOSING_VIEW_LIMIT);
   if (!rateCheck.allowed) {
     return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
@@ -243,7 +244,7 @@ interface ClosingUpdate {
 
 export async function POST(req: NextRequest) {
   // Rate limit to prevent abuse on state-changing actions
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const clientIp = getClientIp(req);
   const rateCheck = await rateLimitByUser(clientIp, 'closing_action', CLOSING_ACTION_LIMIT);
   if (!rateCheck.allowed) {
     return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });

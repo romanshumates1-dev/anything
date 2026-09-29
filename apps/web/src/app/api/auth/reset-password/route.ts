@@ -8,10 +8,15 @@ import sql from '@/app/api/utils/sql';
 import { hashPassword } from 'better-auth/crypto';
 import crypto from 'crypto';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 export async function POST(req: NextRequest) {
-  // Get IP for rate limiting (fallback to token prefix for privacy)
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  // Resolve the client IP for rate limiting. The old leftmost-x-forwarded-for
+  // read was attacker-controlled, so the 5/hour anti-brute-force limit below
+  // could be reset simply by changing the header on each request. `getClientIp`
+  // takes the proxy-appended entry and returns null when unidentifiable, in
+  // which case rateLimitByUser fails closed.
+  const ip = getClientIp(req);
 
   // Rate limit: 5 reset attempts per IP per hour (prevent brute force)
   const rateLimit = await rateLimitByUser(ip, 'password_reset_attempt', 5, 3600);

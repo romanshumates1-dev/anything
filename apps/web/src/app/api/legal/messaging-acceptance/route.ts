@@ -11,6 +11,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { currentVersionFor } from '@/lib/legal';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 const MESSAGING_DOC_TYPE = 'messaging_compliance';
 
@@ -89,7 +90,8 @@ export async function POST(request: Request) {
   }
 
   const hdrs = await headers();
-  const ip = hdrs.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  // Proxy-resolved address; the old leftmost x-forwarded-for read was forgeable.
+  const ip = getClientIp(hdrs);
   const userAgent = hdrs.get('user-agent') || null;
   const version = currentVersionFor('messaging');
 

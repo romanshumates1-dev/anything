@@ -12,6 +12,7 @@ import sql from '@/app/api/utils/sql';
 import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { logEvent } from '@/app/api/utils/logger';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 import { verifyPortalToken } from '@/app/api/utils/portalToken';
 
 // Rate limits for public portal actions
@@ -38,7 +39,7 @@ interface OfferDetails {
 
 export async function GET(req: NextRequest) {
   // Rate limit to prevent enumeration attacks
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const clientIp = getClientIp(req);
   const rateCheck = await rateLimitByUser(clientIp, 'portal_view', PORTAL_VIEW_LIMIT);
   if (!rateCheck.allowed) {
     return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });
@@ -239,7 +240,7 @@ interface OfferResponse {
 
 export async function POST(req: NextRequest) {
   // Rate limit to prevent spam/abuse on state-changing actions
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const clientIp = getClientIp(req);
   const rateCheck = await rateLimitByUser(clientIp, 'portal_action', PORTAL_ACTION_LIMIT);
   if (!rateCheck.allowed) {
     return Response.json({ error: 'Too many requests. Please try again later.' }, { status: 429 });

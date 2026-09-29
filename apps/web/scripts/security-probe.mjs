@@ -84,6 +84,50 @@ console.log('\n--- webhook forgery: unsigned payloads must not be accepted ---')
   }
 }
 
+// --------------------------------------------------- rate-limit trust
+console.log('\n--- rate limit: edge header wins over a rotating x-forwarded-for ---');
+{
+  // Behind Cloudflare, `cf-connecting-ip` is set by the edge and cannot be
+  // forged through it, while `x-forwarded-for` can. If the resolver trusted
+  // the LEFTMOST x-forwarded-for entry (the pre-fix behaviour), rotating that
+  // header yielded a fresh bucket per request and defeated every limit here,
+  // including reset-password's 5/hour anti-brute-force control.
+  //
+  // Pin the precedence over HTTP: hold the edge header fixed, rotate the
+  // spoofable one, and require the window to exhaust anyway.
+  const EDGE = '203.0.113.44'; // fixed real client as the edge would report it
+  const body = JSON.stringify({
+    name: 'probe',
+    email: 'probe@example.invalid',
+    message: 'probe',
+  });
+  let limited = 0;
+  let statuses = [];
+  for (let i = 1; i <= 7; i++) {
+    const res = await fetch(`${BASE}/api/contact`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Origin: BASE.replace('4001', '4000'),
+        'cf-connecting-ip': EDGE,
+        // Attacker rotates this on every attempt to get a new bucket.
+        'x-forwarded-for': `6.6.${i}.6`,
+      },
+      body,
+    });
+    statuses.push(res.status);
+    if (res.status === 429) limited++;
+  }
+  // 5/hour: the 6th and 7th must be rejected despite the rotating header.
+  checks++;
+  const ok = limited >= 2;
+  if (!ok) failures++;
+  console.log(
+    `  ${ok ? 'OK  ' : 'FAIL'} statuses=[${statuses.join(',')}] -> ${limited} throttled ` +
+      `(edge header must own the bucket regardless of x-forwarded-for)`
+  );
+}
+
 // --------------------------------------------------------------- XSS
 console.log('\n--- XSS: hostile input must not be reflected unescaped ---');
 {

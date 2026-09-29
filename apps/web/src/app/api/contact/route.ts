@@ -1,13 +1,16 @@
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
 import { rateLimitByUser } from '@/app/api/utils/rateLimit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 const CONTACT_RATE_LIMIT = 5; // 5 submissions per hour
 
 export async function POST(request: Request) {
   try {
-    // Rate limiting
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    // Rate limiting. Trust only a proxy-resolved address: reading the leftmost
+    // x-forwarded-for entry let a caller rotate the header and reset this
+    // window at will (complete bypass of the 5/hour limit).
+    const clientIp = getClientIp(request);
     const rateCheck = await rateLimitByUser(clientIp, 'contact', CONTACT_RATE_LIMIT);
     if (!rateCheck.allowed) {
       return Response.json(

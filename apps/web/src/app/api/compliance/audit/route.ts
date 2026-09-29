@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { recordComplianceAction } from '@/app/api/utils/compliance-audit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -74,7 +75,9 @@ export async function POST(request: NextRequest) {
       action,
       metadata: {
         confirmationText: confirmationText || '',
-        ip: ip || request.headers.get('x-forwarded-for') || 'unknown',
+        // Proxy-resolved IP; the previous raw x-forwarded-for read was
+        // client-controlled, so this forensic field could be forged.
+        ip: ip || getClientIp(request) || 'unknown',
         userAgent: userAgent || request.headers.get('user-agent') || 'unknown',
         timestamp: new Date().toISOString(),
       },

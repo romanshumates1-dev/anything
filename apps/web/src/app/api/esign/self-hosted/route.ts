@@ -13,6 +13,7 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import { enqueueJob } from '@/app/api/utils/jobs';
+import { getClientIp } from '@/app/api/utils/clientIp';
 import { alertSellerSigned, alertBuyersMatched } from '@/app/api/alerts/notification-engine';
 import {
   createDocument,
@@ -413,7 +414,9 @@ export async function PUT(req: NextRequest) {
   }
 
   // Get IP and user agent from request
-  const ipAddress = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+  // Proxy-resolved IP and user agent. The old leftmost-x-forwarded-for read
+  // let the signer choose the address recorded against their signature.
+  const ipAddress = getClientIp(req) || 'unknown';
   const userAgent = req.headers.get('user-agent') || 'unknown';
 
   // Apply signature

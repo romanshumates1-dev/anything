@@ -1,4 +1,5 @@
 import sql from '@/app/api/utils/sql';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 /**
  * Write one row to admin_audit_log (migration 034). Every admin MUTATION must
@@ -33,5 +34,9 @@ export async function adminAudit(params: {
 }
 
 export function clientIp(request: Request): string | null {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  // Delegates to the shared resolver so every audit row gets the same
+  // proxy-validated address. Reading the leftmost x-forwarded-for entry here
+  // (the previous implementation) let a caller choose the IP recorded as
+  // forensic evidence.
+  return getClientIp(request);
 }

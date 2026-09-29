@@ -16,6 +16,7 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getLegalDoc, getAllLegalDocs, currentVersionFor, ACCEPTANCE_DOCS, type AcceptanceKey } from '@/lib/legal';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -65,7 +66,9 @@ export async function POST(request: Request) {
   }
 
   const hdrs = await headers();
-  const ip = hdrs.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  // Legal acceptance evidence must record a proxy-resolved address, not the
+  // leftmost x-forwarded-for entry the client can forge.
+  const ip = getClientIp(hdrs);
   const userAgent = hdrs.get('user-agent') || null;
 
   try {

@@ -23,11 +23,30 @@ interface RateLimitResult {
  * for these low-frequency guards (5/hour, 3/day).
  */
 export async function rateLimitByUser(
-  identifier: string,
+  identifier: string | null | undefined,
   action: string,
   maxRequests: number,
   windowSeconds: number = 3600
 ): Promise<RateLimitResult> {
+  // FAIL CLOSED when the caller cannot be identified.
+  //
+  // The previous behaviour - bucketing unidentified callers under a literal
+  // 'unknown' - had two defects at once: an attacker who withheld the
+  // forwarding header got an unlimited bucket (complete bypass of every limit,
+  // including the 5/hour reset-password anti-brute-force control), and one such
+  // client could exhaust the shared window and deny service to everyone else.
+  //
+  // Failing closed is safe rather than merely conservative: legitimate proxied
+  // traffic always carries an address, so a hostile client that strips the
+  // header only locks itself out and cannot affect anyone else.
+  if (!identifier || !identifier.trim()) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: new Date(Date.now() + windowSeconds * 1000),
+    };
+  }
+
   const windowMs = windowSeconds * 1000;
   const windowStartMs = Math.floor(Date.now() / windowMs) * windowMs;
   const windowStart = new Date(windowStartMs);

@@ -2,6 +2,7 @@ import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
 import { logEvent } from '@/app/api/utils/logger';
 import { adminAudit } from '@/app/api/utils/adminAudit';
+import { getClientIp } from '@/app/api/utils/clientIp';
 
 /**
  * Admin reviews moderation endpoint.
@@ -108,5 +109,8 @@ export async function POST(request: Request) {
 }
 
 function getClientIP(request: Request): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  // Proxy-resolved address so audit rows cannot record a client-chosen IP.
+  // 'unknown' is preserved as the fallback only when no address exists at
+  // all - unlike the rate limiter, an audit row may not be null here.
+  return getClientIp(request) || 'unknown';
 }

@@ -90,6 +90,40 @@ describe('rateLimitByUser', () => {
     const insertCalls = mockSql.mock.calls.filter((c: any) => c[0].join('?').includes('INSERT INTO rate_limits'));
     expect(insertCalls.length).toBe(1);
   });
+
+  // ── Defect: rate-limit bypass via an unidentifiable caller ─────────────────
+  // Pre-fix, a missing/blank identifier fell through to a shared 'unknown'
+  // bucket. An attacker who simply omitted the forwarding header got a fresh
+  // bucket on every request (unlimited reset-password attempts), and could also
+  // exhaust the shared window to deny service to legitimate callers.
+  it('FAILS CLOSED when the identifier is null (no unlimited bucket)', async () => {
+    const r = await rateLimitByUser(null, 'password_reset_attempt', 5, 3600);
+    expect(r.allowed).toBe(false);
+    expect(r.remaining).toBe(0);
+  });
+
+  it('fails closed on an empty or whitespace identifier', async () => {
+    expect((await rateLimitByUser('', 'contact', 5)).allowed).toBe(false);
+    expect((await rateLimitByUser('   ', 'contact', 5)).allowed).toBe(false);
+  });
+
+  it('does not touch the database for an unidentifiable caller', async () => {
+    await rateLimitByUser(null, 'contact', 5);
+    const inserts = mockSql.mock.calls.filter((c: any) => c[0].join('?').includes('INSERT INTO rate_limits'));
+    expect(inserts.length).toBe(0);
+  });
+
+  it('an unidentifiable caller cannot poison a shared bucket', async () => {
+    // Previously both would have landed on 'unknown' and collided. Now the
+    // unidentified caller is refused outright while a real identifier still
+    // gets its full budget.
+    const blocked = await rateLimitByUser(null, 'contact', 5);
+    expect(blocked.allowed).toBe(false);
+
+    const real = await rateLimitByUser('203.0.113.9', 'contact', 5);
+    expect(real.allowed).toBe(true);
+    expect(real.remaining).toBe(4);
+  });
 });
 
 // ─── Live concurrency proof ──────────────────────────────────────────────────
