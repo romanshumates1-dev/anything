@@ -122,7 +122,27 @@ export async function getOrganization(): Promise<Organization | null> {
       };
     }
 
-    // Fallback to default organization for backward compatibility
+    // NO MEMBERSHIP.
+    //
+    // DEFECT (tenant isolation): this used to fall through to `org_default`
+    // unconditionally, so ANY authenticated user with no organization membership
+    // was handed the default organization instead of being refused. `org_default`
+    // holds the bulk of the platform's leads (370k+ rows) and has zero members,
+    // so the fallback was a mass data exposure for every membership-less session
+    // - including the orphaned CI/E2E accounts still holding live sessions.
+    //
+    // `getUserOrganizations` (below) has always gated `org_default` behind
+    // `role === 'ADMIN'`; this authorization path now applies the same gate, so
+    // the two can no longer disagree. A membership-less non-admin gets `null`,
+    // which every caller already translates to 403.
+    const userRows = (await sql`
+      SELECT role FROM "user" WHERE id = ${session.user.id} LIMIT 1
+    `) as UserRoleRow[];
+    if (userRows[0]?.role !== 'ADMIN') {
+      return null;
+    }
+
+    // Platform admins may fall back to the default organization.
     const defaultOrgRows = await sql`
       SELECT id, name, slug FROM organizations WHERE id = 'org_default' LIMIT 1
     `;
