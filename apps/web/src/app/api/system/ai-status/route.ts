@@ -1,12 +1,21 @@
 import { requireAdmin } from '@/app/api/utils/authz';
 import { getAiConfig } from '@/app/api/utils/ai-settings';
 import { callAnthropic } from '@/app/api/utils/anthropic-client';
+import { callBedrock, getBedrockConfig } from '@/app/api/utils/bedrock-client';
 
 /**
  * Live "test connection" for the ACTIVE AI provider (admin). Cheap + honest:
  *  - ollama    → GET {base}/api/tags (free) → reachable + is the model pulled?
  *  - anthropic → a 1-token message call → true green/red (surfaces a bad key or
  *                a $0 credit balance as the actual error).
+ *  - bedrock   → a 1-token Converse call → surfaces an invalid AWS token, a
+ *                model that is not enabled, or a wrong region.
+ *
+ * DEFECT (2026-09-30): this route ignored `cfg.provider` and ALWAYS called
+ * Anthropic, so a Bedrock deployment was told "Anthropic reachable" and the
+ * real Bedrock failure (403 invalid security token) was never surfaced. The
+ * whole point of this route is to answer "would the next AI call work?", so it
+ * must exercise the provider that would actually serve it.
  */
 export async function GET() {
   const admin = await requireAdmin();
@@ -44,6 +53,37 @@ export async function GET() {
         baseUrl: cfg.ollamaBaseUrl,
         reachable: false,
         detail: `Ollama not reachable at ${cfg.ollamaBaseUrl} — is \`ollama serve\` running? (${err?.message || err})`,
+      });
+    }
+  }
+
+  // bedrock
+  if (cfg.provider === 'bedrock') {
+    const bedrockCfg = getBedrockConfig();
+    if (!bedrockCfg) {
+      return Response.json({
+        provider: 'bedrock',
+        reachable: false,
+        detail:
+          'Bedrock is the selected provider but is not configured — set BEDROCK_MODEL_NEGOTIATE, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY',
+      });
+    }
+    try {
+      const r = await callBedrock(
+        { messages: [{ role: 'user', content: 'ping' }], maxTokens: 1 },
+        bedrockCfg
+      );
+      return Response.json({
+        provider: 'bedrock',
+        model: r.model,
+        reachable: true,
+        detail: `Bedrock reachable (model ${r.model}).`,
+      });
+    } catch (err: any) {
+      return Response.json({
+        provider: 'bedrock',
+        reachable: false,
+        detail: err?.message || 'Bedrock call failed',
       });
     }
   }

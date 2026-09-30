@@ -183,7 +183,7 @@ export function SocialProof({
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
           </svg>
-          <span className="text-sm">SOC 2 Compliant</span>
+          <span className="text-sm">Role-based access</span>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
@@ -195,13 +195,13 @@ export function SocialProof({
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM10 17l-3.5-3.5 1.41-1.41L10 14.17l4.59-4.59L16 11l-6 6z" />
           </svg>
-          <span className="text-sm">99.9% Uptime</span>
+          <span className="text-sm">Live service status</span>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg">
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
           </svg>
-          <span className="text-sm">30-Day Guarantee</span>
+          <span className="text-sm">7-Day Guarantee</span>
         </div>
       </div>
     </div>

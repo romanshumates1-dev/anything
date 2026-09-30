@@ -235,7 +235,7 @@ export default function FeaturesPage() {
             <div className="relative px-8 py-16 sm:px-16 text-center">
               <h2 className="text-3xl font-bold text-white mb-4">Ready to automate your wholesaling?</h2>
               <p className="text-white/80 mb-8 max-w-xl mx-auto">
-                Start your 14-day free trial. No credit card required. Join 800+ active users generating $45M+ in deals.
+                Start your 14-day free trial. No credit card required. Join the early-access cohort building on DealFlow AI.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link

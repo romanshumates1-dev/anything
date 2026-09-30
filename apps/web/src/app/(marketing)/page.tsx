@@ -387,65 +387,36 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials */}
+      {/* Customer feedback
+          HONESTY (2026-09-30): this section rendered three INVENTED
+          testimonials — "Marcus Johnson, Atlanta, $32,000 first deal",
+          "Sarah Chen, Phoenix, 2x close rate", "David Williams, Houston,
+          8 deals/month" — with five-star ratings. No such customers, reviews
+          or deals exist in the database (100 users, 54 orgs, all on trial, no
+          closed deals). Named endorsements with invented earnings are the most
+          legally exposed kind of marketing claim, so they are removed.
+          Real, stored customer reviews (with `is_demo` rows excluded in
+          production) are rendered on /reviews and linked from here. */}
       <section className="py-24 bg-[#0A0F1A]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <span className="text-sm font-medium text-[#3B82F6] uppercase tracking-wider">Testimonials</span>
+            <span className="text-sm font-medium text-[#3B82F6] uppercase tracking-wider">Customer Feedback</span>
             <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">
-              Real results from real investors
+              Read verified customer reviews
             </h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                name: "Marcus Johnson",
-                role: "Real Estate Investor, Atlanta",
-                quote: "Made $32K profit on my first deal in 6 weeks. The AI handled 80% of my conversations with property owners.",
-                result: "$32,000",
-                resultLabel: "First Deal Profit",
-              },
-              {
-                name: "Sarah Chen",
-                role: "Real Estate Investor, Phoenix",
-                quote: "Switched from REsimpli. DealFlow saves me $200/month and finding buyers for my deals has doubled my close rate.",
-                result: "2x",
-                resultLabel: "Close Rate",
-              },
-              {
-                name: "David Williams",
-                role: "Team Lead, Houston",
-                quote: "We went from 2 deals/month to 8 deals/month. The automation handles what used to take 3 virtual assistants.",
-                result: "8",
-                resultLabel: "Deals/Month",
-              },
-            ].map((testimonial, i) => (
-              <div key={i} className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-6">
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, j) => (
-                    <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                  ))}
-                </div>
-                <p className="text-slate-300 mb-6 leading-relaxed">"{testimonial.quote}"</p>
-                <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B82F6] to-[#8B5CF6] flex items-center justify-center">
-                      <span className="text-white text-sm font-medium">
-                        {testimonial.name.split(" ").map(n => n[0]).join("")}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white">{testimonial.name}</p>
-                      <p className="text-xs text-slate-500">{testimonial.role}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-emerald-400">{testimonial.result}</p>
-                    <p className="text-xs text-slate-500">{testimonial.resultLabel}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+            <p className="mt-4 text-slate-400 max-w-2xl mx-auto">
+              Every review below is stored in our database and attributed to a real
+              account. We do not publish testimonials we cannot substantiate.
+            </p>
+            <div className="mt-8">
+              <Link
+                href="/reviews"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-[#3B82F6] text-white font-medium hover:bg-[#2563EB] transition-colors"
+              >
+                See all reviews
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </div>
       </section>

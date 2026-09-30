@@ -153,7 +153,7 @@ export default function TrustPage() {
                 {[
                   {
                     label: "Subprocessors",
-                    desc: "Twilio (SMS), Stripe (Payments), Neon (Database), Anthropic (AI). All providers meet SOC 2 compliance standards.",
+                    desc: "Infrastructure vendors (SMS, database, AI) publish their own security attestations; DealSwift Automation LLC is not currently SOC 2 certified.",
                   },
                   {
                     label: "Encryption",

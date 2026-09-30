@@ -95,7 +95,7 @@ function SignUpForm() {
 						Start closing more deals with AI
 					</h2>
 					<p className="text-slate-400 mb-8 leading-relaxed">
-						Join 800+ wholesalers using AI to automate lead engagement, negotiate better, and close more deals.
+						Join the wholesalers using AI to automate lead engagement, negotiate better, and close more deals.
 					</p>
 
 					<ul className="space-y-5">
@@ -114,55 +114,46 @@ function SignUpForm() {
 						))}
 					</ul>
 
-					{/* Social Proof Stats */}
+					{/* HONESTY (2026-09-30): the previous social-proof block was FABRICATED.
+					    "800+ active users", "4.9/5 rating", "$2.4M+ deal volume" and a
+					    named testimonial ("Marcus Johnson, Atlanta" / "$32K first deal")
+					    had no supporting record: the live database holds 100 users and 54
+					    organizations, ALL on trial, with no paid subscriptions and no
+					    closed deals. Invented endorsements and revenue figures are a
+					    false-advertising risk, so they are REMOVED rather than softened.
+					    Real customer sentiment renders from the database on /reviews
+					    (`reviews.is_demo` rows are excluded in production); the tiles
+					    below are verifiable product facts instead. */}
 					<div className="mt-8 grid grid-cols-3 gap-4">
 						<div className="text-center p-3 rounded-lg bg-white/5">
 							<div className="flex items-center justify-center gap-1.5 mb-1">
 								<Users className="h-4 w-4 text-[#3B82F6]" />
-								<span className="text-lg font-bold text-white">800+</span>
+								<span className="text-lg font-bold text-white">14-day</span>
 							</div>
-							<p className="text-xs text-slate-500">Active Users</p>
+							<p className="text-xs text-slate-500">Free trial, no card</p>
 						</div>
 						<div className="text-center p-3 rounded-lg bg-white/5">
 							<div className="flex items-center justify-center gap-1.5 mb-1">
 								<Star className="h-4 w-4 text-amber-400" />
-								<span className="text-lg font-bold text-white">4.9/5</span>
+								<span className="text-lg font-bold text-white">7-day</span>
 							</div>
-							<p className="text-xs text-slate-500">Rating</p>
+							<p className="text-xs text-slate-500">Money-back guarantee</p>
 						</div>
 						<div className="text-center p-3 rounded-lg bg-white/5">
 							<div className="flex items-center justify-center gap-1.5 mb-1">
 								<TrendingUp className="h-4 w-4 text-emerald-400" />
-								<span className="text-lg font-bold text-white">$2.4M+</span>
+								<span className="text-lg font-bold text-white">No</span>
 							</div>
-							<p className="text-xs text-slate-500">Deal Volume</p>
+							<p className="text-xs text-slate-500">Contracts, cancel anytime</p>
 						</div>
 					</div>
 
-					{/* Testimonial */}
-					<div className="mt-8 p-6 rounded-2xl border border-white/10 bg-[#1E293B]/30">
-						<div className="flex gap-1 mb-3">
-							{[...Array(5)].map((_, i) => (
-								<Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
-							))}
-						</div>
-						<p className="text-slate-300 italic mb-4">
-							"Closed my first $32K assignment fee in 6 weeks. The AI negotiation handled 80% of my seller conversations."
-						</p>
-						<div className="flex items-center gap-3">
-							<div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B82F6] to-[#8B5CF6] flex items-center justify-center">
-								<span className="text-white text-sm font-medium">MJ</span>
-							</div>
-							<div>
-								<p className="text-sm font-medium text-white">Marcus Johnson</p>
-								<p className="text-xs text-slate-500">Wholesaler, Atlanta</p>
-							</div>
-							<div className="ml-auto text-right">
-								<p className="text-lg font-bold text-emerald-400">$32K</p>
-								<p className="text-xs text-slate-500">First Deal</p>
-							</div>
-						</div>
-					</div>
+					{/* HONESTY (2026-09-30): the named testimonial that stood here
+					    ("Marcus Johnson, Wholesaler, Atlanta", five stars, "$32K first
+					    deal") was invented — no such customer, review or deal exists in
+					    the database. A fabricated endorsement is the most serious kind of
+					    marketing claim, so it is removed outright. Real, stored reviews
+					    render on /reviews. */}
 
 					{/* Industry Fact */}
 					<div className="mt-6 p-4 rounded-xl bg-[#3B82F6]/5 border border-[#3B82F6]/20">

@@ -71,9 +71,13 @@ const GUARANTEES: Record<
   },
   uptime: {
     icon: Zap,
-    title: '99.9% Uptime SLA',
-    shortTitle: '99.9% Uptime',
-    description: "Enterprise-grade reliability backed by our SLA.",
+    // HONESTY (2026-09-30): this was "99.9% Uptime SLA — backed by our SLA".
+    // No SLA exists and none is measurable here (the platform has documented
+    // Cloudflare Worker CPU kills on the Free plan), so publishing a numeric
+    // uptime commitment would be an unsupported claim.
+    title: 'Live Status',
+    shortTitle: 'Status',
+    description: "Service health is reported live by the platform status endpoint.",
     color: 'text-cyan-400',
     bgColor: 'bg-cyan-500/10',
   },
@@ -81,7 +85,7 @@ const GUARANTEES: Record<
     icon: Lock,
     title: 'Enterprise Security',
     shortTitle: 'Secure',
-    description: "256-bit encryption, SOC 2 compliant, data protection.",
+    description: "256-bit encryption in transit, role-based access control, audit logs.",
     color: 'text-slate-300',
     bgColor: 'bg-slate-500/10',
   },
@@ -186,9 +190,13 @@ export function SecurityBadges({ className = '' }: { className?: string }) {
   return (
     <div className={`flex flex-wrap justify-center gap-6 ${className}`}>
       {[
-        { icon: Shield, label: 'SOC 2 Compliant' },
-        { icon: Lock, label: '256-bit Encryption' },
-        { icon: Zap, label: '99.9% Uptime' },
+        // HONESTY (2026-09-30): "SOC 2 Compliant" and "99.9% Uptime" are removed.
+        // No SOC 2 audit/certification exists for this platform, and no uptime
+        // figure is measured or contractually committed. Displaying a compliance
+        // badge that was never earned is false advertising; the verifiable
+        // controls below are stated instead.
+        { icon: Lock, label: '256-bit TLS in transit' },
+        { icon: Shield, label: 'Role-based access' },
         { icon: CheckCircle, label: '7-Day Guarantee' },
       ].map((badge) => (
         <div

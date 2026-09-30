@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Check, X, Users, Star, ArrowRight, Gift } from "lucide-react";
+import { Check, X, Users, ArrowRight, Gift } from "lucide-react";
 import {
   GuaranteeBadgeRow,
   SecurityBadges,
@@ -172,29 +172,19 @@ function buildCompetitorComparison(starterPrice: number) {
 // COMPETITOR_COMPARISON is generated dynamically from starter tier price
 // Feature comparison is handled by PricingTierSelector component using pricingTiers.ts
 
-const TESTIMONIALS = [
-  {
-    name: 'Marcus Johnson',
-    role: 'Real Estate Investor, Atlanta',
-    quote: 'Made $32K profit on my first deal in 6 weeks. The AI handled 80% of my conversations with property owners.',
-    deal: '$32,000',
-    avatar: 'MJ',
-  },
-  {
-    name: 'Sarah Chen',
-    role: 'Real Estate Investor, Phoenix',
-    quote: 'Switched from REsimpli. DealFlow saves me $200/month and finding buyers for my deals has doubled my close rate.',
-    deal: '$87,000',
-    avatar: 'SC',
-  },
-  {
-    name: 'David Williams',
-    role: 'Team Lead, Houston',
-    quote: 'We went from 2 deals/month to 8 deals/month. The automation handles what used to take 3 virtual assistants.',
-    deal: '8 deals/mo',
-    avatar: 'DW',
-  },
-];
+// HONESTY (2026-09-30): this array held three INVENTED testimonials
+// ("Marcus Johnson, Atlanta, $32,000", "Sarah Chen, Phoenix, $87,000",
+// "David Williams, Houston, 8 deals/mo"). No such customers, reviews or deals
+// exist in the database, so the array is removed. Real stored reviews render on
+// /reviews (`is_demo` rows excluded in production) — do not hardcode customer
+// names or earnings here.
+const TESTIMONIALS: Array<{
+  name: string;
+  role: string;
+  quote: string;
+  deal: string;
+  avatar: string;
+}> = [];
 
 const FAQS = [
   {
@@ -245,7 +235,7 @@ export default async function PricingPage() {
         <span className="mx-3 opacity-50">|</span>
         <span className="opacity-90">Lock in this rate before general launch</span>
         <span className="ml-2 inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full text-xs">
-          <Users className="h-3 w-3" /> 800+ active users
+          <Users className="h-3 w-3" /> Early-access cohort
         </span>
       </div>
 
@@ -401,38 +391,28 @@ export default async function PricingPage() {
             <LiveSocialProof variant="rotating" autoRotate rotationInterval={5000} />
           </div>
 
-          {/* Testimonials */}
+          {/* Customer feedback
+              HONESTY (2026-09-30): this rendered the invented testimonials
+              above plus a "Join 500+ investors" claim. There are 54
+              organizations, all on trial, and no stored reviews backing any of
+              it. The section now points at the real, database-backed reviews
+              page instead of asserting results we cannot substantiate. */}
           <div className="mb-24">
             <div className="text-center mb-12">
-              <span className="text-sm font-medium text-[#3B82F6] uppercase tracking-wider">Testimonials</span>
-              <h2 className="mt-4 text-3xl font-bold text-white mb-4">Real Results from Real Investors</h2>
-              <p className="text-slate-400">Join 500+ investors already closing more deals with AI</p>
-            </div>
-            <div className="grid md:grid-cols-3 gap-8">
-              {TESTIMONIALS.map((t, i) => (
-                <div key={i} className="rounded-2xl border border-white/10 bg-[#1E293B]/30 p-6">
-                  <div className="flex gap-1 mb-4">
-                    {[...Array(5)].map((_, j) => (
-                      <Star key={j} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-slate-300 mb-6 leading-relaxed">"{t.quote}"</p>
-                  <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B82F6] to-[#8B5CF6] flex items-center justify-center text-white font-semibold text-sm">
-                        {t.avatar}
-                      </div>
-                      <div>
-                        <div className="font-medium text-white text-sm">{t.name}</div>
-                        <div className="text-xs text-slate-500">{t.role}</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-lg font-bold text-emerald-400">{t.deal}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <span className="text-sm font-medium text-[#3B82F6] uppercase tracking-wider">Customer Feedback</span>
+              <h2 className="mt-4 text-3xl font-bold text-white mb-4">Verified Customer Reviews</h2>
+              <p className="text-slate-400">
+                Every review is stored in our database and attributed to a real account.
+              </p>
+              <div className="mt-8">
+                <Link
+                  href="/reviews"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-[#3B82F6] text-white font-medium hover:bg-[#2563EB] transition-colors"
+                >
+                  See all reviews
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -494,7 +474,7 @@ export default async function PricingPage() {
             <div className="relative px-8 py-16 sm:px-16 text-center">
               <h2 className="text-3xl font-bold text-white mb-4">Ready to Automate Your Wholesaling?</h2>
               <p className="text-white/80 mb-8 max-w-xl mx-auto">
-                Join 500+ investors using AI to find homeowners ready to sell, negotiate better prices, and connect with buyers faster.
+                Use AI to find homeowners ready to sell, negotiate better prices, and connect with buyers faster.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link

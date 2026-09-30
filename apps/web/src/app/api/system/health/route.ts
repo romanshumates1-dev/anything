@@ -1,7 +1,16 @@
 import sql from '@/app/api/utils/sql';
 import { getTwilioConfig } from '@/app/api/utils/twilio-adapter';
 import { getAiConfig } from '@/app/api/utils/ai-settings';
+import { getBedrockConfig } from '@/app/api/utils/bedrock-client';
 import { timingSafeSecretEqual } from '@/app/api/utils/secretCompare';
+
+/**
+ * Bedrock is only "configured" when a model id is resolvable as well as AWS
+ * credentials being present — a model id alone cannot serve a call.
+ */
+function aiConfiguredForBedrock(): boolean {
+  return getBedrockConfig() !== null;
+}
 
 /**
  * PUBLIC health probe — used by uptime checks, the Shell status dot, and the
@@ -38,10 +47,23 @@ export async function GET(request: Request) {
     services.jobs = false;
   }
 
-  // AI = a provider is CONFIGURED (no live ping — a health probe must stay fast).
+  // AI = the ACTIVE provider is CONFIGURED (no live ping — a health probe must
+  // stay fast). DEFECT (2026-09-30): this used to be
+  //   `provider === 'ollama' ? ollamaBaseUrl : Boolean(ANTHROPIC_API_KEY)`
+  // so a BEDROCK deployment was judged by the Anthropic key: it reported the AI
+  // service down while Bedrock was configured, or up while Bedrock's AWS token
+  // was invalid. The check now follows the provider that would actually serve.
   try {
     const ai = await getAiConfig();
-    services.ai = ai.provider === 'ollama' ? Boolean(ai.ollamaBaseUrl) : Boolean(process.env.ANTHROPIC_API_KEY);
+    if (ai.provider === 'ollama') {
+      services.ai = Boolean(ai.ollamaBaseUrl);
+    } else if (ai.provider === 'bedrock') {
+      services.ai = Boolean(
+        process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && aiConfiguredForBedrock()
+      );
+    } else {
+      services.ai = Boolean(process.env.ANTHROPIC_API_KEY);
+    }
   } catch {
     services.ai = false;
   }

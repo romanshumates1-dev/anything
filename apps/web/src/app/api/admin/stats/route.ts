@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { requireAdmin } from '@/app/api/utils/authz';
+import { getAiConfig } from '@/app/api/utils/ai-settings';
 
 /**
  * Admin system statistics - overview metrics for the admin dashboard.
@@ -164,12 +165,36 @@ async function checkSystemHealth() {
     checks.database = { status: 'down', latency: Date.now() - dbStart };
   }
 
-  // Check AI provider status (via settings)
+  // Check AI provider status — CONFIGURED, not VERIFIED.
+  // DEFECT (2026-09-30): this reported `healthy` whenever an `app_settings` ROW
+  // existed — i.e. "a config row was written" was treated as "the provider
+  // works". During a total AI outage (an out-of-credit Anthropic key here, an
+  // invalid Bedrock token in the other environment) the admin dashboard
+  // therefore read `aiProvider: healthy` while every AI call 400'd.
+  //
+  // This dashboard stays a CONFIGURATION view on purpose: it is polled, so a
+  // live provider call per refresh would cost money and add latency. The
+  // credential check now follows the provider that would actually serve, so a
+  // provider with no credentials is at least reported `degraded`. A provider
+  // that IS configured can still be unusable (out of credit, revoked key,
+  // model not enabled) — /api/system/ai-status is the route that proves that
+  // with a real 1-token call, and it is the one to read before launch.
   try {
-    const [setting] = await sql`
-      SELECT value FROM app_settings WHERE key = 'ai_provider' LIMIT 1
-    `;
-    checks.aiProvider = { status: setting ? 'healthy' : 'degraded' };
+    const ai = await getAiConfig();
+    const configured =
+      ai.provider === 'ollama'
+        ? Boolean(ai.ollamaBaseUrl)
+        : ai.provider === 'bedrock'
+          ? Boolean(
+              process.env.AWS_ACCESS_KEY_ID &&
+                process.env.AWS_SECRET_ACCESS_KEY &&
+                process.env.BEDROCK_MODEL_NEGOTIATE
+            )
+          : Boolean(process.env.ANTHROPIC_API_KEY);
+    checks.aiProvider = {
+      status: configured ? 'healthy' : 'degraded',
+      ...(configured ? {} : { detail: `${ai.provider} has no usable configuration` }),
+    };
   } catch {
     checks.aiProvider = { status: 'degraded' };
   }
