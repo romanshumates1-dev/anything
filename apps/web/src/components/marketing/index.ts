@@ -32,7 +32,6 @@ export {
 export {
   CaseStudyCard,
   CaseStudySection,
-  SAMPLE_CASE_STUDIES,
 } from './CaseStudy';
 export {
   UpgradePrompt,

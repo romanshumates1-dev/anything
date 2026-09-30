@@ -229,82 +229,28 @@ export function CaseStudyCard({
 }
 
 /**
- * Sample case studies - Replace with real customer data
+ * Case studies must come from real, consented customers.
+ *
+ * WHY THE SAMPLE DATA WAS DELETED (2026-09-30)
+ * -------------------------------------------
+ * This file previously exported `SAMPLE_CASE_STUDIES`: three invented customer
+ * stories ("Marcus Johnson, Atlanta, $32K profit", "Sarah Chen, Phoenix",
+ * "David Williams, Houston") with specific quotes, earnings figures and
+ * before/after metrics - and the invented Marcus entry was flagged
+ * `verified: true`, which asserted a verification that never happened.
+ *
+ * `CaseStudySection` DEFAULTED to that array and rendered it under the heading
+ * "Real Results from Real Investors" with a "Get Results Like These" CTA. The
+ * component was not yet mounted on a page, so nothing was published - but it
+ * was exported from the marketing barrel and one prop-drop away from shipping
+ * fabricated earnings claims to the public.
+ *
+ * A default is a decision. Defaulting a marketing gallery to invented customer
+ * results means the first person to mount it publishes fabrications without
+ * intending to. The component now renders an honest empty state instead, and
+ * requires real data to be passed in explicitly.
  */
-export const SAMPLE_CASE_STUDIES: CaseStudyData[] = [
-  {
-    id: 'marcus-atlanta',
-    title: 'From Zero to $32K Profit in 6 Weeks',
-    subtitle: 'How a new investor closed his first deal with AI assistance',
-    location: 'Atlanta, GA',
-    timeframe: '6 weeks',
-    challenge:
-      'Marcus was spending 6+ hours daily cold calling and texting property owners manually. Despite contacting 50+ owners per day, his response rate was under 5% and he had yet to close his first deal after 3 months.',
-    solution:
-      'He started using DealFlow AI to automate initial outreach and follow-ups. The AI handled the first 3 messages, identified owners who were actually interested in selling, and only notified Marcus when someone was ready to talk.',
-    results:
-      'Within 6 weeks, Marcus closed his first deal and made $32,000 profit. His response rate jumped to 18% and he reduced his outreach time from 6 hours to just 45 minutes daily.',
-    quote:
-      'The AI handled 80% of my conversations with property owners. I just stepped in for the final negotiations and closing.',
-    personName: 'Marcus Johnson',
-    personRole: 'Real Estate Investor',
-    metrics: [
-      { label: 'Time/Day', before: '6 hours', after: '45 min', improvement: '-88%' },
-      { label: 'Response Rate', before: '5%', after: '18%', improvement: '+260%' },
-      { label: 'First Deal Profit', before: '0', after: '$32K', improvement: 'In 6 weeks' },
-      { label: 'Owners Contacted/Day', before: '50', after: '200', improvement: '+300%' },
-    ],
-    verified: true,
-  },
-  {
-    id: 'sarah-phoenix',
-    title: 'Doubled Close Rate After Switching',
-    subtitle: 'REsimpli user saves $200/mo and gets better results',
-    location: 'Phoenix, AZ',
-    timeframe: '3 months',
-    challenge:
-      'Sarah was paying $449/month for REsimpli plus $99/month for their AI add-on. Despite the cost, she wasnt seeing the ROI and her close rate had plateaued at 1.5%.',
-    solution:
-      'She switched to DealFlow AI Pro at $299/month, getting AI automation built-in. The buyer-finding feature automatically connected her deals with interested investors.',
-    results:
-      'Her close rate doubled to 3.2% and she saved $249/month. Finding buyers automatically helped her close 4 additional deals in the first quarter.',
-    quote:
-      'Finding buyers for my deals automatically has been worth the switch alone. I closed 4 extra deals last quarter.',
-    personName: 'Sarah Chen',
-    personRole: 'Real Estate Investor',
-    metrics: [
-      { label: 'Monthly Cost', before: '$548', after: '$299', improvement: '-45%' },
-      { label: 'Close Rate', before: '1.5%', after: '3.2%', improvement: '+113%' },
-      { label: 'Q1 Deals', before: '4', after: '8', improvement: '+100%' },
-      { label: 'Response Time', before: '2 hours', after: '3 min', improvement: '-97%' },
-    ],
-    verified: true,
-  },
-  {
-    id: 'david-houston',
-    title: '4x Deal Volume Without Hiring',
-    subtitle: 'Small team scales from 2 to 8 deals per month',
-    location: 'Houston, TX',
-    timeframe: '4 months',
-    challenge:
-      'David\'s 3-person team was maxed out at 2 deals per month. They were considering hiring 3 virtual assistants at $1,500/month each to handle more property owners.',
-    solution:
-      'Instead of hiring, they used DealFlow AI to handle initial outreach, follow-ups, and figuring out which owners were serious about selling. Team members focused only on interested owners and closing deals.',
-    results:
-      'The team went from 2 to 8 deals per month without adding headcount. They saved $4,500/month in potential hiring costs while quadrupling revenue.',
-    quote:
-      'The automation handles what used to take 3 virtual assistants. My team just focuses on closing now.',
-    personName: 'David Williams',
-    personRole: 'Team Lead',
-    metrics: [
-      { label: 'Deals/Month', before: '2', after: '8', improvement: '+300%' },
-      { label: 'Team Size', before: '3', after: '3', improvement: 'No hires needed' },
-      { label: 'Hiring Cost Saved', before: '$4,500/mo', after: '$0', improvement: '-100%' },
-      { label: 'Owners Reached', before: '500', after: '2,000', improvement: '+300%' },
-    ],
-    verified: true,
-  },
-];
+const NO_CASE_STUDIES: CaseStudyData[] = [];
 
 /**
  * CaseStudySection - Display multiple case studies
@@ -318,12 +264,16 @@ interface CaseStudySectionProps {
 }
 
 export function CaseStudySection({
-  caseStudies = SAMPLE_CASE_STUDIES,
+  caseStudies = NO_CASE_STUDIES,
   title = 'Real Results from Real Investors',
   subtitle = 'See how others are using DealFlow AI to close more deals',
   showCTA = true,
   className = '',
 }: CaseStudySectionProps) {
+  // With no real customer data to show, the section renders nothing at all.
+  // Publishing the heading alone would promise results that do not exist.
+  if (caseStudies.length === 0) return null;
+
   return (
     <div className={className}>
       {title && (

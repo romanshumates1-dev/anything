@@ -1,6 +1,6 @@
 'use client';
 
-import { Star, TrendingUp, DollarSign, Users, ArrowRight } from 'lucide-react';
+import { Star, TrendingUp, DollarSign, Users } from 'lucide-react';
 
 interface Testimonial {
   name: string;
@@ -12,8 +12,13 @@ interface Testimonial {
 }
 
 interface SocialProofProps {
-  testimonials?: Testimonial[];
-  stats?: {
+  /**
+   * REQUIRED, and must be real, consented customer testimonials. There is no
+   * default: see the note above the component.
+   */
+  testimonials: Testimonial[];
+  /** REQUIRED, and must be measured. There is no default. */
+  stats: {
     users?: number;
     deals?: number;
     revenue?: string;
@@ -21,49 +26,29 @@ interface SocialProofProps {
   };
 }
 
-const DEFAULT_TESTIMONIALS: Testimonial[] = [
-  {
-    name: 'Marcus Johnson',
-    role: 'Solo Wholesaler',
-    location: 'Atlanta, GA',
-    quote: 'Closed my first $32K assignment fee in 6 weeks. The AI negotiation literally handled 80% of my seller conversations.',
-    result: '$32,000 deal',
-  },
-  {
-    name: 'Sarah Chen',
-    role: 'Real Estate Investor',
-    location: 'Phoenix, AZ',
-    quote: 'Switched from REsimpli. DealFlow saves me $200/month and the buyer matching alone has doubled my close rate.',
-    result: '2x close rate',
-  },
-  {
-    name: 'David Williams',
-    role: 'Team Lead',
-    location: 'Houston, TX',
-    quote: 'We went from 2 deals/month to 8 deals/month. The automation handles what used to take 3 VAs.',
-    result: '8 deals/month',
-  },
-  {
-    name: 'Jennifer Martinez',
-    role: 'New Investor',
-    location: 'Miami, FL',
-    quote: 'As a complete beginner, the AI walked me through everything. First deal in 45 days with zero cold calling.',
-    result: '45 days to first deal',
-  },
-];
-
-// Note: These are projected goals, not verified metrics. Display with appropriate disclaimers.
-const DEFAULT_STATS = {
-  users: 0, // Will show actual count from DB or "Growing" label
-  deals: 0, // Will show actual count from DB or goal label
-  revenue: '$45M', // Goal target, labeled as such
-  rating: 5.0, // Our standard
-};
-
+/**
+ * No default testimonials.
+ *
+ * This component previously defaulted to four invented customers - "Marcus
+ * Johnson" ($32,000 first deal), "Sarah Chen", "David Williams",
+ * "Jennifer Martinez" - each with a first-person quote about results that
+ * never happened, plus a "$45M" revenue figure presented as a stat.
+ *
+ * The marketing pages now render `LiveSocialProof`, which reads real signup
+ * data from the database. This component remains for the rare case where a
+ * caller supplies genuine, consented testimonials.
+ *
+ * A testimonial is a person's name and their money. It cannot be defaulted into
+ * existence, so both props are now REQUIRED: a caller must pass real data or
+ * not render this at all.
+ */
 export function SocialProof({
-  testimonials = DEFAULT_TESTIMONIALS,
-  stats = DEFAULT_STATS,
+  testimonials,
+  stats,
 }: SocialProofProps) {
+  if (!testimonials || testimonials.length === 0) return null;
+  if (!stats) return null;
+
   const getInitials = (name: string) =>
     name
       .split(' ')
@@ -77,31 +62,42 @@ export function SocialProof({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
         <div className="bg-white rounded-xl border p-6 text-center">
           <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{(stats.users ?? 0) > 0 ? `${stats.users}+` : 'Growing'}</div>
-          <div className="text-sm text-gray-500">{(stats.users ?? 0) > 0 ? 'Active Users' : 'User Community'}</div>
+          <div className="text-3xl font-bold text-gray-900">
+            {stats.users !== undefined ? `${stats.users.toLocaleString()}+` : '—'}
+          </div>
+          <div className="text-sm text-gray-500">
+            {stats.users !== undefined ? 'Active Users' : 'User Count Not Published'}
+          </div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <TrendingUp className="h-6 w-6 text-green-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{(stats.deals ?? 0) > 0 ? (stats.deals ?? 0).toLocaleString() : '2,500'}</div>
-          <div className="text-sm text-gray-500">{(stats.deals ?? 0) > 0 ? 'Deals Closed' : 'Deal Goal*'}</div>
+          <div className="text-3xl font-bold text-gray-900">
+            {stats.deals !== undefined ? stats.deals.toLocaleString() : '—'}
+          </div>
+          <div className="text-sm text-gray-500">
+            {stats.deals !== undefined ? 'Deals Closed' : 'Deal Count Not Published'}
+          </div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <DollarSign className="h-6 w-6 text-emerald-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{stats.revenue ?? '$45M'}</div>
-          <div className="text-sm text-gray-500">Volume Target*</div>
+          {/* No "$45M" fallback. A number that was never measured must render as
+              unknown, not as a target wearing a stat's clothing. */}
+          <div className="text-3xl font-bold text-gray-900">{stats.revenue ?? '—'}</div>
+          <div className="text-sm text-gray-500">Volume</div>
         </div>
         <div className="bg-white rounded-xl border p-6 text-center">
           <Star className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
-          <div className="text-3xl font-bold text-gray-900">{stats.rating ?? 5}/5</div>
-          <div className="text-sm text-gray-500">Our Standard</div>
+          <div className="text-3xl font-bold text-gray-900">
+            {stats.rating !== undefined ? `${stats.rating}/5` : '—'}
+          </div>
+          <div className="text-sm text-gray-500">Average Rating</div>
         </div>
       </div>
-      <p className="text-center text-xs text-gray-400 -mt-8 mb-8">*Projected goals. Actual results will vary based on market conditions and user activity.</p>
 
       {/* Title */}
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold text-gray-900 mb-4">What Our Users Are Saying</h2>
-        <p className="text-gray-600">Hear from investors using DealFlow to close more deals with AI</p>
+        <p className="text-gray-600">Testimonials from investors using DealSwift to close more deals with AI</p>
       </div>
 
       {/* Testimonials Grid */}
@@ -150,32 +146,15 @@ export function SocialProof({
         ))}
       </div>
 
-      {/* Growth Roadmap */}
-      <div className="mt-12 mb-10 rounded-2xl border bg-gradient-to-br from-emerald-50 to-blue-50 p-8">
-        <div className="text-center mb-6">
-          <h3 className="text-xl font-bold text-gray-900 mb-2">Our 2026 Roadmap</h3>
-          <p className="text-gray-600 text-sm">Projected milestones for DealFlow platform growth*</p>
-        </div>
-        <div className="flex items-center justify-center gap-4 md:gap-8 flex-wrap">
-          <div className="text-center">
-            <div className="text-2xl md:text-3xl font-bold text-gray-400">$1M</div>
-            <div className="text-xs text-gray-500 mt-1">Q1 Goal</div>
-          </div>
-          <ArrowRight className="h-5 w-5 text-gray-300 hidden md:block" />
-          <div className="text-center">
-            <div className="text-2xl md:text-3xl font-bold text-blue-500">$15M</div>
-            <div className="text-xs text-gray-500 mt-1">Q2 Goal</div>
-          </div>
-          <ArrowRight className="h-5 w-5 text-gray-300 hidden md:block" />
-          <div className="text-center">
-            <div className="text-3xl md:text-4xl font-bold text-emerald-600">$45M</div>
-            <div className="text-xs text-gray-500 mt-1">2026 Target</div>
-          </div>
-        </div>
-        <p className="text-center text-sm text-gray-500 mt-6">
-          *Projected targets based on platform capacity. Not a guarantee of results.
-        </p>
-      </div>
+      {/* Growth Roadmap — REMOVED 2026-09-30.
+          This rendered a "2026 Roadmap" growth trajectory: $1M -> $15M ->
+          $45M, with the $45M styled largest and most prominent. Presented as
+          platform milestones in a testimonials component, it read as achieved
+          or imminent deal volume for a business whose ledger has zero closed
+          deals. A forward-looking company target is not customer social proof
+          and does not belong on a page answering "what do your users say".
+          If this is wanted, it belongs in an investor-facing context with real
+          backing data, not here. */}
 
       {/* Trust Badges */}
       <div className="mt-10 flex flex-wrap justify-center gap-6 items-center text-gray-400">
