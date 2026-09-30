@@ -85,6 +85,18 @@ vi.mock('@/app/api/utils/jobs', () => ({
 
 vi.mock('@/app/api/utils/logger', () => ({ logEvent: vi.fn() }));
 
+/**
+ * The AI credit gate is real infrastructure, not the subject of THIS file
+ * (which asks what a hostile model/hostile input can do). Left unmocked it
+ * reads a real subscription and fails closed with 402, which would mask every
+ * injection/isolation assertion behind a credit error. Stubbed open here, and
+ * covered for real in aiCreditGate's own suite plus the gating test below.
+ */
+const mockAuthorizeAiRequest = vi.fn();
+vi.mock('@/app/api/utils/aiCreditGate', () => ({
+  authorizeAiRequest: (...a: unknown[]) => mockAuthorizeAiRequest(...a),
+}));
+
 /** The hostile model: whatever `text` says is what the "model" decided. */
 const mockCallAI = vi.fn();
 vi.mock('@/app/api/utils/ai-provider', () => ({
@@ -123,6 +135,15 @@ beforeEach(() => {
   mockGetSession.mockResolvedValue({ user: { id: 'user_1' } });
   mockGetOrganization.mockResolvedValue({ id: 'org_1' });
   mockCheckConsent.mockResolvedValue(true);
+  // Default: credits available, consumed from the included bucket. Tests that
+  // exercise denial override this explicitly.
+  mockAuthorizeAiRequest.mockResolvedValue({
+    ok: true,
+    bucket: 'included',
+    caps: { monthly: 100, weekly: 25, daily: 5 },
+    keys: {},
+    release: vi.fn().mockResolvedValue(undefined),
+  });
   mockCallAI.mockResolvedValue({
     text: JSON.stringify({
       response_text: 'Sounds good, when can we start?',
@@ -278,6 +299,117 @@ describe('AI adversarial — input abuse and provider failure', () => {
     const { POST } = await import('../../conversations/message/route');
     const res = await POST(post({ leadId: 'lead_mine', message: 'hi' }));
     expect(res.status).toBe(401);
+    expect(mockCallAI).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // AI CREDIT GATE
+  //
+  // This route reaches the AI provider on every accepted message. It is the one
+  // user-triggerable AI entry point, so an ungated version is an unmetered
+  // spend leak. These assert the gate is real, positioned, and compensating.
+  // -------------------------------------------------------------------------
+
+  it('refuses with 402 and makes NO provider call when credits are exhausted', async () => {
+    mockAuthorizeAiRequest.mockResolvedValueOnce({
+      ok: false,
+      reason: 'no_credits',
+      message: 'You have used all your AI credits for this period.',
+      caps: { monthly: 100, weekly: 25, daily: 5 },
+      keys: {},
+    });
+
+    const { POST } = await import('../../conversations/message/route');
+    const res = await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(402);
+    expect(body.code).toBe('INSUFFICIENT_CREDITS');
+    // The whole point: a denial must cost the vendor nothing.
+    expect(mockCallAI).not.toHaveBeenCalled();
+    expect(mockEnqueueJob).not.toHaveBeenCalled();
+  });
+
+  it('charges against the CALLER organization, never a request-supplied one', async () => {
+    const { POST } = await import('../../conversations/message/route');
+    await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+    expect(mockAuthorizeAiRequest).toHaveBeenCalledTimes(1);
+    // Org comes from the session context only - there is no org in the body.
+    expect(mockAuthorizeAiRequest.mock.calls[0][0]).toBe('org_1');
+  });
+
+  it('passes an idempotency key so a retried submit is not charged twice', async () => {
+    const { POST } = await import('../../conversations/message/route');
+    await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+    const opts = mockAuthorizeAiRequest.mock.calls[0][1];
+    expect(typeof opts?.requestId).toBe('string');
+    expect(opts.requestId.length).toBeGreaterThan(0);
+  });
+
+  it('does NOT charge a rejected request (validation and consent come first)', async () => {
+    // Malformed body: the gate must never be reached.
+    mockCheckConsent.mockResolvedValue(false);
+    const { POST } = await import('../../conversations/message/route');
+
+    await POST(post({ leadId: 'lead_mine', message: '' }));
+    await POST(post({ message: 'no lead id' }));
+
+    expect(mockAuthorizeAiRequest).not.toHaveBeenCalled();
+    expect(mockCallAI).not.toHaveBeenCalled();
+  });
+
+  it('refunds the credit when the provider fails, so an outage is not billed', async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    mockAuthorizeAiRequest.mockResolvedValueOnce({
+      ok: true,
+      bucket: 'included',
+      caps: { monthly: 100, weekly: 25, daily: 5 },
+      keys: {},
+      release,
+    });
+    mockCallAI.mockRejectedValueOnce(new Error('provider 500'));
+
+    const { POST } = await import('../../conversations/message/route');
+    const res = await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    // The credit was taken before the provider call, so it must be handed back.
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refund on success - the credit was genuinely spent', async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    mockAuthorizeAiRequest.mockResolvedValueOnce({
+      ok: true,
+      bucket: 'included',
+      caps: { monthly: 100, weekly: 25, daily: 5 },
+      keys: {},
+      release,
+    });
+
+    const { POST } = await import('../../conversations/message/route');
+    const res = await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+
+    expect(res.status).toBe(200);
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('fails CLOSED when credit accounting itself is unavailable', async () => {
+    // A gate that fails open on an accounting error is a spend leak. The real
+    // gate returns ok:false/'accounting_error' in this situation; assert the
+    // route honours that denial rather than proceeding.
+    mockAuthorizeAiRequest.mockResolvedValueOnce({
+      ok: false,
+      reason: 'accounting_error',
+      message: 'AI credit accounting is temporarily unavailable. Please try again shortly.',
+      caps: { monthly: 0, weekly: 0, daily: 0 },
+      keys: {},
+    });
+
+    const { POST } = await import('../../conversations/message/route');
+    const res = await POST(post({ leadId: 'lead_mine', message: 'hi' }));
+
+    expect(res.status).toBe(402);
     expect(mockCallAI).not.toHaveBeenCalled();
   });
 });

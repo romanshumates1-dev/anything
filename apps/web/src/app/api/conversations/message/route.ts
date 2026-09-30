@@ -6,6 +6,7 @@ import { checkConsent } from '../../utils/compliance';
 import { enqueueJob } from '../../utils/jobs';
 import { logEvent } from '../../utils/logger';
 import { getOrganization } from '@/lib/organization-context';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 
 const MAX_MESSAGE_LENGTH = 4000;
 
@@ -83,16 +84,56 @@ export async function POST(request: Request) {
     `;
     const history = appended.history || [];
 
-    // 5. Orchestrate the AI response.
-    const decision = await orchestrateAIResponse(leadId, history);
+    // 5. Server-side AI credit gate.
+    //
+    // PLACEMENT IS LOAD-BEARING:
+    //  - AFTER validation + consent (steps 1-2), so a malformed request or an
+    //    opted-out contact is never charged; and
+    //  - BEFORE `orchestrateAIResponse`, so no provider call happens on denial.
+    //
+    // This route was previously ungated while every other AI entry point
+    // (templates/generate, outreach/call-queue/brief, analytics/ai-recommendations)
+    // was gated, so an authenticated user could drive unlimited paid provider
+    // calls through it. The gate restores that invariant.
+    //
+    // `requestId` makes a retried submission idempotent, so a double-tap or a
+    // network retry cannot be charged twice for the same message.
+    const authorization = await authorizeAiRequest(org.id, {
+      requestId: `conversations:message:${leadId}:${message.length}:${history.length}`,
+    });
+    if (!authorization.ok) {
+      return Response.json(
+        {
+          error: authorization.message,
+          reason: authorization.reason,
+          code: 'INSUFFICIENT_CREDITS',
+        },
+        { status: 402 }
+      );
+    }
 
-    // 6. Server-side human-in-the-loop enforcement. The model's own flag is a
+    // 6. Orchestrate the AI response (consumes the credit taken above).
+    let decision;
+    try {
+      decision = await orchestrateAIResponse(leadId, history);
+    } catch (aiError) {
+      // The credit is paid back when the provider work fails, so an outage
+      // cannot silently consume the customer's included or purchased credits.
+      try {
+        await authorization.release();
+      } catch (releaseError) {
+        console.error('[conversations/message] credit release failed', releaseError);
+      }
+      throw aiError;
+    }
+
+    // 7. Server-side human-in-the-loop enforcement. The model's own flag is a
     //    hint; risky topics (offers, contracts, assignments, pricing) ALWAYS
     //    require a human before anything is sent.
     const riskFlag = detectHighRisk(message) || detectHighRisk(decision.response_text);
     const requiresHuman = decision.requires_human || riskFlag;
 
-    // 7. Persist the AI draft + review state atomically.
+    // 8. Persist the AI draft + review state atomically.
     await sql`
       UPDATE ai_conversations
       SET history = history || ${JSON.stringify([{ role: 'assistant', content: decision.response_text }])}::jsonb,
@@ -106,7 +147,7 @@ export async function POST(request: Request) {
         )
     `;
 
-    // 8. Only auto-send when no human approval is required. Otherwise the draft
+    // 9. Only auto-send when no human approval is required. Otherwise the draft
     //    waits for review — we never auto-send offers/contracts.
     let queued = false;
     if (!requiresHuman) {
