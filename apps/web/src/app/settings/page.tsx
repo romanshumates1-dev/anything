@@ -46,6 +46,7 @@ import {
   RotateCcw,
   CheckCircle2,
   CreditCard,
+  Accessibility,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import EventLogPanel from '@/components/EventLogPanel';
@@ -245,6 +246,27 @@ export default function SettingsPage() {
           </div>
         </div>
         <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--color-success)] group-hover:translate-x-1 transition-all" />
+      </Link>
+
+      {/* Accessibility Settings Link (item 5) */}
+      <Link
+        href="/settings/accessibility"
+        className="flex items-center justify-between p-5 rounded-xl bg-gradient-to-r from-[var(--accent-purple)]/5 to-[var(--accent-blue)]/5 border border-[var(--accent-purple)]/20 hover:border-[var(--accent-purple)]/40 transition-all group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 rounded-lg bg-[var(--accent-purple)]/10 group-hover:bg-[var(--accent-purple)]/20 transition-colors">
+            <Accessibility className="h-5 w-5 text-[var(--accent-purple)]" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Accessibility
+            </p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Dyslexia-friendly font, larger text, reduced motion, and high contrast
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-[var(--accent-purple)] group-hover:translate-x-1 transition-all" />
       </Link>
 
       {/* Outreach Settings Link */}

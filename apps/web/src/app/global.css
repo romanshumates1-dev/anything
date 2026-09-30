@@ -1344,6 +1344,97 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   USER-CONTROLLED ACCESSIBILITY (item 5)
+   ═══════════════════════════════════════════════════════════════════════════
+   Applied as data-* attributes on <html> by <AccessibilityProvider>, which
+   persists the choice to public."user".preferences so it follows the user
+   across devices - unlike the prefers-* media queries above, which only ever
+   described the machine the user happened to be sitting at.
+
+   DELIBERATELY NOT FORCED ON ANYONE: every attribute defaults to a no-op value,
+   so a user who never opens Settings gets byte-identical rendering and motion
+   to what shipped before. This is opt-in, not a redesign.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dyslexic-friendly font ─────────────────────────────────────────────────
+   OpenDyslexic is not bundled, so this prefers widely-installed faces with the
+   characteristics that help: heavier weight, generous letter-spacing, and
+   unambiguous letterforms. It degrades to the existing sans stack rather than
+   to a missing webfont (no layout shift, no extra request). */
+html[data-font='dyslexic'] {
+  --font-sans: 'OpenDyslexic', 'Comic Sans MS', 'Verdana', 'Tahoma', ui-sans-serif,
+    system-ui, -apple-system, sans-serif;
+  /* Letter-spacing on the root variable, not on `body`, so components reading
+     --font-sans inherit it without needing their own rule. */
+  letter-spacing: 0.02em;
+  /* Heavier weight compensates for the lighter letterforms. */
+  font-weight: 400;
+}
+
+html[data-font='dyslexic'] body {
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+/* ── Larger text ────────────────────────────────────────────────────────────
+   A ROOT font-size bump, not a body override: every rem-based size in the app
+   scales together, so the whole UI grows proportionally instead of only the
+   body text becoming larger and leaving tables and controls inconsistent. */
+html[data-font-scale='large'] {
+  font-size: 118%;
+}
+
+/* ── Always reduce motion ───────────────────────────────────────────────────
+   Mirrors the prefers-reduced-motion block above, but driven by the user's own
+   saved setting so it holds on every device. `!important` is required: these
+   must override component transitions, which is the entire point. */
+html[data-reduce-motion='always'] *,
+html[data-reduce-motion='always'] *::before,
+html[data-reduce-motion='always'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ── High contrast ──────────────────────────────────────────────────────────
+   Strengthens the muted/secondary text tokens that the existing
+   prefers-contrast block only lightly adjusts. */
+html[data-contrast='high'] {
+  --text-secondary: #DCE6F2;
+  --text-muted: #B4C1D4;
+  --border-subtle: rgba(255, 255, 255, 0.28);
+  --border-medium: rgba(255, 255, 255, 0.42);
+}
+
+html[data-contrast='high'] a:focus-visible,
+html[data-contrast='high'] button:focus-visible {
+  outline: 3px solid #FFFFFF;
+  outline-offset: 2px;
+}
+
+/* ── Compact density ────────────────────────────────────────────────────────
+   TIGHTENS the existing spacing scale. The first cut of this rule reused the
+   default --space-* values verbatim, which made the toggle a no-op that looked
+   like it worked - the "looks functional but does nothing" failure the audit
+   exists to catch. Values below are strictly smaller than the defaults at
+   line 133+ (0.25/0.5/0.75/1/1.5/2rem).
+
+   Scoped to the spacing custom properties rather than editing dozens of
+   component rules, so it cannot drift out of sync with the components. Note
+   this only affects rules that actually consume these variables. */
+html[data-density='compact'] {
+  --space-1: 0.125rem;
+  --space-2: 0.25rem;
+  --space-3: 0.5rem;
+  --space-4: 0.75rem;
+  --space-5: 0.875rem;
+  --space-6: 1rem;
+  --space-8: 1.5rem;
+  --space-10: 1.75rem;
+}
+
 /* ========================================
    PROFESSIONAL UI/VFX POLISH
    Sophisticated, trustworthy appearance for real estate investors
