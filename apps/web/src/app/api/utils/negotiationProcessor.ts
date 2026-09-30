@@ -19,6 +19,7 @@ import { logEvent } from '@/app/api/utils/logger';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
 import { createActionItem } from '@/app/api/utils/pipelineOrchestrator';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 import {
   evaluateCounterOffer,
   generateCounterResponse,
@@ -75,10 +76,22 @@ export interface PriceExtractionResult {
 /**
  * Extract price/counter-offer from a message using AI.
  * Falls back to regex parsing if AI is unavailable.
+ *
+ * METERING: when `organizationId` is supplied, the AI path is gated by
+ * `authorizeAiRequest`. `processNegotiation` passes it, so automated
+ * negotiation no longer makes unmetered provider calls.
+ *
+ * EXHAUSTION DEGRADES, IT DOES NOT STALL: a denial falls through to exactly
+ * the same regex path an AI outage already takes. A seller waiting on a
+ * counter-offer must not go silent because a plan ran out of AI credits, and
+ * the deterministic path is a strictly better answer than a stalled job.
+ * Omitting the argument preserves the previous ungated behaviour, so existing
+ * callers are unaffected.
  */
 export async function extractPriceFromMessage(
   message: string,
-  side: 'seller' | 'buyer'
+  side: 'seller' | 'buyer',
+  organizationId?: string
 ): Promise<PriceExtractionResult> {
   // First try simple regex extraction (fast path for obvious prices)
   const regexPrice = parseCounterCents(message);
@@ -98,6 +111,30 @@ export async function extractPriceFromMessage(
   }
 
   // AI extraction for complex cases
+  let releaseAiCredit: (() => Promise<void>) | null = null;
+  if (organizationId) {
+    const authorization = await authorizeAiRequest(organizationId, {
+      requestId: `negotiation:extract-price:${organizationId}:${message.length}`,
+    });
+    if (!authorization.ok) {
+      // Degrade to the deterministic path rather than failing the job: an
+      // out-of-credits plan must not silently stop negotiating.
+      console.warn(
+        `[negotiation] AI price extraction skipped (${authorization.reason}); using regex fallback`
+      );
+      return {
+        hasPrice: false,
+        priceCents: null,
+        priceText: null,
+        confidence: 0.3,
+        sentiment: 'unclear',
+        needsEscalation: true,
+        escalationReason: 'ai_credits_exhausted',
+      };
+    }
+    releaseAiCredit = authorization.release;
+  }
+
   try {
     const prompt = PRICE_EXTRACTION_PROMPT
       .replace('{MESSAGE}', message.slice(0, 500))
@@ -121,6 +158,15 @@ export async function extractPriceFromMessage(
       escalationReason: parsed.escalationReason ?? null,
     };
   } catch (error) {
+    // Hand the credit back: the provider work failed, so the customer should
+    // not be charged for it. `release` is idempotent, so this is safe.
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[negotiation] credit release failed', releaseError);
+      }
+    }
     // Fallback: no price found, may need human review
     return {
       hasPrice: false,
@@ -158,6 +204,10 @@ Return ONLY the message text, no quotes or explanation.`;
 /**
  * Generate AI prose for a negotiation response.
  * The {OFFER} slot is injected with the computed figure AFTER generation.
+ *
+ * METERING: gated when `organizationId` is supplied; on exhaustion or provider
+ * failure it falls back to the deterministic templates below, so a deal is
+ * never left mid-negotiation because credits ran out.
  */
 export async function generateNegotiationProse(
   side: 'seller' | 'buyer',
@@ -165,8 +215,14 @@ export async function generateNegotiationProse(
   theirCounterCents: number | null,
   newOfferCents: number,
   round: number,
-  strategy: string
+  strategy: string,
+  organizationId?: string
 ): Promise<string> {
+  const fallbackTemplate = () =>
+    side === 'seller'
+      ? `Based on our analysis of the property and current market conditions, we can offer ${OFFER_SLOT} cash with a 14-day close. Let me know if this works for you.`
+      : `Thank you for your interest. Given the current buyer demand, we're able to assign at ${OFFER_SLOT}. This ensures a smooth transaction for both parties.`;
+
   const prompt = NEGOTIATION_RESPONSE_PROMPT
     .replace('{SIDE}', side)
     .replace('{OUR_OFFER}', formatOffer(ourOfferCents))
@@ -174,6 +230,22 @@ export async function generateNegotiationProse(
     .replace('{NEW_OFFER}', formatOffer(newOfferCents))
     .replace('{ROUND}', String(round))
     .replace('{STRATEGY}', strategy);
+
+  let releaseAiCredit: (() => Promise<void>) | null = null;
+  if (organizationId) {
+    const authorization = await authorizeAiRequest(organizationId, {
+      requestId: `negotiation:prose:${organizationId}:${side}:${round}`,
+    });
+    // A templated counter is far better than a stalled negotiation, so an
+    // exhausted plan degrades to the deterministic wording.
+    if (!authorization.ok) {
+      console.warn(
+        `[negotiation] AI prose skipped (${authorization.reason}); using template`
+      );
+      return fallbackTemplate();
+    }
+    releaseAiCredit = authorization.release;
+  }
 
   try {
     const result = await callAI({
@@ -195,12 +267,15 @@ export async function generateNegotiationProse(
 
     return text;
   } catch (error) {
-    // Fallback templates
-    if (side === 'seller') {
-      return `Based on our analysis of the property and current market conditions, we can offer ${OFFER_SLOT} cash with a 14-day close. Let me know if this works for you.`;
-    } else {
-      return `Thank you for your interest. Given the current buyer demand, we're able to assign at ${OFFER_SLOT}. This ensures a smooth transaction for both parties.`;
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[negotiation] credit release failed', releaseError);
+      }
     }
+    // Fallback templates
+    return fallbackTemplate();
   }
 }
 
@@ -245,7 +320,7 @@ export async function processNegotiation(
   }
 
   // Extract price from inbound message
-  const extraction = await extractPriceFromMessage(inboundMessage, session.side);
+  const extraction = await extractPriceFromMessage(inboundMessage, session.side, organizationId);
 
   await logEvent('negotiation_extraction', 'lead', String(leadId), {
     sessionId,
@@ -312,7 +387,8 @@ export async function processNegotiation(
     extraction.priceCents,
     extraction.priceCents, // Will be replaced by advanceRound
     session.round + 1,
-    config.strategy
+    config.strategy,
+    organizationId
   );
 
   // Use the existing advanceRound which handles all the state management
@@ -390,7 +466,8 @@ export async function sendCounterOffer(
     null,
     offerCents,
     1,
-    'balanced'
+    'balanced',
+    organizationId
   );
 
   // Inject the offer amount

@@ -44,13 +44,19 @@ const NON_ROUTING_ALLOWLIST = [
   'app/api/utils/evalHarness.ts',
 ];
 
-/** Files that start with `callAI(` but are not a per-request user action. */
+/**
+ * Batch/background engines reached from job handlers, not from a user's HTTP
+ * request.
+ *
+ * `negotiationProcessor` was REMOVED from this list on 2026-09-30: it now gates
+ * its own AI calls (extractPriceFromMessage / generateNegotiationProse) and
+ * degrades to the deterministic regex/template paths on exhaustion, so
+ * automated negotiation is metered without ever stalling a live deal.
+ */
 const NON_USER_TRIGGERED_ALLOWLIST = [
-  // Batch/background engines invoked by cron, not by a user's HTTP request.
   'app/api/utils/buyerPipelineEngine.ts',
   'app/api/utils/callSchedulingEngine.ts',
   'app/api/utils/campaignEngine.ts',
-  'app/api/utils/negotiationProcessor.ts',
   'app/api/utils/simplifierEngine.ts',
   'app/api/utils/socialMediaEngine.ts',
   'app/api/utils/spamDetectionEngine.ts',
@@ -160,5 +166,16 @@ describe('AI credit gate ratchet', () => {
     expect(text).toContain('INSUFFICIENT_CREDITS');
     // And it must hand the credit back when the provider fails.
     expect(text).toMatch(/release/);
+  }, 30_000);
+
+  it('automated negotiation is metered (regression anchor)', () => {
+    // Background negotiation is money-critical, so this is anchored by name:
+    // it must stay metered AND must keep its deterministic fallbacks, because
+    // those are what stop an exhausted plan from stalling a live deal.
+    const text = readSource(join(SRC, 'app/api/utils/negotiationProcessor.ts'));
+    expect(text).toContain(GATE);
+    // Exhaustion must degrade, never throw the job away.
+    expect(text).toContain('ai_credits_exhausted');
+    expect(text).toContain('fallbackTemplate');
   }, 30_000);
 });
