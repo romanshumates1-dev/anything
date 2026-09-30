@@ -13,6 +13,7 @@
 import { NextRequest } from 'next/server';
 import { neon } from '@neondatabase/serverless';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
@@ -66,6 +67,22 @@ export async function GET(req: NextRequest) {
       error: rateLimitResult.message || 'Rate limit exceeded',
       resetsAt: rateLimitResult.resetsAt,
     }, { status: 429 });
+  }
+
+  // Phase 11 credit gate — BEFORE any analytics work or provider call, so a
+  // refusal costs nothing and cannot be retried into a provider charge.
+  // INCLUDED plan credits are capped per UTC day/week/month; purchased credits
+  // fall through uncapped. Denial is a 402 with nothing charged.
+  const aiAuthorization = await authorizeAiRequest(organization.id);
+  if (!aiAuthorization.ok) {
+    return Response.json(
+      {
+        error: aiAuthorization.message,
+        reason: aiAuthorization.reason,
+        code: 'INSUFFICIENT_CREDITS',
+      },
+      { status: 402 }
+    );
   }
 
   if (!process.env.DATABASE_URL) {
@@ -283,6 +300,13 @@ IMPORTANT RULES:
         aiRecommendations = parsed.recommendations || [];
       }
     } catch (aiError: any) {
+      // The provider call failed and we fall back to rule-based output, so no
+      // AI result is delivered: compensate the consumed credit (idempotent).
+      try {
+        await aiAuthorization.release();
+      } catch (releaseError) {
+        console.error('ai-recommendations credit release failed:', releaseError);
+      }
       console.error('AI recommendation error:', aiError.message);
       // Fall back to rule-based recommendations
       aiRecommendations = generateFallbackRecommendations({
@@ -350,6 +374,12 @@ IMPORTANT RULES:
     });
 
   } catch (error: any) {
+    // A failed request must not silently consume the customer's credit.
+    try {
+      await aiAuthorization.release();
+    } catch (releaseError) {
+      console.error('ai-recommendations credit release failed:', releaseError);
+    }
     console.error('AI recommendations error:', error);
     return safeErrorResponse(error, { context: "[src/app/api/analytics/ai-recommendations/route.ts]", status: 500 });
   }

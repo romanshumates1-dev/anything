@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ContactForm } from "./ContactForm";
-import { Mail, MessageSquare, Clock } from "lucide-react";
+import { Mail, Phone, Clock } from "lucide-react";
 import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
@@ -36,15 +36,15 @@ export default function ContactPage() {
                   icon: Mail,
                   title: "Email us",
                   desc: "Send us an email anytime",
-                  contact: "support@dealflow.ai",
-                  href: "mailto:support@dealflow.ai",
+                  contact: "support@dealswiftautomation.com",
+                  href: "mailto:support@dealswiftautomation.com",
                 },
                 {
-                  icon: MessageSquare,
-                  title: "Live chat",
-                  desc: "Available M-F, 9am-5pm EST",
-                  contact: "Start a chat",
-                  href: "#",
+                  icon: Phone,
+                  title: "Call us",
+                  desc: "Available Mon-Fri, 9am-5pm ET",
+                  contact: "(502) 524-1638",
+                  href: "tel:+15025241638",
                 },
                 {
                   icon: Clock,

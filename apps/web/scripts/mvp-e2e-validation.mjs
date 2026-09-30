@@ -12,7 +12,7 @@ import os from 'os';
 const { Pool } = pg;
 
 const pool = new Pool({
-  connectionString: 'postgresql://postgres:Dqbeasty+874774!!!@db.apdngzmopuygwfchkttx.supabase.co:5432/postgres',
+  connectionString: '',
   ssl: { rejectUnauthorized: false },
   max: 50 // High connection pool for load testing
 });

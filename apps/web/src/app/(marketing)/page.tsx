@@ -602,7 +602,7 @@ export default async function LandingPage() {
               },
               {
                 q: "Can I cancel anytime?",
-                a: "Yes. Month-to-month plans with no contracts. Cancel in one click from settings. 30-day money-back guarantee.",
+                a: "Yes. Month-to-month plans with no contracts. Cancel in one click from settings. 7-day money-back guarantee (see the Refund Policy).",
               },
             ].map((faq, i) => (
               <details key={i} className="group rounded-xl border border-white/10 bg-[#1E293B]/30">

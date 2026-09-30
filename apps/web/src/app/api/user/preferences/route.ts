@@ -29,8 +29,7 @@ export async function GET() {
   }
 
   try {
-    // Try to get preferences from user metadata or a dedicated preferences table
-    // For now, we'll use a simple approach with a JSONB column
+    // Backed by public."user".preferences (jsonb) — added in migration 094.
     const [result] = await sql`
       SELECT preferences
       FROM "user"
@@ -43,11 +42,10 @@ export async function GET() {
       preferences: result?.preferences || {},
     });
   } catch (error) {
-    // If preferences column doesn't exist, return empty
+    // A failed read must not masquerade as "no preferences stored": log the
+    // cause and fail the request so callers can tell empty from broken.
     console.error('[PREFERENCES] Error fetching preferences:', error);
-    return NextResponse.json({
-      preferences: {},
-    });
+    return NextResponse.json({ error: 'Failed to load preferences' }, { status: 500 });
   }
 }
 
@@ -75,23 +73,15 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // Try to update preferences JSONB column
-    // If the column doesn't exist, we'll silently succeed
-    // (preferences are primarily stored in localStorage)
-    try {
-      await sql`
-        UPDATE "user"
-        SET preferences = COALESCE(preferences, '{}'::jsonb) || ${JSON.stringify(updates)}::jsonb,
-            "updatedAt" = NOW()
-        WHERE id = ${session.userId}
-      `;
-    } catch (dbError: unknown) {
-      // Column might not exist - that's okay, we use localStorage as primary
-      const errorMessage = dbError instanceof Error ? dbError.message : String(dbError);
-      if (!errorMessage.includes('column "preferences" does not exist')) {
-        console.error('[PREFERENCES] Database error:', dbError);
-      }
-    }
+    // Persist to public."user".preferences (jsonb, migration 094). Failures
+    // propagate to the catch below — a write that did not happen must never
+    // be reported as success.
+    await sql`
+      UPDATE "user"
+      SET preferences = COALESCE(preferences, '{}'::jsonb) || ${JSON.stringify(updates)}::jsonb,
+          "updatedAt" = NOW()
+      WHERE id = ${session.userId}
+    `;
 
     return NextResponse.json({
       success: true,
@@ -121,20 +111,13 @@ export async function PUT(request: Request) {
       }
     }
 
-    try {
-      await sql`
-        UPDATE "user"
-        SET preferences = ${JSON.stringify(preferences)}::jsonb,
-            "updatedAt" = NOW()
-        WHERE id = ${session.userId}
-      `;
-    } catch (dbError: unknown) {
-      // Column might not exist - that's okay
-      const errorMessage = dbError instanceof Error ? dbError.message : String(dbError);
-      if (!errorMessage.includes('column "preferences" does not exist')) {
-        console.error('[PREFERENCES] Database error:', dbError);
-      }
-    }
+    // Same as PATCH: propagate real failures instead of claiming success.
+    await sql`
+      UPDATE "user"
+      SET preferences = ${JSON.stringify(preferences)}::jsonb,
+          "updatedAt" = NOW()
+      WHERE id = ${session.userId}
+    `;
 
     return NextResponse.json({
       success: true,

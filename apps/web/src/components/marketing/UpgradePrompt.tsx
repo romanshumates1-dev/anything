@@ -185,7 +185,7 @@ export function UpgradePrompt({
             Upgrade Now
           </Link>
           <p className="text-xs text-slate-600 text-center mt-3">
-            30-day money-back guarantee
+            7-day money-back guarantee
           </p>
         </div>
       </div>

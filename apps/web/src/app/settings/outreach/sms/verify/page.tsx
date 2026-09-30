@@ -638,9 +638,7 @@ function ComplianceStep({
       </Button>
 
       <a
-        href="https://docs.dealflow.ai/compliance/tcpa"
-        target="_blank"
-        rel="noopener noreferrer"
+        href="/compliance"
         className="text-sm text-[var(--accent-blue)] hover:underline flex items-center gap-1 justify-center"
       >
         Read our full TCPA compliance guide

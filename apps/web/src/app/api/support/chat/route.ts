@@ -152,7 +152,7 @@ export async function POST(request: Request) {
       {
         error: 'Unable to process your message right now',
         content:
-          "I'm sorry, I'm having trouble connecting to my systems right now. Please try again in a moment, or contact our support team directly at support@dealflow.ai for immediate assistance.",
+          "I'm sorry, I'm having trouble connecting to my systems right now. Please try again in a moment, or contact our support team directly at support@dealswiftautomation.com or (502) 524-1638 for immediate assistance.",
       },
       { status: 503 }
     );

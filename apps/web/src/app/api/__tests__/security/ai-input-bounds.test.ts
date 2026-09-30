@@ -38,6 +38,19 @@ vi.mock('@/app/api/utils/ai-provider', () => ({
   callAI: (...args: unknown[]) => mockCallAI(...args),
 }));
 
+// The Phase 11 AI credit gate sits in front of the provider call. These cases
+// assert INPUT BOUNDS, so the gate is mocked to authorize (a denied gate would
+// short-circuit before the bound is ever exercised, testing the wrong thing).
+vi.mock('@/app/api/utils/aiCreditGate', () => ({
+  authorizeAiRequest: vi.fn(async () => ({
+    ok: true,
+    bucket: 'included',
+    caps: { monthly: 50, weekly: 12, daily: 2 },
+    keys: {},
+    release: vi.fn(async () => {}),
+  })),
+}));
+
 const mockSql = vi.fn();
 vi.mock('@/app/api/utils/sql', () => ({
   default: (...args: unknown[]) => mockSql(...args),

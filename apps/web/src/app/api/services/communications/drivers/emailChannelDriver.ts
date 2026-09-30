@@ -17,7 +17,7 @@ export class EmailChannelDriver implements ChannelDriver {
     // Parse recipient and content for email
     const fromAddress = process.env.EMAIL_FROM
       || process.env.SMTP_FROM
-      || 'DealFlow AI <noreply@dealflow.ai>';
+      || 'DealFlow AI <noreply@dealswiftautomation.com>';
 
     // Content should be HTML for email
     const htmlContent = options.content.includes('<')

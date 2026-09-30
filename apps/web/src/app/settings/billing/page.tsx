@@ -697,7 +697,7 @@ export default function BillingSettingsPage() {
 
         <p className="text-sm text-[var(--text-muted)] text-center mt-4">
           Need a custom plan?{' '}
-          <a href="mailto:support@dealflow.ai" className="text-[var(--accent-blue)] hover:underline">
+          <a href="mailto:support@dealswiftautomation.com" className="text-[var(--accent-blue)] hover:underline">
             Contact us
           </a>{' '}
           for enterprise pricing.

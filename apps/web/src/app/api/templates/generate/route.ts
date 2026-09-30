@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
@@ -46,6 +47,10 @@ export async function POST(request: NextRequest) {
   }
 
   const startTime = Date.now();
+  // Phase 11 credit gate: set once a credit is consumed so the catch below can
+  // compensate (idempotently) if the provider call or persistence fails — a
+  // failed request must never silently burn the customer's credits.
+  let releaseAiCredit: (() => Promise<void>) | null = null;
 
   try {
     const body = await request.json();
@@ -73,6 +78,23 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Phase 11 credit gate — AFTER validation (an invalid request must not be
+    // charged) and BEFORE any provider call. INCLUDED plan credits are capped
+    // per UTC day/week/month; purchased credits fall through and are never
+    // capped. Denial is a 402 with nothing charged.
+    const authorization = await authorizeAiRequest(organization.id);
+    if (!authorization.ok) {
+      return NextResponse.json(
+        {
+          error: authorization.message,
+          reason: authorization.reason,
+          code: 'INSUFFICIENT_CREDITS',
+        },
+        { status: 402 }
+      );
+    }
+    releaseAiCredit = authorization.release;
 
     // AI INPUT BOUNDS (2026-09-26). These three fields are user-controlled and
     // (a) are interpolated into the prompt sent to the model and (b) are
@@ -159,6 +181,14 @@ export async function POST(request: NextRequest) {
       generationTimeMs,
     });
   } catch (error: any) {
+    // Compensate a consumed credit when the request ultimately failed.
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('POST /api/templates/generate credit release failed', releaseError);
+      }
+    }
     console.error('POST /api/templates/generate error', error);
     return NextResponse.json(
       { error: 'Failed to generate template. Please try again.' },

@@ -309,18 +309,14 @@ export default function OutreachSettingsPage() {
       {/* Help Links */}
       <div className="flex items-center justify-center gap-6 pt-4">
         <a
-          href="https://docs.dealflow.ai/outreach/email"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/faq"
           className="text-sm text-[var(--text-muted)] hover:text-[var(--accent-blue)] transition-colors flex items-center gap-1"
         >
           Email Setup Guide
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
         <a
-          href="https://docs.dealflow.ai/outreach/sms"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/compliance"
           className="text-sm text-[var(--text-muted)] hover:text-[var(--accent-blue)] transition-colors flex items-center gap-1"
         >
           SMS Compliance Guide

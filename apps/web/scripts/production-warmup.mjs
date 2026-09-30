@@ -11,7 +11,7 @@ import pg from 'pg';
 const { Pool } = pg;
 
 const pool = new Pool({
-  connectionString: 'postgresql://postgres:Dqbeasty+874774!!!@db.apdngzmopuygwfchkttx.supabase.co:5432/postgres',
+  connectionString: '',
   ssl: { rejectUnauthorized: false },
   max: 10
 });

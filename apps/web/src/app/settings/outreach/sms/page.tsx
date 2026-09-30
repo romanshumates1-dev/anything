@@ -154,9 +154,7 @@ function ProviderSelector({
               This applies to all providers and helps ensure high deliverability.
             </p>
             <a
-              href="https://docs.dealflow.ai/sms/10dlc"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/compliance"
               className="text-sm text-[var(--accent-blue)] hover:underline flex items-center gap-1 mt-2"
             >
               Learn about 10DLC registration
@@ -468,9 +466,7 @@ function ComplianceStep({
       </div>
 
       <a
-        href="https://docs.dealflow.ai/compliance/tcpa"
-        target="_blank"
-        rel="noopener noreferrer"
+        href="/compliance"
         className="text-sm text-[var(--accent-blue)] hover:underline flex items-center gap-1"
       >
         Read our full TCPA compliance guide

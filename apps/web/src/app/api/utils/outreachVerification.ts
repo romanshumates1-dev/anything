@@ -540,6 +540,11 @@ export async function completeSmsCompliance(
 
 /**
  * Generate DNS records for email verification
+ *
+ * The SPF include names the platform's actual sending infrastructure (AWS SES,
+ * see AWS_SES_ENABLED / the email channel drivers) rather than the legacy
+ * `_spf.dealflow.ai` domain this project does not own; DMARC reports must be
+ * collected on a mailbox we control.
  */
 export function generateDnsRecords(domain: string, selector: string = 'dealflow'): DnsRecord[] {
   // Generate a unique DKIM selector and public key placeholder
@@ -550,7 +555,7 @@ export function generateDnsRecords(domain: string, selector: string = 'dealflow'
     {
       type: 'TXT',
       name: domain,
-      value: 'v=spf1 include:_spf.dealflow.ai ~all',
+      value: 'v=spf1 include:amazonses.com ~all',
       verified: false,
     },
     {
@@ -562,7 +567,7 @@ export function generateDnsRecords(domain: string, selector: string = 'dealflow'
     {
       type: 'TXT',
       name: `_dmarc.${domain}`,
-      value: 'v=DMARC1; p=quarantine; rua=mailto:dmarc@dealflow.ai',
+      value: 'v=DMARC1; p=quarantine; rua=mailto:dmarc@dealswiftautomation.com',
       verified: false,
     },
   ];

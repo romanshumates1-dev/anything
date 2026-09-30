@@ -134,7 +134,7 @@ const BASELINE: Record<string, number> = {
   'app/buyers/page.tsx': 1,
   'app/campaigns/launcher/page.tsx': 1,
   'app/campaigns/wizard/page.tsx': 2,
-  'app/lead-finder/page.tsx': 2,
+  'app/lead-finder/page.tsx': 0,
   'app/leads/import/page.tsx': 2,
   'app/monitor/page.tsx': 1,
   'app/monitor/pipeline/page.tsx': 3,

@@ -288,7 +288,7 @@ export default async function PricingPage() {
               </span>
               <span className="flex items-center gap-2">
                 <Check className="h-5 w-5 text-emerald-400" />
-                30-day money-back guarantee
+                7-day money-back guarantee
               </span>
             </div>
 

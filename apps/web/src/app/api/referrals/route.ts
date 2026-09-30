@@ -77,7 +77,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const stats = await getReferralStats(userId);
 
     // Build referral link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealflow.ai';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealswiftautomation.com';
     const referralLink = `${baseUrl}/signup?ref=${code}`;
 
     const response: ReferralStatsResponse = {
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { code, isNew } = await getOrCreateReferralCode(userId, organization.id, userName);
 
     // Build referral link
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealflow.ai';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealswiftautomation.com';
     const referralLink = `${baseUrl}/signup?ref=${code}`;
 
     return NextResponse.json({

@@ -146,10 +146,12 @@ export default function AboutPage() {
                 Have questions? We'd love to hear from you.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 text-slate-400">
-                <a href="mailto:support@dealflow.ai" className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
-                  support@dealflow.ai
+                <a href="mailto:support@dealswiftautomation.com" className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
+                  support@dealswiftautomation.com
                 </a>
-                <span className="text-white">(555) 123-4567</span>
+                <a href="tel:+15025241638" className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
+                  (502) 524-1638
+                </a>
               </div>
               <div className="mt-6">
                 <Link

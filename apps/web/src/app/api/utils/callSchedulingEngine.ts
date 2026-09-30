@@ -267,7 +267,7 @@ This is an automated notification from DealFlow AI.
   try {
     await sendEmail({
       to: org.owner_email,
-      from: process.env.EMAIL_FROM || 'noreply@dealflow.ai',
+      from: process.env.EMAIL_FROM || 'noreply@dealswiftautomation.com',
       subject,
       html: `<pre style="font-family: sans-serif; white-space: pre-wrap;">${body}</pre>`,
       text: body,

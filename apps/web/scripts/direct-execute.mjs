@@ -7,7 +7,7 @@
 
 // Set env before imports
 process.env.NODE_ENV = 'development';
-process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres:Dqbeasty+874774!!!@db.apdngzmopuygwfchkttx.supabase.co:5432/postgres";
+process.env.DATABASE_URL = process.env.DATABASE_URL ;
 
 import { neon } from '@neondatabase/serverless';
 

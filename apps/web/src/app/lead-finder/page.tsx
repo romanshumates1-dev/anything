@@ -138,7 +138,12 @@ export default function LeadFinderPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ perPage: 25 }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch((parseError: unknown) => {
+        // A non-JSON body would otherwise become `{}` and be reported as a
+        // generic failure; keep the cause visible instead of discarding it.
+        console.error(`[lead-finder] Apollo pull body was not JSON (status ${res.status})`, parseError);
+        return {};
+      });
       if (!res.ok) throw new Error(data.error || `Apollo.io pull failed (${res.status})`);
       return data;
     },
@@ -170,7 +175,10 @@ export default function LeadFinderPage() {
       });
 
       if (!listRes.ok) {
-        const err = await listRes.json().catch(() => ({}));
+        const err = await listRes.json().catch((parseError: unknown) => {
+          console.error(`[lead-finder] Contact-list error body was not JSON (status ${listRes.status})`, parseError);
+          return {};
+        });
         throw new Error(err.error || 'Failed to create contact list');
       }
 
@@ -187,7 +195,10 @@ export default function LeadFinderPage() {
       });
 
       if (!handoffRes.ok) {
-        const err = await handoffRes.json().catch(() => ({}));
+        const err = await handoffRes.json().catch((parseError: unknown) => {
+          console.error(`[lead-finder] Handoff error body was not JSON (status ${handoffRes.status})`, parseError);
+          return {};
+        });
         throw new Error(err.error || 'Failed to hand off leads');
       }
 

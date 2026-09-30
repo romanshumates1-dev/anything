@@ -147,7 +147,7 @@ export default function SupportChat() {
     const escalateMessage: Message = {
       id: `system-${Date.now()}`,
       role: "system",
-      content: "Connecting you to human support... A support agent will reach out to you via email shortly. You can also email us directly at support@dealflow.ai",
+      content: "Connecting you to human support... A support agent will reach out to you via email shortly. You can also reach us directly at support@dealswiftautomation.com or (502) 524-1638.",
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, escalateMessage]);

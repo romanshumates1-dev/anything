@@ -356,7 +356,7 @@ export function CheckoutFlow({ plan, onComplete }: CheckoutFlowProps) {
       <div className="mt-6 flex flex-wrap justify-center gap-4 text-xs text-gray-400">
         <span>14-day free trial</span>
         <span>Cancel anytime</span>
-        <span>30-day money-back</span>
+        <span>7-day money-back</span>
       </div>
     </div>
   );

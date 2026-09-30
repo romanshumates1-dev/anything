@@ -161,7 +161,7 @@ export async function matchAndNotifyBuyers(params: MatchBuyersParams): Promise<M
     const complianceFooter = generateComplianceFooter(
       state,
       process.env.COMPANY_ADDRESS || '123 Main St, Dallas, TX 75201',
-      `${process.env.NEXTAUTH_URL || 'https://app.dealflow.ai'}/unsubscribe?dealId=${dealId}`,
+      `${process.env.NEXTAUTH_URL || 'https://dealswiftautomation.com'}/unsubscribe?dealId=${dealId}`,
       metadata.is_distressed || false
     );
 

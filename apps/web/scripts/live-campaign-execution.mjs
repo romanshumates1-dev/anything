@@ -12,7 +12,7 @@
  * - Test leads in database
  *
  * Usage:
- *   export DATABASE_URL="postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres"
+ *   export DATABASE_URL=""
  *   export OLLAMA_BASE_URL="http://localhost:11434"
  *   node apps/web/scripts/live-campaign-execution.mjs
  */

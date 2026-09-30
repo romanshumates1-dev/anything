@@ -1,5 +1,6 @@
 import sql from '@/app/api/utils/sql';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 
 const BRIEF_STALE_MS = 24 * 60 * 60 * 1000;
 
@@ -57,24 +58,41 @@ export async function generateCallBrief(
     lead.recent_messages ? `Recent conversation:\n${JSON.stringify(lead.recent_messages)}` : null,
   ].filter(Boolean).join('\n');
 
-  const response = await callAI({
-    messages: [{ role: 'user', content: `Prepare a call brief for this lead:\n\n${context}` }],
-    system: SYSTEM_PROMPT,
-    maxTokens: 300,
-  });
+  // Phase 11 credit gate — only the GENERATION path consumes a credit; the
+  // fresh cached brief returned above is free. On refusal nothing is charged
+  // and no provider call is made; on failure the credit is compensated.
+  const authorization = await authorizeAiRequest(organizationId);
+  if (!authorization.ok) {
+    throw new Error(authorization.message);
+  }
 
-  const generatedAt = new Date().toISOString();
-  await sql`
-    UPDATE leads
-    SET metadata = jsonb_set(
-      COALESCE(metadata, '{}'::jsonb),
-      '{call_brief}',
-      ${JSON.stringify({ text: response.text, generated_at: generatedAt })}::jsonb
-    )
-    WHERE id = ${leadId}
-  `;
+  try {
+    const response = await callAI({
+      messages: [{ role: 'user', content: `Prepare a call brief for this lead:\n\n${context}` }],
+      system: SYSTEM_PROMPT,
+      maxTokens: 300,
+    });
 
-  return { brief: response.text, generatedAt, stale: false };
+    const generatedAt = new Date().toISOString();
+    await sql`
+      UPDATE leads
+      SET metadata = jsonb_set(
+        COALESCE(metadata, '{}'::jsonb),
+        '{call_brief}',
+        ${JSON.stringify({ text: response.text, generated_at: generatedAt })}::jsonb
+      )
+      WHERE id = ${leadId}
+    `;
+
+    return { brief: response.text, generatedAt, stale: false };
+  } catch (error) {
+    try {
+      await authorization.release();
+    } catch (releaseError) {
+      console.error('[call-brief] credit release failed', releaseError);
+    }
+    throw error;
+  }
 }
 
 export async function getOrGenerateBrief(

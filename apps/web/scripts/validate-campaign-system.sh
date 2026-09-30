@@ -62,14 +62,11 @@ MOCK_MODE=false
 if [ -n "${DATABASE_URL:-}" ]; then
   pass "env: DATABASE_URL is set"
 else
-  # Try to use default local postgres
-  if command -v psql >/dev/null 2>&1; then
-    export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/dealflow"
-    warn "env: DATABASE_URL not set, using default: $DATABASE_URL"
-  else
-    MOCK_MODE=true
-    warn "env: DATABASE_URL not set and psql not available (MOCK MODE - skipping database checks)"
-  fi
+  # No DATABASE_URL: never fall back to a hardcoded connection string — that
+  # both commits a credential and silently points the run at the wrong
+  # database. Run with `node --env-file=.env` (or export it) for real checks.
+  MOCK_MODE=true
+  warn "env: DATABASE_URL not set (MOCK MODE - skipping database checks; export DATABASE_URL or use --env-file=.env to run them for real)"
 fi
 
 # Check optional env vars
