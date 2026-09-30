@@ -168,6 +168,7 @@ describe('Withdrawals API', () => {
 
     it('returns empty array when no withdrawals exist', async () => {
       mockSql.mockResolvedValueOnce([]);
+      mockSql.mockResolvedValueOnce([{ gross_cents: 0, net_withheld_cents: 0, count: 0 }]);
 
       const { GET } = await import('../route');
       const response = await GET();
@@ -175,6 +176,8 @@ describe('Withdrawals API', () => {
 
       expect(response.status).toBe(200);
       expect(data.withdrawals).toEqual([]);
+      expect(data.rangeTotals).toEqual({ gross_cents: 0, net_withheld_cents: 0, count: 0 });
+      expect(data.filters).toEqual({ from: null, to: null });
     });
 
     it('returns withdrawal history for organization', async () => {
@@ -210,6 +213,7 @@ describe('Withdrawals API', () => {
       ];
 
       mockSql.mockResolvedValueOnce(mockWithdrawals);
+      mockSql.mockResolvedValueOnce([{ gross_cents: 75000, net_withheld_cents: 0, count: 2 }]);
 
       const { GET } = await import('../route');
       const response = await GET();
@@ -262,6 +266,7 @@ describe('Withdrawals API', () => {
       ];
 
       mockSql.mockResolvedValueOnce(mockWithdrawals);
+      mockSql.mockResolvedValueOnce([{ gross_cents: 70000, net_withheld_cents: 5000, count: 2 }]);
 
       const { GET } = await import('../route');
       const response = await GET();
@@ -283,6 +288,20 @@ describe('Withdrawals API', () => {
       // No-withholding withdrawal: zeros/nulls, never a fabricated rate.
       expect(data.withdrawals[1].tax_withheld_cents).toBe(0);
       expect(data.withdrawals[1].tax_rate_bps).toBeNull();
+      // Range totals come from the ledger, not from summing rendered rows.
+      expect(data.rangeTotals).toEqual({ gross_cents: 70000, net_withheld_cents: 5000, count: 2 });
+      expect(data.filters).toEqual({ from: null, to: null });
+    });
+
+    it('rejects an inverted date range instead of returning an empty list', async () => {
+      const { GET } = await import('../route');
+      const response = await GET({
+        url: 'http://localhost/api/withdrawals?from=2026-09-30T00:00:00.000Z&to=2026-09-01T00:00:00.000Z',
+      } as Request);
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe('`from` must not be after `to`');
     });
 
     it('aggregates releases so a release can never double-count withheld money', async () => {
@@ -290,6 +309,7 @@ describe('Withdrawals API', () => {
       // net at zero (GREATEST(..., 0)). This test pins the SQL shape that
       // guarantees it: a release reduces the figure, never inverts it.
       mockSql.mockResolvedValueOnce([]);
+      mockSql.mockResolvedValueOnce([{ gross_cents: 0, net_withheld_cents: 0, count: 0 }]);
 
       const { GET } = await import('../route');
       await GET();
@@ -325,6 +345,7 @@ describe('Withdrawals API', () => {
       ];
 
       mockSql.mockResolvedValueOnce(mockWithdrawals);
+      mockSql.mockResolvedValueOnce([{ gross_cents: 50000, net_withheld_cents: 0, count: 1 }]);
 
       const { GET } = await import('../route');
       const response = await GET();

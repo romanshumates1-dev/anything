@@ -64,6 +64,7 @@ describe('GET /api/earnings', () => {
 
     mockSql
       .mockResolvedValueOnce(mockEarnings)
+      .mockResolvedValueOnce([{ gross_cents: 800000, pending_cents: 300000, available_cents: 500000, withdrawn_cents: 0, refunded_cents: 0, count: 2 }])
       .mockResolvedValueOnce(mockSummary)
       .mockResolvedValueOnce([]) // payout settings
       .mockResolvedValueOnce([]); // bank account
@@ -75,12 +76,24 @@ describe('GET /api/earnings', () => {
     expect(body.earnings).toHaveLength(2);
     expect(body.summary.pending).toBe(300000);
     expect(body.summary.available).toBe(500000);
+    expect(body.rangeTotals.gross_cents).toBe(800000);
+    expect(body.rangeTotals.count).toBe(2);
+    expect(body.filters).toEqual({ from: null, to: null });
     expect(body.minimumPayout).toBe(10000);
+  });
+
+  it('rejects an inverted date range instead of returning an empty list', async () => {
+    const res = await GET({
+      url: 'http://localhost/api/earnings?from=2026-09-30T00:00:00.000Z&to=2026-09-01T00:00:00.000Z',
+    } as Request);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: '`from` must not be after `to`' });
   });
 
   it('scopes earnings to user and organization (IDOR prevention)', async () => {
     mockSql
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ gross_cents: 0, pending_cents: 0, available_cents: 0, withdrawn_cents: 0, refunded_cents: 0, count: 0 }])
       .mockResolvedValueOnce([{ pending: 0, available: 0, withdrawn: 0, refunded: 0, total_earned: 0 }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
@@ -96,6 +109,7 @@ describe('GET /api/earnings', () => {
   it('returns default summary when no earnings exist', async () => {
     mockSql
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ gross_cents: 0, pending_cents: 0, available_cents: 0, withdrawn_cents: 0, refunded_cents: 0, count: 0 }])
       .mockResolvedValueOnce([]) // Empty summary
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);

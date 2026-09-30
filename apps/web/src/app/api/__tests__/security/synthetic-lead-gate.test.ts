@@ -24,6 +24,21 @@ const SYNTHETIC_CALLS = [/simulateBySourceType\s*\(/, /generateMarketLeads\s*\(/
 
 
 describe('synthetic lead generation ratchet', () => {
+  // This test body performs REAL filesystem I/O: it walks all of `src`
+  // (768 files / 5.78 MB as of 2026-09-30) and reads every candidate file to
+  // regex-test it. Measured cold, the walk+read is ~350ms on an idle machine,
+  // but under full-suite worker contention the read of 5.78MB across 240
+  // parallel files stretches it to ~6s - which is exactly the 5s default budget
+  // it was tripping (observed: "Test timed out in 5000ms", while the
+  // assertion itself passes in isolation).
+  //
+  // vitest.config.ts documents the same reasoning for the live-DB suites: the
+  // 5s budget exists to catch a HANGING mocked test body, and is raised for
+  // work that does irreducible I/O. This is that case. 30s still fails loudly
+  // on a genuine hang while removing the contention-driven false negative, so
+  // the guard keeps its teeth - it is a timeout budget, not a suppression.
+  const IO_TIMEOUT_MS = 30_000;
+
   it('every consumer of a synthetic generator is gated by syntheticDataAllowed', () => {
     const offenders: string[] = [];
     const files = scanSource(SRC);
@@ -46,7 +61,7 @@ describe('synthetic lead generation ratchet', () => {
     }
 
     expect(offenders).toEqual([]);
-  });
+  }, IO_TIMEOUT_MS);
 
   it('mega-launch refuses to run without the synthetic flag', () => {
     const text = readSource(join(SRC, 'app/api/campaigns/mega-launch/route.ts'));

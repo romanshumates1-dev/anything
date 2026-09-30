@@ -35,8 +35,12 @@ const WITHDRAWAL_RATE_WINDOW_SECONDS = 3600; // 1 hour window
 /**
  * GET /api/withdrawals
  * List withdrawal history for the current user.
+ *
+ * Date filtering: `from`/`to` (ISO dates) constrain the returned ROWS (by
+ * requested_at) only. A `rangeTotals` aggregate is computed in SQL from the
+ * SAME filtered rows, so the totals and the list can never disagree.
  */
-export async function GET() {
+export async function GET(request?: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -50,6 +54,30 @@ export async function GET() {
 
     const userId = session.user.id;
     const orgId = organization.id;
+
+    // Server-side date filter on requested_at. Invalid dates fall back to
+    // unbounded on that side; the tax report route enforces the same
+    // from<=to and 3-year-range rules so the two surfaces agree.
+    // `request` is optional so existing no-arg callers (tests, older clients)
+    // keep working: no request means no filter, never an error.
+    const MAX_RANGE_DAYS = 366 * 3; // 3 years - bounds the aggregate cost.
+    const url = request ? new URL(request.url) : null;
+    const parseDate = (value: string | null): Date | null => {
+      if (!value) return null;
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const from = parseDate(url?.searchParams.get('from') ?? null);
+    const to = parseDate(url?.searchParams.get('to') ?? null);
+    if (from && to && from > to) {
+      return Response.json({ error: '`from` must not be after `to`' }, { status: 400 });
+    }
+    if (from && to && (to.getTime() - from.getTime()) / 86_400_000 > MAX_RANGE_DAYS) {
+      return Response.json(
+        { error: `Date range must not exceed ${MAX_RANGE_DAYS} days` },
+        { status: 400 }
+      );
+    }
 
     // Tax withholding is stored in the append-only ledger keyed by
     // withdrawal_id. Each row is aggregated here so a withdrawal renders its
@@ -93,11 +121,50 @@ export async function GET() {
       ) l ON true
       WHERE w.user_id = ${userId}
         AND w.organization_id = ${orgId}
+        AND (${from}::timestamptz IS NULL OR w.requested_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR w.requested_at <= ${to})
       ORDER BY w.requested_at DESC
       LIMIT 50
     `;
 
-    return Response.json({ withdrawals });
+    // Range-scoped ledger totals from the SAME filtered rows: gross paid out
+    // plus the still-held tax, so the header and the list cannot disagree.
+    const [rangeTotals] = await sql`
+      SELECT
+        COALESCE(SUM(w.amount_cents), 0) as gross_cents,
+        COALESCE(SUM(
+          GREATEST(
+            COALESCE(l.withheld_cents, 0) - COALESCE(l.released_cents, 0),
+            0
+          )
+        ), 0) as net_withheld_cents,
+        COUNT(*) as count
+      FROM withdrawals w
+      LEFT JOIN LATERAL (
+        SELECT
+          SUM(twl.amount_cents) FILTER (WHERE twl.kind = 'WITHHELD')
+            AS withheld_cents,
+          SUM(twl.amount_cents) FILTER (WHERE twl.kind = 'RELEASED')
+            AS released_cents
+        FROM tax_withholding_ledger twl
+        WHERE twl.withdrawal_id = w.id
+          AND twl.user_id = w.user_id
+          AND twl.organization_id = w.organization_id
+      ) l ON true
+      WHERE w.user_id = ${userId}
+        AND w.organization_id = ${orgId}
+        AND (${from}::timestamptz IS NULL OR w.requested_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR w.requested_at <= ${to})
+    `;
+
+    return Response.json({
+      withdrawals,
+      rangeTotals: rangeTotals || { gross_cents: 0, net_withheld_cents: 0, count: 0 },
+      filters: {
+        from: from ? from.toISOString() : null,
+        to: to ? to.toISOString() : null,
+      },
+    });
   } catch (error: any) {
     console.error('GET /api/withdrawals error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });

@@ -118,6 +118,36 @@ interface BankAccount {
 
 type PayoutStatus = 'all' | 'COMPLETED' | 'PENDING' | 'FAILED';
 type EarningFilter = 'all' | 'PENDING' | 'AVAILABLE' | 'WITHDRAWN' | 'REFUNDED';
+// Server-bucketed history ranges (item N: totals come from the ledger API,
+// never from summing rendered rows in the browser).
+type RangePreset = 'all' | 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+
+const RANGE_PRESETS: Array<{ value: RangePreset; label: string }> = [
+  { value: 'all', label: 'All time' },
+  { value: 'day', label: 'Today' },
+  { value: 'week', label: 'Last 7 days' },
+  { value: 'month', label: 'Last 30 days' },
+  { value: 'quarter', label: 'Last 90 days' },
+  { value: 'year', label: 'Last 12 months' },
+  { value: 'custom', label: 'Custom range' },
+];
+
+/** Preset -> [from, to] ISO bounds. `all`/`custom` are handled by the caller. */
+function presetBounds(preset: RangePreset): { from: string | null; to: string | null } {
+  if (preset === 'all' || preset === 'custom') return { from: null, to: null };
+  const now = new Date();
+  const days = preset === 'day' ? 1 : preset === 'week' ? 7 : preset === 'month' ? 30 : preset === 'quarter' ? 90 : 365;
+  const from = new Date(now.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+  from.setHours(0, 0, 0, 0);
+  return { from: from.toISOString(), to: now.toISOString() };
+}
+
+/** `YYYY-MM-DD` from a date <input> -> start/end-of-day ISO, or null. */
+function customInputBounds(date: string, endOfDay: boolean): string | null {
+  if (!date) return null;
+  const d = new Date(`${date}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 const withdrawalStatusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; label: string; bg: string }> = {
   COMPLETED: { dot: 'success', label: 'Completed', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
@@ -405,16 +435,55 @@ export default function PayoutsPage() {
   const [payoutMode, setPayoutMode] = useState<'full' | 'custom'>('full');
   const [customAmount, setCustomAmount] = useState('');
   const [activeTab, setActiveTab] = useState<'earnings' | 'withdrawals' | 'tax'>('earnings');
+  // History date range (shared by both history tabs; server-enforced).
+  const [rangePreset, setRangePreset] = useState<RangePreset>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  const rangeParams = (() => {
+    if (rangePreset === 'custom') {
+      return {
+        from: customInputBounds(customFrom, false),
+        to: customInputBounds(customTo, true),
+      };
+    }
+    return presetBounds(rangePreset);
+  })();
+  // The API rejects an inverted range with 400, which would otherwise surface
+  // as a generic empty table and look like "no money in this period". Detect it
+  // here so the UI can explain the problem instead of showing a false zero.
+  const customRangeInverted =
+    rangePreset === 'custom' &&
+    !!rangeParams.from &&
+    !!rangeParams.to &&
+    rangeParams.from > rangeParams.to;
+  const rangeKey = `${rangePreset}|${rangeParams.from ?? ''}|${rangeParams.to ?? ''}`;
+  const buildRangeQuery = () => {
+    const q = new URLSearchParams();
+    if (rangeParams.from) q.set('from', rangeParams.from);
+    if (rangeParams.to) q.set('to', rangeParams.to);
+    const s = q.toString();
+    return s ? `?${s}` : '';
+  };
 
   // Fetch earnings and balance data
   const { data: earningsData, isLoading: earningsLoading, refetch: refetchEarnings } = useQuery({
-    queryKey: ['earnings'],
+    queryKey: ['earnings', rangeKey],
     queryFn: async () => {
-      const res = await fetch('/api/earnings');
+      const res = await fetch(`/api/earnings${buildRangeQuery()}`);
       if (!res.ok) throw new Error('Failed to fetch earnings');
       return res.json() as Promise<{
         earnings: EarningData[];
         summary: BalanceSummary;
+        rangeTotals: {
+          gross_cents: number;
+          pending_cents: number;
+          available_cents: number;
+          withdrawn_cents: number;
+          refunded_cents: number;
+          count: number;
+        };
+        filters: { from: string | null; to: string | null };
         bankAccount: BankAccount | null;
         minimumPayout: number;
       }>;
@@ -424,11 +493,15 @@ export default function PayoutsPage() {
 
   // Fetch withdrawals
   const { data: withdrawalsData, isLoading: withdrawalsLoading } = useQuery({
-    queryKey: ['withdrawals'],
+    queryKey: ['withdrawals', rangeKey],
     queryFn: async () => {
-      const res = await fetch('/api/withdrawals');
+      const res = await fetch(`/api/withdrawals${buildRangeQuery()}`);
       if (!res.ok) throw new Error('Failed to fetch withdrawals');
-      return res.json() as Promise<{ withdrawals: WithdrawalData[] }>;
+      return res.json() as Promise<{
+        withdrawals: WithdrawalData[];
+        rangeTotals: { gross_cents: number; net_withheld_cents: number; count: number };
+        filters: { from: string | null; to: string | null };
+      }>;
     },
     enabled: !!session,
   });
@@ -850,6 +923,56 @@ export default function PayoutsPage() {
         </button>
       </div>
 
+      {/* Date range (server-enforced; totals come from the ledger API) */}
+      {(activeTab === 'earnings' || activeTab === 'withdrawals') && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Select value={rangePreset} onValueChange={(v) => setRangePreset(v as RangePreset)}>
+            <SelectTrigger
+              className="w-full sm:w-[160px] bg-[var(--bg-tertiary)] border-[var(--border-subtle)]"
+              aria-label="Filter history by date range"
+            >
+              <SelectValue placeholder="Date range" />
+            </SelectTrigger>
+            <SelectContent>
+              {RANGE_PRESETS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {rangePreset === 'custom' && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  aria-label="Custom range start date"
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)]"
+                />
+                <span className="text-sm text-[var(--text-muted)]">to</span>
+                <Input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  aria-label="Custom range end date"
+                  className="bg-[var(--bg-tertiary)] border-[var(--border-subtle)]"
+                />
+              </div>
+              {customRangeInverted && (
+                <p role="alert" className="text-sm text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  Start date must be on or before the end date.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tax & earnings report (period-granular, server-bucketed) */}
       {activeTab === 'tax' && <TaxReportPanel />}
 
@@ -875,6 +998,16 @@ export default function PayoutsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {rangePreset !== 'all' && earningsData?.rangeTotals && (
+              <p className="mt-3 text-sm text-[var(--text-muted)]" aria-live="polite">
+                Showing {earningsData.rangeTotals.count} deal
+                {earningsData.rangeTotals.count === 1 ? '' : 's'} totaling{' '}
+                <span className="font-mono text-[var(--text-primary)]">
+                  {formatCurrency(Number(earningsData.rangeTotals.gross_cents) || 0)}
+                </span>{' '}
+                in this range (server total).
+              </p>
+            )}
           </div>
 
           {earningsLoading ? (
@@ -905,16 +1038,23 @@ export default function PayoutsPage() {
               <p className="text-sm text-[var(--text-muted)] max-w-sm mx-auto">
                 {earningFilter !== 'all'
                   ? 'Try changing the filter to see more results'
-                  : 'Your earnings will appear here when deals close'}
+                  : rangePreset !== 'all'
+                    ? 'No deal earnings fall in the selected date range'
+                    : 'Your earnings will appear here when deals close'}
               </p>
-              {earningFilter !== 'all' && (
+              {(earningFilter !== 'all' || rangePreset !== 'all') && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="mt-4"
-                  onClick={() => setEarningFilter('all')}
+                  onClick={() => {
+                    setEarningFilter('all');
+                    setRangePreset('all');
+                    setCustomFrom('');
+                    setCustomTo('');
+                  }}
                 >
-                  Clear filter
+                  Clear filters
                 </Button>
               )}
             </div>
@@ -1029,6 +1169,16 @@ export default function PayoutsPage() {
                 </SelectContent>
               </Select>
             </div>
+            {rangePreset !== 'all' && withdrawalsData?.rangeTotals && (
+              <p className="mt-3 text-sm text-[var(--text-muted)]" aria-live="polite">
+                Showing {withdrawalsData.rangeTotals.count} payout
+                {withdrawalsData.rangeTotals.count === 1 ? '' : 's'} totaling{' '}
+                <span className="font-mono text-[var(--text-primary)]">
+                  {formatCurrency(Number(withdrawalsData.rangeTotals.gross_cents) || 0)}
+                </span>{' '}
+                in this range (server total).
+              </p>
+            )}
           </div>
 
           {withdrawalsLoading ? (
@@ -1059,16 +1209,23 @@ export default function PayoutsPage() {
               <p className="text-sm text-[var(--text-muted)] max-w-sm mx-auto">
                 {withdrawalStatusFilter !== 'all'
                   ? 'Try changing the filter to see more results'
-                  : 'Your withdrawal history will appear here once you request your first payout'}
+                  : rangePreset !== 'all'
+                    ? 'No payouts were requested in the selected date range'
+                    : 'Your withdrawal history will appear here once you request your first payout'}
               </p>
-              {withdrawalStatusFilter !== 'all' && (
+              {(withdrawalStatusFilter !== 'all' || rangePreset !== 'all') && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="mt-4"
-                  onClick={() => setWithdrawalStatusFilter('all')}
+                  onClick={() => {
+                    setWithdrawalStatusFilter('all');
+                    setRangePreset('all');
+                    setCustomFrom('');
+                    setCustomTo('');
+                  }}
                 >
-                  Clear filter
+                  Clear filters
                 </Button>
               )}
             </div>

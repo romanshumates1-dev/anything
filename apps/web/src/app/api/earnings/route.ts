@@ -7,8 +7,14 @@ import { randomUUID } from 'crypto';
 /**
  * GET /api/earnings
  * List user earnings with balance summary.
+ *
+ * Date filtering: `from`/`to` (ISO dates) constrain the returned ROWS only.
+ * The summary always describes the FULL ledger (it answers "how much can I
+ * withdraw right now"), so a filtered view can never shrink the balance and
+ * mislead the payout action. The response echoes `filters.from/to` so the UI
+ * can prove the totals came from the server for that range.
  */
-export async function GET() {
+export async function GET(request?: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -23,7 +29,29 @@ export async function GET() {
     const userId = session.user.id;
     const orgId = organization.id;
 
-    // Get all earnings for this user
+    // Server-side date filter: rows only, never the withdrawable summary.
+    // Invalid dates fall back to unbounded on that side (a mistyped filter
+    // shows everything, never an empty list that looks like missing money).
+    const MAX_RANGE_DAYS = 366 * 3; // 3 years - bounds the aggregate cost.
+    const url = request ? new URL(request.url) : null;
+    const parseDate = (value: string | null): Date | null => {
+      if (!value) return null;
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const from = parseDate(url?.searchParams.get('from') ?? null);
+    const to = parseDate(url?.searchParams.get('to') ?? null);
+    if (from && to && from > to) {
+      return Response.json({ error: '`from` must not be after `to`' }, { status: 400 });
+    }
+    if (from && to && (to.getTime() - from.getTime()) / 86_400_000 > MAX_RANGE_DAYS) {
+      return Response.json(
+        { error: `Date range must not exceed ${MAX_RANGE_DAYS} days` },
+        { status: 400 }
+      );
+    }
+
+    // Get earnings for this user (filtered to the requested window)
     const earnings = await sql`
       SELECT
         e.id,
@@ -42,11 +70,30 @@ export async function GET() {
       LEFT JOIN contracts c ON c.id = e.contract_id
       WHERE e.user_id = ${userId}
         AND e.organization_id = ${orgId}
+        AND (${from}::timestamptz IS NULL OR e.created_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR e.created_at <= ${to})
       ORDER BY e.created_at DESC
-      LIMIT 100
+      LIMIT 500
     `;
 
-    // Calculate balance summary
+    // Range-scoped ledger totals: computed in SQL from the SAME rows, so the
+    // totals and the list can never disagree (no presentation-layer math).
+    const [rangeTotals] = await sql`
+      SELECT
+        COALESCE(SUM(e.amount_cents), 0) as gross_cents,
+        COALESCE(SUM(CASE WHEN e.status = 'PENDING' THEN e.amount_cents ELSE 0 END), 0) as pending_cents,
+        COALESCE(SUM(CASE WHEN e.status = 'AVAILABLE' THEN e.amount_cents ELSE 0 END), 0) as available_cents,
+        COALESCE(SUM(CASE WHEN e.status = 'WITHDRAWN' THEN e.amount_cents ELSE 0 END), 0) as withdrawn_cents,
+        COALESCE(SUM(CASE WHEN e.status = 'REFUNDED' THEN e.amount_cents ELSE 0 END), 0) as refunded_cents,
+        COUNT(*) as count
+      FROM earnings e
+      WHERE e.user_id = ${userId}
+        AND e.organization_id = ${orgId}
+        AND (${from}::timestamptz IS NULL OR e.created_at >= ${from})
+        AND (${to}::timestamptz IS NULL OR e.created_at <= ${to})
+    `;
+
+    // Calculate balance summary (FULL ledger: the withdrawable truth)
     const summary = await sql`
       SELECT
         COALESCE(SUM(CASE WHEN status = 'PENDING' THEN amount_cents ELSE 0 END), 0) as pending,
@@ -83,6 +130,18 @@ export async function GET() {
         withdrawn: 0,
         refunded: 0,
         total_earned: 0,
+      },
+      rangeTotals: rangeTotals || {
+        gross_cents: 0,
+        pending_cents: 0,
+        available_cents: 0,
+        withdrawn_cents: 0,
+        refunded_cents: 0,
+        count: 0,
+      },
+      filters: {
+        from: from ? from.toISOString() : null,
+        to: to ? to.toISOString() : null,
       },
       settings: settings || {
         default_hold_days: 14,
