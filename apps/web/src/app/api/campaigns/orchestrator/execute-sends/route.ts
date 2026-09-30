@@ -197,8 +197,26 @@ ${postalAddress}
 
         if (sendResult.status === 'dispatched') {
           // Log to message_events
+          //
+          // `id` is the primary key with no default, so it must be supplied.
+          // This statement previously omitted it entirely, which fails the NOT
+          // NULL check even once the missing columns exist. `created_at` has a
+          // DEFAULT now() and is deliberately left out.
+          //
+          // from_address records what the provider ACTUALLY sent from, so it is
+          // the same EMAIL_FROM_ADDRESS the emailDriver passed to the provider.
+          // It previously fell back to a hard-coded address on a domain this
+          // project does not own — the same defect src/lib/seo.ts documents
+          // having fixed in metadataBase. With that variable unset the audit
+          // ledger would attribute real campaign email to a third party, and
+          // any reply-to or deliverability investigation would start from a
+          // false sender. NULL is the honest value for "we don't know": the
+          // column is nullable (migration 095) and an unset from-address is a
+          // configuration fault that should stay visible, not be papered over
+          // with a fiction.
           await sql`
             INSERT INTO message_events (
+              id,
               organization_id,
               conversation_id,
               contact_id,
@@ -212,13 +230,14 @@ ${postalAddress}
               status,
               provider_message_id
             ) VALUES (
+              ${`msg_${crypto.randomUUID().replace(/-/g, '')}`},
               ${organization.id},
               'campaign-' || ${lead.lead_id},
               NULL,
               ${lead.lead_id},
               'email',
               'outbound',
-              ${process.env.EMAIL_FROM_ADDRESS || 'hello@dealflow.com'},
+              ${process.env.EMAIL_FROM_ADDRESS || null},
               ${lead.email},
               ${subject},
               ${fullBody},

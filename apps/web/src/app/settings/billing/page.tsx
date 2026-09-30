@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSession } from '@/lib/auth-client';
+import { mailtoHref } from '@/lib/contact';
 import { redirect, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -697,7 +698,7 @@ export default function BillingSettingsPage() {
 
         <p className="text-sm text-[var(--text-muted)] text-center mt-4">
           Need a custom plan?{' '}
-          <a href="mailto:support@dealswiftautomation.com" className="text-[var(--accent-blue)] hover:underline">
+          <a href={mailtoHref()} className="text-[var(--accent-blue)] hover:underline">
             Contact us
           </a>{' '}
           for enterprise pricing.

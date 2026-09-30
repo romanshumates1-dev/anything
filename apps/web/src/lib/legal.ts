@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { SUPPORT_EMAIL } from './contact';
 import {
   REQUIRED_ACCEPTANCE_VERSIONS,
   MESSAGING_AGREEMENT_VERSION as MESSAGING_VERSION,
@@ -34,12 +35,32 @@ export interface LegalDoc {
 
 const CONTENT_DIR = join(process.cwd(), 'content', 'legal');
 
-function substitutePlaceholders(text: string): string {
-  const map: Record<string, string> = {
-    LEGAL_ENTITY_NAME: process.env.LEGAL_ENTITY_NAME || process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME || '[LEGAL_ENTITY_NAME]',
+/**
+ * The placeholder map, as a function.
+ *
+ * `SUPPORT_EMAIL` previously fell back to the literal string
+ * `[SUPPORT_EMAIL]`. `.env.production.template` ships that variable EMPTY
+ * ("TODO(owner)"), so in production every /legal/* page rendered the bracketed
+ * placeholder as real text in place of a contact address. A published privacy
+ * policy that tells a data subject to email "[SUPPORT_EMAIL]" is worse than one
+ * that names a real, monitored mailbox — it reads as a broken page and gives the
+ * request nowhere to go.
+ *
+ * It now falls back to the canonical address in `lib/contact`. An env override
+ * is still honoured so a deployment can point legal mail at a dedicated alias,
+ * but silence no longer produces a placeholder.
+ */
+export function legalTemplateValues(): Record<string, string> {
+  return {
+    LEGAL_ENTITY_NAME:
+      process.env.LEGAL_ENTITY_NAME || process.env.NEXT_PUBLIC_LEGAL_ENTITY_NAME || '[LEGAL_ENTITY_NAME]',
     LEGAL_ENTITY_STATE: process.env.LEGAL_ENTITY_STATE || '[LEGAL_ENTITY_STATE]',
-    SUPPORT_EMAIL: process.env.SUPPORT_EMAIL || '[SUPPORT_EMAIL]',
+    SUPPORT_EMAIL: process.env.SUPPORT_EMAIL || SUPPORT_EMAIL,
   };
+}
+
+function substitutePlaceholders(text: string): string {
+  const map = legalTemplateValues();
   return text.replace(/\{\{(\w+)\}\}/g, (whole, key) => (key in map ? map[key] : whole));
 }
 

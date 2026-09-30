@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_HREF, mailtoHref } from '@/lib/contact';
 
 export default function PrivacyPolicy() {
   const lastUpdated = 'August 5, 2026';
@@ -201,7 +202,7 @@ export default function PrivacyPolicy() {
             </div>
 
             <p className="text-slate-700 mt-4">
-              To exercise these rights, contact us at <a href="mailto:privacy@dealswiftautomation.com" className="text-violet-600 hover:underline">privacy@dealswiftautomation.com</a>.
+              To exercise these rights, contact us at <a href={mailtoHref()} className="text-violet-600 hover:underline">{SUPPORT_EMAIL}</a>.
             </p>
           </section>
 
@@ -310,8 +311,8 @@ export default function PrivacyPolicy() {
             <div className="bg-slate-50 rounded-xl p-6">
               <p className="font-medium text-slate-900 mb-2">DealSwift Automation LLC</p>
               <div className="text-slate-600 space-y-1">
-                <p>Email: <a href="mailto:privacy@dealswiftautomation.com" className="text-violet-600 hover:underline">privacy@dealswiftautomation.com</a></p>
-                <p>Support: <a href="mailto:support@dealswiftautomation.com" className="text-violet-600 hover:underline">support@dealswiftautomation.com</a></p>
+                <p>Email: <a href={mailtoHref()} className="text-violet-600 hover:underline">{SUPPORT_EMAIL}</a></p>
+                <p>Phone: <a href={SUPPORT_PHONE_HREF} className="text-violet-600 hover:underline">{SUPPORT_PHONE}</a></p>
                 <p>Website: <a href="https://dealswiftautomation.com" className="text-violet-600 hover:underline">dealswiftautomation.com</a></p>
               </div>
             </div>

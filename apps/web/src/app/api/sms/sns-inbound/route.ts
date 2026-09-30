@@ -259,8 +259,17 @@ export async function POST(request: Request) {
     await recordReplyReceived(lead.id, 'sms');
 
     await sql`
-      INSERT INTO message_events (lead_id, direction, channel, body, status, external_id, created_at)
-      VALUES (${lead.id}, 'inbound', 'sms', ${text}, 'received', ${messageSid}, now())
+      INSERT INTO message_events (id, organization_id, lead_id, direction, channel, body, status, external_id)
+      VALUES (
+        ${`msg_${crypto.randomUUID().replace(/-/g, '')}`},
+        ${lead.organization_id},
+        ${lead.id},
+        'inbound',
+        'sms',
+        ${text},
+        'received',
+        ${messageSid}
+      )
     `;
 
     await enqueueJob('ai_reply', {

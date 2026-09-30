@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ContactForm } from "./ContactForm";
 import { Mail, Phone, Clock } from "lucide-react";
 import { canonicalFor } from '@/lib/seo';
+import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_HREF, mailtoHref } from '@/lib/contact';
 
 export const metadata: Metadata = {
 	...canonicalFor('/contact'),
@@ -36,15 +37,15 @@ export default function ContactPage() {
                   icon: Mail,
                   title: "Email us",
                   desc: "Send us an email anytime",
-                  contact: "support@dealswiftautomation.com",
-                  href: "mailto:support@dealswiftautomation.com",
+                  contact: SUPPORT_EMAIL,
+                  href: mailtoHref(),
                 },
                 {
                   icon: Phone,
                   title: "Call us",
                   desc: "Available Mon-Fri, 9am-5pm ET",
-                  contact: "(502) 524-1638",
-                  href: "tel:+15025241638",
+                  contact: SUPPORT_PHONE,
+                  href: SUPPORT_PHONE_HREF,
                 },
                 {
                   icon: Clock,

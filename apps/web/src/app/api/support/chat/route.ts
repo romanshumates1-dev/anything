@@ -8,6 +8,7 @@ import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
 import { callAI, type AnthropicMessage } from '@/app/api/utils/ai-provider';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
+import { SUPPORT_EMAIL, SUPPORT_PHONE } from '@/lib/contact';
 
 const SUPPORT_SYSTEM_PROMPT = `You are the DealFlow AI support assistant - a helpful, knowledgeable guide for users of the DealFlow AI real estate wholesaling platform.
 
@@ -152,7 +153,7 @@ export async function POST(request: Request) {
       {
         error: 'Unable to process your message right now',
         content:
-          "I'm sorry, I'm having trouble connecting to my systems right now. Please try again in a moment, or contact our support team directly at support@dealswiftautomation.com or (502) 524-1638 for immediate assistance.",
+          `I'm sorry, I'm having trouble connecting to my systems right now. Please try again in a moment, or contact our support team directly at ${SUPPORT_EMAIL} or ${SUPPORT_PHONE} for immediate assistance.`,
       },
       { status: 503 }
     );

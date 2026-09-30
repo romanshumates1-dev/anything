@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_HREF, mailtoHref } from '@/lib/contact';
 
 export default function TermsOfService() {
   const lastUpdated = 'August 5, 2026';
@@ -325,7 +326,7 @@ export default function TermsOfService() {
 
             <h3 className="text-lg font-medium text-slate-800 mt-6 mb-3">Informal Resolution</h3>
             <p className="text-slate-700">
-              Before filing any claim, you agree to attempt to resolve the dispute informally by contacting us at <a href="mailto:legal@dealswiftautomation.com" className="text-violet-600 hover:underline">legal@dealswiftautomation.com</a>. We will attempt to resolve the dispute within 60 days.
+              Before filing any claim, you agree to attempt to resolve the dispute informally by contacting us at <a href={mailtoHref()} className="text-violet-600 hover:underline">{SUPPORT_EMAIL}</a>. We will attempt to resolve the dispute within 60 days.
             </p>
 
             <h3 className="text-lg font-medium text-slate-800 mt-6 mb-3">Binding Arbitration</h3>
@@ -409,8 +410,8 @@ export default function TermsOfService() {
             <div className="bg-slate-50 rounded-xl p-6">
               <p className="font-medium text-slate-900 mb-2">DealSwift Automation LLC</p>
               <div className="text-slate-600 space-y-1">
-                <p>Email: <a href="mailto:legal@dealswiftautomation.com" className="text-violet-600 hover:underline">legal@dealswiftautomation.com</a></p>
-                <p>Support: <a href="mailto:support@dealswiftautomation.com" className="text-violet-600 hover:underline">support@dealswiftautomation.com</a></p>
+                <p>Email: <a href={mailtoHref()} className="text-violet-600 hover:underline">{SUPPORT_EMAIL}</a></p>
+                <p>Phone: <a href={SUPPORT_PHONE_HREF} className="text-violet-600 hover:underline">{SUPPORT_PHONE}</a></p>
                 <p>Website: <a href="https://dealswiftautomation.com" className="text-violet-600 hover:underline">dealswiftautomation.com</a></p>
               </div>
             </div>

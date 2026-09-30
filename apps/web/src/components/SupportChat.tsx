@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { MessageSquare, Send, X, ChevronDown, User, Bot, Loader2, Headphones } from "lucide-react";
+import { SUPPORT_EMAIL, SUPPORT_PHONE } from "@/lib/contact";
 
 interface Message {
   id: string;
@@ -147,7 +148,7 @@ export default function SupportChat() {
     const escalateMessage: Message = {
       id: `system-${Date.now()}`,
       role: "system",
-      content: "Connecting you to human support... A support agent will reach out to you via email shortly. You can also reach us directly at support@dealswiftautomation.com or (502) 524-1638.",
+      content: `Connecting you to human support... A support agent will reach out to you via email shortly. You can also reach us directly at ${SUPPORT_EMAIL} or ${SUPPORT_PHONE}.`,
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, escalateMessage]);

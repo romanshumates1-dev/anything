@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Shield, Clock, CheckCircle, Zap } from "lucide-react";
 import { canonicalFor } from '@/lib/seo';
+import { SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_PHONE_HREF, mailtoHref } from '@/lib/contact';
 
 export const metadata: Metadata = {
 	...canonicalFor('/about'),
@@ -146,11 +147,11 @@ export default function AboutPage() {
                 Have questions? We'd love to hear from you.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 text-slate-400">
-                <a href="mailto:support@dealswiftautomation.com" className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
-                  support@dealswiftautomation.com
+                <a href={mailtoHref()} className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
+                  {SUPPORT_EMAIL}
                 </a>
-                <a href="tel:+15025241638" className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
-                  (502) 524-1638
+                <a href={SUPPORT_PHONE_HREF} className="text-[#3B82F6] hover:text-[#60A5FA] transition-colors">
+                  {SUPPORT_PHONE}
                 </a>
               </div>
               <div className="mt-6">

@@ -220,9 +220,12 @@ export async function sendContractAlert(alert: ContractAlert): Promise<{ success
   try {
     const sql = neon(process.env.DATABASE_URL!);
     await sql`
-      INSERT INTO message_events (lead_id, type, status, metadata, created_at)
+      INSERT INTO message_events (id, organization_id, lead_id, direction, type, status, metadata)
       VALUES (
+        ${`msg_${crypto.randomUUID().replace(/-/g, '')}`},
+        ${alert.metadata?.organizationId || 'default'},
         ${alert.metadata?.leadId || null},
+        'outbound',
         'contract_alert',
         'sent',
         ${JSON.stringify({
