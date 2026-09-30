@@ -46,17 +46,28 @@ const NON_ROUTING_ALLOWLIST = [
 
 /**
  * Batch/background engines reached from job handlers, not from a user's HTTP
- * request.
+ * request. Each of these now gates its own AI calls (via an optional
+ * `organizationId` that the job handler passes) and degrades to a deterministic
+ * fallback on exhaustion, so automated work is metered without stalling.
  *
- * `negotiationProcessor` was REMOVED from this list on 2026-09-30: it now gates
- * its own AI calls (extractPriceFromMessage / generateNegotiationProse) and
- * degrades to the deterministic regex/template paths on exhaustion, so
- * automated negotiation is metered without ever stalling a live deal.
+ * `negotiationProcessor`, `buyerPipelineEngine` and `campaignEngine` were each
+ * removed from this list on 2026-09-30 as they gained real metering.
+ *
+ * THE REMAINING FOUR HAVE NO AI SPEND PATH TODAY - THIS IS NOT AN EXEMPTION:
+ *   - simplifierEngine, spamDetectionEngine: no importer anywhere in src.
+ *   - socialMediaEngine: imported by jobs.ts for a send function only.
+ *   - callSchedulingEngine: imported by jobs.ts, but ONLY for
+ *     `notifyOwnerOfCallRequest`, which sends an email and calls no provider.
+ *     Its two AI functions (`parseAvailability`, `parseCallReason`) have zero
+ *     callers, so no provider call is reachable through it today.
+ *
+ * That is a measurement of the CURRENT code, not a judgement that these engines
+ * are safe to leave unmetered forever. A companion test re-checks the
+ * load-bearing part of that claim, so wiring one of these AI functions up later
+ * fails the build instead of quietly becoming an unmetered spend path.
  */
 const NON_USER_TRIGGERED_ALLOWLIST = [
-  'app/api/utils/buyerPipelineEngine.ts',
   'app/api/utils/callSchedulingEngine.ts',
-  'app/api/utils/campaignEngine.ts',
   'app/api/utils/simplifierEngine.ts',
   'app/api/utils/socialMediaEngine.ts',
   'app/api/utils/spamDetectionEngine.ts',
@@ -177,5 +188,44 @@ describe('AI credit gate ratchet', () => {
     // Exhaustion must degrade, never throw the job away.
     expect(text).toContain('ai_credits_exhausted');
     expect(text).toContain('fallbackTemplate');
+  }, 30_000);
+
+  it('buyer and campaign automation stay metered (regression anchors)', () => {
+    // Both run unattended on every inbound reply. An unmetered copy here means
+    // an account can drive provider spend simply by receiving replies, and the
+    // deterministic fallbacks are what keep outreach working when credits run out.
+    const buyer = readSource(join(SRC, 'app/api/utils/buyerPipelineEngine.ts'));
+    expect(buyer).toContain(GATE);
+    expect(buyer).toContain('classifyBuyerResponseFallback');
+
+    const campaign = readSource(join(SRC, 'app/api/utils/campaignEngine.ts'));
+    expect(campaign).toContain(GATE);
+    // An exhausted plan must still produce a SENDABLE message.
+    expect(campaign).toContain('substituteVariables');
+  }, 30_000);
+
+  it("callSchedulingEngine's AI functions have no callers (keeps its exemption true)", () => {
+    // callSchedulingEngine is allowlisted ONLY because the single function
+    // jobs.ts imports makes no provider call. That justification depends on its
+    // two AI functions staying uncalled. If someone wires one up, the exemption
+    // silently becomes a lie and a spend path opens - so this is asserted.
+    const engine = readSource(join(SRC, 'app/api/utils/callSchedulingEngine.ts'));
+    expect(engine).toContain('parseAvailability');
+    expect(engine).toContain('parseCallReason');
+
+    const aiFnNames = ['parseAvailability', 'parseCallReason'];
+    let externalCallers = 0;
+    for (const file of scanSource(SRC, { excludeTests: true })) {
+      const rel = file.replace(process.cwd(), '').replace(/\\/g, '/');
+      if (rel.endsWith('app/api/utils/callSchedulingEngine.ts')) continue;
+      if (rel.endsWith('ai-credit-gate.test.ts')) continue;
+      const text = readSource(file);
+      if (aiFnNames.some((fn) => new RegExp(`${fn}\\s*\\(`).test(text))) externalCallers++;
+    }
+
+    expect(
+      externalCallers,
+      'callSchedulingEngine AI functions gained a caller - meter them or remove the exemption'
+    ).toBe(0);
   }, 30_000);
 });

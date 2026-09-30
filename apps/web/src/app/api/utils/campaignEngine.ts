@@ -16,6 +16,7 @@ import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 import { isBetaFlagOn } from '@/app/api/utils/betaFlags';
 import crypto from 'crypto';
 
@@ -318,7 +319,7 @@ export async function scheduleOutreach(campaignId: string): Promise<{
       name: contact.name || 'Unknown',
       property_address: contact.property_address,
       current_touch: contact.current_touch || 0,
-    }, settings);
+    }, settings, campaign.organization_id);
 
     // Enqueue the send
     await enqueueJob(
@@ -404,7 +405,7 @@ export async function handleInboundResponse(
     name: contact.name || 'Unknown',
     property_address: contact.property_address,
     current_touch: contact.current_touch || 0,
-  });
+  }, contact.organization_id);
 
   // Store classification
   const classId = crypto.randomUUID();
@@ -648,8 +649,13 @@ Message to classify:
 
 async function classifyResponse(
   message: string,
-  contact: { name: string; property_address?: string; current_touch: number }
+  contact: { name: string; property_address?: string; current_touch: number },
+  organizationId?: string
 ): Promise<ResponseClassification> {
+  // Declared OUTSIDE the try: the catch block below must be able to hand the
+  // credit back. A `let` inside the try would be out of scope there, so a
+  // provider failure would silently consume the customer's credit.
+  let releaseAiCredit: (() => Promise<void>) | null = null;
   try {
     // Check for explicit opt-out keywords first (fast path)
     const optOutKeywords = /\b(stop|unsubscribe|remove|opt.?out|do not contact|leave me alone)\b/i;
@@ -663,6 +669,27 @@ async function classifyResponse(
     }
 
     // Use AI for nuanced classification
+    // METERING: gated when the caller's org is known. On denial the catch block's
+    // safe default ("question", review manually) applies, so an exhausted plan
+    // routes a reply to human review instead of silently mis-staging it.
+    if (organizationId) {
+      const authorization = await authorizeAiRequest(organizationId, {
+        requestId: `campaign:classify:${organizationId}:${message.length}`,
+      });
+      if (!authorization.ok) {
+        console.warn(
+          `[campaign] AI classification skipped (${authorization.reason}); routing to manual review`
+        );
+        return {
+          classification: 'question',
+          confidence: 0.3,
+          extractedTimeline: 'unknown',
+          suggestedAction: 'AI credits exhausted - review manually',
+        };
+      }
+      releaseAiCredit = authorization.release;
+    }
+
     const prompt = CLASSIFICATION_PROMPT
       .replace('{{name}}', contact.name || 'Unknown')
       .replace('{{propertyAddress}}', contact.property_address || 'Unknown')
@@ -688,6 +715,13 @@ async function classifyResponse(
     };
   } catch (error) {
     console.error('Classification error:', error);
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[campaign] credit release failed', releaseError);
+      }
+    }
     // Default to question on error - safest fallback
     return {
       classification: 'question',
@@ -727,7 +761,8 @@ Return ONLY the message text, no explanation.`;
 async function generatePersonalizedMessage(
   template: string,
   contact: { name: string; property_address?: string; current_touch: number },
-  settings: CampaignSettings
+  settings: CampaignSettings,
+  organizationId?: string
 ): Promise<string> {
   // Simple variable substitution for low personalization
   if (settings.aiPersonalizationLevel === 'low') {
@@ -735,6 +770,23 @@ async function generatePersonalizedMessage(
   }
 
   // AI personalization for medium/high
+  // METERING: gated when the org is known. On denial we fall back to plain
+  // template substitution rather than returning an empty string - an empty SMS
+  // would still be enqueued and sent, which is worse than a generic message.
+  let releaseAiCredit: (() => Promise<void>) | null = null;
+  if (organizationId) {
+    const authorization = await authorizeAiRequest(organizationId, {
+      requestId: `campaign:message:${organizationId}:${contact.current_touch}`,
+    });
+    if (!authorization.ok) {
+      console.warn(
+        `[campaign] AI personalization skipped (${authorization.reason}); using template`
+      );
+      return substituteVariables(template, contact);
+    }
+    releaseAiCredit = authorization.release;
+  }
+
   try {
     const prompt = MESSAGE_GENERATION_PROMPT
       .replace('{{name}}', contact.name || 'there')
@@ -759,6 +811,13 @@ async function generatePersonalizedMessage(
     return message;
   } catch (error) {
     console.error('Message generation error:', error);
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[campaign] credit release failed', releaseError);
+      }
+    }
     return substituteVariables(template, contact);
   }
 }

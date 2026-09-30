@@ -25,6 +25,7 @@ import sql from '@/app/api/utils/sql';
 import { enqueueJob } from '@/app/api/utils/jobs';
 import { logEvent } from '@/app/api/utils/logger';
 import { callAI } from '@/app/api/utils/ai-provider';
+import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
 import { sendEmailAuto } from '@/app/api/utils/emailProviders';
 import { sendPipelineSMS } from '@/app/api/utils/smsOutreachEngine';
 
@@ -322,8 +323,29 @@ export interface BuyerClassification {
 
 export async function classifyBuyerResponse(
   message: string,
-  buyerContext?: { name: string; previousInteractions: number }
+  buyerContext?: { name: string; previousInteractions: number },
+  organizationId?: string
 ): Promise<BuyerClassification> {
+  // METERING: when `organizationId` is supplied the AI path is gated. On denial
+  // the call degrades to `classifyBuyerResponseFallback` - the same deterministic
+  // keyword classifier already used when the provider is down. A buyer replying
+  // "interested, what's the price?" must still be staged correctly on an
+  // exhausted plan; mis-staging a HOT lead is a worse business failure than the
+  // provider cost. Optional so existing callers keep their previous behaviour.
+  let releaseAiCredit: (() => Promise<void>) | null = null;
+  if (organizationId) {
+    const authorization = await authorizeAiRequest(organizationId, {
+      requestId: `buyer:classify:${organizationId}:${message.length}`,
+    });
+    if (!authorization.ok) {
+      console.warn(
+        `[buyer-classify] AI skipped (${authorization.reason}); using keyword fallback`
+      );
+      return classifyBuyerResponseFallback(message);
+    }
+    releaseAiCredit = authorization.release;
+  }
+
   const prompt = `Classify this investor/buyer response for a real estate wholesale deal.
 
 Message: "${message}"
@@ -368,6 +390,15 @@ Respond in JSON format:
     };
   } catch (e) {
     console.error('[BUYER-CLASSIFY] AI classification failed:', e);
+    // Hand the credit back: the provider work failed, so the customer should
+    // not be charged for it. `release` is idempotent.
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[buyer-classify] credit release failed', releaseError);
+      }
+    }
     // Fallback to keyword-based classification
     return classifyBuyerResponseFallback(message);
   }

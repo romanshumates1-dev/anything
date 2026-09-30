@@ -767,10 +767,16 @@ export async function processNextJob() {
         const payload: any = job.payload;
         const { classifyBuyerResponse, transitionBuyerStage } = await import('./buyerPipelineEngine');
 
-        const classification = await classifyBuyerResponse(payload.message, {
-          name: payload.buyerName,
-          previousInteractions: payload.previousInteractions || 0,
-        });
+        const classification = await classifyBuyerResponse(
+          payload.message,
+          {
+            name: payload.buyerName,
+            previousInteractions: payload.previousInteractions || 0,
+          },
+          // Metered: this job runs on every inbound buyer reply. Without the org
+          // id the call would bypass the credit gate entirely.
+          payload.organizationId
+        );
 
         // Update buyer based on classification
         let newStage = 'CONTACTED';
