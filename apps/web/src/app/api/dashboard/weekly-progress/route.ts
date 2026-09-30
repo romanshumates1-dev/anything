@@ -2,7 +2,32 @@ import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
+import { logFallback } from '@/app/api/utils/queryFallback';
 
+/**
+ * Weekly progress summary (defect #47, rewritten 2026-09-29 against the REAL
+ * schema verified via information_schema).
+ *
+ * The previous version joined `outreach_log` (never existed) and
+ * `inbound_messages` (never existed) and filtered `leads.stage` (the column is
+ * `status`), so the FIRST query threw and one outer `.catch` answered 200 with
+ * all zeros - a "working" widget that was always empty.
+ *
+ * Real sources now used:
+ *   - contacted this/last week -> campaign_lead_queue.last_sent_at (org-scoped)
+ *   - responses this/last week -> campaign_lead_queue.last_reply_at
+ *   - deals in progress        -> leads.status IN ('negotiating','under_contract')
+ *   - closed deals             -> leads.status = 'closed'
+ *   - activity streak          -> distinct days with an outbound message_events row
+ *                                 (falls back to queue sends when the ledger is empty
+ *                                  would be a lie, so the ledger alone is used)
+ *   - total contacted          -> distinct leads in the queue, all time
+ *
+ * Every query carries its own logFallback toward a zero row, so one broken
+ * source degrades that ONE counter (visibly, in the log) instead of silently
+ * zeroing the whole widget; the outer catch now returns 500 instead of a
+ * fake-200 all-zeros payload. The response SHAPE is unchanged.
+ */
 export async function GET() {
   const session = await auth.api.getSession({
     headers: await headers(),
@@ -29,94 +54,85 @@ export async function GET() {
     const lastWeekStart = new Date(thisWeekStart);
     lastWeekStart.setDate(lastWeekStart.getDate() - 7);
 
-    const lastWeekEnd = new Date(thisWeekStart);
-    lastWeekEnd.setMilliseconds(-1);
+    const ZERO = [{ count: '0' }];
 
-    // Query for this week's contacted leads
+    // Contacted = a queued lead that received an outbound touch in the window.
     const [thisWeekContacted] = await sql`
-      SELECT count(DISTINCT l.id) as count
-      FROM leads l
-      JOIN outreach_log o ON o.lead_id = l.id
-      WHERE l.organization_id = ${org.id}
-        AND o.sent_at >= ${thisWeekStart.toISOString()}
-    `;
+      SELECT count(DISTINCT lead_id) as count
+      FROM campaign_lead_queue
+      WHERE organization_id = ${org.id}
+        AND last_sent_at >= ${thisWeekStart.toISOString()}
+    `.catch(logFallback('weekly-progress#contacted-this-week', ZERO));
 
-    // Query for last week's contacted leads
     const [lastWeekContacted] = await sql`
-      SELECT count(DISTINCT l.id) as count
-      FROM leads l
-      JOIN outreach_log o ON o.lead_id = l.id
-      WHERE l.organization_id = ${org.id}
-        AND o.sent_at >= ${lastWeekStart.toISOString()}
-        AND o.sent_at < ${thisWeekStart.toISOString()}
-    `;
+      SELECT count(DISTINCT lead_id) as count
+      FROM campaign_lead_queue
+      WHERE organization_id = ${org.id}
+        AND last_sent_at >= ${lastWeekStart.toISOString()}
+        AND last_sent_at < ${thisWeekStart.toISOString()}
+    `.catch(logFallback('weekly-progress#contacted-last-week', ZERO));
 
-    // Query for this week's responses
+    // Responses = a queued lead that replied in the window.
     const [thisWeekResponses] = await sql`
-      SELECT count(*) as count
-      FROM inbound_messages i
-      JOIN leads l ON l.id = i.lead_id
-      WHERE l.organization_id = ${org.id}
-        AND i.received_at >= ${thisWeekStart.toISOString()}
-    `;
+      SELECT count(DISTINCT lead_id) as count
+      FROM campaign_lead_queue
+      WHERE organization_id = ${org.id}
+        AND last_reply_at >= ${thisWeekStart.toISOString()}
+    `.catch(logFallback('weekly-progress#responses-this-week', ZERO));
 
-    // Query for last week's responses
     const [lastWeekResponses] = await sql`
-      SELECT count(*) as count
-      FROM inbound_messages i
-      JOIN leads l ON l.id = i.lead_id
-      WHERE l.organization_id = ${org.id}
-        AND i.received_at >= ${lastWeekStart.toISOString()}
-        AND i.received_at < ${thisWeekStart.toISOString()}
-    `;
+      SELECT count(DISTINCT lead_id) as count
+      FROM campaign_lead_queue
+      WHERE organization_id = ${org.id}
+        AND last_reply_at >= ${lastWeekStart.toISOString()}
+        AND last_reply_at < ${thisWeekStart.toISOString()}
+    `.catch(logFallback('weekly-progress#responses-last-week', ZERO));
 
-    // Query for this week's deals in progress (negotiating stage)
+    // Deals in progress (real column: leads.status, not stage).
     const [thisWeekDeals] = await sql`
       SELECT count(*) as count
       FROM leads
       WHERE organization_id = ${org.id}
-        AND stage IN ('negotiating', 'contract')
+        AND status IN ('negotiating', 'under_contract')
         AND updated_at >= ${thisWeekStart.toISOString()}
-    `;
+    `.catch(logFallback('weekly-progress#deals-this-week', ZERO));
 
-    // Query for last week's deals
     const [lastWeekDeals] = await sql`
       SELECT count(*) as count
       FROM leads
       WHERE organization_id = ${org.id}
-        AND stage IN ('negotiating', 'contract')
+        AND status IN ('negotiating', 'under_contract')
         AND updated_at >= ${lastWeekStart.toISOString()}
         AND updated_at < ${thisWeekStart.toISOString()}
-    `;
+    `.catch(logFallback('weekly-progress#deals-last-week', ZERO));
 
-    // Query for this week's closed deals
+    // Closed deals.
     const [thisWeekClosed] = await sql`
       SELECT count(*) as count
       FROM leads
       WHERE organization_id = ${org.id}
-        AND stage = 'closed'
+        AND status = 'closed'
         AND updated_at >= ${thisWeekStart.toISOString()}
-    `;
+    `.catch(logFallback('weekly-progress#closed-this-week', ZERO));
 
-    // Query for last week's closed deals
     const [lastWeekClosed] = await sql`
       SELECT count(*) as count
       FROM leads
       WHERE organization_id = ${org.id}
-        AND stage = 'closed'
+        AND status = 'closed'
         AND updated_at >= ${lastWeekStart.toISOString()}
         AND updated_at < ${thisWeekStart.toISOString()}
-    `;
+    `.catch(logFallback('weekly-progress#closed-last-week', ZERO));
 
-    // Calculate streak (days with activity)
+    // Streak: consecutive days (within the last 30) with outbound activity,
+    // measured from the per-message ledger.
     const [streakResult] = await sql`
       WITH daily_activity AS (
-        SELECT DISTINCT DATE(o.sent_at) as activity_date
-        FROM outreach_log o
-        JOIN leads l ON l.id = o.lead_id
-        WHERE l.organization_id = ${org.id}
-          AND o.sent_at >= NOW() - INTERVAL '30 days'
-        ORDER BY activity_date DESC
+        SELECT DISTINCT DATE(created_at) as activity_date
+        FROM message_events
+        WHERE organization_id = ${org.id}
+          AND direction = 'outbound'
+          AND created_at >= NOW() - INTERVAL '30 days'
       )
       SELECT count(*) as streak
       FROM (
@@ -129,15 +145,14 @@ export async function GET() {
         FROM daily_activity
         LIMIT 1
       )
-    `;
+    `.catch(logFallback('weekly-progress#streak', [{ streak: '0' }]));
 
-    // Check for milestones
+    // Milestone basis: all-time distinct contacted leads in the queue.
     const [totalContacted] = await sql`
-      SELECT count(DISTINCT l.id) as count
-      FROM leads l
-      JOIN outreach_log o ON o.lead_id = l.id
-      WHERE l.organization_id = ${org.id}
-    `;
+      SELECT count(DISTINCT lead_id) as count
+      FROM campaign_lead_queue
+      WHERE organization_id = ${org.id}
+    `.catch(logFallback('weekly-progress#total-contacted', ZERO));
 
     let milestone = null;
     const totalContactedCount = parseInt(totalContacted.count);
@@ -154,31 +169,21 @@ export async function GET() {
     }
 
     return Response.json({
-      leadsContacted: parseInt(thisWeekContacted.count),
-      leadsContactedLastWeek: parseInt(lastWeekContacted.count),
-      responsesReceived: parseInt(thisWeekResponses.count),
-      responsesLastWeek: parseInt(lastWeekResponses.count),
-      dealsInProgress: parseInt(thisWeekDeals.count),
-      dealsLastWeek: parseInt(lastWeekDeals.count),
-      dealsClosed: parseInt(thisWeekClosed.count),
-      dealsClosedLastWeek: parseInt(lastWeekClosed.count),
-      streak: parseInt(streakResult?.streak || '0'),
+      leadsContacted: parseInt(thisWeekContacted.count) || 0,
+      leadsContactedLastWeek: parseInt(lastWeekContacted.count) || 0,
+      responsesReceived: parseInt(thisWeekResponses.count) || 0,
+      responsesLastWeek: parseInt(lastWeekResponses.count) || 0,
+      dealsInProgress: parseInt(thisWeekDeals.count) || 0,
+      dealsLastWeek: parseInt(lastWeekDeals.count) || 0,
+      dealsClosed: parseInt(thisWeekClosed.count) || 0,
+      dealsClosedLastWeek: parseInt(lastWeekClosed.count) || 0,
+      streak: parseInt((streakResult as any)?.streak || '0') || 0,
       milestone,
     });
   } catch (error: any) {
+    // Failures reaching here are not covered by the per-counter fallbacks;
+    // a 200 full of zeros would be the defect #47 lie again.
     console.error('GET /api/dashboard/weekly-progress error', error);
-    // Return fallback data on error
-    return Response.json({
-      leadsContacted: 0,
-      leadsContactedLastWeek: 0,
-      responsesReceived: 0,
-      responsesLastWeek: 0,
-      dealsInProgress: 0,
-      dealsLastWeek: 0,
-      dealsClosed: 0,
-      dealsClosedLastWeek: 0,
-      streak: 0,
-      milestone: null,
-    });
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

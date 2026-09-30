@@ -282,7 +282,7 @@ export async function GET(req: NextRequest) {
         COALESCE(SUM(ba.assignment_fee_cents), 0)::bigint as revenue_cents
       FROM campaign_lead_queue clq
       JOIN leads l ON l.id = clq.lead_id
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
       WHERE clq.organization_id = ${orgId}
         AND clq.created_at > now() - (${days} || ' days')::interval
@@ -306,7 +306,7 @@ export async function GET(req: NextRequest) {
           ba.assignment_fee_cents
         FROM campaign_lead_queue clq
         JOIN leads l ON l.id = clq.lead_id
-        LEFT JOIN contracts c ON c.lead_id = l.id
+        LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
         LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
         WHERE clq.organization_id = ${orgId}
           AND clq.created_at > now() - (${days} || ' days')::interval
@@ -398,7 +398,7 @@ export async function GET(req: NextRequest) {
       FROM message_events me
       WHERE me.organization_id = ${orgId}
         AND me.created_at > now() - (${days} || ' days')::interval
-        AND me.type IN ('email', 'sms')
+        AND me.direction = 'outbound'
       GROUP BY COALESCE(me.metadata->>'template', 'default')
       ORDER BY COUNT(*) DESC
       LIMIT 10
@@ -496,7 +496,7 @@ export async function GET(req: NextRequest) {
         COALESCE(l.metadata->>'acquisition_cost_cents', '0')::int as acquisition_cost_cents
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id AND ba.status = 'SIGNED'
       WHERE l.organization_id = ${orgId}
         AND l.created_at > now() - (${days} || ' days')::interval
@@ -600,7 +600,7 @@ export async function GET(req: NextRequest) {
       FROM compliance_records cr
       JOIN leads l ON l.phone = cr.target OR l.email = cr.target
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${orgId}
         AND cr.type = 'consent'
         AND cr.created_at > now() - (${days} || ' days')::interval
@@ -641,7 +641,7 @@ export async function GET(req: NextRequest) {
         COALESCE(AVG(clq.touch_number) FILTER (WHERE clq.status = 'interested'), 0)::numeric(4,2) as avg_touches_to_interest
       FROM leads l
       LEFT JOIN campaign_lead_queue clq ON clq.lead_id = l.id
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${orgId}
         AND l.created_at > now() - (${days} || ' days')::interval
     `.catch(logFallback('advanced-analytics-row#3', [{}])) as any[];
@@ -655,7 +655,7 @@ export async function GET(req: NextRequest) {
         ROUND(COUNT(DISTINCT c.id) FILTER (WHERE c.esign_status = 'signed')::numeric /
               NULLIF(COUNT(DISTINCT l.id), 0) * 100, 2) as contract_rate
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${orgId}
         AND l.created_at > now() - (${days} || ' days')::interval
       GROUP BY COALESCE(l.source, 'Unknown')
@@ -685,9 +685,9 @@ export async function GET(req: NextRequest) {
         GROUP BY clq.status
       ),
       contract_stage AS (
-        SELECT 7 as stage_order, 'contracted' as stage, COUNT(DISTINCT ct.lead_id)::int as count
+        SELECT 7 as stage_order, 'contracted' as stage, COUNT(DISTINCT ct.seller_lead_id)::int as count
         FROM contracts ct
-        JOIN leads l ON l.id = ct.lead_id
+        JOIN leads l ON l.id::text = ct.seller_lead_id
         WHERE l.organization_id = ${orgId}
           AND ct.created_at > now() - (${days} || ' days')::interval
       )

@@ -19,9 +19,18 @@
  *   };
  */
 
-/** Absolute site origin, matching the root layout's metadataBase fallback. */
+/**
+ * Absolute site origin, matching the root layout's metadataBase fallback.
+ *
+ * The fallback must be the production apex we actually serve from. It used to
+ * be `dealflow.ai` — a domain this project does not own — so with
+ * NEXT_PUBLIC_APP_URL unset every canonical and og:url pointed crawlers at
+ * someone else's site (the same defect robots.ts documents having fixed).
+ * Keep this in lockstep with robots.ts and sitemap.ts, which already fall back
+ * to the real apex.
+ */
 export function siteOrigin(): string {
-  return (process.env.NEXT_PUBLIC_APP_URL || 'https://dealflow.ai').replace(/\/+$/, '');
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://dealswiftautomation.com').replace(/\/+$/, '');
 }
 
 /**

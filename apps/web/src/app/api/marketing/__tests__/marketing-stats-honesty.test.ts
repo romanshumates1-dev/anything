@@ -45,7 +45,7 @@ describe('GET /api/marketing/stats — honesty and data minimisation', () => {
       mockSql
         .mockResolvedValueOnce([{ count: '42' }])                        // total users
         .mockResolvedValueOnce([{ count: '7' }])                         // signups this week
-        .mockResolvedValueOnce([{ created_at: new Date().toISOString() }]); // last signup
+        .mockResolvedValueOnce([{ createdAt: new Date().toISOString() }]); // last signup
 
       const res = await GET();
       const body = await res.json();
@@ -59,7 +59,7 @@ describe('GET /api/marketing/stats — honesty and data minimisation', () => {
     mockSql
       .mockResolvedValueOnce([{ count: '1234' }])
       .mockResolvedValueOnce([{ count: '9' }])
-      .mockResolvedValueOnce([{ created_at: new Date().toISOString() }]);
+      .mockResolvedValueOnce([{ createdAt: new Date().toISOString() }]);
 
     const res = await GET();
     const body = await res.json();
@@ -77,5 +77,38 @@ describe('GET /api/marketing/stats — honesty and data minimisation', () => {
     expect(body.dataVerified).toBe(false);
     expect(body.signupsThisWeek).toBe(0);
     expect(body.lastSignupLocation ?? null).toBeNull();
+  });
+
+  // The route queried `created_at` on the Better Auth "user" table, which is
+  // camelCase ("createdAt"). Postgres threw `column "created_at" does not
+  // exist`, the bare catch swallowed it, and every landing-page load was told
+  // verified-looking zeros. The mock now mirrors the real column so the
+  // verified path is actually exercised, not just the failure path.
+  it('reports verified values and a real time-ago from the camelCase user columns', async () => {
+    mockSql
+      .mockResolvedValueOnce([{ count: '42' }])
+      .mockResolvedValueOnce([{ count: '7' }])
+      .mockResolvedValueOnce([{ createdAt: new Date().toISOString() }]);
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(body.dataVerified).toBe(true);
+    expect(body.signupsThisWeek).toBe(7);
+    expect(body.lastSignupTimeAgo).toBe('just now');
+  });
+
+  it('never inverts a missing signup time into an invented one', async () => {
+    // '3 minutes ago' was hardcoded whenever no signup time could be read -
+    // an invented timestamp rendered to real visitors as live activity.
+    mockSql
+      .mockResolvedValueOnce([{ count: '42' }])
+      .mockResolvedValueOnce([{ count: '7' }])
+      .mockResolvedValueOnce([]);
+
+    const res = await GET();
+    const body = await res.json();
+
+    expect(body.lastSignupTimeAgo).toBeNull();
   });
 });

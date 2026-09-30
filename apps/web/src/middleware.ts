@@ -378,6 +378,14 @@ export const config = {
     '/contracts/:path*',
     '/analytics/:path*',
     '/settings/:path*',
+    // /payouts is an authenticated financial surface (wallet, payouts, tax
+    // reports) but was absent from this matcher, so the middleware role gate
+    // never saw it: a signed-in MEMBER still waiting on access, or a
+    // suspended/disabled account, could render the payouts page shell because
+    // the page itself only checks "is there a session?". The middleware is the
+    // only layer that enforces MIN_ACCESS_ROLE, so every session-visible app
+    // page must be listed here.
+    '/payouts/:path*',
     '/health/:path*',
     '/imports/:path*',
   ],

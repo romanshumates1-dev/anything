@@ -34,6 +34,13 @@ export async function GET() {
     let dataVerified = false;
 
     try {
+      // NB: the Better Auth "user" table really is camelCase ("createdAt"),
+      // unlike the rest of the schema (defect #39 / admin/stats). This route
+      // queried created_at on it, Postgres threw `column "created_at" does not
+      // exist` on the WEEKLY query, and the bare catch below swallowed the
+      // error and reported verified-looking zeros to the landing page on every
+      // load. Verified against information_schema, not assumed.
+      //
       // Total users - note: table is "user" not "users"
       const usersResult = await sql`SELECT COUNT(*) as count FROM public."user"`;
       totalUsers = parseInt(usersResult[0]?.count || '0', 10);
@@ -44,27 +51,30 @@ export async function GET() {
 
       const weeklyResult = await sql`
         SELECT COUNT(*) as count FROM public."user"
-        WHERE created_at >= ${weekAgo.toISOString()}
+        WHERE "createdAt" >= ${weekAgo.toISOString()}
       `;
       signupsThisWeek = parseInt(weeklyResult[0]?.count || '0', 10);
 
       // Last signup time (location not available in current schema)
       const lastSignupResult = await sql`
-        SELECT created_at
+        SELECT "createdAt"
         FROM public."user"
-        ORDER BY created_at DESC
+        ORDER BY "createdAt" DESC
         LIMIT 1
       `;
 
       if (lastSignupResult[0]) {
-        lastSignupTime = new Date(lastSignupResult[0].created_at);
+        lastSignupTime = new Date(lastSignupResult[0].createdAt as string);
       }
 
       dataVerified = true;
-    } catch {
-      // Database query failed - return zeros to indicate no verified data
-      // This is expected in development or when tables don't exist
-      console.warn('Marketing stats: DB query failed, returning zeros');
+    } catch (error) {
+      // Database query failed - return zeros to indicate no verified data.
+      // This is a deliberate degradation for a PUBLIC marketing endpoint (the
+      // social-proof widgets hide themselves when dataVerified is false), but
+      // the failure itself is logged with its cause: the blind `catch {}` this
+      // replaces is what let the created_at drift above stay invisible.
+      console.warn('Marketing stats: DB query failed, returning zeros', error);
 
       // Return zeros when we cannot verify real data - UI will handle display appropriately
       totalUsers = 0;
@@ -75,10 +85,15 @@ export async function GET() {
     // Calculate spots remaining (minimum 50 to avoid showing 0)
     const spotsRemaining = Math.max(50, MAX_BETA_SPOTS - totalUsers);
 
-    // Calculate time ago string
+    // Calculate time ago string.
+    // When no signup time could be established (DB unreachable, or genuinely no
+    // users), this is `null` - NOT the hardcoded '3 minutes ago' this route
+    // used to emit. That literal was an invented timestamp shown to real
+    // visitors ("someone just signed up"), the same fabrication class the
+    // random-city bug belonged to. The UI omits the notification when it is null.
     const lastSignupTimeAgo = lastSignupTime
       ? formatTimeAgo(lastSignupTime)
-      : '3 minutes ago';
+      : null;
 
     // Return actual signups count - do not inflate for marketing purposes
     const displaySignups = signupsThisWeek;

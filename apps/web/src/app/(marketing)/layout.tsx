@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "../global.css";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
+import { siteOrigin } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: {
@@ -15,7 +16,11 @@ export const metadata: Metadata = {
     title: "DealFlow AI — Real Estate Lead Intelligence",
     description:
       "AI-powered lead engagement, approval workflows, and compliance for real estate wholesalers and brokers.",
-    url: "https://dealflow.ai",
+    // siteOrigin(), not a literal: og:url used to hard-code `dealflow.ai` (a
+    // domain this project does not own) and ignored NEXT_PUBLIC_APP_URL, so
+    // social scrapers were told the canonical home of every marketing page was
+    // a third party's site.
+    url: siteOrigin(),
     siteName: "DealFlow AI",
     locale: "en_US",
     type: "website",

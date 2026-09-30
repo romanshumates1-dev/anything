@@ -23,8 +23,13 @@ export const metadata: Metadata = {
 	// URLs, which crawlers and social scrapers cannot resolve. Falls back to the
 	// production domain so a missing env var degrades to a correct absolute URL
 	// rather than a broken relative one.
+	//
+	// The fallback is the apex we actually serve from, in lockstep with
+	// lib/seo.ts, robots.ts and sitemap.ts. It previously named `dealflow.ai` -a
+	// domain this project does not own- so a missing env var told crawlers the
+	// canonical copy of every page lived on a third party's site.
 	metadataBase: new URL(
-		(process.env.NEXT_PUBLIC_APP_URL || "https://dealflow.ai").replace(/\/+$/, "")
+		(process.env.NEXT_PUBLIC_APP_URL || "https://dealswiftautomation.com").replace(/\/+$/, "")
 	),
 	// DENY BY DEFAULT (2026-09-27 SEO sweep).
 	//

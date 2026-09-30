@@ -132,6 +132,29 @@ const nextConfig = {
       },
     ];
   },
+  /**
+   * Consolidate the legacy top-level legal URLs onto the canonical documents.
+   *
+   * `/privacy` and `/terms` are orphan hand-written duplicates: nothing in the
+   * app links to them (the footer and every legal reference point at
+   * `/legal/*`), the sitemap lists only `/legal/*`, and the markdown docs under
+   * `content/legal` are the authoritative, version-gated texts. Measured in a
+   * real browser, the legacy routes also emitted an INCOMPLETE head — they
+   * inherited the root layout's title/description and shipped no canonical and
+   * no OpenGraph tags (acceptance #11: `og=0c | canonical=NO`) — while the
+   * canonical documents carry the full tag set. Two live URLs for the same
+   * legal content is also the textbook duplicate-content split.
+   *
+   * A permanent redirect makes the canonical path unambiguous for crawlers and
+   * for any stale bookmark or email link, and it is what keeps `/privacy` and
+   * `/terms` from re-appearing as thin duplicates in search results.
+   */
+  async redirects() {
+    return [
+      { source: '/privacy', destination: '/legal/privacy', permanent: true },
+      { source: '/terms', destination: '/legal/terms', permanent: true },
+    ];
+  },
 };
 
 module.exports = nextConfig;

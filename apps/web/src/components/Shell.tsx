@@ -48,6 +48,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
+  // Pre-access interstitials (/pending-access, /access-restricted) render for
+  // sessions the middleware access gate REJECTS with 403 on every /api call.
+  // Firing the data queries from here produced 3 guaranteed console 403s per
+  // visit - browser-logged resource failures that no JS error handling can
+  // suppress, because the only fix is not making the request. The sidebar
+  // widgets these queries feed are not shown on those pages anyway.
+  const preAccessPage =
+    pathname === '/pending-access' ||
+    pathname === '/access-restricted' ||
+    pathname.startsWith('/pending-access/') ||
+    pathname.startsWith('/access-restricted/');
+
   // Click outside to close dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -82,7 +94,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     },
     staleTime: 60_000,
     retry: 0,
-    enabled: !!session,
+    enabled: !!session && !preAccessPage,
   });
 
   // Alias for backward compatibility
@@ -96,7 +108,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     staleTime: 30_000,
-    enabled: !!session,
+    enabled: !!session && !preAccessPage,
   });
 
   const { data: approvals } = useQuery({
@@ -107,7 +119,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     retry: 0,
-    enabled: !!session,
+    enabled: !!session && !preAccessPage,
   });
 
   const { data: actionQueue } = useQuery({
@@ -119,7 +131,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     },
     retry: 0,
     staleTime: 30_000,
-    enabled: !!session,
+    enabled: !!session && !preAccessPage,
   });
 
   if (isPending) {

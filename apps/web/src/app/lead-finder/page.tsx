@@ -125,6 +125,32 @@ export default function LeadFinderPage() {
     },
   });
 
+  // Apollo.io pull state. The licensed people-search route
+  // (POST /api/lead-finder/apollo) shipped as API-only, so the integration was
+  // unreachable from the product surface it feeds. Error strings come straight
+  // from the route (e.g. the 503 APOLLO_NOT_CONFIGURED explanation) instead of
+  // a generic failure, so an unconfigured deployment says why.
+  const [apolloMessage, setApolloMessage] = useState<string | null>(null);
+  const pullApollo = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/lead-finder/apollo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perPage: 25 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Apollo.io pull failed (${res.status})`);
+      return data;
+    },
+    onSuccess: (data) => {
+      setApolloMessage(
+        `Apollo.io: fetched ${data.fetched ?? 0}, added ${data.inserted ?? 0}, duplicates skipped ${data.duplicates ?? 0}.`
+      );
+      queryClient.invalidateQueries({ queryKey: ['lf-prospects'] });
+    },
+    onError: (err: Error) => setApolloMessage(`Apollo.io: ${err.message}`),
+  });
+
   // Save leads to a new contact list
   const saveListMutation = useMutation({
     mutationFn: async () => {
@@ -236,41 +262,65 @@ export default function LeadFinderPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Lead Finder</h1>
           <p className="text-[var(--text-secondary)] mt-1">Discover motivated sellers from public records</p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex bg-[var(--bg-tertiary)] rounded-lg p-1">
-          <button
-            onClick={() => setActiveTab('public')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'public'
-                ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <Globe className="h-4 w-4" />
-            Public Pool
-            {publicStats.freshLeads > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-xs">
-                {publicStats.freshLeads} fresh
-              </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Tab Switcher */}
+          <div className="flex bg-[var(--bg-tertiary)] rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab('public')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'public'
+                  ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Globe className="h-4 w-4" />
+              Public Pool
+              {publicStats.freshLeads > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-xs">
+                  {publicStats.freshLeads} fresh
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('private')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'private'
+                  ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
+                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Database className="h-4 w-4" />
+              Private Sources
+            </button>
+          </div>
+
+          {/* Apollo.io licensed pull. Sits in the header so it is reachable from
+              BOTH tabs (it is an ingest action, not a per-tab filter), and it
+              wires the existing admin-only route into the UI. */}
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={() => pullApollo.mutate()}
+              disabled={pullApollo.isPending}
+              title="Pull licensed Apollo.io people-search results into your private sourced leads (admin action)"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[var(--text-primary)] hover:border-[var(--accent-blue)] transition-all disabled:opacity-60"
+            >
+              {pullApollo.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 text-[var(--accent-blue)]" />
+              )}
+              Pull from Apollo.io
+            </button>
+            {apolloMessage && (
+              <p className="text-xs max-w-xs text-right text-[var(--text-secondary)]">{apolloMessage}</p>
             )}
-          </button>
-          <button
-            onClick={() => setActiveTab('private')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'private'
-                ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <Database className="h-4 w-4" />
-            Private Sources
-          </button>
+          </div>
         </div>
       </div>
 
