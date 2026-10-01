@@ -7,8 +7,16 @@ import { enqueueJob } from '../../utils/jobs';
 import { logEvent } from '../../utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
+import { providerFailureResponse } from '@/app/api/utils/providerFailureResponse';
 
 const MAX_MESSAGE_LENGTH = 4000;
+/**
+ * Declared body size ceiling. The message itself is capped at 4KB, so a body
+ * far larger than that is either an oversized payload or an attempted memory
+ * exhaustion — rejected on the DECLARED length before a byte is parsed.
+ * Chunked uploads without content-length fall through to the parsed checks.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
 
 export async function POST(request: Request) {
   // SECURITY: this endpoint triggers paid AI calls and outbound messaging.
@@ -26,27 +34,63 @@ export async function POST(request: Request) {
     return Response.json({ error: 'No organization' }, { status: 403 });
   }
 
+  // Declared-size guard FIRST: a 4KB message cannot legitimately arrive in a
+  // 64KB+ body, and parsing before rejecting hands the requester the memory
+  // allocation they asked for.
+  const declaredLength = Number(request.headers.get('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return Response.json({ error: 'Request body too large' }, { status: 413 });
+  }
+
+  // A malformed body is a 400, not a 500 (and never reaches the credit gate).
+  let body: {
+    leadId?: unknown;
+    message?: unknown;
+    channel?: unknown;
+  };
   try {
-    const body = await request.json();
-    const { leadId, message, channel = 'sms' } = body;
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-    // ---- Input validation ----
-    if (!leadId || typeof message !== 'string' || message.trim().length === 0) {
-      return Response.json(
-        { error: 'Lead ID and a non-empty message are required' },
-        { status: 400 }
-      );
-    }
-    if (!['sms', 'email'].includes(channel)) {
-      return Response.json({ error: 'Invalid channel' }, { status: 400 });
-    }
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return Response.json(
-        { error: `Message exceeds ${MAX_MESSAGE_LENGTH} characters` },
-        { status: 413 }
-      );
-    }
+  const { message } = body;
+  const leadIdInput = body.leadId;
+  const channelInput = body.channel ?? 'sms';
 
+  // ---- Input validation ----
+  if (!leadIdInput || typeof message !== 'string' || message.trim().length === 0) {
+    return Response.json(
+      { error: 'Lead ID and a non-empty message are required' },
+      { status: 400 }
+    );
+  }
+  if (channelInput !== 'sms' && channelInput !== 'email') {
+    return Response.json({ error: 'Invalid channel' }, { status: 400 });
+  }
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return Response.json(
+      { error: `Message exceeds ${MAX_MESSAGE_LENGTH} characters` },
+      { status: 413 }
+    );
+  }
+
+  // Narrowed by the checks above: a numeric id and a literal channel union.
+  // Both still reach the DB as bound parameters (never interpolated).
+  const leadId = Number(leadIdInput);
+  if (!Number.isInteger(leadId) || leadId <= 0) {
+    return Response.json({ error: 'Invalid lead id' }, { status: 400 });
+  }
+  const channel: 'sms' | 'email' = channelInput;
+
+  // Set once the gate has charged; cleared the moment the charge becomes
+  // legitimate (a draft the caller actually receives) or is compensated. The
+  // outer handler uses it so a failure AFTER the provider call — a persist or
+  // queue error — hands the credit back instead of billing for a draft the
+  // customer never got.
+  let releaseAiCredit: (() => Promise<void>) | null = null;
+
+  try {
     // 1. Load lead (SECURITY: scoped to organization to prevent IDOR)
     const [lead] = await sql`SELECT * FROM leads WHERE id = ${leadId} AND organization_id = ${org.id} LIMIT 1`;
     if (!lead) return Response.json({ error: 'Lead not found' }, { status: 404 });
@@ -111,6 +155,7 @@ export async function POST(request: Request) {
         { status: 402 }
       );
     }
+    releaseAiCredit = authorization.release;
 
     // 6. Orchestrate the AI response (consumes the credit taken above).
     let decision;
@@ -119,12 +164,23 @@ export async function POST(request: Request) {
     } catch (aiError) {
       // The credit is paid back when the provider work fails, so an outage
       // cannot silently consume the customer's included or purchased credits.
+      let creditReleased = false;
       try {
         await authorization.release();
+        creditReleased = true;
+        // Compensated here; the outer handler must not release a second time.
+        releaseAiCredit = null;
       } catch (releaseError) {
         console.error('[conversations/message] credit release failed', releaseError);
       }
-      throw aiError;
+      // NOT a rethrow: `orchestrateAIResponse` rethrows everything it catches,
+      // so the old `throw` dropped the caller into the outer handler and the
+      // user saw an opaque "Internal Server Error" 500 for what was really a
+      // billing/credential outage upstream. Provider failure => 502 + hint.
+      return providerFailureResponse(aiError, {
+        context: 'conversations/message',
+        creditReleased,
+      });
     }
 
     // 7. Server-side human-in-the-loop enforcement. The model's own flag is a
@@ -173,6 +229,10 @@ export async function POST(request: Request) {
       session.user.id
     );
 
+    // The caller is getting the draft, so the charge stands: clear the
+    // compensation pointer before the response leaves the handler.
+    releaseAiCredit = null;
+
     return Response.json({
       response: decision.response_text,
       requiresHuman,
@@ -180,6 +240,15 @@ export async function POST(request: Request) {
       queued,
     });
   } catch (error: any) {
+    // The provider ran, so the inner handler did not fire — but the request
+    // still produced nothing the customer can use. Hand the credit back.
+    if (releaseAiCredit) {
+      try {
+        await releaseAiCredit();
+      } catch (releaseError) {
+        console.error('[conversations/message] credit release failed', releaseError);
+      }
+    }
     console.error('POST /api/conversations/message error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });
   }

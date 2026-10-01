@@ -48,6 +48,18 @@ export default function SupportChat() {
     }
   }, [isOpen]);
 
+  // Keyboard: Escape dismisses the dialog (a dialog that only closes by
+  // pointer is a keyboard trap). Listener lives on the document so it works
+  // regardless of which element inside the panel has focus.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoading) return;
 
@@ -178,6 +190,12 @@ export default function SupportChat() {
       {/* Chat Panel */}
       <div
         role="dialog"
+        aria-modal="true"
+        aria-hidden={!isOpen}
+        // aria-hidden alone leaves the closed panel's input/buttons reachable
+        // by Tab, which is a keyboard trap. `inert` (React 19) removes the
+        // whole subtree from focus and the a11y tree while it is closed.
+        inert={!isOpen}
         aria-label="DealFlow support chat"
         className={`fixed bottom-32 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] rounded-xl shadow-2xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] transition-all duration-300 transform ${
           isOpen

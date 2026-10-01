@@ -4,6 +4,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { headers } from 'next/headers';
 import { callAI } from '@/app/api/utils/ai-provider';
 import { authorizeAiRequest } from '@/app/api/utils/aiCreditGate';
+import { providerFailureResponse } from '@/app/api/utils/providerFailureResponse';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
 import sql from '@/app/api/utils/sql';
 import crypto from 'crypto';
@@ -52,92 +53,146 @@ export async function POST(request: NextRequest) {
   // failed request must never silently burn the customer's credits.
   let releaseAiCredit: (() => Promise<void>) | null = null;
 
+  // A MALFORMED BODY IS A 400, NOT A 500. This sits outside the main try so a
+  // broken payload can never be misreported as a server-side failure (and never
+  // reaches the credit gate).
+  let body: {
+    prompt: string;
+    campaignGoal?: string;
+    targetAudience?: string;
+    tone?: 'professional' | 'friendly' | 'direct' | 'empathetic';
+    channel?: 'sms' | 'email';
+    includeFollowUps?: boolean;
+    numberOfFollowUps?: number;
+  };
   try {
-    const body = await request.json();
-    const {
-      prompt,
-      campaignGoal,
-      targetAudience,
-      tone = 'professional',
-      channel = 'sms',
-      includeFollowUps = true,
-      numberOfFollowUps = 2,
-    } = body as {
-      prompt: string;
-      campaignGoal?: string;
-      targetAudience?: string;
-      tone?: 'professional' | 'friendly' | 'direct' | 'empathetic';
-      channel?: 'sms' | 'email';
-      includeFollowUps?: boolean;
-      numberOfFollowUps?: number;
-    };
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
 
-    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 10) {
+  const {
+    prompt,
+    campaignGoal,
+    targetAudience,
+    tone = 'professional',
+    channel = 'sms',
+    includeFollowUps = true,
+    numberOfFollowUps = 2,
+  } = body;
+
+  // ---- VALIDATION — ALL BEFORE THE CREDIT GATE ----
+  //
+  // Ordering is load-bearing and was previously violated: the input-bounds
+  // checks ran AFTER `authorizeAiRequest`, so an over-long prompt consumed a
+  // credit and then returned 400 without ever handing it back — a paid
+  // rejection. Every rule here matches the documented invariant "an invalid
+  // request must not be charged".
+  if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 10) {
+    return NextResponse.json(
+      { error: 'Please provide a description of at least 10 characters' },
+      { status: 400 }
+    );
+  }
+
+  if (prompt.length > MAX_PROMPT_CHARS) {
+    return NextResponse.json(
+      { error: `Description must be at most ${MAX_PROMPT_CHARS} characters` },
+      { status: 400 }
+    );
+  }
+
+  for (const [name, value] of [
+    ['Campaign goal', campaignGoal],
+    ['Target audience', targetAudience],
+  ] as const) {
+    if (value !== undefined && String(value).length > MAX_AUX_CHARS) {
       return NextResponse.json(
-        { error: 'Please provide a description of at least 10 characters' },
+        { error: `${name} must be at most ${MAX_AUX_CHARS} characters` },
         { status: 400 }
       );
     }
+  }
 
-    // Phase 11 credit gate — AFTER validation (an invalid request must not be
-    // charged) and BEFORE any provider call. INCLUDED plan credits are capped
-    // per UTC day/week/month; purchased credits fall through and are never
-    // capped. Denial is a 402 with nothing charged.
-    const authorization = await authorizeAiRequest(organization.id);
-    if (!authorization.ok) {
-      return NextResponse.json(
-        {
-          error: authorization.message,
-          reason: authorization.reason,
-          code: 'INSUFFICIENT_CREDITS',
-        },
-        { status: 402 }
-      );
-    }
-    releaseAiCredit = authorization.release;
+  // `channel` and `tone` are interpolated into the SYSTEM prompt (see
+  // buildSystemPrompt) and persisted. They arrive as untyped JSON, so without
+  // an allowlist here a caller could push arbitrary-length, arbitrary-content
+  // text past every ceiling above and straight into the provider request —
+  // both a prompt-injection vector and a cost amplifier. Enums, not slices.
+  if (channel !== 'sms' && channel !== 'email') {
+    return NextResponse.json(
+      { error: "channel must be 'sms' or 'email'" },
+      { status: 400 }
+    );
+  }
+  if (!['professional', 'friendly', 'direct', 'empathetic'].includes(tone)) {
+    return NextResponse.json({ error: 'Unknown tone' }, { status: 400 });
+  }
+  if (
+    numberOfFollowUps !== undefined &&
+    (!Number.isInteger(numberOfFollowUps) || numberOfFollowUps < 0 || numberOfFollowUps > 5)
+  ) {
+    return NextResponse.json(
+      { error: 'numberOfFollowUps must be an integer between 0 and 5' },
+      { status: 400 }
+    );
+  }
 
-    // AI INPUT BOUNDS (2026-09-26). These three fields are user-controlled and
-    // (a) are interpolated into the prompt sent to the model and (b) are
-    // PERSISTED to generated_templates. Only a minimum was enforced, so a
-    // single request could push megabytes into a provider call and into the
-    // database. Bounds are explicit, and the values are truncated to them
-    // before use so no code path can bypass the limit by calling the builders
-    // directly.
-    if (prompt.length > MAX_PROMPT_CHARS) {
-      return NextResponse.json(
-        { error: `Description must be at most ${MAX_PROMPT_CHARS} characters` },
-        { status: 400 }
-      );
-    }
-    for (const [name, value] of [
-      ['Campaign goal', campaignGoal],
-      ['Target audience', targetAudience],
-    ] as const) {
-      if (value !== undefined && String(value).length > MAX_AUX_CHARS) {
-        return NextResponse.json(
-          { error: `${name} must be at most ${MAX_AUX_CHARS} characters` },
-          { status: 400 }
-        );
-      }
-    }
+  // Phase 11 credit gate — AFTER validation (an invalid request is never
+  // charged) and BEFORE any provider call. INCLUDED plan credits are capped
+  // per UTC day/week/month; purchased credits fall through and are never
+  // capped. Denial is a 402 with nothing charged.
+  const authorization = await authorizeAiRequest(organization.id);
+  if (!authorization.ok) {
+    return NextResponse.json(
+      {
+        error: authorization.message,
+        reason: authorization.reason,
+        code: 'INSUFFICIENT_CREDITS',
+      },
+      { status: 402 }
+    );
+  }
+  releaseAiCredit = authorization.release;
 
+  try {
     // Build the system prompt for template generation
     const systemPrompt = buildSystemPrompt(channel, tone);
     const userPrompt = buildUserPrompt(
-      prompt.slice(0, MAX_PROMPT_CHARS),
-      campaignGoal ? String(campaignGoal).slice(0, MAX_AUX_CHARS) : campaignGoal,
-      targetAudience ? String(targetAudience).slice(0, MAX_AUX_CHARS) : targetAudience,
+      prompt,
+      campaignGoal ? String(campaignGoal) : campaignGoal,
+      targetAudience ? String(targetAudience) : targetAudience,
       channel,
       includeFollowUps,
       numberOfFollowUps
     );
 
-    // Call AI to generate the template
-    const aiResponse = await callAI({
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-      maxTokens: 1500,
-    });
+    // Call AI to generate the template. A provider failure (billing,
+    // credentials, outage) is NOT a 500: it is upstream of this service, so it
+    // gets an actionable 502 with the credit handed back — the same treatment
+    // negotiation/analyze and conversations/message now give it.
+    let aiResponse: Awaited<ReturnType<typeof callAI>>;
+    try {
+      aiResponse = await callAI({
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        maxTokens: 1500,
+      });
+    } catch (error) {
+      let creditReleased = false;
+      if (releaseAiCredit) {
+        try {
+          await releaseAiCredit();
+          creditReleased = true;
+        } catch (releaseError) {
+          console.error('POST /api/templates/generate credit release failed', releaseError);
+        }
+      }
+      return providerFailureResponse(error, {
+        context: 'templates/generate',
+        creditReleased,
+      });
+    }
 
     // Parse the AI response
     const parsed = parseAIResponse(aiResponse.text, channel, includeFollowUps);
