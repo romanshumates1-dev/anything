@@ -80,7 +80,7 @@ transient failure was seen while the suite ran concurrently with typecheck
 (`bankAccounts.security.test.ts` beforeAll hook timeout at 60s); it passes
 10/10 in isolation in 8.5s, so it is a load flake, not a regression.
 
-### C3. FRESH RE-RUN — 2026-09-30, commit <pending> (silent-failure sweep + rate-limit bypass + download-authz)
+### C3. FRESH RE-RUN — 2026-09-30, commit 3e86c54 (silent-failure sweep + rate-limit bypass + download-authz)
 
 Work: `trustSignals.ts` 6→0, `campaigns/monitor/route.ts` 7→0,
 `pipeline-health-engine.ts` 7→0 silent catches (all now `logFallback`; fail
