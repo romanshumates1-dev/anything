@@ -34,6 +34,7 @@
  */
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useSession } from '@/lib/auth-client';
 
 export interface AccessibilityPrefs {
   fontFamily: 'default' | 'dyslexic';
@@ -168,7 +169,28 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   // The server copy is authoritative and wins whenever it actually carries a
   // stored value. If it does not (signed-out visitor, or a user who never set
   // anything) the cached/default value stands.
+  //
+  // WHY THE SESSION GATE (C4 console-error fix): this fetch used to fire for
+  // EVERY visitor. For an anonymous one /api/user/preferences answers 401, and
+  // the browser logs a 401 response as a console error
+  // ("Failed to load resource: the server responded with a status of 401").
+  // It was showing up on every public page load - /, /dashboard, /reviews.
+  // A signed-out visitor has no stored preferences to reconcile, so the only
+  // correct fix is to not ask. The cached/default values still apply, which is
+  // exactly the pre-existing behaviour for that visitor.
+  const { data: session } = useSession();
+
   useEffect(() => {
+    // Still resolving the session: wait rather than firing a request whose
+    // answer we would only have to discard a moment later.
+    if (!session) {
+      // A signed-out visitor has nothing stored server-side to reconcile, so
+      // "loading" is over for them. Stating it explicitly keeps `loading`
+      // honest for any future caller instead of leaving it stuck at true.
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
@@ -196,7 +218,7 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [session]);
 
   const persist = (next: AccessibilityPrefs) => {
     setPrefs(next);

@@ -41,7 +41,11 @@ const navItems = [
 ];
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { data: session, isPending } = useSession();
+  // `isPending` is intentionally NOT destructured: it is true for the entire
+  // server render, so branching on it withheld the page (see the note above
+  // the `!session` check). `useSession()` reports the same "unknown" state via
+  // `data === null`, which is what the layout decision below keys on.
+  const { data: session } = useSession();
   const pathname = usePathname();
   const router = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -134,14 +138,32 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     enabled: !!session && !preAccessPage,
   });
 
-  if (isPending) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
-      </div>
-    );
-  }
-
+  // SSR / FIRST-PAINT BEHAVIOUR (C4 fix) - read this before "simplifying".
+  //
+  // `useSession()` is a CLIENT hook. During server rendering no session fetch
+  // has run and none can, so `isPending` is ALWAYS true on the server. The
+  // previous code answered that with an early `return <spinner/>`, which meant
+  // the spinner - not `children` - was the server-rendered HTML of EVERY route
+  // in the app.
+  //
+  // Measured on a real `next start` before the fix:
+  //   /reviews 200, 26,611 bytes, VISIBLE TEXT = 0 chars
+  //   /pricing 200, 61,577 bytes, VISIBLE TEXT = 0 chars
+  //   /faq     200, 44,503 bytes, VISIBLE TEXT = 0 chars
+  //   /trust   200, 42,758 bytes, VISIBLE TEXT = 0 chars
+  //
+  // Consequences that are real defects, not cosmetics:
+  //   - the indexable marketing pages shipped no crawlable text;
+  //   - the /reviews schema.org AggregateRating, which page.tsx renders
+  //     server-side on purpose, never reached the HTML;
+  //   - first paint was a spinner, so LCP measured a loading icon.
+  //
+  // An UNKNOWN session is therefore treated as "signed out" FOR LAYOUT ONLY.
+  // This is not an authorization change: the sidebar is chrome, never a
+  // security boundary. Middleware plus the per-route and per-API session
+  // checks are what gate data, and they run server-side regardless. Keeping
+  // `!session` below means an unknown session still cannot see the sidebar,
+  // so no authenticated navigation is exposed before the session resolves.
   if (!session) {
     return <>{children}</>;
   }

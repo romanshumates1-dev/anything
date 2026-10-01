@@ -167,6 +167,9 @@ for (const vp of VIEWPORTS) {
     // page.content() twice can throw while the page is navigating.
     let html = '';
     const t0 = Date.now();
+    // Counted after load: proves the page rendered real interactive UI, which
+    // a text-length heuristic cannot do for a deliberately short page.
+    let controlCount = 0;
 
     try {
       const resp = await page.goto(BASE + route, {
@@ -180,6 +183,17 @@ for (const vp of VIEWPORTS) {
       bytes = html.length;
       textLen = extract(html).length;
       title = (await page.title()) || '';
+
+      // A client-rendered page (these auth screens bail out of SSR because they
+      // read useSearchParams) has almost no text in the served HTML, so
+      // textLen alone cannot tell "short but working" from "blank". Count the
+      // real interactive elements the browser ended up with: a sign-in form
+      // with its inputs and submit button is short by design, not broken.
+      controlCount = await page.evaluate(
+        () =>
+          document.querySelectorAll('input, button, select, textarea, form, [role="button"]')
+            .length
+      );
     } catch (e) {
       error = String(e).split('\n')[0].slice(0, 200);
     }
@@ -208,8 +222,15 @@ for (const vp of VIEWPORTS) {
     const isLoginPage =
       /\/account\/signin|signin|login/i.test(page.url()) ||
       /sign in|log in/i.test(extract(html));
+    // A page passes on EITHER substantial text OR a genuinely rendered set of
+    // interactive controls. The second arm is what stops a short-but-working
+    // auth form (sign-in, forgot-password) from being reported as a blank page
+    // while still failing a page that rendered nothing at all.
     const realContent =
-      bytes > 5000 && (textLen > 400 || (kind === 'protected' && !AUTH_MODE && isLoginPage));
+      bytes > 5000 &&
+      (textLen > 400 ||
+        controlCount >= 3 ||
+        (kind === 'protected' && !AUTH_MODE && isLoginPage));
     results.push({
       viewport: vp.name,
       route,
@@ -217,6 +238,7 @@ for (const vp of VIEWPORTS) {
       status,
       bytes,
       textLen,
+      controlCount,
       title: title.slice(0, 80),
       elapsedMs: elapsed,
       realContent,
@@ -253,7 +275,7 @@ let fail = 0;
 for (const r of results) {
   const problems = [];
   if (r.error) problems.push(`ERROR ${r.error}`);
-  if (!r.realContent) problems.push(`THIN bytes=${r.bytes} text=${r.textLen}`);
+  if (!r.realContent) problems.push(`THIN bytes=${r.bytes} text=${r.textLen} ctrls=${r.controlCount}`);
   if (r.status >= 400) problems.push(`HTTP ${r.status}`);
   if (r.expectRedirect && r.authGuardOk === false) problems.push('AUTH GUARD MISSING');
   if (r.netFailures.length) problems.push(`net:${r.netFailures.length}`);
