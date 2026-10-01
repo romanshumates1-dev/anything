@@ -15,13 +15,18 @@
  *           socialProviders block (the platform injects the OAuth credentials
  *           via env vars when a provider is enabled in project settings).
  */
-import { Pool, neonConfig } from '@neondatabase/serverless';
+import { Pool, neon, neonConfig } from '@neondatabase/serverless';
 import { argon2Verify } from 'argon2-wasm-edge';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
 import { isCloudflareWorkers, resolveWebSocketConstructor } from '@/lib/websocket';
+
+/** The shape better-auth accepts as its `database` option. */
+type BetterAuthDatabase = NonNullable<
+  ConstructorParameters<typeof betterAuth>[0]['database']
+>;
 
 import {
   ROLE_ADMIN,
@@ -85,6 +90,48 @@ if (isCloudflareWorkers()) {
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+/**
+ * ⚠ WORKERS: better-auth must NOT talk to Neon over the pooled WebSocket
+ * -------------------------------------------------------------------------
+ * Measured in production 2026-10-01: 12 authenticated routes returned HTTP
+ * 500 on the deployed Worker while returning 200 under `next start`, and
+ * `wrangler tail` reported, verbatim:
+ *
+ *   Error: Cannot perform I/O on behalf of a different request. I/O objects
+ *   (such as streams, request/response bodies, and others) created in the
+ *   context of one request handler cannot be accessed from a different
+ *   request's handler.
+ *
+ *   Error: The Workers runtime canceled this request because it detected that
+ *   your Worker's code had hung and would never generate a response.
+ *
+ * That second line is the "Worker exceeded resource limits" symptom the
+ * product has been reporting: the request never completes, so workerd kills it.
+ *
+ * workerd ties every I/O object to the request that created it. A WebSocket
+ * opened while serving request A is A's object, so a MODULE-SCOPE pool reused
+ * by request B is touching a dead object's socket and is refused. Node imposes
+ * no such rule, which is why no local gate could ever see this.
+ *
+ * WHY `poolQueryViaFetch` WAS NOT ENOUGH (tried first, deployed, did NOT fix
+ * it - recorded so nobody repeats it): `NeonPool.query` short-circuits to the
+ * WebSocket whenever `hasFetchUnsupportedListeners` is set, and that flag is
+ * latched to true by ANY `.on(event, ...)` subscription on the pool. better-auth
+ * subscribes to pool events, so the flag is set and the HTTP path is skipped
+ * no matter what `neonConfig.poolQueryViaFetch` says. The flag cannot be unset.
+ *
+ * So on Workers better-auth is given an HTTP-backed adapter instead of the
+ * pool: every query is a self-contained fetch, created and consumed inside the
+ * request that issued it, so there is no cross-request I/O object at all.
+ * Node keeps the pooled WebSocket path, which is faster there and works today.
+ */
+const sessionDatabase: BetterAuthDatabase = isCloudflareWorkers()
+  ? ({
+      query: (text: string, params?: unknown[]) =>
+        neon(process.env.DATABASE_URL ?? '').query(text, params as never),
+    } as unknown as BetterAuthDatabase)
+  : (pool as unknown as BetterAuthDatabase);
 
 // RANDOM SIGN-OUT FIX: better-auth's internal session reads (getSession →
 // session table) and the databaseHooks below all flow through pool.query.
@@ -164,7 +211,7 @@ async function verifyCompatiblePassword({
 }
 
 export const auth = betterAuth({
-  database: pool,
+  database: sessionDatabase,
   trustedOrigins,
   socialProviders,
   emailAndPassword: {

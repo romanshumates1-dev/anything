@@ -113,7 +113,24 @@ console.log('');
   await db`
     UPDATE organization_members SET role = 'OWNER' WHERE user_id = ${userId}
   `;
+  console.log('');
   console.log(`promoted the probe account to ADMIN/OWNER (user ${userId.slice(0, 8)}…)`);
+  console.log('');
+}
+
+/**
+ * RUNTIME DETECTOR CHECK.
+ *
+ * The C9 fix gates the Neon HTTP transport on `isCloudflareWorkers()`, which
+ * tests `navigator.userAgent === 'Cloudflare-Workers'`. That guard is the one
+ * thing between the fix and the 12 failing routes, so it is worth proving at
+ * runtime rather than assuming: a route that reports the value it observes
+ * turns "is the detector right?" from a guess into a fact.
+ */
+{
+  const res = await fetch(`${BASE}/api/system/health`);
+  const body = await res.json();
+  console.log(`runtime probe: ${JSON.stringify(body)}`);
   console.log('');
 }
 
