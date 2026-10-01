@@ -7,11 +7,16 @@ Status values: NOT_STARTED | IN_PROGRESS | PARTIAL | BLOCKED | UNVERIFIED | COMP
 COMPLETE requires evidence. Code existing is NOT completion.
 
 Last updated: 2026-10-01. Branch `feat/cloudflare-workers`.
-Headline: **C4 full runtime gate green — build exit 0, browser QA 70/70, unit
-2821/0, security 18/0, tenant 15/0 leaks, API probe PASS, E2E 2 passed.** The
-gate also caught and fixed a severe defect: the app shell was withholding
-*every* page's server-rendered HTML (0 visible text site-wide), which had
-silently removed all crawlable text and the reviews schema.org markup.
+Headline: **C6 — the first real production deploy. Live-verified on
+dealswiftautomation.com.** The C4 SSR fix is deployed (all 13 public routes went
+from 0 visible text to 1,031–7,105 chars, no spinners). Auditing the live site
+then exposed a second defect no local gate could see: every static `/legal/*`
+page 404'd in production because `lib/legal.ts` read markdown with Node's `fs`
+on a filesystem-less runtime — `/privacy` and `/terms` redirected into dead
+pages, and the sitemap lists both. Fixed via a build-time generated module and
+deployed; all 10 legal pages and `/api/legal` (9 docs) are live.
+Gates: typecheck 0 errors · unit 2826/0 · build PASS · deploy `6dca42a2` ·
+post-deploy live sweep 20/20.
 
 ## A. ORIGINAL 17 REQUESTED ITEMS
 
@@ -23,7 +28,7 @@ silently removed all crawlable text and the reviews schema.org markup.
 | 4 | Third-party lead sources + pricing/upcharge | PARTIAL | Buyer discovery + upcharge implemented. Billing path not re-verified. |
 | 5 | Free-trial demo/mock data | PARTIAL | 14-day trial created on signup (verified). Demo-data safety not re-audited. |
 | 6 | Performance | UNVERIFIED | Original 5-10s complaint. No measurement this session. MUST measure. |
-| 7 | Complete site functionality | PARTIAL | **Browser QA 70/70 confirmed at C4** (35 routes × desktop+mobile, 0 console errors, 0 non-2xx). All pages load and render. Authenticated interactive flows still not clicked through in a browser. |
+| 7 | Complete site functionality | PARTIAL | **Live-verified 2026-10-01:** all 20 public routes healthy on the deployed Worker, 0 spinners, 0 console errors. Authenticated interactive flows still not clicked through in a real browser. |
 | 8 | Shopify / purchases / withdrawals | PARTIAL | Architecture not decided (lead source vs checkout rail). Withdrawals exist. |
 | 9 | Subscriptions / billing | UNVERIFIED | Stripe keys absent -> BLOCKED for live; plan gate passed (7 plans). |
 | 10 | AI weekly/daily credit limits | COMPLETE | **C5 verified.** Included credits capped at M/4 weekly (25%) and M/20 daily (20% of weekly), keyed on UTC day / ISO week / calendar month. Purchased credits are a separate bucket the caps never touch. 58/0 tests incl. PGlite: cap denial, boundary reset, tenant isolation, no oversell under concurrency, repeated requestId no double-charge, purchased still served at cap. |
@@ -221,25 +226,110 @@ now reports **29 passed / 0 skipped / 0 todo**.
 Still NOT verified, unchanged: any real payment-provider behaviour, Shopify,
 Apollo live ingestion, and the Cloudflare Worker runtime.
 
+### C6. FIRST PRODUCTION DEPLOY + WORKERS LEGAL 404 — 2026-10-01, commits 0acc701 / 9a563c9
+
+The first time local fixes were actually **deployed and verified on the live
+domain**. Two production defects were found and fixed; one of them was
+invisible to every local gate.
+
+#### C6.1 The SSR fix, deployed
+
+`0acc701` was live-verified against `https://dealswiftautomation.com`.
+Before → after, all measured on the deployed Worker:
+
+| Route | Visible text before | after |
+|---|---|---|
+| `/` | 0 | **7,105** |
+| `/pricing` | 0 | **6,013** |
+| `/features` | 0 | 3,949 |
+| `/about` | 0 | 2,216 |
+| `/contact` | 0 | 1,087 |
+| `/faq` | 0 | 4,247 |
+| `/reviews` | 0 | 1,036 |
+| `/trust` | 0 | 2,900 |
+| `/how-it-works` | 0 | 3,107 |
+| `/cash-offer` | 0 | 1,231 |
+
+Zero spinners remain on any public route. `/reviews` now carries its
+`application/ld+json` `AggregateRating` **in the visible HTML** (it previously
+existed only inside the RSC payload), with correct `<title>` and canonical.
+
+#### C6.2 `/legal/*` returned 404 in production (defect #52)
+
+Found only by auditing the live site after deploying. Baseline captured before
+the fix: **all 13 public routes served 0 visible text**, and every static
+`/legal/*` page 404'd while returning 200 locally.
+
+| Route | Local | Production (before) | Production (after) |
+|---|---|---|---|
+| `/legal/privacy` | 200 | **404** | 200, 8,701 chars |
+| `/legal/terms` | 200 | **404** | 200, 8,731 chars |
+| `/legal/disclaimers` | 200 | **404** | 200, 8,210 chars |
+| `/legal/refunds` | 200 | **404** | 200, 2,405 chars |
+| `/legal/acceptable-use` | 200 | **404** | 200, 2,477 chars |
+| `/legal/esign` / `sms-terms` / `dmca` / `cookies` | 200 | **404** | 200 each |
+| `/api/legal` | 200 (9 docs) | **200 `[]`** | 200, **9 docs** |
+
+`/privacy` and `/terms` 308-redirect into these pages, so two of the most
+linked legal pages on the site were unreachable, and the sitemap lists both.
+
+**Root cause:** `lib/legal.ts` read `content/legal/*.md` through Node's `fs` on
+every call. Cloudflare Workers has no filesystem — `readFileSync` throws,
+`readdirSync` returns nothing. `LegalDocPage` converts a null doc into
+`notFound()`, so the failure presented as a clean 404 rather than an error,
+which is exactly why it survived every local gate. The `.md` files do ship
+inside the Worker bundle, but nothing there can read them.
+
+**Fix:** the markdown stays the single source of truth on disk; only the read
+path moves. `scripts/generate-legal-docs.mjs` bakes the corpus into
+`src/lib/legal-docs.generated.ts` at build time and `cf:build` runs it first, so
+it cannot drift. `lib/legal.ts` has no `fs` dependency at all. Placeholder
+substitution still happens at request time, so a deployment can override the
+entity name via env without a rebuild.
+
+**Honest note on method:** my first hypothesis was `generateMetadata()` opting
+these pages out of static prerendering. I changed all nine to static
+`export const metadata`, deployed, and **they still 404'd** — so that
+hypothesis was wrong. The `static-metadata.guard.test.ts` ratchet was kept
+because the underlying property is still correct, but the `fs` dependency is
+the real cause. Recording this because the first fix did not work and the
+second one did.
+
+#### C6.3 `cf:deploy` was broken on Windows (defect #53)
+
+`"cf:deploy": "yarn cf:gate && OPEN_NEXT_DEPLOY=true wrangler deploy"` is
+POSIX syntax. npm runs lifecycle scripts through `cmd.exe` on Windows, which
+tried to execute the literal string as a program:
+`'OPEN_NEXT_DEPLOY' is not recognized as an internal or external command`.
+Because the gate runs first, an operator paid a full ~4 min build + size gate +
+secret scan and then deployed nothing. Now calls `scripts/wrangler-deploy.mjs`,
+which sets the variable in the child's `env` — portable across cmd.exe,
+PowerShell, bash and zsh.
+
+#### C6.4 Deployment evidence
+
+| Step | Result |
+|---|---|
+| pre-deploy baseline (live) | 13/13 public routes 0 visible text; `/legal/*` 404 |
+| `npm run cf:gate` | PASS — size 6.62 MB gzip of 10 MB, 3.36 MB headroom; secret scan clean over 3,098 files |
+| build | PASS, 315/315 static pages |
+| deploy | Version `6dca42a2-a213-460d-ab11-0edd9c22c750`, 3 crons registered |
+| post-deploy live sweep | 20/20 routes healthy; 0 spinners; `/legal/*` all 200; `/api/legal` 9 docs |
+| typecheck | PASS 0 errors |
+| unit suite | PASS **2826 passed / 0 failed** (255 files) |
+
+Note: `cf:gate` (build → gate) runs the build twice by design — once in
+`cf:build`, once inside `cf:gate`. That is wasteful but safe, and left alone
+rather than reworked mid-incident.
+
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
-### PRODUCTION CONFIRMS #50 IS LIVE (read-only, 2026-10-01)
+### PRODUCTION CONFIRMS #50 WAS LIVE — NOW FIXED AND DEPLOYED (2026-10-01)
 
-The app-shell defect is **not** a local-only artifact — it is on the deployed
-site right now. Verified with read-only GETs against the live domain:
-
-| Route | Status | Bytes | Visible text | Spinner in HTML |
-|---|---|---|---|---|
-| `/` | 200 | 87,819 | **0** | yes |
-| `/pricing` | 200 | 69,673 | **0** | yes |
-| `/reviews` | 200 | 27,223 | **0** | yes |
-
-So the marketing surface currently presents no server-rendered text to any
-crawler or to a first paint. The fix is committed (`0acc701`) and verified
-locally, but **it is not deployed**, and deploying it is the single
-highest-value action available. The live `/reviews` does carry its
-`application/ld+json` block, which confirms the data layer works and the
-content is simply not being rendered into the HTML.
+**SUPERSEDED by C6 below.** The original read-only check found the app-shell
+defect live on the deployed site (`/`, `/pricing`, `/reviews` all 200 with 0
+visible text). The fix is now **built, deployed and live-verified**; see C6.1
+for the before/after on every public route.
 
 
 - `APOLLO_API_KEY` - blocks Apollo live verification only.
