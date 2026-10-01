@@ -20,6 +20,9 @@
  * The check is deliberately precise. `return null` is still legitimate for DATA
  * guards (`if (!res.ok) return null`), so only a null-return that is bound to
  * the SESSION is a violation.
+ *
+ * SIBLING SUITE: `static-metadata.guard.test.ts` covers the production-only
+ * 404 that `generateMetadata()` caused on the public legal pages.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync } from 'node:fs';

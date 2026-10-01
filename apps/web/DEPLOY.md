@@ -469,7 +469,7 @@ REPLACES the DNS records serving WordPress — that is the cutover moment (see
 | `yarn cf:build` | `opennextjs-cloudflare build` → `scrub-opennext-env.mjs` → `patch-opennext-instrumentation.mjs` |
 | `yarn cf:size` | `wrangler deploy --dry-run --outdir .wrangler/dry-run-out`, then the gzip size gate |
 | `yarn cf:gate` | `cf:build` + `cf:size` + secret scan of the dry-run output — the deploy gate |
-| `yarn cf:deploy` | `cf:gate`, then `OPEN_NEXT_DEPLOY=true wrangler deploy` |
+| `yarn cf:deploy` | `cf:gate`, then `node scripts/wrangler-deploy.mjs` (sets `OPEN_NEXT_DEPLOY` portably — see below) |
 | `yarn cf:preview` | Build + `opennextjs-cloudflare preview` (local workerd) |
 | `yarn cf:typecheck` | Build + `tsc -p tsconfig.cloudflare.json` |
 | `yarn cf:typegen` | Regenerate `cloudflare-env.d.ts` from the wrangler config |
@@ -483,6 +483,16 @@ Windows notes:
   (build → gate → deploy) that passes `OPEN_NEXT_DEPLOY` as a real environment
   variable — the `VAR=x command` inline syntax is not portable to cmd. It logs
   to `D:\tmp\rebuild-deploy.log`.
+- **`cf:deploy` was Windows-broken and is now fixed (2026-10-01).** It used to
+  inline `OPEN_NEXT_DEPLOY=true wrangler deploy`, which is POSIX syntax. npm on
+  Windows runs lifecycle scripts through cmd.exe, so it tried to execute the
+  literal string `OPEN_NEXT_DEPLOY=true` as a program and failed with
+  `'OPEN_NEXT_DEPLOY' is not recognized as an internal or external command`.
+  Because the gate runs first, the operator paid a full ~4 min build + size
+  gate + secret scan and then deployed nothing. `cf:deploy` now calls
+  `scripts/wrangler-deploy.mjs`, which sets the variable in the child's
+  `env` — the portable form that behaves identically on cmd.exe, PowerShell,
+  bash and zsh.
 - CI (`.github/workflows/ci.yml`) does not run the Cloudflare gates yet;
   `cf:gate` is an operator step. Add it to CI for deploy-parity on PRs.
 

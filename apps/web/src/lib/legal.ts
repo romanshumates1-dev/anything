@@ -1,5 +1,24 @@
-import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+/**
+ * ⚠ EDGE / WORKERS SAFE — DO NOT REINTRODUCE `fs` HERE ⚠
+ *
+ * This module used to read `content/legal/*.md` with Node's `fs` on every
+ * call. Cloudflare Workers has no filesystem, so in production that meant:
+ *
+ *   GET /api/legal       -> 200 []            (readdirSync returned nothing)
+ *   GET /legal/privacy   -> 404               (read threw -> notFound())
+ *   ... all nine docs    -> 404
+ *
+ * while `next start`, the unit suite and the whole browser-QA gate all passed
+ * locally. `content/legal/` does ship inside the deployed bundle, but nothing
+ * can read it there, so shipping it was never sufficient.
+ *
+ * Documents are now inlined at BUILD time into `./legal-docs.generated` by
+ * scripts/generate-legal-docs.mjs (wired into `cf:build`). The markdown on
+ * disk is still the single source of truth - only the read path moved.
+ *
+ * `legal.test.ts` asserts there is no `fs` import here. If you need to change
+ * where legal text comes from, change the generator, not this file.
+ */
 import { SUPPORT_EMAIL } from './contact';
 import {
   REQUIRED_ACCEPTANCE_VERSIONS,
@@ -7,6 +26,8 @@ import {
   ACCEPTANCE_DOC_TYPES,
   type AcceptanceKey,
 } from './legal-versions';
+import { LEGAL_DOC_SEEDS } from './legal-docs.generated';
+import type { LegalDocSeed } from './legal-types';
 
 export type { AcceptanceKey };
 
@@ -32,8 +53,6 @@ export interface LegalDoc {
   requiresAcceptance: boolean;
   body: string; // markdown body with placeholders substituted
 }
-
-const CONTENT_DIR = join(process.cwd(), 'content', 'legal');
 
 /**
  * The placeholder map, as a function.
@@ -64,37 +83,23 @@ function substitutePlaceholders(text: string): string {
   return text.replace(/\{\{(\w+)\}\}/g, (whole, key) => (key in map ? map[key] : whole));
 }
 
-/** Minimal, dependency-free frontmatter parser (key: value lines only). */
-function parseFrontmatter(raw: string): { data: Record<string, string>; body: string } {
-  if (!raw.startsWith('---')) return { data: {}, body: raw };
-  const end = raw.indexOf('\n---', 3);
-  if (end === -1) return { data: {}, body: raw };
-  const fmBlock = raw.slice(3, end).trim();
-  const body = raw.slice(end + 4).replace(/^\s*\n/, '');
-  const data: Record<string, string> = {};
-  for (const line of fmBlock.split('\n')) {
-    const idx = line.indexOf(':');
-    if (idx === -1) continue;
-    data[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return { data, body };
-}
+/**
+ * Frontmatter parsing now happens at BUILD time in
+ * scripts/generate-legal-docs.mjs, so it is deliberately absent here. Keeping a
+ * second copy in the runtime module would be two parsers free to disagree.
+ */
 
-function loadFile(slug: string): LegalDoc | null {
-  let raw: string;
-  try {
-    raw = readFileSync(join(CONTENT_DIR, `${slug}.md`), 'utf8');
-  } catch {
-    return null;
-  }
-  const { data, body } = parseFrontmatter(raw);
+function loadSeed(seed: LegalDocSeed): LegalDoc {
+  const data = seed.frontmatter ?? {};
   // Strip the HTML template comment from the rendered body (it stays in source
   // as a reviewer signal, but shouldn't render as literal text on the page).
-  const cleanBody = substitutePlaceholders(body.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\n/, ''));
+  const cleanBody = substitutePlaceholders(
+    seed.body.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\n/, '')
+  );
   return {
-    slug,
-    docType: data.doc_type || slug,
-    title: data.title || slug,
+    slug: seed.slug,
+    docType: data.doc_type || seed.slug,
+    title: data.title || seed.slug,
     version: data.version || '1.0.0',
     effectiveDate: data.effective_date || '',
     requiresAcceptance: data.requires_acceptance === 'true',
@@ -103,29 +108,23 @@ function loadFile(slug: string): LegalDoc | null {
 }
 
 export function getLegalDoc(slug: string): LegalDoc | null {
-  return loadFile(slug);
+  const seed = LEGAL_DOC_SEEDS.find((s) => s.slug === slug);
+  return seed ? loadSeed(seed) : null;
 }
 
 export function getAllLegalSlugs(): string[] {
-  try {
-    return readdirSync(CONTENT_DIR)
-      .filter((f) => f.endsWith('.md'))
-      .map((f) => f.replace(/\.md$/, ''))
-      .sort();
-  } catch {
-    return [];
-  }
+  return LEGAL_DOC_SEEDS.map((s) => s.slug).sort();
 }
 
 export function getAllLegalDocs(): LegalDoc[] {
   return getAllLegalSlugs()
-    .map(loadFile)
+    .map((slug) => getLegalDoc(slug))
     .filter((d): d is LegalDoc => d !== null);
 }
 
 // Re-exported so callers that already import from '@/lib/legal' get the
 // acceptance metadata too. The authoritative values live in the edge-safe
-// './legal-versions' module (the middleware can't import this fs-based file).
+// './legal-versions' module, which the middleware imports directly.
 export const ACCEPTANCE_DOCS = { tos: ACCEPTANCE_DOC_TYPES.tos, privacy: ACCEPTANCE_DOC_TYPES.privacy } as const;
 export const MESSAGING_AGREEMENT_VERSION = MESSAGING_VERSION;
 
