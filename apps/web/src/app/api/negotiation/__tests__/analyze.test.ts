@@ -138,11 +138,18 @@ describe('POST /api/negotiation/analyze', () => {
     mockAnalyzeNegotiation.mockRejectedValueOnce(new Error('provider 500'));
     const { POST } = await import('../analyze/route');
 
-    // The rejection propagates out of the route (unhandled by design here, as
-    // before this change); the important assertion is that the credit is handed
-    // back rather than silently consumed.
-    await expect(POST(post({ inputs: { arv: 100000 } }))).rejects.toThrow('provider 500');
+    // The credit is handed back AND the caller gets a real response. This test
+    // previously asserted that the rejection propagated out of the route
+    // unhandled - its own comment said "unhandled by design here". That is the
+    // defect fixed in this change: an escaping rejection becomes an opaque 500
+    // with no indication the credit was returned, so a user who retries cannot
+    // tell whether they were charged. The refund assertion below is unchanged
+    // and remains the point of the test.
+    const res = await POST(post({ inputs: { arv: 100000 } }));
+    expect(res.status).toBe(502);
     expect(mockRelease).toHaveBeenCalledTimes(1);
+    const body = await res.json();
+    expect(body.creditReleased).toBe(true);
   });
 
   it('does not refund on success - the credit was genuinely spent', async () => {
@@ -152,5 +159,82 @@ describe('POST /api/negotiation/analyze', () => {
     expect(res.status).toBe(200);
     expect(mockAnalyzeNegotiation).toHaveBeenCalledTimes(1);
     expect(mockRelease).not.toHaveBeenCalled();
+  });
+});
+describe('provider failure returns an actionable response (not an opaque 500)', () => {
+  /**
+   * These are VERBATIM provider messages observed on 2026-09-30 against the
+   * deployed configuration - both providers were failing at the same time, which
+   * is why the classification must distinguish them rather than lumping them
+   * together as "AI is down".
+   */
+  const ANTHROPIC_CREDITS =
+    'Anthropic API error [400]: {"type":"error","error":{"type":"invalid_request_error",' +
+    '"message":"Your credit balance is too low to access the Anthropic API. Please go to ' +
+    'Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CfadwajxjUYuFaFnsBPcJ"}';
+
+  const BEDROCK_TOKEN =
+    'Bedrock error [403] for model us.anthropic.claude-haiku-4-5-20251001-v1:0 - check: ' +
+    '1) model is enabled in Bedrock console, 2) region matches, 3) IAM has ' +
+    'bedrock:InvokeModel permission: The security token included in the request is invalid.';
+
+  it('returns 502 with credits_exhausted for the Anthropic out-of-credit error', async () => {
+    mockAnalyzeNegotiation.mockRejectedValueOnce(new Error(ANTHROPIC_CREDITS));
+    const { POST } = await import('../analyze/route');
+    const res = await POST(post({ inputs: { arv: 100000 } }));
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.failureClass).toBe('credits_exhausted');
+    expect(body.creditReleased).toBe(true);
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 502 with invalid_credentials for the Bedrock token error', async () => {
+    mockAnalyzeNegotiation.mockRejectedValueOnce(new Error(BEDROCK_TOKEN));
+    const { POST } = await import('../analyze/route');
+    const res = await POST(post({ inputs: { arv: 100000 } }));
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.failureClass).toBe('invalid_credentials');
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('never leaks the raw provider text (request ids, model names)', async () => {
+    for (const raw of [ANTHROPIC_CREDITS, BEDROCK_TOKEN]) {
+      mockAnalyzeNegotiation.mockRejectedValueOnce(new Error(raw));
+      const { POST } = await import('../analyze/route');
+      const res = await POST(post({ inputs: { arv: 100000 } }));
+      const body = await res.json();
+
+      expect(body.failureClass).toBeTruthy();
+      expect(JSON.stringify(body)).not.toContain('req_011CfadwajxjUYuFaFnsBPcJ');
+      expect(JSON.stringify(body)).not.toContain('us.anthropic.claude');
+    }
+  });
+
+  it('does not blame the user for a server-side outage', async () => {
+    mockAnalyzeNegotiation.mockRejectedValueOnce(new Error(BEDROCK_TOKEN));
+    const { POST } = await import('../analyze/route');
+    const res = await POST(post({ inputs: { arv: 100000 } }));
+    const body = await res.json();
+
+    expect(body.hint).toMatch(/temporarily unavailable/i);
+    expect(body.hint).toMatch(/credit was returned/i);
+    expect(body.hint.toLowerCase()).not.toMatch(/invalid input|check your|bad request/);
+  });
+
+  it('falls back to a generic 502 for an unrecognised failure', async () => {
+    mockAnalyzeNegotiation.mockRejectedValueOnce(new Error('kaboom: something new'));
+    const { POST } = await import('../analyze/route');
+    const res = await POST(post({ inputs: { arv: 100000 } }));
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.failureClass).toBe('unknown');
+    expect(body.hint).toMatch(/temporarily unavailable/i);
+    // Still refunds: an unrecognised failure is still a failure.
+    expect(mockRelease).toHaveBeenCalledTimes(1);
   });
 });
