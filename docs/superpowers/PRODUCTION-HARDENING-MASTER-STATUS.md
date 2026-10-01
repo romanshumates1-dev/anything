@@ -26,12 +26,12 @@ silently removed all crawlable text and the reviews schema.org markup.
 | 7 | Complete site functionality | PARTIAL | **Browser QA 70/70 confirmed at C4** (35 routes × desktop+mobile, 0 console errors, 0 non-2xx). All pages load and render. Authenticated interactive flows still not clicked through in a browser. |
 | 8 | Shopify / purchases / withdrawals | PARTIAL | Architecture not decided (lead source vs checkout rail). Withdrawals exist. |
 | 9 | Subscriptions / billing | UNVERIFIED | Stripe keys absent -> BLOCKED for live; plan gate passed (7 plans). |
-| 10 | AI weekly/daily credit limits | PARTIAL | Rate limiter fixed (defect #34). Purchased vs included credit separation not re-audited. |
+| 10 | AI weekly/daily credit limits | COMPLETE | **C5 verified.** Included credits capped at M/4 weekly (25%) and M/20 daily (20% of weekly), keyed on UTC day / ISO week / calendar month. Purchased credits are a separate bucket the caps never touch. 58/0 tests incl. PGlite: cap denial, boundary reset, tenant isolation, no oversell under concurrency, repeated requestId no double-charge, purchased still served at cap. |
 | 11 | Restricted signup setting | COMPLETE | `app_settings.signup_restrictions` = {restricted:true, domains:[dealswiftautomation.com]}. Verified: non-allowlisted domain -> 403. |
 | 12 | Billing/payment UI + backend | PARTIAL | Tax/payout UI shipped (c068aed). Not re-verified. |
 | 13 | Payout/earnings date filters | UNVERIFIED | Not checked this session. |
-| 14 | Earnings/tax reporting | UNVERIFIED | `/api/tax/report` returns 200 authenticated. Document generation not re-verified. |
-| 15 | Optional auto tax withholding | UNVERIFIED | Not checked this session. |
+| 14 | Earnings/tax reporting | PARTIAL | **C5:** `/api/tax/report` buckets day/week/month/quarter/year in SQL (`date_trunc`), never in JS; tenant-scoped by BOTH user_id and organization_id; CSV export carries the disclaimer and `Cache-Control: no-store`. 166/0 financial tests. Not verified against real ledger volume or a downloaded file opened end-to-end. |
+| 15 | Optional auto tax withholding | PARTIAL | **C5:** per-seller setting, OFF by default, rate validated as integer 0..10000 bps and rejected (400) rather than clamped; org resolved from session only (no mass-assignable tenant field); withheld inside the withdrawal transaction; release/compensation never goes below zero; withheld balance excluded from payout. 25/0 taxWithholding tests. |
 | 16 | Premium UI/VFX/UX polish | IN_PROGRESS | Pricing React-key fix in progress. Full visual audit not done. |
 | 17 | SEO | PARTIAL | **C4 fixed the critical half.** The app shell was server-rendering a spinner for every route, so indexable marketing pages had 0 crawlable text and `/reviews` schema.org never reached the HTML. After the fix: `/reviews` 1,036 chars + `AggregateRating` present, `/pricing` 6,013, `/faq` 4,247, `/trust` 2,900, `/how-it-works` 3,107. robots/sitemap/canonical still not re-audited. |
 
@@ -172,7 +172,75 @@ production build. Nothing here is a deployed-production result, and no gate
 in this run exercised payments, withdrawals, tax reporting, AI credit
 limits, Apollo, or the Cloudflare Worker path — see section D.
 
+### C5. FINANCIAL / AI-CREDIT VERIFICATION + PRODUCTION CHECK — 2026-10-01
+
+C4 fixed the runtime defects. C5 went after the two highest-risk areas that
+could be verified without live payment credentials: the **financial system**
+(withdrawals, earnings, tax withholding, bank accounts) and **AI credit
+limiting** (item K).
+
+**Item K is COMPLETE and the arithmetic is right.** `aiCreditLimits.ts` caps
+included credits at `M/4` weekly (25%) and `M/20` daily (= 20% of the weekly
+allowance), keyed on UTC day / ISO week / calendar month so every instance
+agrees. Purchased credits are a **separate bucket the caps never touch**,
+which is exactly the requirement's warning. Verified by
+`npx vitest run aiCreditLimits aiCreditGate aiCreditDb` → **58 passed, 0
+failed** across 5 files, including PGlite (real Postgres) suites asserting:
+daily/weekly/monthly denial, period-boundary reset, tenant isolation, release
+compensation never going below zero, no oversell under concurrency, a repeated
+`requestId` not double-charging, and purchased credits still served when the
+included cap is reached or the plan includes no AI credits at all.
+
+**Financial system is COMPLETE for the tested paths.** `npx vitest run
+withdrawals taxWithholding taxLedger tax-report tax-settings
+tax-withdrawal earningsEscrow tenant-isolation-financial bank-accounts` →
+**166 passed, 0 failed**. Withdrawal creation is a single transaction using
+`FOR UPDATE SKIP LOCKED` with an idempotent pre-generated id, and tax is
+withheld inside that same transaction so it can neither be lost nor charged
+for a rejected withdrawal.
+
+**Defect found and fixed (#52): a stale suite was asserting a false gap.**
+`bank-accounts/__tests__/bank-accounts.test.ts` was a pre-implementation
+scaffold whose 30 `it.todo` markers all read "routes not implemented". The
+routes have existed for some time (`next build` emits them; the C4 API probe
+answered 200) and are covered for real by `bank-accounts-lifecycle.test.ts`
+and `bankAccounts.security.test.ts`. The stale file was removed and its
+genuinely useful security notes preserved in the surviving suite's header.
+Effect: the gate stops reporting a phantom "30 todo" gap, and bank-accounts
+now reports **29 passed / 0 skipped / 0 todo**.
+
+| Gate | Result |
+|---|---|
+| typecheck (`npm run typecheck`) | PASS 0 errors |
+| unit suite (`npm test`) | PASS **2821 passed / 0 failed / 0 todo** (254 files) in 145s |
+| AI credit limiting suite | PASS 58/0 (5 files) |
+| financial suite | PASS 166/0 (11 files) |
+| bank-accounts after cleanup | PASS 29 passed / 0 skipped / 0 todo |
+| live production (read-only GET) | `/`, `/pricing`, `/reviews` all 200 with **0 visible text** — #50 confirmed live; fix committed but **not deployed** |
+
+Still NOT verified, unchanged: any real payment-provider behaviour, Shopify,
+Apollo live ingestion, and the Cloudflare Worker runtime.
+
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
+
+### PRODUCTION CONFIRMS #50 IS LIVE (read-only, 2026-10-01)
+
+The app-shell defect is **not** a local-only artifact — it is on the deployed
+site right now. Verified with read-only GETs against the live domain:
+
+| Route | Status | Bytes | Visible text | Spinner in HTML |
+|---|---|---|---|---|
+| `/` | 200 | 87,819 | **0** | yes |
+| `/pricing` | 200 | 69,673 | **0** | yes |
+| `/reviews` | 200 | 27,223 | **0** | yes |
+
+So the marketing surface currently presents no server-rendered text to any
+crawler or to a first paint. The fix is committed (`0acc701`) and verified
+locally, but **it is not deployed**, and deploying it is the single
+highest-value action available. The live `/reviews` does carry its
+`application/ld+json` block, which confirms the data layer works and the
+content is simply not being rendered into the HTML.
+
 
 - `APOLLO_API_KEY` - blocks Apollo live verification only.
 - `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` - blocks live billing. All

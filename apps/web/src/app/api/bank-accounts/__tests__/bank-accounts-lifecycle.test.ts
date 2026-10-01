@@ -1,13 +1,43 @@
 /**
  * Bank Account Management — set default, micro-deposit verify, delete.
  *
- * Companion to bank-accounts.test.ts (list + add). Covers the per-account
- * lifecycle routes and the two invariants that matter most for money safety:
+ * THIS is the bank-accounts lifecycle suite. It used to cite a companion file
+ * `bank-accounts.test.ts` (list + add); that file has been REMOVED (2026-10-01).
+ *
+ * WHY IT WAS REMOVED RATHER THAN COMPLETED: it was a pre-implementation
+ * scaffold whose 30 `it.todo` markers all read "routes not implemented". That
+ * was true when written and silently went false — `next build` has been emitting
+ * the routes for some time, and the C4 API probe answered 200 on
+ * /api/bank-accounts. A stale "not implemented" marker is worse than no test:
+ * it reads as a known coverage gap, and it quietly removed 30 slots from the
+ * counts the release gate reports ("30 todo" in the C5 financial run).
+ *
+ * Nothing was lost: every behaviour it stubbed is asserted for real elsewhere.
+ *   - here (lifecycle): 401 / 404 / tenant isolation / default swap / delete
+ *     races / verification attempt limiting — 19 tests.
+ *   - bankAccounts.security.test.ts: routing + account numbers are never
+ *     exposed, routing-number checksum validation, and per-tenant deterministic
+ *     encryption so two tenants cannot collide.
+ *
+ * Preserved from that deleted scaffold, because they are requirements rather
+ * than trivia and nothing in the code states them as sharply:
+ *
+ *   1. Account numbers and routing numbers MUST be encrypted at rest, and only
+ *      `last_four` may ever be stored/returned for display.
+ *   2. Verification attempts must be rate limited (the micro-deposit amount
+ *      space is tiny — two values under $1.00 — so it is brute-forceable
+ *      without a limit).
+ *   3. Bank account operations must be audit logged.
+ *   4. Deleting an account must be refused while a withdrawal is PENDING or
+ *      PROCESSING, and deleting the default account must be considered against
+ *      the seller's available balance.
+ *
+ * Companion suite, and the two invariants that matter most for money safety:
  *
  *  1. CROSS-TENANT IS 404, NEVER 403. Returning 403 would confirm the id
  *     exists in another org, giving an attacker a free id oracle.
  *  2. Verification is attempt-limited so micro-deposit amounts cannot be
- *     brute-forced (the amount space is tiny: two values under $1.00).
+ *     brute-forced.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
