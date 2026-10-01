@@ -18,6 +18,7 @@ import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
+import { logFallback } from '@/app/api/utils/queryFallback';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
         FROM jobs
         WHERE payload->>'organizationId' = ${orgId}
         GROUP BY status
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:jobStats', [])),
 
       // Queue status
       sql`
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
         FROM campaign_lead_queue
         WHERE organization_id = ${orgId}
         GROUP BY status
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:queueStats', [])),
 
       // Email stats (today)
       sql`
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest) {
           AND direction = 'outbound'
           AND organization_id = ${orgId}
           AND created_at >= ${todayStart.toISOString()}
-      `.catch(() => [{ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0, unsubscribed: 0, failed: 0, total: 0 }]),
+      `.catch(logFallback('campaignMonitor:emailStats', [{ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0, unsubscribed: 0, failed: 0, total: 0 }])),
 
       // Warmup config
       sql`
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
         FROM email_warmup_config
         WHERE organization_id = ${orgId}
         LIMIT 1
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:warmupConfig', [])),
 
       // Recent errors (last 10)
       sql`
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest) {
           AND COALESCE(payload->>'organizationId', '') = ${orgId}
         ORDER BY updated_at DESC
         LIMIT 10
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:recentErrors', [])),
 
       // Hourly send volume (last 24h)
       sql`
@@ -138,7 +139,7 @@ export async function GET(req: NextRequest) {
         GROUP BY date_trunc('hour', created_at)
         ORDER BY hour DESC
         LIMIT 24
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:hourlyVolume', [])),
 
       // Regional breakdown (if metadata has state)
       sql`
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
         GROUP BY l.metadata->>'state'
         ORDER BY count DESC
         LIMIT 10
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:regionalBreakdown', [])),
 
       // Health engine status
       sql`
@@ -166,7 +167,7 @@ export async function GET(req: NextRequest) {
         WHERE type = 'pipeline_health_check'
         ORDER BY updated_at DESC
         LIMIT 1
-      `.catch(() => []),
+      `.catch(logFallback('campaignMonitor:healthStatus', [])),
     ]);
 
     // Calculate quality metrics

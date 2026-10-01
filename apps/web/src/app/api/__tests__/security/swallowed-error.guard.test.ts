@@ -65,7 +65,7 @@ const BASELINE: Record<string, number> = {
   'app/api/approvals/[id]/route.ts': 1,
   'app/api/billing/subscribe/route.ts': 1,
   'app/api/buyers/route.ts': 2,
-  'app/api/campaigns/monitor/route.ts': 7,
+  'app/api/campaigns/monitor/route.ts': 0,
   'app/api/campaigns/outreach-calculator/route.ts': 2,
   'app/api/campaigns/pipeline/route.ts': 2,
   'app/api/compliance/regional-messaging/engine.ts': 1,
@@ -126,10 +126,10 @@ const BASELINE: Record<string, number> = {
   'app/api/utils/dncRegistry.ts': 1,
   'app/api/utils/ghostErrorSweep.ts': 1,
   'app/api/utils/leadGenerationEngine.ts': 3,
-  'app/api/utils/pipeline-health-engine.ts': 7,
+  'app/api/utils/pipeline-health-engine.ts': 0,
   'app/api/utils/prospectRecyclingEngine.ts': 2,
   'app/api/utils/smsOutreachEngine.ts': 1,
-  'app/api/utils/trustSignals.ts': 6,
+  'app/api/utils/trustSignals.ts': 0,
   'app/approvals/page.tsx': 1,
   'app/buyers/page.tsx': 1,
   'app/campaigns/launcher/page.tsx': 1,
@@ -186,10 +186,19 @@ describe('swallowed-error guard', () => {
     expect(total).toBeLessThanOrEqual(allowed);
   });
 
-  it('the two fixed routes no longer swallow errors silently', () => {
+  it('the fixed routes no longer swallow errors silently', () => {
     // feedback and duplicates were fixed by replacing the bare catch with one
     // that logs. They must not reappear in the counts.
-    for (const rel of ['app/api/feedback/route.ts', 'app/api/duplicates/route.ts']) {
+    for (const rel of [
+      'app/api/feedback/route.ts',
+      'app/api/duplicates/route.ts',
+      // Swept 2026-09-30 (highest-count server files: 7 + 7 + 6 sites).
+      // Asserted by name as well as via the zeroed baseline entries above, so
+      // the fix stays pinned even if someone re-adds a permissive count.
+      'app/api/campaigns/monitor/route.ts',
+      'app/api/utils/pipeline-health-engine.ts',
+      'app/api/utils/trustSignals.ts',
+    ]) {
       const sites = silentSites(join(process.cwd(), 'src', rel));
       expect(sites, `${rel} reintroduced a silent catch: ${sites.join(' | ')}`).toEqual([]);
     }

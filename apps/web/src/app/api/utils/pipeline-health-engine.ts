@@ -19,6 +19,7 @@
  */
 import sql from '@/app/api/utils/sql';
 import { logEvent } from '@/app/api/utils/logger';
+import { logFallback } from '@/app/api/utils/queryFallback';
 import { callOllama, type OllamaOptions } from './ollama-client';
 import { callAnthropic } from './anthropic-client';
 import { callBedrock, getBedrockConfig } from './bedrock-client';
@@ -134,6 +135,13 @@ async function probeProvider(
 
 /**
  * Check for missing contract emails (esign flows that should have sent but didn't).
+ *
+ * FALLBACK DIRECTION (deliberate, and why it is only an observability change):
+ * an empty result here reads as "no contracts are stuck", i.e. the monitor
+ * reports HEALTHY when the query itself failed. That is the wrong direction for
+ * a check whose result gates a heal action, and it is now logged so the failure
+ * is visible; flipping it to a synthetic 'critical' issue would change what the
+ * healing path does on a DB blip, so it is out of scope for this sweep.
  */
 async function checkMissingContractEmails(): Promise<PipelineIssue | null> {
   const rows = await sql`
@@ -143,7 +151,7 @@ async function checkMissingContractEmails(): Promise<PipelineIssue | null> {
       AND created_at < now() - interval '30 minutes'
       AND esign_envelope_id IS NULL
     LIMIT 50
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:missingContractEmails', []));
 
   if (rows.length === 0) return null;
 
@@ -164,7 +172,7 @@ async function checkStuckContacts(): Promise<PipelineIssue | null> {
     WHERE status = 'SENDING'
       AND updated_at < now() - interval '10 minutes'
     LIMIT 100
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:stuckContacts', []));
 
   if (rows.length === 0) return null;
 
@@ -185,7 +193,7 @@ async function checkDeadJobs(): Promise<PipelineIssue | null> {
     WHERE status = 'dead'
       AND (payload->>'dead_alerted')::boolean IS NOT TRUE
     LIMIT 100
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:deadJobs', []));
 
   if (rows.length === 0) return null;
 
@@ -206,7 +214,7 @@ async function checkStuckEsign(): Promise<PipelineIssue | null> {
     WHERE esign_status = 'sent'
       AND esign_expires_at < now()
     LIMIT 50
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:stuckEsign', []));
 
   if (rows.length === 0) return null;
 
@@ -229,7 +237,7 @@ async function healMissingContracts(): Promise<HealingAction> {
       AND created_at < now() - interval '30 minutes'
       AND esign_envelope_id IS NULL
     LIMIT 10
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:healMissingContractsFetch', []));
 
   if (rows.length === 0) {
     return { type: 'heal_missing_contracts', success: true, detail: 'No contracts to heal' };
@@ -247,8 +255,11 @@ async function healMissingContracts(): Promise<HealingAction> {
         retry: true,
       });
       healed++;
-    } catch {
-      // Continue with other contracts
+    } catch (error) {
+      // Continue with other contracts, but say which one failed - a silent
+      // continue here under-reports `healed` with no way to find the cause.
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[pipelineHealth] contract ${contract.id} retry enqueue failed:`, message);
     }
   }
 
@@ -269,7 +280,7 @@ async function healStuckContacts(): Promise<HealingAction> {
     WHERE status = 'SENDING'
       AND updated_at < now() - interval '10 minutes'
     RETURNING id
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:healStuckContactsUpdate', []));
 
   return {
     type: 'heal_stuck_contacts',
@@ -390,7 +401,7 @@ export async function runPipelineHealthCheck(
     healthy: report.issues.filter((i) => i.severity === 'critical').length === 0,
     issues: report.issues.length,
     healed: report.healed.filter((h) => h.success).length,
-  }).catch(() => {});
+  }).catch(logFallback('pipelineHealth:logEvent', undefined));
 
   return report;
 }
@@ -405,7 +416,7 @@ export async function getHealthState(): Promise<{
 }> {
   const [row] = await sql`
     SELECT value FROM app_settings WHERE key = 'pipeline_health_state' LIMIT 1
-  `.catch(() => []);
+  `.catch(logFallback('pipelineHealth:readState', []));
 
   if (!row?.value) {
     return { consecutiveFailures: 0, lastCheckAt: null, lastHealthy: true };
@@ -444,7 +455,7 @@ export async function updateHealthState(
       value = EXCLUDED.value,
       updated_by = EXCLUDED.updated_by,
       updated_at = now()
-  `.catch(() => {});
+  `.catch(logFallback('pipelineHealth:persistState', undefined));
 
   return {
     consecutiveFailures,

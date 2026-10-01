@@ -80,6 +80,31 @@ transient failure was seen while the suite ran concurrently with typecheck
 (`bankAccounts.security.test.ts` beforeAll hook timeout at 60s); it passes
 10/10 in isolation in 8.5s, so it is a load flake, not a regression.
 
+### C3. FRESH RE-RUN — 2026-09-30, commit <pending> (silent-failure sweep + rate-limit bypass + download-authz)
+
+Work: `trustSignals.ts` 6→0, `campaigns/monitor/route.ts` 7→0,
+`pipeline-health-engine.ts` 7→0 silent catches (all now `logFallback`; fail
+direction unchanged, behaviour preserved). Baselines zeroed + the three files
+added to the guard's named zero-site assertion. New:
+`rate-limit-bypass.pglite.test.ts` (6 tests: forged-XFF rotation collapses to
+one bucket; unidentified callers fail closed with no row written; a 30-call
+concurrent burst yields exactly 5 allowed; buckets independent per
+(identifier, action) — all against a real Postgres engine with the production
+SQL) and `download-authz.guard.test.ts` (3 tests: every Content-Disposition
+route references auth; the 6-route download inventory is exact; each route
+holds its named guard).
+
+| Gate | Result |
+|---|---|
+| typecheck (`node node_modules/typescript/bin/tsc -p tsconfig.typecheck.json --noEmit`) | PASS 0 errors |
+| unit suite (`npx vitest run --config src/app/api/vitest.config.ts`) | PASS **2817 passed / 0 failed** (254 files passed, 1 skipped, 23 skipped tests, 30 todo) in 225s |
+
+Notes: the suite grew +9 tests vs C2 (3 download-authz + 6 rate-limit-bypass;
+one early red on the bypass suite was a wrong test-side index — `results[4]`
+is the allowed 5th request, not the denied 6th — fixed to assert the denied
+set explicitly). Scope deliberately unchanged: build, E2E, api-probe,
+verify-sql-fixes, browser QA still not re-run since 21fabc7.
+
 
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 

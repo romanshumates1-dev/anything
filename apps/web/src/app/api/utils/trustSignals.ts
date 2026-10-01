@@ -17,6 +17,7 @@
 
 import sql from '@/app/api/utils/sql';
 import { buildWhere, safeIdentifier } from '@/app/api/utils/sqlFragments';
+import { logFallback } from '@/app/api/utils/queryFallback';
 
 export type TrustSignalType =
   | 'deal_count'
@@ -73,49 +74,49 @@ export async function getTrustSignals(
   let rows: TrustSignalRow[] = [];
 
   if (channel === 'email') {
-    rows = await sql`
+    rows = (await sql`
       SELECT * FROM trust_signals
       WHERE organization_id = ${organizationId}
         AND active = true AND show_in_email = true
       ORDER BY display_order ASC LIMIT 5
-    `.catch(() => []) as TrustSignalRow[];
+    `.catch(logFallback('trustSignals:email:org', []))) as TrustSignalRow[];
     if (rows.length === 0) {
-      rows = await sql`
+      rows = (await sql`
         SELECT * FROM trust_signals
         WHERE organization_id = 'default'
           AND active = true AND show_in_email = true
         ORDER BY display_order ASC LIMIT 5
-      `.catch(() => []) as TrustSignalRow[];
+      `.catch(logFallback('trustSignals:email:default', []))) as TrustSignalRow[];
     }
   } else if (channel === 'sms') {
-    rows = await sql`
+    rows = (await sql`
       SELECT * FROM trust_signals
       WHERE organization_id = ${organizationId}
         AND active = true AND show_in_sms = true
       ORDER BY display_order ASC LIMIT 5
-    `.catch(() => []) as TrustSignalRow[];
+    `.catch(logFallback('trustSignals:sms:org', []))) as TrustSignalRow[];
     if (rows.length === 0) {
-      rows = await sql`
+      rows = (await sql`
         SELECT * FROM trust_signals
         WHERE organization_id = 'default'
           AND active = true AND show_in_sms = true
         ORDER BY display_order ASC LIMIT 5
-      `.catch(() => []) as TrustSignalRow[];
+      `.catch(logFallback('trustSignals:sms:default', []))) as TrustSignalRow[];
     }
   } else {
-    rows = await sql`
+    rows = (await sql`
       SELECT * FROM trust_signals
       WHERE organization_id = ${organizationId}
         AND active = true AND show_in_contract = true
       ORDER BY display_order ASC LIMIT 5
-    `.catch(() => []) as TrustSignalRow[];
+    `.catch(logFallback('trustSignals:contract:org', []))) as TrustSignalRow[];
     if (rows.length === 0) {
-      rows = await sql`
+      rows = (await sql`
         SELECT * FROM trust_signals
         WHERE organization_id = 'default'
           AND active = true AND show_in_contract = true
         ORDER BY display_order ASC LIMIT 5
-      `.catch(() => []) as TrustSignalRow[];
+      `.catch(logFallback('trustSignals:contract:default', []))) as TrustSignalRow[];
     }
   }
 
@@ -273,7 +274,11 @@ export async function getDynamicDealCount(
       area: state || 'your area',
       timeframe: 'this year',
     };
-  } catch {
+  } catch (error) {
+    // Same class as the fallbacks above: a failed social-proof lookup must not
+    // look like "this org simply has too few signed deals to show a count".
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[trustSignals] deal-count lookup failed, omitting signal:', message);
     return null;
   }
 }
