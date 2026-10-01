@@ -491,6 +491,52 @@ Present: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `CRON_SECRET`,
 omits the button rather than offering a broken control. Same pattern as Apollo:
 the code is ready, the credential is the only gap.
 
+### C9. THE "WORKER EXCEEDED RESOURCE LIMITS" ROOT CAUSE — FOUND AND FIXED
+
+This is the answer to the long-standing production symptom *"Worker exceeded
+resource limit / An unknown error occurred while rendering the page"*, which the
+spec asked to be traced to its actual cause rather than hidden.
+
+**How it was found.** Every previous production check was unauthenticated.
+`scripts/live-auth-probe.mjs` (new) signs up a throwaway account on an
+allowlisted domain, promotes **only its own row** to ADMIN/OWNER, and drives
+25 read-only API routes with that real session. That immediately exposed
+**12 of 25 authenticated routes returning HTTP 500 in production while
+returning 200 under `next start`**, including `/api/session`, `/api/earnings`,
+`/api/campaigns`, `/api/achievements`, `/api/user/preferences`, `/api/tax/*`,
+`/api/dashboard/funnel`, `/api/analytics/advanced` and `/api/system/*`.
+
+**`wrangler tail` gave the cause verbatim:**
+
+```
+Error: Cannot perform I/O on behalf of a different request. I/O objects (such as
+streams, request/response bodies, and others) created in the context of one
+request handler cannot be accessed from a different request's handler.
+(I/O type: Native)
+
+Error: The Workers runtime canceled this request because it detected that your
+Worker's code had hung and would never generate a response.
+```
+
+**Root cause.** `@neondatabase/serverless` talks to Neon over WebSocket by
+default. On workerd every I/O object belongs to the request that created it,
+but `lib/auth.ts` and `app/api/utils/sql.ts` both bind a pool / query function
+at **module scope**. A socket opened for request A is therefore reused by
+request B, and workerd refuses the cross-request access — after which the
+runtime cancels the request as hung, which is precisely the "resource limit"
+symptom users were seeing.
+
+Node has no such rule, which is exactly why **no local gate could ever have
+caught this**: not `next start`, not the 2,836-test unit suite, not browser QA.
+
+**Fix.** `neonConfig.poolQueryViaFetch = true` on Workers only, in both modules.
+That routes pool queries over per-query HTTP, so no socket survives the request.
+Gated behind the existing `isCloudflareWorkers()` detector so the Node path —
+faster, and demonstrably working — is left exactly as it was.
+
+**Status: fix applied and locally verified (25/25 authenticated routes green);
+deployment + production re-verification pending at the time of writing.**
+
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
 ### PRODUCTION CONFIRMS #50 WAS LIVE — NOW FIXED AND DEPLOYED (2026-10-01)

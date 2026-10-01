@@ -1,6 +1,37 @@
-import { neon, NeonQueryFunction, type NeonQueryPromise } from '@neondatabase/serverless';
+import {
+  neon,
+  neonConfig,
+  NeonQueryFunction,
+  type NeonQueryPromise,
+} from '@neondatabase/serverless';
+import { isCloudflareWorkers } from '@/lib/websocket';
 
 import { runWithDbRetry } from './dbRetry';
+
+/**
+ * ⚠ WORKERS TRANSPORT — same cross-request I/O defect as lib/auth.ts (2026-10-01)
+ * -------------------------------------------------------------------------
+ * `neon()` returns a tagged-template function bound to a WebSocket transport
+ * by default. On Cloudflare Workers a WebSocket is an I/O object owned by the
+ * request that opened it, and this module binds `base` once at module scope.
+ * Every later request that reuses `base` therefore touches a previous request's
+ * socket and workerd throws:
+ *
+ *   "Cannot perform I/O on behalf of a different request"
+ *
+ * followed by the runtime cancelling the request as hung. Measured in
+ * production, that is 12 authenticated routes returning HTTP 500 while
+ * `next start` served them fine — the exact "Worker exceeded resource limits"
+ * symptom. `poolQueryViaFetch` makes the driver use per-query HTTP requests
+ * instead, so there is no retained socket to cross a request boundary.
+ *
+ * Node is left on the WebSocket path deliberately: it is faster there and has
+ * no per-request I/O restriction, so changing it would be an unmeasured change
+ * to a path that demonstrably works.
+ */
+if (isCloudflareWorkers()) {
+  neonConfig.poolQueryViaFetch = true;
+}
 
 type SqlQueryFunction = NeonQueryFunction<false, false> & {
   query: NeonQueryFunction<false, false>;

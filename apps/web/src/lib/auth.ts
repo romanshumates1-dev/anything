@@ -21,7 +21,7 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
-import { resolveWebSocketConstructor } from '@/lib/websocket';
+import { isCloudflareWorkers, resolveWebSocketConstructor } from '@/lib/websocket';
 
 import {
   ROLE_ADMIN,
@@ -37,6 +37,50 @@ import { isAccessDenied } from '@/lib/user-status';
 // See src/lib/websocket.ts for why this is not a plain `import ws from 'ws'`
 // (that import is what blocked the Cloudflare Workers build).
 neonConfig.webSocketConstructor = resolveWebSocketConstructor() as never;
+
+/**
+ * ⚠ `poolQueryViaFetch` ON WORKERS — fixes 12 production 500s (2026-10-01)
+ * ---------------------------------------------------------------------
+ * On Cloudflare Workers, `@neondatabase/serverless`'s WebSocket transport is
+ * fundamentally incompatible with the module-level `Pool` below.
+ *
+ * WHAT WAS BROKEN, MEASURED IN PRODUCTION: every authenticated route that
+ * touches this pool returned HTTP 500 on the deployed Worker while returning
+ * 200 under `next start`. 12 of 25 probed routes were affected, including the
+ * most basic ones — `/api/session`, `/api/earnings`, `/api/campaigns`,
+ * `/api/achievements`, `/api/user/preferences`, `/api/tax/*`,
+ * `/api/dashboard/funnel`, `/api/analytics/advanced`, `/api/system/*`.
+ * `wrangler tail` showed the cause verbatim:
+ *
+ *   Error: Cannot perform I/O on behalf of a different request. I/O objects
+ *   (such as streams, request/response bodies, and others) created in the
+ *   context of one request handler cannot be accessed from a different
+ *   request's handler. (I/O type: Native)
+ *   Error: The Workers runtime canceled this request because it detected that
+ *   your Worker's code had hung and would never generate a response.
+ *
+ * That second message is the "Worker exceeded resource limits" symptom the
+ * product kept hitting: the request never completes, so the runtime kills it.
+ *
+ * WHY: workerd ties every I/O object to the request that created it. A
+ * WebSocket opened while serving request A is A's object, so when the module
+ * scope reuses that same pool for request B, B is touching A's socket and
+ * workerd throws. Under Node there is no such rule, which is exactly why local
+ * testing never saw this — it is invisible to `next start`, to the unit suite,
+ * and to the browser-QA harness.
+ *
+ * THE FIX: `poolQueryViaFetch` routes pool queries over plain HTTP instead of
+ * a WebSocket. An HTTP request is created per query and consumed within the
+ * same request, so there is no cross-request I/O object at all.
+ *
+ * It is applied ONLY on workerd, behind `isCloudflareWorkers()`: the WebSocket
+ * path stays in place on Node, where it is faster and long-lived sockets are
+ * safe. Changing the Node path as well would be an unmeasured behaviour change
+ * to a code path that currently works.
+ */
+if (isCloudflareWorkers()) {
+  neonConfig.poolQueryViaFetch = true;
+}
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
