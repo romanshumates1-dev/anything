@@ -322,6 +322,52 @@ Note: `cf:gate` (build → gate) runs the build twice by design — once in
 `cf:build`, once inside `cf:gate`. That is wasteful but safe, and left alone
 rather than reworked mid-incident.
 
+#### C6.5 Branch audit — `claude/superpowers-saas-tiers-eaba76` deliberately NOT merged
+
+12 commits ahead, 3,591 insertions: a "SaaS monetization foundation" (tiers,
+entitlement, Stripe, usage caps, SMS metering, env validation, monitoring,
+`GO_LIVE_CHECKLIST.md`) plus migrations `014_billing.sql` and
+`015_sms_idempotency.sql`. It looks like the missing billing work, and it is
+genuinely well-built. **It was still not merged, because it would break live
+billing.** Evidence:
+
+| | Production (live, verified) | Branch |
+|---|---|---|
+| Plan source of truth | DB table `subscription_plans` | hard-coded `src/config/plans.ts` |
+| Tiers | **5** — `plan_free`, `plan_starter`, `plan_pro`, `plan_business`, `plan_scale` | **3** — `starter`, `professional`, `enterprise` |
+| Prices | $0 / $99 / $299 / $699 / $1799 | $99 / $249 / custom |
+| Limits | per-metric sms/email/ai + overage rates + campaigns + seats | different `PlanLimits` shape |
+
+`/api/billing/plans` is rewritten by the branch to read from `config/plans.ts`,
+and `(marketing)/pricing/page.tsx` is rewritten to render from it. Those are
+exactly the two surfaces a customer sees before paying. Adopting the branch
+would replace a live 5-tier catalog with a different 3-tier one — the DB rows
+would still exist and the code would no longer read them, so the UI and the
+enforcement gate would disagree.
+
+The branch also adds a **second** Stripe webhook (`api/billing/webhook`) and
+checkout/portal/subscription routes alongside the deployed
+`api/payments/webhook`, `api/payments/stripe` and `api/subscriptions`. Two
+webhook paths mutating subscription state is precisely the duplicate-delivery
+hazard item H asks about.
+
+Its genuinely additive, non-conflicting pieces — `env-validation.ts`,
+`monitoring.ts`, the SMS idempotency store, and `GO_LIVE_CHECKLIST.md` — are
+**left on the branch, untouched and undeleted**, to be cherry-picked
+individually after the plan model is reconciled. Nothing was deleted or
+rewritten; the branch is intact at `64d10cd`.
+
+**Required before this branch can be adopted:** decide whether the plan model
+is DB-driven or code-driven, then make the other one a projection of it. Doing
+that unilaterally here would have silently repriced the product.
+
+Also checked and found healthy: the lead-finder scraper engine's simulator
+(`engine.ts` `cheerio` is genuinely not installed, so the build warns) is gated
+by `syntheticDataAllowed()`, which returns false when `NODE_ENV === production`.
+Synthetic leads cannot be served in production; the live route correctly
+answers 401 unauthenticated. Not a defect — recorded because the build warning
+looks alarming and is in fact fail-closed by design.
+
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
 ### PRODUCTION CONFIRMS #50 WAS LIVE — NOW FIXED AND DEPLOYED (2026-10-01)
