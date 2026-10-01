@@ -24,12 +24,12 @@ post-deploy live sweep 20/20.
 |---|---|---|---|
 | 1 | AI support + smaller optimized control | UNVERIFIED | Implemented (session 6) + adversarial suite green. Not re-verified in browser this session. |
 | 2 | Long username/email sidebar scaling | UNVERIFIED | Implemented. Needs browser check with a long email. |
-| 3 | Apollo lead source | BLOCKED | Needs `APOLLO_API_KEY`. Config gating/normalisation/dedup/attribution/credits implemented + tested. Only live credential check remains. |
-| 4 | Third-party lead sources + pricing/upcharge | PARTIAL | Buyer discovery + upcharge implemented. Billing path not re-verified. |
+| 3 | Apollo lead source | **IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED** | **C8 full audit: nothing to implement.** Provider abstraction, header-only auth, normalization (contact data stripped), pagination, bounded retries + `Retry-After`, 429 mapping, two-level dedupe, org-scoped admin gate, attribution, credit upcharge with auto-refund, frontend wiring, 26/26 tests. Live route correctly 401s. Blocked only by `APOLLO_API_KEY` (absent from `.dev.vars.prod` AND `wrangler secret list`). Fails with a precise `APOLLO_NOT_CONFIGURED`, never a fake success. |
+| 4 | Third-party lead sources + pricing/upcharge | **IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED** | Apollo pulls are metered through `withCreditDeduction(LEAD_FIND)` with automatic refund on failure — verified in code and by 26 tests. Upcharge *pricing* per provider cannot be confirmed end-to-end without a live provider. |
 | 5 | Free-trial demo/mock data | PARTIAL | 14-day trial created on signup (verified). Demo-data safety not re-audited. |
 | 6 | Performance | UNVERIFIED | Original 5-10s complaint. No measurement this session. MUST measure. |
 | 7 | Complete site functionality | PARTIAL | **Live-verified 2026-10-01:** all 20 public routes healthy on the deployed Worker, 0 spinners, 0 console errors. Authenticated interactive flows still not clicked through in a real browser. |
-| 8 | Shopify / purchases / withdrawals | PARTIAL | Architecture not decided (lead source vs checkout rail). Withdrawals exist. |
+| 8 | Shopify / purchases / withdrawals | N/A for Shopify; withdrawals VERIFIED | **Shopify is not part of this product** (C8): no commits match `shopify`, no env var/route/webhook/catalog/migration; the only hits are `@shopify/flash-list` and `@shopify/react-native-skia`, mobile UI libraries. Fabricating it would invent a product. The behaviour it stood for is implemented for Stripe. Withdrawals/earnings/tax verified in depth (166 tests) + idempotency on real Postgres (8 tests). |
 | 9 | Subscriptions / billing | UNVERIFIED | Stripe keys absent -> BLOCKED for live; plan gate passed (7 plans). |
 | 10 | AI weekly/daily credit limits | COMPLETE | **C5 verified.** Included credits capped at M/4 weekly (25%) and M/20 daily (20% of weekly), keyed on UTC day / ISO week / calendar month. Purchased credits are a separate bucket the caps never touch. 58/0 tests incl. PGlite: cap denial, boundary reset, tenant isolation, no oversell under concurrency, repeated requestId no double-charge, purchased still served at cap. |
 | 11 | Restricted signup setting | PARTIAL | **Enforcement live-verified 2026-10-01:** a non-allowlisted-domain signup against production returns **403**; `/api/admin/settings/signup` is 401. The backend genuinely honors the state, not just the UI. Still to verify by hand: admin toggling ON/OFF and persistence across logout/login and deploy. |
@@ -414,6 +414,82 @@ real security result, established by probing the live site rather than by
 reading the guards.
 
 Gates: typecheck 0 errors; unit **2834 passed / 0 failed** (256 files).
+
+### C8. APOLLO AUDIT + SHOPIFY DETERMINATION + EXACT CREDENTIAL GAP — 2026-10-01
+
+#### Apollo: IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED
+
+Audited against the full checklist in the spec. The integration is **complete
+and honestly built**; nothing needed implementing.
+
+| Requirement | State | Evidence |
+|---|---|---|
+| Provider abstraction | done | reuses the existing `lead_sources` registry, no parallel table |
+| Authentication | done | `x-api-key` header only, never in URL/body/logs |
+| Normalization | done | `normalize.ts`; **contact data is stripped** (emails/phones never persisted) |
+| Pagination | done | `page` / `per_page`, clamped to `maxPerPage` |
+| Retries | done | bounded (1 + 2), honours `Retry-After` on 429, backoff on 5xx/network |
+| Rate limits | done | 429 → HTTP 429 + `Retry-After`, not an internal error |
+| Duplicate handling | done | in-batch dedupe **and** `ON CONFLICT (dedupe_key) DO NOTHING` |
+| Tenant isolation | done | `requireAdmin` + org from session, never from the body |
+| Campaign ingestion | done | inserts into `sourced_leads` with attribution |
+| Billing / upcharge | done | `withCreditDeduction(LEAD_FIND)`, **refunded automatically on failure** |
+| Frontend wiring | done | `lead-finder/page.tsx` calls the route and surfaces real counts |
+| Error handling | done | upstream errors map to static 429/502 messages, no provider text leaked |
+| Tests | done | **26 passing** across client / normalize / route |
+
+Live: `POST /api/lead-finder/apollo` unauthenticated returns **401** — the admin
+gate holds in production.
+
+**Why it is blocked:** `APOLLO_API_KEY` is not set. Confirmed two ways —
+absent from `.dev.vars.prod`, and absent from `wrangler secret list` (the
+authoritative list of what the deployed Worker actually holds). The code fails
+with a precise `APOLLO_NOT_CONFIGURED` rather than fabricating success, so
+nothing here is a hidden fake.
+
+#### Shopify: NOT PART OF THIS PRODUCT (evidence-based determination)
+
+The spec lists Shopify under item H. Searched the whole repository and all
+Git history before concluding:
+
+- `git log --all --grep=shopify -i` → **no commits**
+- The only `shopify` strings in the tree are `@shopify/flash-list` (a React
+  Native list library) and `@shopify/react-native-skia` (a graphics library),
+  both in the **mobile** app's `yarn.lock` / `package.json`
+- No Shopify env var, no route, no webhook handler, no product catalog, no
+  migration, nothing in the deploy config
+
+**Conclusion:** Shopify is a third-party UI/animation library dependency in the
+mobile app, not a payment rail. DealFlowAI's payment architecture is Stripe
+(contract assignment fees + subscriptions). Fabricating a Shopify integration
+would invent a product that does not exist, so it is **N/A**, not a gap. The
+requested behaviour it stood in for — "purchase → order mapping → webhook →
+entitlement" — is already implemented for Stripe.
+
+#### EXACT CREDENTIAL GAP (from `wrangler secret list`, names only)
+
+Present: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `CRON_SECRET`,
+`ANTHROPIC_API_KEY`, `AI_PROVIDER`, `AWS_*` (5), `TWILIO_*` (5), `AWS_SES_*`,
+`SUPPORT_EMAIL`, `LEGAL_ENTITY_*`, `JOB_RUNNER_SECRET`, `SMS_INBOUND_SECRET`,
+`PUBLIC_WEBHOOK_URL`, `RUN_LIVE_FLOWS`, `OLLAMA_MODEL`, `OWNER_NUMBER`,
+`BEDROCK_*` (3), `TWILIO_10DLC_*` (2).
+
+**Missing — this is the complete list of what blocks external verification:**
+
+| Variable | Blocks | State |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | checkout, subscriptions, upgrades, downgrades, cancellation, renewal, refunds, portal, invoices | BLOCKED |
+| `STRIPE_WEBHOOK_SECRET` | webhook signature verification (all real billing events) | BLOCKED |
+| `APOLLO_API_KEY` | live Apollo lead ingestion | BLOCKED |
+| `GOOGLE_CLIENT_ID` | Google sign-in | BLOCKED |
+| `GOOGLE_CLIENT_SECRET` | Google sign-in | BLOCKED |
+| `ANTHROPIC_API_KEY` (present) | AI support / AI routes | **present but out of credits** — verified earlier |
+| `AWS_ACCESS_KEY_ID` (present) | Bedrock AI fallback | **present but token invalid** — verified earlier |
+
+`src/lib/auth.ts` registers the Google provider only when
+`GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET` are both set, so the UI correctly
+omits the button rather than offering a broken control. Same pattern as Apollo:
+the code is ready, the credential is the only gap.
 
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
