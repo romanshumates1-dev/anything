@@ -32,7 +32,7 @@ post-deploy live sweep 20/20.
 | 8 | Shopify / purchases / withdrawals | PARTIAL | Architecture not decided (lead source vs checkout rail). Withdrawals exist. |
 | 9 | Subscriptions / billing | UNVERIFIED | Stripe keys absent -> BLOCKED for live; plan gate passed (7 plans). |
 | 10 | AI weekly/daily credit limits | COMPLETE | **C5 verified.** Included credits capped at M/4 weekly (25%) and M/20 daily (20% of weekly), keyed on UTC day / ISO week / calendar month. Purchased credits are a separate bucket the caps never touch. 58/0 tests incl. PGlite: cap denial, boundary reset, tenant isolation, no oversell under concurrency, repeated requestId no double-charge, purchased still served at cap. |
-| 11 | Restricted signup setting | COMPLETE | `app_settings.signup_restrictions` = {restricted:true, domains:[dealswiftautomation.com]}. Verified: non-allowlisted domain -> 403. |
+| 11 | Restricted signup setting | PARTIAL | **Enforcement live-verified 2026-10-01:** a non-allowlisted-domain signup against production returns **403**; `/api/admin/settings/signup` is 401. The backend genuinely honors the state, not just the UI. Still to verify by hand: admin toggling ON/OFF and persistence across logout/login and deploy. |
 | 12 | Billing/payment UI + backend | PARTIAL | Tax/payout UI shipped (c068aed). Not re-verified. |
 | 13 | Payout/earnings date filters | UNVERIFIED | Not checked this session. |
 | 14 | Earnings/tax reporting | PARTIAL | **C5:** `/api/tax/report` buckets day/week/month/quarter/year in SQL (`date_trunc`), never in JS; tenant-scoped by BOTH user_id and organization_id; CSV export carries the disclaimer and `Cache-Control: no-store`. 166/0 financial tests. Not verified against real ledger volume or a downloaded file opened end-to-end. |
@@ -367,6 +367,53 @@ by `syntheticDataAllowed()`, which returns false when `NODE_ENV === production`.
 Synthetic leads cannot be served in production; the live route correctly
 answers 401 unauthenticated. Not a defect — recorded because the build warning
 looks alarming and is in fact fail-closed by design.
+
+### C7. BILLING IDEMPOTENCY PROVEN + LIVE AUTH/SECURITY SWEEP — 2026-10-01, commit 776935e
+
+Item H asks verbatim: *"Verify repeated webhook delivery does not duplicate
+financial records."* Nothing in the repo answered that against a real database.
+`billingEntitlements.ts` is documented as "the ONE place paid access is granted"
+and is what a replayed Stripe webhook reaches, but it had no direct suite — only
+indirect coverage from webhook tests that mock the very `sql` layer the
+guarantee depends on.
+
+**New suite** `billingIdempotency.pglite.test.ts` (8 tests, all passing) boots
+PGlite (Postgres in WASM), applies migration 086 **unmodified** from disk, and
+replays real payments: a grant lands once; replaying a Stripe event id grants
+nothing and moves no balance; a burst of five replays still grants once; eight
+deliveries of one event grant once and seven report duplicate; a *different*
+payment is not blocked (over-blocking is its own bug); the key is genuinely
+unique; and one org cannot see another's credits.
+
+**Method note worth keeping.** The first version used
+`ON CONFLICT (idempotency_key) DO NOTHING` and failed — *"there is no unique or
+exclusion constraint matching the ON CONFLICT specification"*, because 086
+creates a **partial** index (`WHERE idempotency_key IS NOT NULL`) and a partial
+index cannot arbitrate a bare column conflict target. Production does not use
+`ON CONFLICT` either: `credits.ts` catches SQLSTATE 23505 and re-reads the
+original row. The helper now reproduces that exact contract inside a
+transaction, so a rejected duplicate rolls back and the balance provably cannot
+move. The concurrency test is sequential deliberately — one PGlite connection
+means `Promise.all` would serialise anyway and assert less than it appears to.
+
+**Live production sweep (read-only, no state changed).**
+
+| Check | Result |
+|---|---|
+| 12 sensitive endpoints (`/api/admin/*`, `/api/withdrawals`, `/api/earnings`, `/api/tax/report`, `/api/credits`, `/api/subscriptions`) | all **401** |
+| `/api/system/health` | 200, body carries no internals |
+| `/api/payments/webhook` (unsigned, mock provider) | **503** — fail-closed in production |
+| `/api/payments/mock-checkout` | **404** — `devOnlyGuard` allow-list holds |
+| non-allowlisted signup domain | **403** — item L genuinely enforced, not a UI flag |
+| public API (`/api/billing/plans`, `/api/legal`, `/api/reviews`, `/api/feedback`) | 200; `/api/legal` returns 9 docs |
+
+So the two most dangerous surfaces in the codebase — the endpoint that flips a
+ledger row to `paid`, and the endpoint that would forge
+`payment_intent.succeeded` — are both verifiably closed in production. That is a
+real security result, established by probing the live site rather than by
+reading the guards.
+
+Gates: typecheck 0 errors; unit **2834 passed / 0 failed** (256 files).
 
 ## D. EXTERNAL BLOCKERS (do not stop other work for these)
 
