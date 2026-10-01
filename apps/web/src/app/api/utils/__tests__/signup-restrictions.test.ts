@@ -56,6 +56,59 @@ describe('checkSignupAllowed', () => {
     expect((await checkSignupAllowed('owner@dealswiftautomation.com')).allowed).toBe(true);
     expect((await checkSignupAllowed('stranger@gmail.com')).allowed).toBe(false);
   });
+
+  /**
+   * THE FULL TOGGLE CYCLE (item L, specified as ON -> OFF -> ON).
+   *
+   * The other tests each prove ONE state in isolation. That is not the same
+   * thing as proving the setting is a real, reversible, server-authoritative
+   * control: a setting that latched ON, or that only ever read its first value,
+   * would still pass every single-state test above.
+   *
+   * Each step re-queries with a FRESH cache, which is what a different edge
+   * isolate or a restarted process sees. The DB is the single authority and the
+   * 10 s in-process cache only ever shortens the propagation delay - it is never
+   * the source of truth, and nothing here depends on `_resetEmailDomainPolicyCache`
+   * being called in between.
+   */
+  it('ON -> OFF -> ON really flips server-side enforcement each time', async () => {
+    const row = (restricted: boolean) => ({
+      value: {
+        signup_restricted: restricted,
+        allowed_email_domains: ['dealswiftautomation.com'],
+      },
+    });
+
+    // --- step 1: ON -------------------------------------------------------
+    mockSql.mockResolvedValue([row(true)]);
+    expect((await checkSignupAllowed('stranger@gmail.com')).allowed).toBe(false);
+    expect((await checkSignupAllowed('owner@dealswiftautomation.com')).allowed).toBe(true);
+
+    // --- step 2: OFF ------------------------------------------------------
+    // A fresh isolate: the policy is re-read, and the restriction is genuinely
+    // lifted rather than the UI merely being told it is.
+    _resetEmailDomainPolicyCache();
+    mockSql.mockResolvedValue([row(false)]);
+    expect((await checkSignupAllowed('stranger@gmail.com')).allowed).toBe(true);
+    expect((await checkSignupAllowed('anyone@any-domain.test')).allowed).toBe(true);
+
+    // --- step 3: ON again --------------------------------------------------
+    // Guards against a one-way latch: turning it back on must restrict again.
+    _resetEmailDomainPolicyCache();
+    mockSql.mockResolvedValue([row(true)]);
+    expect((await checkSignupAllowed('stranger@gmail.com')).allowed).toBe(false);
+    expect((await checkSignupAllowed('owner@dealswiftautomation.com')).allowed).toBe(true);
+  });
+
+  it('the allowlist itself is honoured and is case-insensitive', async () => {
+    mockSql.mockResolvedValue([
+      { value: { signup_restricted: true, allowed_email_domains: ['DealSwiftAutomation.com'] } },
+    ]);
+
+    // Uppercase in the setting must not exclude a lowercase address.
+    expect((await checkSignupAllowed('owner@dealswiftautomation.com')).allowed).toBe(true);
+    expect((await checkSignupAllowed('stranger@gmail.com')).allowed).toBe(false);
+  });
 });
 
 describe('getSignupRestrictions', () => {
