@@ -122,23 +122,32 @@ export async function getOrganization(): Promise<Organization | null> {
       };
     }
 
-    // NO MEMBERSHIP.
+    // NO MEMBERSHIP, and NO CROSS-TENANT FALLBACK.
     //
-    // DEFECT (tenant isolation): this used to fall through to `org_default`
-    // unconditionally, so ANY authenticated user with no organization membership
-    // was handed the default organization instead of being refused. `org_default`
-    // holds the bulk of the platform's leads (370k+ rows) and has zero members,
-    // so the fallback was a mass data exposure for every membership-less session
-    // - including the orphaned CI/E2E accounts still holding live sessions.
+    // DEFECT HISTORY (this change removes TWO separate fallbacks):
+    //  1. It fell through to `org_default` unconditionally, so ANY authenticated
+    //     membership-less session was handed the platform primary tenant
+    //     (370k+ leads measured on the live database). Gated behind
+    //     `role === 'ADMIN'` on 2026-09-26.
+    //  2. That gate was STILL wrong. `role === 'ADMIN'` is not evidence of
+    //     platform-wide authority: 16 accounts on the live database hold it
+    //     while having NO organization at all, including the orphaned e2e/probe
+    //     accounts left behind by the signup-hook defect (including the operator
+    //     account). "Is an admin" and "may this session read the platform
+    //     tenant" are different questions, and conflating them meant a stale or
+    //     mis-set role silently conferred cross-tenant read access.
     //
-    // `getUserOrganizations` (below) has always gated `org_default` behind
-    // `role === 'ADMIN'`; this authorization path now applies the same gate, so
-    // the two can no longer disagree. A membership-less non-admin gets `null`,
-    // which every caller already translates to 403.
-    const userRows = (await sql`
-      SELECT role FROM "user" WHERE id = ${session.user.id} LIMIT 1
-    `) as UserRoleRow[];
-    if (userRows[0]?.role !== 'ADMIN') {
+    // THE FIX: the fallback is no longer role-derived at all. It requires BOTH
+    // an explicit operator-curated allowlist (PLATFORM_ADMIN_EMAILS) AND an
+    // existing `org_default` row. Everything else, including an admin who is
+    // not on the allowlist, gets `null`, which every caller already translates
+    // to 403.
+    //
+    // This is the "explicitly designed, documented, independently authorized
+    // platform-global admin architecture" the security requirement calls for:
+    // granting it is a deliberate, reviewable config change rather than a side
+    // effect of a role column.
+    if (!(await isPlatformOrgAdmin(session.user.id))) {
       return null;
     }
 
@@ -156,6 +165,46 @@ export async function getOrganization(): Promise<Organization | null> {
 }
 
 /**
+ * Is this user an explicitly-authorized PLATFORM admin (allowed to fall back to
+ * `org_default` when they hold no membership)?
+ *
+ * WHY AN ALLOWLIST AND NOT `role === 'ADMIN'`:
+ * `role` answers "may this person administer the app's own admin surface", which
+ * is a different question from "may this session read the platform's primary
+ * tenant". Coupling them meant any account that ended up with an ADMIN role and
+ * no organization — 16 of them on the live database — silently inherited
+ * cross-tenant read access to `org_default` (370k+ leads). Authority to cross a
+ * tenant boundary has to be explicit, reviewable and deliberate.
+ *
+ * Contract:
+ *   - the user must actually hold `role = 'ADMIN'` in the database, AND
+ *   - their email must appear in `PLATFORM_ADMIN_EMAILS`.
+ * Requiring BOTH means demoting an allowlisted account actually removes the
+ * fallback, so the allowlist can never outlive the role that justified it.
+ *
+ * Fails CLOSED on every error path, including an unset/empty variable: with no
+ * allowlist configured, nobody gets the cross-tenant fallback.
+ */
+async function isPlatformOrgAdmin(userId: string): Promise<boolean> {
+  try {
+    const allowlist = (process.env.PLATFORM_ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (allowlist.length === 0) return false;
+
+    const rows = await sql`
+      SELECT role, email FROM "user" WHERE id = ${userId} LIMIT 1
+    `;
+    const row = rows[0] as { role?: string; email?: string } | undefined;
+    if (row?.role !== 'ADMIN') return false;
+    return allowlist.includes((row.email ?? '').trim().toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get all organizations the current user belongs to with their roles.
  */
 export async function getUserOrganizations(userId: string): Promise<MemberInfo[]> {
@@ -167,14 +216,14 @@ export async function getUserOrganizations(userId: string): Promise<MemberInfo[]
       ORDER BY om.created_at ASC
     `;
 
-    // Also check if user has admin platform access (can access default org)
-    const userRows = await sql`
-      SELECT role FROM "user" WHERE id = ${userId} LIMIT 1
-    `;
-    
-    const userRoleRows = userRows as UserRoleRow[];
-    if (userRoleRows[0]?.role === 'ADMIN') {
-      // Admin users get access to default org if not already a member
+    // SAME DEFECT, LISTING PATH (fixed together with getOrganization above).
+    // This synthesised a fake `org_default` membership for ANY role=ADMIN user,
+    // which had two consequences: the org switcher would show a tenant the user
+    // was never a member of, and any caller trusting this LIST to decide what a
+    // user may reach would be told "yes, org_default" on the strength of a role
+    // column. Now gated by the same explicit allowlist, so the listing and the
+    // authorization path cannot disagree.
+    if (await isPlatformOrgAdmin(userId)) {
       const hasMembership = rows.some((r: any) => r.organization_id === 'org_default');
       if (!hasMembership) {
         (rows as any[]).push({
@@ -268,11 +317,20 @@ async function isMemberOf(userId: string, orgId: string): Promise<boolean> {
   }
 }
 
+/**
+ * True only for an EXPLICITLY allowlisted platform admin.
+ *
+ * This replaced a bare `role === 'ADMIN'` check. It is the most dangerous of
+ * the three role-derived fallbacks, because it authorises an org id that came
+ * from the REQUEST: `getEffectiveOrganizationId(explicitOrgId)` will hand back
+ * `explicitOrgId` whenever the caller is a platform admin. Combined with the
+ * role gate, ANY admin account - including the 16 orphaned ones with no
+ * organization - could name any tenant's id and be granted it. That is a direct
+ * IDOR into every organization, not merely access to the default one.
+ *
+ * It now defers to the same `isPlatformOrgAdmin` allowlist as the other two
+ * paths, so "may cross a tenant boundary" has exactly one definition.
+ */
 async function isPlatformAdmin(userId: string): Promise<boolean> {
-  try {
-    const rows = await sql`SELECT role FROM "user" WHERE id = ${userId} LIMIT 1`;
-    return rows[0]?.role === 'ADMIN';
-  } catch {
-    return false;
-  }
+  return isPlatformOrgAdmin(userId);
 }
