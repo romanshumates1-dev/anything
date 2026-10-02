@@ -100,7 +100,7 @@ Legend: **I** = implemented · **T** = automated test exists · **L** = live / e
 | **R** | AI phone calling (reuse, do not duplicate) | Y | Y | N | `gateway/voice-gateway.ts` + `.test.ts`; `services/phoneDriver.ts`, `phoneChannelDriver.ts`; `utils/callSchedulingEngine.ts`; 45 `voice` files, 11 `transcript` files | IMPLEMENTED — no live telephony verification |
 | **S** | Campaign AI templates (custom + recommended) | Y | P | N | `api/templates/**`; `src/app/templates/**` | **INCOMPLETE** — "recommended defaults" must not claim optimised without data; not audited |
 | **T** | AI voice selection (Auto + manual, deterministic) | Y | Y | N | `src/app/api/utils/voiceSelection.ts`; `api/campaigns/[id]/voice/route.ts` (GET explain + POST set); migration `098_campaign_voice_selection.sql`; `utils/__tests__/voiceSelection.test.ts` (12), `campaigns/[id]/voice/__tests__/voiceRoute.test.ts` (8) | **UNIT TESTED** — 0 hits for any voice-selection identifier before this change, so the set was genuinely absent, not merely unevidenced. Determinism proven by a 200-invocation single-answer assertion; tenant isolation proven as 404-not-403 |
-| **U** | Admin CRM analytics | Y | P | N | 8 `src/app/admin/**/page.tsx`; `api/admin/stats`, `api/admin/{users,subscriptions,audience,exports,audit-log}` | IMPLEMENTED — metric-by-metric traceability not audited |
+| **U** | Admin CRM analytics | Y | Y | N | 8 `src/app/admin/**/page.tsx`; `api/admin/stats`, `api/admin/{users,subscriptions,audience,exports,audit-log}`; `admin/__tests__/adminMetricTraceability.test.ts` (4) | **VERIFIED (unit)** — audit found and fixed TWO real defects: (1) the dashboard rendered `messages.receivedToday \|\| 0` as **"0 received"**, converting the backend's honest `null`/`directionAvailable:false` into a fabricated zero; (2) `api/admin/audience` hand-rolled its admin check and so **skipped the email-domain policy** that `requireAdmin` enforces. Both now guarded |
 | **V** | Optional gamification system | P | P | N | `api/achievements`, `api/leaderboard`; `src/app/{achievements,leaderboard}`; `WeeklyProgressSummary.tsx`; **0 hits** for `battle` / `spin wheel` / `crate` | **INCOMPLETE** — XP/levels/seasons/spin-wheel absent; ON/OFF gating not evidenced |
 | **W** | User settings (persist, server-backed) | Y | Y | N | `api/user/preferences/route.ts`; `__tests__/preferences/accessibility.test.ts`; `settings/accessibility/page.tsx`; `AccessibilityProvider.tsx`; migration `094_user_preferences.sql` | VERIFIED (unit) — cross-session persistence not browser-tested |
 | **X** | Paid-account clarification messaging | P | N | N | entitlement messaging exists piecemeal; no dedicated audit | **INCOMPLETE** |
@@ -115,7 +115,7 @@ Legend: **I** = implemented · **T** = automated test exists · **L** = live / e
 |---|---|---|
 | Fully live-VERIFIED (real Postgres / DB constraint) | N, J, M | 3 |
 | VERIFIED at unit level with a real regression artifact | A, B, E, K, L, O, Q, W, **T** | 9 |
-| IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED | C, I, D, R, U, AA | 6 |
+| IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED | C, I, D, R, AA | 5 |
 | **INCOMPLETE** | F, G, H, P, S, V, X, Y, Z, AB | **10** |
 
 The 11 INCOMPLETE sets are **not** all "the code is missing" — several are *"implemented but no
@@ -262,7 +262,7 @@ Why **not lower than 5**:
 | 1 | Run the P1 authenticated browser E2E against `https://dealswiftautomation.com` (login → dashboard → campaigns → contacts → lead finder → billing → settings) with console capture | G, H, P, Z, AA, AB, smoke items 11–20, Frontend / Visual QA | none — implementable now |
 | 2 | ~~Run the prompt-required **lint** gate and record the result~~ — **DONE**: oxlint `342 warnings / 0 errors`, exit 0 | Lint row | ✅ closed |
 | 3 | ~~Set **T** — locate / capture voice-selection state (`voiceId`) and the Auto-recommendation path~~ — **DONE**: the identifiers returned **0 hits**, so the set was absent rather than merely unevidenced. Shipped `voiceSelection.ts` (deterministic, explainable, manual short-circuits Auto), the `[id]/voice` route, migration `098`, and 20 tests | T | ✅ closed |
-| 4 | Audit **U** metric-by-metric traceability (each admin analytic must map to a query) | U | none |
+| 4 | ~~Audit **U** metric-by-metric traceability~~ — **DONE**: found and fixed a **fabricated metric** (the dashboard turned the backend's honest `receivedToday: null` into "0 received") and a **weaker-than-standard admin gate** on `api/admin/audience` that skipped the email-domain policy. Both now guarded by `adminMetricTraceability.test.ts` | U | ✅ closed |
 | 5 | Re-read onboarding (**Z**, **AB**) against the 10-point flow; add skip / resume / opt-in enforcement tests | Z, AB | none |
 | 6 | Determine **V** gamification ON/OFF gating and whether XP / levels are in scope | V | none |
 | 7 | Repo-wide support-contact sweep; homepage structured-data + private-route noindex audit | Contact, SEO | owner-supplied business contact details |

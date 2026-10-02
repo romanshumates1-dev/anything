@@ -1,22 +1,35 @@
 import { NextResponse } from 'next/server';
-import { requireSession } from '@/app/api/utils/auth';
+import { requireAdmin } from '@/app/api/utils/authz';
 import sql from '@/app/api/utils/sql';
 
 /**
  * GET /api/admin/audience
  * Get aggregate questionnaire analytics for admin dashboard
+ *
+ * WHY THIS USES `requireAdmin` AND NOT A HAND-ROLLED CHECK
+ * -------------------------------------------------------
+ * This route previously called `requireSession()` and then re-implemented the
+ * admin check inline:
+ *
+ *     const [user] = await sql`SELECT role FROM "user" WHERE id = ${session.userId}`;
+ *     if (!user || user.role !== 'ADMIN') return 403;
+ *
+ * That is admin-gated, so it was not an open door — but it was a WEAKER gate
+ * than every other admin route, in two concrete ways:
+ *
+ *   1. It skipped the email-domain policy. `requireAdmin` additionally requires
+ *      `isEmailDomainAllowedEffective(user.email)`. A user whose domain was
+ *      later revoked keeps ADMIN in the database but is correctly shut out of
+ *      every other admin surface; this route alone would still serve them the
+ *      questionnaire analytics.
+ *   2. It compared the role against the literal `'ADMIN'` instead of
+ *      `isAdminRole(...)`, so the role vocabulary had a second definition.
+ *
+ * One enforcement path, enforced once, is easier to audit than two.
  */
 export async function GET() {
-  const session = await requireSession();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  // Check admin role
-  const [user] = await sql`SELECT role FROM "user" WHERE id = ${session.userId} LIMIT 1`;
-  if (!user || user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
 
   try {
     // Get overall stats

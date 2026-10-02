@@ -69,7 +69,18 @@ interface SystemStats {
     sentToday: number;
     sentThisWeek: number;
     sentThisMonth: number;
-    receivedToday: number;
+    /**
+     * Null exactly when `directionAvailable` is false. The API returns null
+     * rather than 0 because this schema has no per-message direction column,
+     * so an inbound count cannot be derived at all.
+     */
+    receivedToday: number | null;
+    /**
+     * False when the platform cannot derive an inbound/outbound split. Set U
+     * forbids fabricating metrics, so the UI must consult this before
+     * rendering any inbound number instead of coercing null to 0.
+     */
+    directionAvailable: boolean;
   };
   leads: {
     total: number;
@@ -279,7 +290,21 @@ function SystemOverviewSection({ stats, loading }: { stats?: SystemStats; loadin
       label: 'Messages Today',
       value: stats?.messages.sentToday || 0,
       icon: MessageSquare,
-      secondary: `${stats?.messages.receivedToday || 0} received`,
+      // Set U: "Do not fabricate metrics." The backend deliberately returns
+      // `receivedToday: null` with `directionAvailable: false` because this
+      // schema records conversation activity in `ai_conversations` and has no
+      // per-message direction to read. Coercing that null to a number (what
+      // this line used to do) displayed "0 received", which asserts ZERO
+      // inbound messages — an invented number that reads as verified data.
+      // The honest rendering states that the split is not tracked.
+      secondary:
+        stats?.messages.directionAvailable === false
+          ? 'Inbound/outbound split not tracked'
+          : `${stats?.messages.receivedToday ?? 0} received`,
+      secondaryTitle:
+        stats?.messages.directionAvailable === false
+          ? 'This platform records conversation activity, not per-message direction, so inbound volume cannot be derived. Reporting a number here would be a fabrication.'
+          : undefined,
     },
     {
       label: 'System Health',
@@ -369,7 +394,12 @@ function KpiContent({ kpi }: { kpi: any }) {
           </p>
         )}
         {kpi.secondary && (
-          <p className="text-xs text-[var(--text-muted)] mt-1">{kpi.secondary}</p>
+          // `title` carries the WHY for a metric that cannot be reported as a
+          // number. Without it "Inbound/outbound split not tracked" reads as a
+          // rendering bug rather than an honest statement about the data.
+          <p className="text-xs text-[var(--text-muted)] mt-1" title={kpi.secondaryTitle}>
+            {kpi.secondary}
+          </p>
         )}
       </div>
       <div className="p-2 rounded-lg bg-[var(--accent-blue)]/10">
