@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import {
   CheckCircle,
   Bot,
@@ -14,7 +13,7 @@ import {
   Star,
   Sparkles,
 } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { getSessionOrNull } from "@/lib/session";
 import {
   RecentlyJoinedAvatars,
   BetaPricingBanner,
@@ -35,7 +34,10 @@ export const metadata = {
 };
 
 export default async function LandingPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  // Contained read: an auth-backend failure must render the public page as a
+  // guest, never 500 it (2026-10-02 crawl: GET / 500 in 12.6s on a session
+  // lookup failure with NO session need on this page).
+  const session = await getSessionOrNull();
   if (session) redirect("/dashboard");
 
   return (

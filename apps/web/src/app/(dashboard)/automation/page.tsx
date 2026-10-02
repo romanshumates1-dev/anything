@@ -5,8 +5,7 @@
  * The "command center" for set-and-forget campaign operation.
  */
 import { Metadata } from 'next';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSessionOrNull } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { CampaignAutomationDashboard } from '@/components/campaigns/CampaignAutomationDashboard';
 import { getOrganization } from '@/lib/organization-context';
@@ -17,7 +16,9 @@ export const metadata: Metadata = {
 };
 
 export default async function AutomationDashboardPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
+  // Contained read: an auth-backend failure renders as signed-out (redirect to
+  // signin), never as a 500. See src/lib/session.ts for the observed defect.
+  const session = await getSessionOrNull();
   if (!session) {
     redirect('/account/signin');
   }

@@ -1,6 +1,5 @@
-import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { getSessionOrNull } from '@/lib/session';
 import sql from '@/app/api/utils/sql';
 import { isAdminRole } from '@/app/api/utils/access-control';
 import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
@@ -12,7 +11,9 @@ import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-poli
  * re-read from the DB every call (never trusts a cached session).
  */
 export async function requireAdminPage(): Promise<{ userId: string; email: string }> {
-  const session = await auth.api.getSession({ headers: await headers() });
+  // Contained read: an auth-backend failure renders as signed-out (redirect to
+  // signin), never as a 500. See src/lib/session.ts for the observed defect.
+  const session = await getSessionOrNull();
   if (!session) redirect('/account/signin?callbackUrl=%2Fadmin');
 
   const [user] = await sql`SELECT email, role FROM "user" WHERE id = ${session.user.id} LIMIT 1`;

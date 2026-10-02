@@ -5,8 +5,7 @@
  * Allows users to configure and monitor automated outreach.
  */
 import { Metadata } from 'next';
-import { auth } from '@/lib/auth';
-import { headers } from 'next/headers';
+import { getSessionOrNull } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { CampaignAutomationDashboard } from '@/components/campaigns/CampaignAutomationDashboard';
 import { CampaignAutomationSettings } from '@/components/campaigns/CampaignAutomationSettings';
@@ -26,7 +25,9 @@ interface PageProps {
 export default async function CampaignAutomationPage({ params }: PageProps) {
   const { id: campaignId } = await params;
 
-  const session = await auth.api.getSession({ headers: await headers() });
+  // Contained read: an auth-backend failure renders as signed-out (redirect to
+  // signin), never as a 500. See src/lib/session.ts for the observed defect.
+  const session = await getSessionOrNull();
   if (!session) {
     redirect('/account/signin');
   }
