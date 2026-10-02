@@ -64,12 +64,22 @@ export interface PgClientLike {
  * The HTTP query function. Typed structurally so tests can pass a fake, and so
  * this module does not import @neondatabase/serverless at module scope (which
  * would drag the WebSocket path into the Workers bundle).
+ *
+ * NON-GENERIC on purpose: `neon(url, { fullResults: true })` resolves to
+ * `FullQueryResults` ({ fields, command, rowCount, rows, rowAsArray }), while
+ * default mode resolves to a bare `Record<string, unknown>[]`. Both shapes are
+ * accepted here because `exec` normalises BOTH — a generic `<Row>` return made
+ * the real driver function unassignable (TS2345), and rows are column-name
+ * objects in either mode, which is what Kysely's QueryResult carries.
  */
 export interface HttpQueryFn {
-  <Row = Record<string, unknown>>(
+  (
     text: string,
     params?: readonly unknown[]
-  ): Promise<{ rows?: Row[]; rowCount?: number; command?: string }>;
+  ): Promise<
+    | { rows?: Record<string, unknown>[]; rowCount?: number; command?: string }
+    | Record<string, unknown>[]
+  >;
 }
 
 const TRANSACTION_CONTROL = /^\s*(begin|start\s+transaction|commit|rollback)\b/i;
@@ -117,13 +127,30 @@ export function createWorkersAuthDatabase(
       return { command: '', rowCount: 0, rows: [] };
     }
 
-    const result = await run(() => httpQuery<Row>(text, params));
+    // Both result shapes arrive here and are normalised to pg-shaped results:
+    //   - `{ command, rowCount, rows }` from `fullResults: true`
+    //   - a bare rows ARRAY from Neon default mode (see HttpQueryFn doc)
+    const result = await run(() => httpQuery(text, params));
+
+    // Neon's DEFAULT mode resolves an ordinary `sql(text, params)` call to a
+    // bare rows ARRAY — not a result object. Reading `.rows` on that array is
+    // `undefined`, which the old normalisation turned into `[]`: the
+    // INSERT...RETURNING row was dropped, better-auth's executeTakeFirst()
+    // yielded undefined, and production signup answered
+    // 400 FAILED_TO_CREATE_USER (2026-10-01) with NO logged exception. Accept
+    // both shapes so the adapter is correct under either driver option.
+    if (Array.isArray(result)) {
+      const rows = result as Row[];
+      return { command: '', rowCount: rows.length, rows };
+    }
 
     return {
       // Kysely compares `command` to uppercase literals, so normalise.
       command: typeof result?.command === 'string' ? result.command : '',
       rowCount: typeof result?.rowCount === 'number' ? result.rowCount : 0,
-      rows: Array.isArray(result?.rows) ? result.rows : [],
+      // The driver types rows as Record<string, unknown>[]; the caller's Row
+      // is that same column-name shape (Kysely fills it from the row values).
+      rows: (Array.isArray(result?.rows) ? result.rows : []) as Row[],
     };
   };
 

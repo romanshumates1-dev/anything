@@ -93,6 +93,48 @@ console.log(
     `(${setCookies.length} cookie header(s), cookie length ${cookie.length})`
 );
 console.log('');
+/**
+ * ADMIN GATING CHECK — runs BEFORE the promotion above, using the original
+ * un-promoted session cookie.
+ *
+ * WHY IT IS HERE, IN THIS ORDER: this script promotes its own throwaway
+ * account to ADMIN so it can exercise the admin surface. That makes the
+ * post-promotion admin routes legitimately 200 — and it silently DESTROYS the
+ * ability to assert the far more important property, namely that a NON-admin
+ * is refused. Asserting `forbidden` against a now-ADMIN account reported a
+ * phantom vulnerability while proving nothing about real authorization.
+ *
+ * The negative case can therefore only be true at this one moment, so it is
+ * asserted here. A non-admin reaching either route with 2xx is a REAL
+ * authorization defect and fails the run.
+ */
+const GATED_ROUTES = ['/api/admin/stats', '/api/admin/users'];
+let gatingProblems = 0;
+for (const route of GATED_ROUTES) {
+  let status = 0;
+  let note = '';
+  let json = null;
+  try {
+    const res = await fetch(`${BASE}${route}`, { headers: { cookie, Origin: BASE } });
+    status = res.status;
+    json = await res.json().catch(() => null);
+    if (status < 400) {
+      note = `  <-- NON-ADMIN REACHED ADMIN ROUTE (${status})`;
+      gatingProblems++;
+    } else if (typeof json?.error === 'string') {
+      note = ` | ${json.error.slice(0, 60)}`;
+    }
+  } catch (e) {
+    status = 0;
+    note = `  <-- TRANSPORT: ${String(e).slice(0, 60)}`;
+    gatingProblems++;
+  }
+  console.log(
+    `${status >= 400 ? 'OK  ' : 'FAIL'} ${String(status).padEnd(4)} ${route.padEnd(42)} (pre-promotion, non-admin)${note}`
+  );
+}
+if (gatingProblems === 0) console.log('admin gating verified: both admin routes refused a non-admin');
+
 
 // -------------------------------------------------- promote OWN probe account
 // A new signup is a MEMBER, and MIN_ACCESS_ROLE answers 403 "Access pending"
@@ -167,8 +209,11 @@ const ROUTES = [
   ['/api/billing/plans', 'ok'],
   ['/api/subscriptions', 'ok'],
   ['/api/system/queue-status', 'gate'],
-  ['/api/admin/stats', 'forbidden'],
-  ['/api/admin/users', 'forbidden'],
+  // The probe promoted its own account to ADMIN above, so 2xx is the CORRECT
+  // result here. Asserting 401/403 against an admin account produced a phantom
+  // "vulnerability"; the real negative case is asserted pre-promotion above.
+  ['/api/admin/stats', 'ok'],
+  ['/api/admin/users', 'ok'],
   ['/api/system/ai-status', 'gate'],
 ];
 
@@ -200,9 +245,6 @@ for (const [route, expect] of ROUTES) {
     } else if (expect === 'ok' && status >= 400) {
       note = `  <-- expected 2xx, got ${status}`;
       problems++;
-    } else if (expect === 'forbidden' && status < 400) {
-      note = '  <-- EXPECTED 401/403 FOR NON-ADMIN';
-      problems++;
     }
   } catch (e) {
     status = 0;
@@ -228,5 +270,9 @@ for (const [route, expect] of ROUTES) {
 }
 
 console.log('');
-console.log(`RESULT: ${ok} ok, ${gated} correctly gated, ${problems} problem(s)`);
-process.exit(problems > 0 ? 1 : 0);
+console.log(
+  `RESULT: ${ok} ok, ${gated} correctly gated, ` +
+    `${problems + gatingProblems} problem(s) ` +
+    `(${gatingProblems} admin-gating)`
+);
+process.exit(problems + gatingProblems > 0 ? 1 : 0);

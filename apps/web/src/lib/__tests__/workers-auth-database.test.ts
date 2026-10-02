@@ -187,4 +187,40 @@ describe('createWorkersAuthDatabase — better-auth / Kysely contract', () => {
     const r = await client.query();
     expect(typeof r.command).toBe('string');
   });
+
+  /**
+   * REGRESSION — production signup 400 FAILED_TO_CREATE_USER (2026-10-01).
+   *
+   * `neon(url)` in DEFAULT mode (no `fullResults: true`) resolves an ordinary
+   * `sql(text, params)` call to a bare rows ARRAY — `[{ id: 'u1', ... }]` — not
+   * a `{ command, rowCount, rows }` object. The adapter read `result?.rows` on
+   * that array, got `undefined`, and normalised to `[]`.
+   *
+   * better-auth creates users via `.insertInto('user').values(...).returningAll()
+   * .executeTakeFirst()` (verified in @better-auth/kysely-adapter/dist/index.mjs
+   * line 362/501): an INSERT...RETURNING whose rows come back empty yields
+   * `undefined`, and sign-up.mjs line 224 turns that into
+   * `FAILED_TO_CREATE_USER` (HTTP 400) WITHOUT throwing — which is exactly why
+   * `wrangler tail` showed a clean 200 with no exception.
+   *
+   * The insert DID reach the database; only the returned row was dropped. So
+   * this test feeds the adapter the exact value the real driver produces and
+   * requires the row to survive.
+   */
+  it('surfaces rows when the HTTP driver resolves to a bare rows array (Neon default mode)', async () => {
+    const insertedRow = { id: 'u1', email: 'new@user.example' };
+    const sql = async () => [insertedRow] as unknown;
+    const db = createWorkersAuthDatabase({ query: sql });
+    const client = (await (db as FakePgPool).connect()) as {
+      query(): Promise<{ rows: Array<{ id: string }>; command: string; rowCount: number }>;
+    };
+
+    const r = await client.query('insert into "user" (...) values (...) returning *');
+
+    // THE BUG: this used to be [] because `result.rows` on an array is undefined.
+    expect(r.rows).toEqual([insertedRow]);
+    expect(r.rowCount).toBe(1);
+    // command is not present on the array form; Kysely needs a string, not undefined.
+    expect(typeof r.command).toBe('string');
+  });
 });

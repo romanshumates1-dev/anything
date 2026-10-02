@@ -124,12 +124,34 @@ const pool = new Pool({
 // `runWithDbRetry` is threaded through so the Workers path keeps the same
 // bounded transient-error protection the Node path has, which is what stops a
 // blip from surfacing to the user as a random sign-out.
-const database = isCloudflareWorkers()
-  ? createWorkersAuthDatabase(neon(process.env.DATABASE_URL ?? ''), runWithDbRetry)
+//
+// Single-signature wrapper over Neon's HTTP driver for the Workers path.
+// WHY A WRAPPER: `neon(...)` is OVERLOADED (tagged-template + ordinary call),
+// and an overloaded function is not structurally assignable to the plain
+// `HttpQueryFn` (TS2345 on the TemplateStringsArray parameter). The wrapper
+// also converts the `readonly` params Kysely passes into the mutable array
+// the driver signature wants — one explicit, documented cast.
+// `fullResults: true` is LOAD-BEARING (see workers-auth-database.ts): without
+// it the ordinary call resolves to a bare rows ARRAY and loses the
+// `command`/`rowCount` Kysely reads for numAffectedRows. The IIFE runs once
+// at module load: `neon()` only builds a query closure (no connection), and
+// on Node the branch returns null without touching the driver at all.
+const workersHttpQuery = (() => {
+  if (!isCloudflareWorkers()) return null;
+  const neonFn = neon(process.env.DATABASE_URL ?? '', { fullResults: true });
+  return (text: string, params?: readonly unknown[]) =>
+    neonFn(text, params as unknown[]) as Promise<
+      | { rows?: Record<string, unknown>[]; rowCount?: number; command?: string }
+      | Record<string, unknown>[]
+    >;
+})();
+
+const database = workersHttpQuery
+  ? createWorkersAuthDatabase(workersHttpQuery, runWithDbRetry)
   : pool;
 
 // RANDOM SIGN-OUT FIX: better-auth's internal session reads (getSession →
-// session table) and the databaseHooks below all flow through pool.query.
+// session table) flow through pool.query on Node (where `database === pool`); the databaseHooks below go through `hookQuery`.
 // A transient Neon connection error there surfaces as a 401, which the
 // client renders as a random sign-out. Wrap (not replace) the query method
 // with the same bounded transient-error retry used by utils/sql.ts.
@@ -141,6 +163,31 @@ const boundPoolQuery = pool.query.bind(pool) as unknown as (
 (pool as unknown as { query: (...args: unknown[]) => Promise<unknown> }).query = (
   ...args: unknown[]
 ) => runWithDbRetry(() => boundPoolQuery(...args));
+
+/**
+ * Raw-SQL helper for the databaseHooks below — ALWAYS the same database
+ * better-auth itself uses: the HTTP-backed adapter on workerd, the pooled
+ * WebSocket on Node (where `database === pool`, so this is byte-for-byte the
+ * same call as the old `pool.query(...)`).
+ *
+ * WHY IT MATTERS: these hooks used to reference the module-scope `pool`
+ * directly. On workerd that pool is exactly the cross-request WebSocket this
+ * change exists to avoid (see the header): during SIGN-UP the first
+ * `user.create.after` insert may ride the socket created in the same request,
+ * but every later signup reuses a socket owned by an earlier request and
+ * workerd throws "Cannot perform I/O on behalf of a different request". The
+ * org-creation hook swallows its errors, so the symptom would be silent —
+ * users with no organization and 403 "No organization found" everywhere.
+ */
+const hookQuery = (
+  text: string,
+  params?: readonly unknown[]
+): Promise<{ rows: Record<string, unknown>[] }> => {
+  const db = database as unknown as {
+    query(t: string, p?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
+  };
+  return db.query(text, params);
+};
 
 // Origins we accept auth requests from. Include every URL the app may be
 // served under so better-auth's CSRF check doesn't reject legitimate requests
@@ -303,21 +350,21 @@ export const auth = betterAuth({
             // INSERT fail for EVERY new signup, and the catch below swallowed
             // the error, so new users ended up with no organization at all and
             // every org-scoped API answered 403 "No organization found".
-            await pool.query(
+            await hookQuery(
               `INSERT INTO organizations (id, name, slug, owner_user_id, created_at, updated_at)
                VALUES ($1, $2, $3, $4, NOW(), NOW())`,
               [orgId, orgName, orgSlug, user.id]
             );
 
             // Add user as OWNER
-            await pool.query(
+            await hookQuery(
               `INSERT INTO organization_members (id, user_id, organization_id, role, created_at)
                VALUES ($1, $2, $3, 'OWNER', NOW())`,
               [memberId, user.id, orgId]
             );
 
             // Create free tier subscription (14-day trial)
-            await pool.query(
+            await hookQuery(
               `INSERT INTO organization_subscriptions (id, organization_id, plan_id, status, trial_ends_at, created_at)
                VALUES ($1, $2, 'plan_free', 'trial', NOW() + INTERVAL '14 days', NOW())`,
               [subId, orgId]
@@ -377,7 +424,7 @@ export const auth = betterAuth({
           }
 
           if (!u) {
-            const { rows } = await pool.query(
+            const { rows } = await hookQuery(
               'SELECT email, banned, suspended_until FROM "user" WHERE id = $1 LIMIT 1',
               [session.userId]
             );
