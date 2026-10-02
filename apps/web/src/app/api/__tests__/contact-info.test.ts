@@ -47,11 +47,19 @@ describe('public contact information', () => {
 
   describe('source tree', () => {
     // These are the mailboxes that were never provisioned. If one reappears in
-    // a rendered page, a real request can go somewhere nobody reads.
+    // a rendered page — or as a DEFAULT in a send path — a real request, notice
+    // or contract follow-up can go somewhere nobody reads.
     const DEAD_MAILBOXES = [
       'support@dealswiftautomation.com',
       'privacy@dealswiftautomation.com',
       'legal@dealswiftautomation.com',
+      // Added after an audit found this one used as the fallback address in
+      // `api/esign/self-hosted/engine.ts` (`process.env.COMPANY_EMAIL ||
+      // 'deals@...'`). The company never provisioned a `deals@` alias, so
+      // every assignment follow-up email would have been delivered to a
+      // black hole. It escaped the earlier version of this list, which is
+      // exactly why a fix is worthless without extending the ratchet.
+      'deals@dealswiftautomation.com',
     ];
 
     // dealflow.com / dealflow.ai are NOT domains this project owns — src/lib/seo.ts

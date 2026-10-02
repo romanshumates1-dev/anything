@@ -13,6 +13,10 @@
 
 import crypto from 'crypto';
 import { sendEmailAuto } from '@/app/api/utils/emailProviders';
+// Single source of truth for the one mailbox that is actually provisioned.
+// Replaces a hard-coded, never-created `deals@` alias as the fallback address
+// for contract follow-up email.
+import { SUPPORT_EMAIL } from '@/lib/contact';
 import {
   generateAssignmentFollowupEmail,
   generateClosingTimelineEmail,
@@ -450,7 +454,13 @@ export async function sendCompletionNotification(
           titleCompanyEmail: meta.titleCompanyEmail,
           dealSwiftContact: process.env.COMPANY_CONTACT_NAME || 'DealSwift Support',
           dealSwiftPhone: process.env.COMPANY_PHONE || process.env.SUPPORT_PHONE || '',
-          dealSwiftEmail: process.env.COMPANY_EMAIL || 'deals@dealswiftautomation.com',
+          // Fallback is the one PROVISIONED mailbox from `lib/contact.ts`. The previous
+          // default named a `deals@` alias that was never created, so with
+          // COMPANY_EMAIL unset every assignment follow-up email was addressed
+          // to a black hole. A contract notice that is silently undeliverable is
+          // worse than a visible error, because the deal still looks like it is
+          // progressing.
+          dealSwiftEmail: process.env.COMPANY_EMAIL || SUPPORT_EMAIL,
           dealId: document.id,
         };
 
