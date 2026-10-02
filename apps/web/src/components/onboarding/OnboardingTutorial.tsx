@@ -6,6 +6,10 @@ import { Button } from '@/components/ui/button';
 import { TutorialProgress } from './TutorialProgress';
 import { TutorialStep, TutorialStepData } from './TutorialStep';
 import {
+  decodeTutorialProgress,
+  encodeTutorialProgress,
+} from './tutorialProgressCodec';
+import {
   LayoutDashboard,
   Upload,
   Megaphone,
@@ -223,37 +227,88 @@ export function OnboardingTutorial({ onComplete, forceShow = false }: Onboarding
   const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('right');
 
   useEffect(() => {
-    // Check if onboarding has been completed
-    const completed = localStorage.getItem(ONBOARDING_KEY);
-    if (!completed || forceShow) {
-      setIsVisible(true);
+    // Set Z step 9-10: "allow returning later" / "preserve progress".
+    //
+    // Two stores, one codec. localStorage is read first because it is
+    // synchronous and always available; the server is then consulted so a user
+    // returning on a DIFFERENT device resumes rather than restarting. Whichever
+    // is further along wins, because a user who completed steps on their phone
+    // must not be rewound to an older laptop state.
+    let cancelled = false;
 
-      // Load previous progress if any
-      const savedProgress = localStorage.getItem(TUTORIAL_PROGRESS_KEY);
-      if (savedProgress) {
-        try {
-          const { step, completed: completedArr } = JSON.parse(savedProgress);
-          if (typeof step === 'number' && step < tutorialSteps.length) {
-            setCurrentStep(step);
-          }
-          if (Array.isArray(completedArr)) {
-            setCompletedSteps(completedArr);
-          }
-        } catch {
-          // Invalid JSON, start fresh
+    // Whether the tutorial opens at all is unchanged: a completed onboarding
+    // stays closed unless `forceShow` (the "replay tutorial" affordance).
+    const alreadyCompleted = localStorage.getItem(ONBOARDING_KEY);
+    if (!alreadyCompleted || forceShow) {
+      setIsVisible(true);
+    }
+
+    async function restore() {
+      const local = decodeTutorialProgress(
+        localStorage.getItem(TUTORIAL_PROGRESS_KEY),
+        tutorialSteps.length,
+      );
+
+      let best = local;
+
+      try {
+        const res = await fetch('/api/user/preferences', { cache: 'no-store' });
+        if (res.ok) {
+          const body = (await res.json()) as { preferences?: Record<string, unknown> };
+          const remote = decodeTutorialProgress(
+            typeof body.preferences?.tutorial_progress === 'string'
+              ? body.preferences.tutorial_progress
+              : null,
+            tutorialSteps.length,
+          );
+          if (remote && (!best || remote.step > best.step)) best = remote;
         }
+      } catch {
+        // Offline or unauthenticated. localStorage is the fallback, which is
+        // exactly why it is read first.
+      }
+
+      // A newer tutorial (fewer steps than the stored value) must not leave
+      // `completed` referencing steps that no longer exist; the codec clamps.
+      if (cancelled) return;
+      if (best) {
+        setCurrentStep(best.step);
+        setCompletedSteps(best.completed);
+        // Mirror the server value locally so the next offline load is correct.
+        localStorage.setItem(TUTORIAL_PROGRESS_KEY, encodeTutorialProgress(best, tutorialSteps.length));
       }
     }
+
+    void restore();
+    return () => {
+      cancelled = true;
+    };
   }, [forceShow]);
 
-  // Save progress on changes
+  // Persist progress: localStorage immediately (survives refresh, works
+  // offline), and the server so it survives a device change. The server write
+  // is deliberately best-effort — losing it must never block the tutorial.
   useEffect(() => {
-    if (isVisible) {
-      localStorage.setItem(
-        TUTORIAL_PROGRESS_KEY,
-        JSON.stringify({ step: currentStep, completed: completedSteps })
-      );
-    }
+    if (!isVisible) return;
+
+    const encoded = encodeTutorialProgress(
+      { step: currentStep, completed: completedSteps },
+      tutorialSteps.length,
+    );
+    localStorage.setItem(TUTORIAL_PROGRESS_KEY, encoded);
+
+    const timer = setTimeout(() => {
+      void fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorial_progress: encoded }),
+      }).catch(() => {
+        // Best-effort. localStorage already holds the value; the next mount
+        // reconciles from whichever store is further along.
+      });
+    }, 400);
+
+    return () => clearTimeout(timer);
   }, [currentStep, completedSteps, isVisible]);
 
   const completeOnboarding = useCallback(async () => {
