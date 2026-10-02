@@ -15,13 +15,14 @@
  *           socialProviders block (the platform injects the OAuth credentials
  *           via env vars when a provider is enabled in project settings).
  */
-import { Pool, neonConfig } from '@neondatabase/serverless';
+import { Pool, neon, neonConfig } from '@neondatabase/serverless';
 import { argon2Verify } from 'argon2-wasm-edge';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { verifyPassword } from 'better-auth/crypto';
 import { bearer } from 'better-auth/plugins';
 import { isCloudflareWorkers, resolveWebSocketConstructor } from '@/lib/websocket';
+import { createWorkersAuthDatabase } from '@/lib/workers-auth-database';
 
 import {
   ROLE_ADMIN,
@@ -69,22 +70,63 @@ neonConfig.webSocketConstructor = resolveWebSocketConstructor() as never;
  * testing never saw this — it is invisible to `next start`, to the unit suite,
  * and to the browser-QA harness.
  *
- * THE FIX: `poolQueryViaFetch` routes pool queries over plain HTTP instead of
- * a WebSocket. An HTTP request is created per query and consumed within the
- * same request, so there is no cross-request I/O object at all.
+ * THE FIX: on workerd, better-auth is given an HTTP-backed pg-shaped pool
+ * (see `workers-auth-database.ts`) instead of this WebSocket pool. Every query
+ * becomes a self-contained fetch created and consumed inside the request that
+ * issued it, so there is no cross-request I/O object at all.
  *
  * It is applied ONLY on workerd, behind `isCloudflareWorkers()`: the WebSocket
- * path stays in place on Node, where it is faster and long-lived sockets are
- * safe. Changing the Node path as well would be an unmeasured behaviour change
- * to a code path that currently works.
+ * path stays in place on Node, where it is faster, supports real interactive
+ * transactions, and is safe because long-lived sockets are not request-scoped.
+ * Changing the Node path as well would be an unmeasured behaviour change to a
+ * code path that currently works.
+ *
+ * TWO EARLIER ATTEMPTS FAILED. Both are recorded so they are not repeated:
+ *
+ *   eca7071  `neonConfig.poolQueryViaFetch = true` — deployed, still 12 x 500.
+ *            CANNOT work: `NeonPool.query` short-circuits to the WebSocket
+ *            whenever `hasFetchUnsupportedListeners` is set. That flag is
+ *            latched true by ANY `.on(event, ...)` subscription on the pool,
+ *            and better-auth subscribes to pool events. The HTTP path is
+ *            therefore unreachable no matter what this setting says, and there
+ *            is no API to clear the flag.
+ *
+ *   acc5277  `database = { query }` on Workers — deployed, signup went 500
+ *            with "Failed to initialize database adapter". CANNOT work:
+ *            better-auth runs the value through `createKyselyAdapter`, which
+ *            requires a recognised Kysely dialect. A plain object has no
+ *            dialect. Verified in @better-auth/kysely-adapter:
+ *            `if ("connect" in db) dialect = new PostgresDialect({pool: db})`.
+ *
+ * The contract that DOES work was read from the installed source, not guessed,
+ * and is pinned by `src/lib/__tests__/workers-auth-database.test.ts`.
  */
 if (isCloudflareWorkers()) {
+  // Retained only so the WebSocket pool below is never handed to better-auth
+  // on workerd. It has no effect on NeonPool.query's branch selection.
   neonConfig.poolQueryViaFetch = true;
 }
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+
+// The database better-auth is given.
+//
+// Node keeps the pooled WebSocket client: it is faster, supports real
+// interactive transactions, and long-lived sockets are safe there.
+//
+// workerd gets the HTTP-backed pg-shaped pool instead, because a module-scope
+// WebSocket cannot be reused across requests (see the note above). The `connect`
+// key is what makes better-auth build a PostgresDialect around it; the shape is
+// pinned by src/lib/__tests__/workers-auth-database.test.ts.
+//
+// `runWithDbRetry` is threaded through so the Workers path keeps the same
+// bounded transient-error protection the Node path has, which is what stops a
+// blip from surfacing to the user as a random sign-out.
+const database = isCloudflareWorkers()
+  ? createWorkersAuthDatabase(neon(process.env.DATABASE_URL ?? ''), runWithDbRetry)
+  : pool;
 
 // RANDOM SIGN-OUT FIX: better-auth's internal session reads (getSession →
 // session table) and the databaseHooks below all flow through pool.query.
@@ -164,7 +206,7 @@ async function verifyCompatiblePassword({
 }
 
 export const auth = betterAuth({
-  database: pool,
+  database,
   trustedOrigins,
   socialProviders,
   emailAndPassword: {
