@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/app/api/utils/auth';
+import { requireGamificationEnabled } from '@/app/api/utils/gamification.server';
 import sql from '@/app/api/utils/sql';
 
 export async function GET() {
@@ -7,6 +8,14 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Set V: "When OFF — hide gamification features, avoid unnecessary queries."
+  // Server-side as well as in the nav, so the achievements query is not merely
+  // unlinked but never issued. Returns 404 rather than 403, and deliberately
+  // does NOT touch `user_achievements`: a user who earned progress while the
+  // feature was off keeps it when they switch it back on ("do not penalize").
+  const disabled = await requireGamificationEnabled(session.userId);
+  if (disabled) return disabled;
 
   try {
     // Get all achievements with user's progress

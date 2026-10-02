@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/app/api/utils/auth';
 import sql from '@/app/api/utils/sql';
+import {
+  GAMIFICATION_PREF_KEY,
+  normalizeGamificationPreference,
+} from '@/app/api/utils/gamification';
 
 /**
  * User preferences API
@@ -31,6 +35,10 @@ const ALLOWED_KEYS = [
   'sidebar_collapsed',
   'dashboard_layout',
   'accessibility',
+  // Set V: GAMIFICATION ON/OFF. Read and enforced by
+  // `utils/gamification.ts`; absent means ON, so existing accounts are
+  // unaffected.
+  GAMIFICATION_PREF_KEY,
 ];
 
 /**
@@ -139,6 +147,14 @@ export async function PATCH(request: Request) {
         if (safe) updates[key] = safe;
         continue;
       }
+      // Set V: only a real boolean may be stored. Persisting the STRING
+      // 'false' would later be read as "unrecognised, fall back to the
+      // default (ON)", leaving a user who believes they turned it off stuck
+      // with it. Normalising at the boundary keeps the stored value honest.
+      if (key === GAMIFICATION_PREF_KEY) {
+        updates[key] = normalizeGamificationPreference(body[key]);
+        continue;
+      }
       updates[key] = body[key];
     }
 
@@ -186,6 +202,10 @@ export async function PUT(request: Request) {
       if (key === 'accessibility') {
         const safe = sanitizeAccessibility(body[key]);
         if (safe) preferences[key] = safe;
+        continue;
+      }
+      if (key === GAMIFICATION_PREF_KEY) {
+        preferences[key] = normalizeGamificationPreference(body[key]);
         continue;
       }
       preferences[key] = body[key];

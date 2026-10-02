@@ -9,6 +9,7 @@ import { StatusDot } from "@/components/ui/StatusDot";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus } from "lucide-react";
 import DemoModeBanner from "@/components/DemoModeBanner";
+import { isGamificationEnabled } from "@/app/api/utils/gamification";
 import SupportChat from "@/components/SupportChat";
 import { FeedbackButton } from "@/components/feedback";
 import { UsageMeterSidebar, FreePlanBadge, CreditBalanceInline } from "@/components/billing";
@@ -103,6 +104,29 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   // Alias for backward compatibility
   const subscription = usageData?.subscription;
+
+  // Set V — GAMIFICATION ON/OFF (roman.agent.md 1254-1280).
+  //
+  // "When OFF: remove unnecessary UI / avoid unnecessary queries." Reading the
+  // preference here means the nav simply never renders the links; the two
+  // gamification endpoints are separately gated server-side, so a client that
+  // ignores this component still gets nothing.
+  //
+  // Default is ON, matching `utils/gamification.ts`. Until the query resolves
+  // the default is shown rather than a flash of hidden links — the same thing
+  // the user already sees today, so nothing appears to change on load.
+  const { data: preferencesData } = useQuery({
+    queryKey: ["user-preferences"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/preferences");
+      if (!res.ok) return null;
+      return res.json() as Promise<{ preferences?: Record<string, unknown> }>;
+    },
+    staleTime: 60_000,
+    retry: 0,
+    enabled: !!session && !preAccessPage,
+  });
+  const gamificationEnabled = isGamificationEnabled(preferencesData?.preferences);
 
   const { data: health } = useQuery({
     queryKey: ["system-health"],
@@ -340,23 +364,30 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               {/* Separator */}
               <div className="border-t border-[var(--border-subtle)]" />
 
-              {/* Gamification Links */}
-              <Link
-                href="/leaderboard"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Trophy className="h-4 w-4" />
-                <span>Leaderboard</span>
-              </Link>
-              <Link
-                href="/achievements"
-                onClick={() => setUserMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Award className="h-4 w-4" />
-                <span>Achievements</span>
-              </Link>
+              {/* Gamification Links
+                  Set V: "When OFF — remove unnecessary UI." Rendered only when
+                  the user has gamification enabled; absent means ON, so
+                  existing accounts see exactly what they always saw. */}
+              {gamificationEnabled && (
+                <>
+                  <Link
+                    href="/leaderboard"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    <Trophy className="h-4 w-4" />
+                    <span>Leaderboard</span>
+                  </Link>
+                  <Link
+                    href="/achievements"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    <Award className="h-4 w-4" />
+                    <span>Achievements</span>
+                  </Link>
+                </>
+              )}
 
               {/* Separator */}
               <div className="border-t border-[var(--border-subtle)]" />

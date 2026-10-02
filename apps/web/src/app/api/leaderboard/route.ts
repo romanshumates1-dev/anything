@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/app/api/utils/auth';
 import { getOrganization } from '@/lib/organization-context';
+import { requireGamificationEnabled } from '@/app/api/utils/gamification.server';
 import sql from '@/app/api/utils/sql';
 
 export async function GET(request: Request) {
@@ -8,6 +9,13 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Set V: "When OFF — hide gamification features, avoid unnecessary queries."
+  // Enforced here as well as in the nav, so a client that ignores the UI cannot
+  // still pull the board. Returns 404 so the route does not even confirm that
+  // gamification exists for this user. Progress itself is untouched.
+  const disabled = await requireGamificationEnabled(session.userId);
+  if (disabled) return disabled;
 
   // TENANT ISOLATION (2026-09-26): a leaderboard entry exposes a user's revenue and
   // deal counts. Ranking every account on the platform leaked those figures across
