@@ -34,6 +34,20 @@ ALLOWED_EMAIL_DOMAINS=dealswiftautomation.com
 SEED_ADMIN_EMAILS=roman.shumate@dealswiftautomation.com
 MIN_ACCESS_ROLE=ADMIN
 
+# Platform-wide (cross-tenant) administration allowlist.
+#
+# An account listed here AND holding role=ADMIN in the database may fall back to
+# the `org_default` tenant when it has no organization membership of its own.
+# Anything else - including any other role=ADMIN account - is refused (403).
+#
+# This is deliberately NOT implied by role=ADMIN: 16 accounts on the live
+# database held that role with no organization, and the role check alone let
+# them reach the platform tenant (370k+ leads). Requiring both conditions means
+# demoting an account here actually revokes the cross-tenant fallback.
+#
+# Leave EMPTY to grant nobody the fallback - that is the safe default.
+PLATFORM_ADMIN_EMAILS=roman.shumate@dealswiftautomation.com
+
 # ── Cron / job runner auth ──
 # CRON_SECRET is what the Cloudflare Cron Trigger (see custom-worker.ts) sends
 # as `Authorization: Bearer <CRON_SECRET>` to /api/jobs/process and
