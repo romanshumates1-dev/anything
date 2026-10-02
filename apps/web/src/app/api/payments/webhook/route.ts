@@ -347,9 +347,20 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<Response> {
     credits,
     amountCents: session.amount_total ?? 0,
     packId: creditPackId as string,
-    // Keyed on the Stripe event id, so a replayed delivery re-reads the same
-    // ledger row instead of granting twice.
-    idempotencyKey: `credit-pack:${event.id}`,
+    // IDEMPOTENCY ANCHOR = the Checkout SESSION, not the event.
+    //
+    // These are not interchangeable. One purchase produces one session but many
+    // events: Stripe assigns a fresh `evt_...` id per delivery, and an operator
+    // resending an event from the dashboard mints a NEW id for the SAME
+    // purchase. Keyed on the event, each delivery granted the pack again, so a
+    // single $19 purchase could be credited repeatedly. The partial unique index
+    // `idx_credit_transactions_idempotency` only collapses duplicates that share
+    // a key, so anchoring on the event defeated it entirely.
+    //
+    // The session is the purchase, so it is the anchor. This also matches
+    // `activatePlan` above, which already used `processorReference: session.id`
+    // - the two branches had drifted, and now cannot.
+    idempotencyKey: `credit-pack:${session.id}`,
     eventId: event.id,
     stripeCustomerId,
   });

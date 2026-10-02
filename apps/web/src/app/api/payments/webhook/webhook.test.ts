@@ -483,7 +483,10 @@ describe('POST /api/payments/webhook - checkout.session.completed', () => {
         credits: 1000,
         amountCents: 4900,
         packId: '1000',
-        idempotencyKey: 'credit-pack:evt_checkout',
+        // Anchored on the Checkout SESSION, not the event: one purchase is one
+        // session, and Stripe mints a new event id per delivery. See the
+        // "one purchase grants once" suite for the replay case this prevents.
+        idempotencyKey: 'credit-pack:cs_test_123',
         stripeCustomerId: 'cus_test',
       })
     );
@@ -561,4 +564,92 @@ describe('POST /api/payments/webhook - checkout.session.completed', () => {
     expect(json.reason).toBe('unknown_credit_pack');
     expect(grantCreditPack).not.toHaveBeenCalled();
   });
+/**
+ * DUPLICATE CREDIT PACK (real money defect).
+ *
+ * `handleCheckoutCompleted` anchored plan activation on the Checkout SESSION id
+ * (`processorReference: session.id`) but anchored credit packs on the EVENT id
+ * (`idempotencyKey: credit-pack:${event.id}`).
+ *
+ * Those are not equivalent. One purchase produces one SESSION but potentially
+ * many EVENTS: Stripe assigns a fresh `evt_...` id to every delivery, and an
+ * operator resending an event from the dashboard - or an async payment method
+ * that emits `checkout.session.completed` and then
+ * `checkout.session.async_payment_succeeded` - produces two events describing
+ * the SAME purchase. Anchored on the event id, each of those grants the pack
+ * again, so a single $19 credit pack could be credited two or more times. The
+ * plan path never had this problem because it keys on the session.
+ *
+ * The purchase is the session, so the session must be the anchor. This test
+ * pins that for BOTH branches so the two cannot drift apart again.
+ */
+describe('POST /api/payments/webhook - one purchase grants once', () => {
+  const SESS = {
+    id: 'cs_test_123',
+    object: 'checkout.session',
+    mode: 'payment',
+    customer: 'cus_test',
+    amount_total: 1900,
+    currency: 'usd',
+    payment_status: 'paid',
+  };
+
+  /** Point the provider at a specific event id + metadata for THIS delivery. */
+  function deliver(eventId: string, metadata: Record<string, string>) {
+    const provider = getStripeProvider();
+    (provider.parseWebhookEvent as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: eventId,
+      object: 'event',
+      type: 'checkout.session.completed',
+      data: { object: { ...SESS, metadata } },
+    });
+    return makeRequest(JSON.stringify({ id: eventId }), {
+      'stripe-signature': 't=123,v1=abc',
+    });
+  }
+
+  beforeEach(() => {
+    (grantCreditPack as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      creditsGranted: 500,
+      balance: 500,
+      alreadyProcessed: false,
+    });
+    (activatePlan as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      planTier: 'pro',
+      creditsGranted: 0,
+      alreadyProcessed: false,
+    });
+  });
+
+  it('anchors credit packs on the SESSION, so a re-delivered event grants once', async () => {
+    const meta = { organization_id: 'org-1', credit_pack_id: 'pack-500', credits: '500' };
+
+    await POST(deliver('evt_first_delivery', meta));
+    await POST(deliver('evt_second_delivery', meta));
+
+    const calls = (grantCreditPack as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls).toHaveLength(2);
+
+    const keys = calls.map((c: any[]) => c[0].idempotencyKey);
+    // The decisive assertion: both deliveries must resolve to the SAME anchor,
+    // otherwise the partial unique index on idempotency_key cannot collapse the
+    // replay and the customer is credited twice for one purchase.
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[0]).toContain(SESS.id);
+    expect(keys[0]).not.toContain('evt_first_delivery');
+    expect(keys[0]).not.toContain('evt_second_delivery');
+  });
+
+  it('anchors plan activation on the SESSION as well (branches stay consistent)', async () => {
+    const meta = { organization_id: 'org-1', plan_id: 'pro' };
+
+    await POST(deliver('evt_a', meta));
+    await POST(deliver('evt_b', meta));
+
+    const refs = (activatePlan as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: any[]) => c[0].processorReference
+    );
+    expect(refs).toEqual([SESS.id, SESS.id]);
+  });
+});
 });

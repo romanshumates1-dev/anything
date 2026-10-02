@@ -19,12 +19,26 @@ import { join } from "node:path";
 const R = (...p: string[]) => readFileSync(join(process.cwd(), "src", "app", ...p), "utf8");
 
 describe("financial invariant guard", () => {
-  it("E. Stripe credit grant is idempotent per event and replays are deduplicated", () => {
+  it("E. Stripe credit grant is idempotent per PURCHASE and replays are deduplicated", () => {
     const s = R("api", "payments", "webhook", "route.ts");
     // Replay dedupe: an already-seen event id must be refused before any grant.
     expect(s).toMatch(/=\s*ANY\s*\(\s*stripe_event_ids\s*\)/i);
-    // The grant itself must carry a deterministic idempotency key derived from the event.
-    expect(s).toMatch(/idempotencyKey:\s*`[^`]*\$\{event\.id\}`/);
+    // The grant must carry a deterministic idempotency key - anchored on the
+    // Checkout SESSION, not the event.
+    //
+    // This assertion previously demanded an event-derived key. That was the
+    // weaker invariant and it was wrong: one purchase produces one session but
+    // MANY events (Stripe assigns a fresh evt_... id per delivery, and a
+    // dashboard resend mints a new one for the SAME purchase), so an
+    // event-keyed grant re-credited the customer on every re-delivery and the
+    // unique index on credit_transactions.idempotency_key could never collapse
+    // them. The session IS the purchase, so it is the anchor.
+    expect(s).toMatch(/idempotencyKey:\s*`[^`]*\$\{session\.id\}`/);
+    // Guard against regression: the credit-pack branch must never key on the
+    // event again.
+    expect(s).not.toMatch(/idempotencyKey:\s*`[^`]*\$\{event\.id\}`/);
+    // Plan activation uses the same anchor, so the branches cannot drift apart.
+    expect(s).toMatch(/processorReference:\s*session\.id/);
   });
 
   it("D. the credit ledger guards sufficiency inside the UPDATE, not in a prior read", () => {
