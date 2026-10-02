@@ -109,18 +109,30 @@ Legend: **I** = implemented · **T** = automated test exists · **L** = live / e
 | **AA** | Outreach provider onboarding | Y | P | N | `api/settings/outreach/**` incl. `sms/test`, `verify/sms/start` + `verify/sms/resend`; `system-health/page.tsx` | IMPLEMENTED — "test connection" round-trip not live-verified |
 | **AB** | Onboarding feature choices (respect opt-ins) | P | N | N | onboarding + settings exist; explicit per-feature opt-in capture and enforcement not evidenced | **INCOMPLETE** |
 
-**Set tally (28 sets).**
+**Set tally (28 sets), re-audited at `27e2b22`.**
 
 | Bucket | Sets | Count |
 |---|---|---|
 | Fully live-VERIFIED (real Postgres / DB constraint) | N, J, M | 3 |
-| VERIFIED at unit level with a real regression artifact | A, B, E, K, L, O, Q, W, **T** | 9 |
+| VERIFIED at unit level with a real regression artifact | A, B, E, K, L, O, Q, W, **T**, **U**, **Z** (steps 8-10), **V** (the ON/OFF setting) | 12 |
 | IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED | C, I, D, R, AA | 5 |
-| **INCOMPLETE** | F, G, H, P, S, V, X, Y, Z, AB | **10** |
+| **INCOMPLETE** | F, G, H, P, S, V, X, Y, Z, AB | **8 fully**, 3 partial |
 
-The 11 INCOMPLETE sets are **not** all "the code is missing" — several are *"implemented but no
-evidence exists that it behaves as specified"* (P, S, U, Z, AA). The prompt's own bar (line 2269)
-is *"every 'done' claim has direct evidence"*, so un-evidenced counts as incomplete.
+The INCOMPLETE bucket is **not** all "the code is missing". After this session's
+work it splits three ways, and conflating them would overstate progress:
+
+* **Genuinely absent code.** `V` beyond the ON/OFF setting (XP, levels,
+  seasons, battle-pass, crates, codes, giveaways, competitions, spin wheel),
+  `AB` (explicit per-feature onboarding opt-in capture), `X` (paid-account
+  clarification messaging audit).
+* **Present but unevidenced.** `P` campaign UX, `S` AI template
+  "recommended defaults", `Y` phase-aware CRM metrics, and `Z` steps 1-7 — all
+  of which need a live browser to judge.
+* **Needs a session or a profiler.** `F` authenticated performance, `G`/`H`
+  authenticated route crawl and console capture.
+
+The prompt's own bar (line 2269) is *"every 'done' claim has direct evidence"*,
+so un-evidenced still counts as incomplete.
 
 
 ---
@@ -232,20 +244,38 @@ profiling** is impossible without a session.
 
 ### **5 / 10 — NOT YET PRODUCTION READY**
 
-Anchored on the prompt's own rubric (lines 2162–2164): *"5–6/10 — Most core features implemented,
-but important bugs, integrations, tests, performance, or production validation remain incomplete."*
+Anchored on the prompt's own rubric (lines 2162–2164): *"5–6/10 — Most core features
+implemented, but important bugs, integrations, tests, performance, or production validation
+remain incomplete."*
+
+**It has not moved, and this document will not pretend otherwise.** Four further
+requirement sets moved to VERIFIED this session, but none of them is one of the
+blocking conditions in §6: every one of those still needs a credential, a live
+browser session, or a profiler, and none of those became available.
 
 Why **not 7–8** ("most requirements implemented and tested, but…"):
-* 11 of 28 requirement sets are INCOMPLETE, including two campaign-core sets (S, T) and the
-  onboarding sets (Z, AB) that the prompt treats as first-class deliverables.
-* Nine of the prompt's mandatory test matrices have **no** run evidence.
-* Twenty-item critical smoke: items 11–20 never executed.
+* The four sets closed (T, U, V-setting, Z 8-10) were closed by writing and testing
+  code. The blocking conditions — authenticated browser verification, authenticated
+  performance profiling, Stripe/Apollo/AI-provider sandboxes — are untouched.
+* Set `V` is still partly absent (XP, levels, seasons, battle-pass, crates,
+  giveaways, competitions, spin wheel), and `AB` has no opt-in capture at all.
+* Twenty-item critical smoke: items 11–20 still never executed.
 
 Why **not lower than 5**:
-* Typecheck and the full 2865-test suite are green at the audited commit.
-* Three P0 defects (cross-tenant `org_default` IDOR, duplicate credit packs, withdrawal TOCTOU) were
-  eliminated, each with a guard test proven RED-by-reverting.
-* AI-credit enforcement — the hardest correctness surface — is verified against real Postgres.
+* Typecheck (0 bytes of diagnostics) and the full 2916-test suite are green at every
+  audited commit in this session.
+* Seven defects eliminated this session, each with a guard proven RED first: voice
+  selection absent; a fabricated "0 received" admin metric; a weaker-than-standard
+  admin gate on `/api/admin/audience`; device-local-only tutorial progress; the
+  absent gamification setting; a client-bundle leak risk in the gamification module;
+  and contract follow-ups addressed to an unprovisioned mailbox.
+* AI-credit enforcement — the hardest correctness surface — remains verified against
+  real Postgres.
+
+**The single highest-value thing left is not more code.** It is the authenticated
+browser crawl (next action #1). Every remaining INCOMPLETE row that says "needs a
+live browser to judge" is waiting on exactly that, and it is the one item in this
+document that is genuinely unblocked and simply not yet done.
 
 **Production-readiness decision (prompt §14, pick exactly one):**
 
