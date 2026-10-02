@@ -98,9 +98,27 @@ export async function POST(request: Request) {
       return await handleCheckoutCompleted(event);
     }
 
+    // SUBSCRIPTION LIFECYCLE.
+    //
+    // Before this, every event below was acknowledged and DROPPED - the comment
+    // even named `customer.subscription.deleted` as an example. Entitlements are
+    // read from `organization_subscriptions.status` (subscriptionGuard.ts), and
+    // that row is written ONLY by activatePlan on checkout. Nothing ever wrote
+    // it back, so a customer could cancel in the Stripe dashboard - or let a
+    // renewal fail - and the organization kept `status = 'active'` and its paid
+    // tier indefinitely. The schema already permitted 'past_due' / 'canceled'
+    // / 'expired' (migration 026); those states were designed and never wired.
+    if (
+      eventType === 'customer.subscription.deleted' ||
+      eventType === 'customer.subscription.updated' ||
+      eventType === 'invoice.payment_failed' ||
+      eventType === 'invoice.paid'
+    ) {
+      return await handleSubscriptionEvent(eventType, event);
+    }
+
     // Only payment-intent and charge events touch the ledger. Everything else
-    // (account.updated, customer.subscription.deleted, etc.) is acknowledged
-    // so Stripe does not redeliver.
+    // (account.updated, etc.) is acknowledged so Stripe does not redeliver.
     if (
       !['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.refunded', 'charge.refunded'].includes(
         eventType
@@ -246,6 +264,108 @@ export async function POST(request: Request) {
       headers: { 'Content-Type': 'application/json' },
     });
   }
+}
+
+/**
+ * Map a Stripe subscription/invoice event onto our subscription status.
+ *
+ * WHY THIS EXISTS: entitlements are read from `organization_subscriptions.status`
+ * and that row was only ever written by `activatePlan` at checkout. Stripe's
+ * cancellation and dunning events were acknowledged and discarded, so a customer
+ * who cancelled - or whose renewal failed - kept a paid tier forever.
+ *
+ * The organization is resolved ONLY from `organizations.stripe_customer_id`,
+ * i.e. from data Stripe itself wrote at checkout. It is never taken from the
+ * request, so a forged or replayed payload cannot redirect a status change onto
+ * another tenant. Signature verification has already run.
+ *
+ * A customer that matches no organization is acknowledged (200) rather than
+ * rejected: it is almost always an unrelated Stripe account, and a 4xx would
+ * make Stripe retry forever for something redelivery can never fix.
+ */
+async function handleSubscriptionEvent(eventType: string, event: Stripe.Event): Promise<Response> {
+  const object = event.data.object as Record<string, any>;
+  const customerId: string | null =
+    typeof object?.customer === 'string'
+      ? object.customer
+      : (object?.customer?.id ?? null);
+
+  if (!customerId) {
+    console.warn(`[payments/webhook] ${eventType} carried no customer; nothing to reconcile`);
+    return json({ received: true, reconciled: false, reason: 'no_customer' });
+  }
+
+  const rows = await sql`
+    SELECT o.id AS organization_id
+    FROM organizations o
+    WHERE o.stripe_customer_id = ${customerId}
+    LIMIT 1
+  `;
+  const organizationId = rows[0]?.organization_id as string | undefined;
+
+  if (!organizationId) {
+    console.warn(
+      `[payments/webhook] ${eventType} for customer ${customerId} matched no organization`
+    );
+    return json({ received: true, reconciled: false, reason: 'unknown_customer' });
+  }
+
+  // Derive the target status. Stripe's own vocabulary is mapped onto the CHECK
+  // constraint in migration 026 rather than written through blindly.
+  let status: 'active' | 'past_due' | 'canceled' | 'expired' | null = null;
+  switch (eventType) {
+    case 'customer.subscription.deleted':
+      status = 'canceled';
+      break;
+    case 'customer.subscription.updated':
+      status =
+        object.status === 'active' || object.status === 'trialing'
+          ? 'active'
+          : object.status === 'past_due' || object.status === 'unpaid'
+            ? 'past_due'
+            : object.status === 'canceled'
+              ? 'canceled'
+              : object.status === 'incomplete_expired'
+                ? 'expired'
+                : null;
+      break;
+    case 'invoice.payment_failed':
+      status = 'past_due';
+      break;
+    case 'invoice.paid':
+      status = 'active';
+      break;
+  }
+
+  if (!status) {
+    console.log(`[payments/webhook] ${eventType} carries no mappable status; ignored`);
+    return json({ received: true, reconciled: false, reason: 'unmappable_status' });
+  }
+
+  const updated = await sql`
+    UPDATE organization_subscriptions
+    SET status = ${status},
+        current_period_end = COALESCE(
+          to_timestamp(${object.current_period_end ?? null}), current_period_end
+        ),
+        updated_at = NOW()
+    WHERE organization_id = ${organizationId}
+      AND status IS DISTINCT FROM ${status}
+  `;
+
+  console.log(
+    `[payments/webhook] ${eventType}: organization ${organizationId} -> ${status}`
+  );
+  await logEvent('billing_subscription_status_changed', 'billing', organizationId, {
+    eventId: event.id,
+    eventType,
+    status,
+    changed: updated.length > 0,
+  });
+
+  // Always 200: a repeat delivery is not an error, and the status write above is
+  // idempotent because the WHERE clause excludes rows already at that status.
+  return json({ received: true, reconciled: true, status, changed: updated.length > 0 });
 }
 
 /**

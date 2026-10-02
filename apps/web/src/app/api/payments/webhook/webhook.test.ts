@@ -652,4 +652,136 @@ describe('POST /api/payments/webhook - one purchase grants once', () => {
     expect(refs).toEqual([SESS.id, SESS.id]);
   });
 });
+
+/**
+ * SUBSCRIPTION LIFECYCLE (revenue + access control).
+ *
+ * The webhook handled checkout and payment_intent events only; every other
+ * event type was acknowledged and dropped, with `customer.subscription.deleted`
+ * named explicitly in the comment as an example. Entitlements, meanwhile, are
+ * read from `organization_subscriptions.status` (subscriptionGuard.ts), a row
+ * written ONLY by `activatePlan` on checkout. Nothing ever wrote it back.
+ *
+ * The consequence: a customer could cancel in the Stripe dashboard, or let a
+ * renewal fail, and the organization kept `status = 'active'` and its paid tier
+ * indefinitely. The schema already permitted 'past_due' / 'canceled' /
+ * 'expired' (migration 026) - the states were designed and never implemented.
+ *
+ * These pin that the lifecycle is now handled.
+ */
+describe('POST /api/payments/webhook - subscription lifecycle', () => {
+  function subEvent(type: string, status: string, customer = 'cus_test') {
+    const provider = getStripeProvider();
+    (provider.parseWebhookEvent as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: `evt_${type}`,
+      object: 'event',
+      type,
+      data: {
+        object: {
+          id: 'sub_123',
+          object: 'subscription',
+          customer,
+          status,
+          current_period_end: 1893456000,
+        },
+      },
+    });
+    return makeRequest(JSON.stringify({ id: `evt_${type}` }), {
+      'stripe-signature': 't=123,v1=abc',
+    });
+  }
+
+  function invoiceEvent(type: string, customer = 'cus_test') {
+    const provider = getStripeProvider();
+    (provider.parseWebhookEvent as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: `evt_${type}`,
+      object: 'event',
+      type,
+      data: {
+        object: {
+          id: 'in_123',
+          object: 'invoice',
+          customer,
+          subscription: 'sub_123',
+        },
+      },
+    });
+    return makeRequest(JSON.stringify({ id: `evt_${type}` }), {
+      'stripe-signature': 't=123,v1=abc',
+    });
+  }
+
+  /** Capture the status value written to organization_subscriptions. */
+  function statusWrites(): string[] {
+    // The status is written as a BOUND PARAMETER, not interpolated into the SQL
+    // text, so read the parameter value off the UPDATE call rather than
+    // scraping the query string for a literal.
+    return (sql as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .filter((c: any[]) =>
+        /UPDATE organization_subscriptions/.test((c[0] as TemplateStringsArray).join('?'))
+      )
+      .map((c: any[]) => c[1])
+      .filter((v: unknown): v is string => typeof v === 'string');
+  }
+
+  /**
+   * Route the mock like the real thing: the stripe_customer_id lookup resolves
+   * an organization; everything else returns an update result.
+   */
+  function mockDb(organizationId: string | null) {
+    (sql as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (strings: TemplateStringsArray, ..._args: any[]) => {
+        const text = strings.join('?');
+        if (/stripe_customer_id/.test(text)) {
+          return organizationId ? [{ organization_id: organizationId }] : [];
+        }
+        return [];
+      }
+    );
+  }
+
+  beforeEach(() => {
+    mockDb('org-1');
+  });
+
+  it('marks the subscription canceled when Stripe says it was deleted', async () => {
+    const res = await POST(subEvent('customer.subscription.deleted', 'canceled'));
+    expect(res.status).toBe(200);
+    expect(statusWrites()).toContain('canceled');
+  });
+
+  it('marks past_due when the subscription enters dunning', async () => {
+    await POST(subEvent('customer.subscription.updated', 'past_due'));
+    expect(statusWrites()).toContain('past_due');
+  });
+
+  it('marks past_due when a renewal invoice fails', async () => {
+    await POST(invoiceEvent('invoice.payment_failed'));
+    expect(statusWrites()).toContain('past_due');
+  });
+
+  it('reactivates on invoice.paid after a failed renewal', async () => {
+    await POST(invoiceEvent('invoice.paid'));
+    expect(statusWrites()).toContain('active');
+  });
+
+  it('resolves the organization from the Stripe customer, never from the body', async () => {
+    await POST(subEvent('customer.subscription.deleted', 'canceled', 'cus_from_event'));
+    const texts = (sql as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c: any[]) => (c[0] as TemplateStringsArray).join('?')
+    );
+    // The lookup must be by stripe_customer_id against organizations.
+    expect(
+      texts.some((t: string) => /stripe_customer_id/.test(t) && /organizations/.test(t))
+    ).toBe(true);
+  });
+
+  it('does nothing when the customer matches no organization', async () => {
+    mockDb(null); // stripe_customer_id resolves to nothing
+    const res = await POST(subEvent('customer.subscription.deleted', 'canceled', 'cus_unknown'));
+    expect(res.status).toBe(200);
+    // No UPDATE should be issued for an unresolvable customer.
+    expect(statusWrites()).toHaveLength(0);
+  });
+});
 });
