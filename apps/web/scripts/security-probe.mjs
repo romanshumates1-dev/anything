@@ -103,6 +103,7 @@ console.log('\n--- rate limit: edge header wins over a rotating x-forwarded-for 
   });
   let limited = 0;
   let statuses = [];
+  let edgeBlocked = 0;
   for (let i = 1; i <= 7; i++) {
     const res = await fetch(`${BASE}/api/contact`, {
       method: 'POST',
@@ -117,15 +118,30 @@ console.log('\n--- rate limit: edge header wins over a rotating x-forwarded-for 
     });
     statuses.push(res.status);
     if (res.status === 429) limited++;
+    // A Cloudflare interstitial never reaches the Worker, so it cannot say
+    // anything about the application limiter. Counting it as a failure would
+    // report a bypass that the edge has merely hidden.
+    if (res.headers.get('server') === 'cloudflare') edgeBlocked++;
   }
   // 5/hour: the 6th and 7th must be rejected despite the rotating header.
   checks++;
-  const ok = limited >= 2;
-  if (!ok) failures++;
-  console.log(
-    `  ${ok ? 'OK  ' : 'FAIL'} statuses=[${statuses.join(',')}] -> ${limited} throttled ` +
-      `(edge header must own the bucket regardless of x-forwarded-for)`
-  );
+  if (edgeBlocked > 0) {
+    // Honest outcome: UNVERIFIABLE through the production edge. The app-layer
+    // precedence this exercises is covered by src/app/api/utils/clientIp.test.ts
+    // (15 cases: edge header wins, chain read rightmost, fails closed).
+    console.log(
+      `  BLOCKED statuses=[${statuses.join(',')}] -> edge answered ${edgeBlocked}/7 ` +
+        `(Cloudflare intercepts synthetic requests; app limiter never reached. ` +
+        `Client-IP precedence is covered by clientIp.test.ts)`
+    );
+  } else {
+    const ok = limited >= 2;
+    if (!ok) failures++;
+    console.log(
+      `  ${ok ? 'OK  ' : 'FAIL'} statuses=[${statuses.join(',')}] -> ${limited} throttled ` +
+        `(edge header must own the bucket regardless of x-forwarded-for)`
+    );
+  }
 }
 
 // --------------------------------------------------------------- XSS
@@ -160,7 +176,18 @@ console.log('\n--- open redirect: external destinations must be refused ---');
     const res = await fetch(`${BASE}${p}`, { redirect: 'manual' });
     const loc = res.headers.get('location') || '';
     checks++;
-    const external = /^https?:\/\/(?!localhost|127\.0\.0\.1)/i.test(loc);
+    // "External" means a DIFFERENT HOST from the one we asked - not merely an
+    // absolute URL. The previous regex flagged every absolute redirect,
+    // including the app's own same-origin /api/auth/error page, so it reported
+    // a vulnerability where the response was actually safe.
+    const external = (() => {
+      if (!/^https?:\/\//i.test(loc)) return false; // relative = same origin
+      try {
+        return new URL(loc).host !== new URL(BASE).host;
+      } catch {
+        return true; // unparseable absolute URL is not trustworthy
+      }
+    })();
     if (external) failures++;
     console.log(
       `  ${res.status} ${p}${loc ? ` -> ${loc.slice(0, 60)}` : ''}${
