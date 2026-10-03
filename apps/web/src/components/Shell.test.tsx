@@ -261,3 +261,51 @@ describe('Shell sidebar identity with long unbroken strings (requirement #2)', (
     }
   });
 });
+
+/**
+ * Requirement SET B's test list explicitly includes "very short username" as
+ * well as the long cases. The long-value contract is pinned above; this closes
+ * the other end of the range so a future fix for overflow can never regress
+ * into hiding or mis-titling a short identity (e.g. a `slice()` guard that
+ * blanks small values). Rendered via a fresh module graph because the file's
+ * default session mock is the 300-character one.
+ */
+describe('Shell sidebar identity with a very short username (Set B test list)', () => {
+  afterEach(() => {
+    cleanup();
+    vi.doUnmock('@/lib/auth-client');
+  });
+
+  it('renders a short name and email in full with the same truncate/title contract', async () => {
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_short', email: 'a@b.co', name: 'Al', role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+    vi.resetModules();
+
+    const { default: FreshShell } = await import('./Shell');
+    render(<FreshShell>child</FreshShell>);
+
+    // The short value must appear VERBATIM — truncation classes may be present
+    // (they are inert until overflow) but the text itself must never be cut.
+    const nameLines = screen.getAllByText('Al');
+    expect(nameLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of nameLines) {
+      expect(line.className).toContain('truncate');
+      expect(line.getAttribute('title')).toBe('Al');
+    }
+
+    const emailLines = screen.getAllByText('a@b.co');
+    expect(emailLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of emailLines) {
+      expect(line.className).toContain('truncate');
+      expect(line.getAttribute('title')).toBe('a@b.co');
+      expect(line.closest('div.min-w-0')).not.toBeNull();
+    }
+  });
+});
