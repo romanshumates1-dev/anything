@@ -34,6 +34,8 @@ import { checkSignupAllowed } from '@/app/api/utils/signup-restrictions';
 import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 import { isAccessDenied } from '@/lib/user-status';
 import { buildTrustedOrigins } from '@/app/api/utils/trustedOrigins';
+import { checkSignInCost } from '@/lib/auth-cost-guard';
+import { rateLimitIdentifier } from '@/app/api/utils/clientIp';
 
 // Runtime-agnostic: global WebSocket on workerd / Node >= 22, `ws` on Node 20.
 // See src/lib/websocket.ts for why this is not a plain `import ws from 'ws'`
@@ -278,6 +280,44 @@ export const auth = betterAuth({
         if (!body || typeof body.email !== 'string' || !(await isEmailDomainAllowedEffective(body.email))) {
           throw new APIError('FORBIDDEN', {
             message: 'Access restricted: this platform is limited to authorized email domains.',
+          });
+        }
+      }
+
+      // CPU-cost guard: MUST run before any password hashing.
+      //
+      // Measured 2026-10-03: scrypt (the actual algorithm in `account.password`;
+      // there are zero argon2 rows, so the argon2 branch below is dead code)
+      // costs ~98ms per verification, and the Workers Free plan allows ~10ms of
+      // CPU per invocation. better-auth's own limiter is not atomic — it
+      // read-decide-writes around awaits — and a burst of 8 was measured
+      // admitting 5 attempts against a max of 3, which is what exhausts the
+      // budget and produces Cloudflare's "Worker exceeded resource limits" 503.
+      //
+      // This uses the app's own atomic Postgres limiter instead, so the bound
+      // actually holds under concurrency. It does NOT weaken the hash: lowering
+      // scrypt's cost parameters would trade real security for a benchmark.
+      // See src/lib/auth-cost-guard.ts for the full reasoning.
+      if (ctx.path === '/sign-in/email') {
+        const body = ctx.body as { email?: unknown } | undefined;
+        const email = typeof body?.email === 'string' ? body.email : null;
+        // `ctx.request` is optional in better-auth's middleware context. When it
+        // is absent no client IP can be resolved, so only the account dimension
+        // applies — which still bounds the cost, rather than silently skipping
+        // the guard. `rateLimitIdentifier` returns null for an unidentifiable
+        // caller and this module deliberately does not fail open on null.
+        const guard = await checkSignInCost(
+          ctx.request ? rateLimitIdentifier(ctx.request) : null,
+          email
+        );
+        if (!guard.allowed) {
+          // Logged with the scope but NOT the identifier, so logs cannot be used
+          // to harvest or correlate a caller's address.
+          console.warn(
+            `[auth-cost-guard] sign-in refused scope=${guard.scope ?? 'unknown'} limiterError=${guard.limiterError === true}`
+          );
+          throw new APIError('TOO_MANY_REQUESTS', {
+            message: 'Too many sign-in attempts. Please wait and try again.',
           });
         }
       }

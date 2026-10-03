@@ -153,28 +153,40 @@ const BASELINE: Record<string, number> = {
   'components/templates/AITemplateGenerator.tsx': 1,
 };
 describe('swallowed-error guard', () => {
-  it('no new silent .catch sites, and baselined counts never increase', () => {
-    const errors: string[] = [];
-    for (const file of files) {
-      const key = relKey(file);
-      const count = silentSites(file).length;
-      if (count === 0) continue;
-      const allowed = BASELINE[key];
-      if (allowed === undefined) {
-        errors.push(
-          `${key}: ${count} silent .catch site(s) in a file with no baseline. ` +
-            `Log the cause instead of swallowing it, or add a justified entry.`
-        );
-      } else if (count > allowed) {
-        errors.push(`${key}: ${count} silent .catch site(s), baseline allows ${allowed}`);
+  // This walks the source tree and re-reads every candidate file, so its runtime
+  // scales with repository size AND with how much CPU the rest of the suite is
+  // using. Under a parallel `vitest run` it was measured exceeding the default
+  // 5s timeout and failing as a false positive, while passing in 516ms when run
+  // on its own. The assertions below are the real gate; this only gives the I/O
+  // enough headroom to reach them.
+  const IO_TIMEOUT_MS = 30_000;
+
+  it(
+    'no new silent .catch sites, and baselined counts never increase',
+    () => {
+      const errors: string[] = [];
+      for (const file of files) {
+        const key = relKey(file);
+        const count = silentSites(file).length;
+        if (count === 0) continue;
+        const allowed = BASELINE[key];
+        if (allowed === undefined) {
+          errors.push(
+            `${key}: ${count} silent .catch site(s) in a file with no baseline. ` +
+              `Log the cause instead of swallowing it, or add a justified entry.`
+          );
+        } else if (count > allowed) {
+          errors.push(`${key}: ${count} silent .catch site(s), baseline allows ${allowed}`);
+        }
       }
-    }
-    expect(
-      errors,
-      `A query failure must not become an empty response. Fix the site (log the ` +
-        `cause) and lower the baseline:\n${errors.join('\n')}`
-    ).toEqual([]);
-  });
+      expect(
+        errors,
+        `A query failure must not become an empty response. Fix the site (log the ` +
+          `cause) and lower the baseline:\n${errors.join('\n')}`
+      ).toEqual([]);
+    },
+    IO_TIMEOUT_MS
+  );
 
   it('records the total so progress is visible', () => {
     let total = 0;
