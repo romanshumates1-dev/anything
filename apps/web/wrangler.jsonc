@@ -23,6 +23,40 @@
   // HTTPS API instead. See "Cloudflare Workers deploy / Known constraints"
   // in apps/web/DEPLOY.md.
   "compatibility_flags": ["nodejs_compat"],
+
+  // NO `limits` BLOCK — DELIBERATELY ABSENT, and that is load-bearing.
+  //
+  // Do not add `limits.cpu_ms` here. It was tried on 2026-10-03 and Cloudflare
+  // REJECTED the deploy outright:
+  //
+  //   "CPU limits are not supported for the Free plan."
+  //   [code: 100328]
+  //
+  // This account is on the Workers **Free** plan, despite DEPLOY.md's
+  // "Prerequisites" claiming Paid. On Free the per-invocation CPU budget is
+  // fixed and cannot be raised, so the budget must instead be RESPECTED:
+  //
+  //   * RSC prefetching — 18+ parallel server-component renders blew the
+  //     budget and returned 503. Fixed by prefetch={false} (measured 16% 503 ->
+  //     0%). This is the template for every future fix here.
+  //
+  //   * PASSWORD HASHING — STILL UNRESOLVED. `POST /api/auth/sign-up/email`
+  //     measures ok=3 / err=3 over six attempts: roughly half of all signup and
+  //     signin attempts 503 with an empty text/plain body, which is Cloudflare
+  //     terminating the invocation rather than an application error. The
+  //     endpoints that work (/api/auth/get-session 200; authenticated APIs
+  //     correctly 401) are exactly the ones that never hash a password.
+  //     argon2 is deliberately CPU-expensive — that is its security property —
+  //     and it does not fit a Free-plan budget.
+  //
+  //     Two real options, neither of which is a code tweak:
+  //       1. Upgrade the account to Workers Paid (billing decision, owner's).
+  //       2. Stop hashing new passwords with argon2 and use better-auth's
+  //          cheaper default, keeping argon2 verify only for legacy hashes —
+  //          an explicit security downgrade, and a decision to make, not to
+  //          slip in.
+  //
+  // See UNIFIED-REQUIREMENTS-MATRIX.md for the measurements.
   // Static assets emitted by the OpenNext build. Requests to assets are free and
   // unlimited on every Workers plan — this is what gives us unmetered bandwidth.
   "assets": {

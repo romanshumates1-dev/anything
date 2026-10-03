@@ -34,6 +34,32 @@ export async function getSessionOrNull(): Promise<Session | null> {
     const session = await auth.api.getSession({ headers: await headers() });
     return session ?? null;
   } catch (err) {
+    // NEXT.JS DYNAMIC-ROUTE SIGNAL — MUST NOT BE SWALLOWED (found 2026-10-03).
+    //
+    // Next.js uses a THROWN error as control flow: when a server component
+    // calls `headers()` during static generation, Next throws
+    // `DynamicServerError` to tell the build "this route is dynamic, render it
+    // per-request instead of pre-rendering it". Catching it and returning null
+    // converts that instruction into an ordinary render, so the route is baked
+    // as STATIC and the per-request headers never reach it at runtime.
+    //
+    // The build log showed exactly that for the pages this helper was added to:
+    //
+    //   Route / couldn't be rendered statically because it used `headers`
+    //   Route /automation ...  Route /admin/audience ...
+    //
+    // So this catch must re-throw the framework's signal and contain only
+    // genuine authentication failures. `DIGEST` is how Next tags it; matching
+    // the message as well keeps the check honest if that marker ever changes.
+    const isDynamicSignal =
+      typeof err === 'object' &&
+      err !== null &&
+      'digest' in err &&
+      typeof (err as { digest?: unknown }).digest === 'string' &&
+      /DYNAMIC_SERVER_USAGE/i.test((err as { digest: string }).digest);
+
+    if (isDynamicSignal) throw err;
+
     console.error('[session] getSession failed; rendering without a session:', err);
     return null;
   }

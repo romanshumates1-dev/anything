@@ -92,4 +92,71 @@ describe('getSessionOrNull', () => {
       errorSpy.mockRestore();
     }
   });
+
+  describe("Next.js's dynamic-route signal must NOT be contained", () => {
+    // REGRESSION, found 2026-10-03 in the Cloudflare build log.
+    //
+    // Next.js signals "render this per-request, not at build time" by THROWING
+    // from `headers()`. This helper's catch-all was swallowing that signal and
+    // returning null, which made the build treat the route as an ordinary static
+    // render:
+    //
+    //   Route / couldn't be rendered statically because it used `headers`
+    //   Route /automation ...  Route /admin/audience ...
+    //
+    // The visible symptom is a page that builds and deploys but cannot read the
+    // request headers it needs at runtime — i.e. session state that is always
+    // empty, which quietly breaks every signed-in feature on that route.
+    //
+    // The containment fix must contain AUTHENTICATION failures, not framework
+    // control flow. These two are easy to confuse and must not be.
+    function dynamicServerError() {
+      const err = new Error(
+        'Dynamic server usage: Route / couldn\'t be rendered statically because it used `headers`.',
+      );
+      // Next tags its control-flow errors with this digest.
+      (err as Error & { digest: string }).digest = 'DYNAMIC_SERVER_USAGE';
+      return err;
+    }
+
+    it('re-throws the dynamic-usage signal instead of returning null', async () => {
+      getSessionMock.mockRejectedValue(dynamicServerError());
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        // Returning null here is the bug: it converts Next's instruction into
+        // a successful static render.
+        await expect(getSessionOrNull()).rejects.toThrow(/Dynamic server usage/);
+        // And it must not be logged as an auth outage — it is not one.
+        expect(errorSpy).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('still contains a genuine auth failure', async () => {
+      // The counter-test: containing real auth failures is the whole point of
+      // the helper and must survive the re-throw change.
+      getSessionMock.mockRejectedValue(new Error('APIError: Failed to get session'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        await expect(getSessionOrNull()).resolves.toBeNull();
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('still contains a backend timeout, which carries no digest', async () => {
+      getSessionMock.mockRejectedValue(new Error('ETIMEDOUT'));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        await expect(getSessionOrNull()).resolves.toBeNull();
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+  });
 });
