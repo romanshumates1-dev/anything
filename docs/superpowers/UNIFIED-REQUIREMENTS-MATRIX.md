@@ -81,7 +81,7 @@ unverified.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | G1 | Routes load without console/network errors | `scripts/deployed-browser-qa.mjs` | E2E TESTED | authenticated crawl reached real `/dashboard`; harness hardened (commit `508ca15`) | — |
-| G2 | No intermittent homepage 500 | — | NOT VERIFIED | `TypeError: components.ComponentMod.handler is not a function` captured via `wrangler tail`; did not reproduce in 40/40 | **OPEN DEFECT 1** |
+| G2 | No intermittent homepage 500 | — | NOT VERIFIED | `TypeError: components.ComponentMod.handler is not a function` captured via `wrangler tail`; did not reproduce in 40/40 controlled requests. **Chunk-loading hypothesis investigated and DISPROVEN** — see OPEN DEFECT 1 | cause still unidentified |
 
 ## SET H — CONSOLE / RUNTIME ERRORS
 
@@ -202,8 +202,24 @@ unverified.
 1. **Intermittent `GET /` 500** — `TypeError: components.ComponentMod.handler is
    not a function`, captured live (cf-ray `a44dae47afab3f27`) via
    `wrangler tail`. Did not reproduce across 40/40 controlled requests (idle,
-   tight-sequential, 8-way parallel). Cause UNIDENTIFIED. Not a CPU-budget
-   symptom on current evidence.
+   tight-sequential, 8-way parallel).
+
+   **Leading hypothesis investigated and DISPROVEN.** The error text matches
+   upstream opennextjs/opennextjs-cloudflare#1305 (Windows-only empty
+   `requireChunk()` switch) and #1258. We run Windows + opennext 1.20.6 + Next
+   16.3.6, so the symptom fits exactly. `scripts/_audit-turbopack-runtime.mjs`
+   checks the real artefacts and rules it out:
+   - intermediate `[turbopack]_runtime.js`: 2038 cases (NOT the empty switch)
+   - deployed `handler.mjs`: 2038 cases, every `require()` rewritten to an
+     inlined function, zero absolute paths, `default: throw` fallback present
+
+   So the deployed bundle is sound and chunk loading is not the cause. Note the
+   absolute paths in the intermediate file are expected and rewritten by the
+   bundler — judging that file alone would have produced a false "confirmed".
+
+   Remaining candidates, none yet evidenced: a race in concurrent RSC render
+   state within a reused isolate, or a module-scope cache shared across
+   requests. Not yet instrumented. **Cause UNIDENTIFIED.**
 
 2. **Free-plan CPU ceiling** — scrypt costs ~98ms per verification against a
    ~10ms budget. The pre-hash guard bounds how many verifications can START,
