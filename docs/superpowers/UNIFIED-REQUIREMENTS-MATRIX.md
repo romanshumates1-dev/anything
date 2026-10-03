@@ -184,7 +184,7 @@ unverified.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | MKT-1 | Public marketing pages | `src/app/(marketing)` home, pricing, features, trust, faq, how-it-works, contact | E2E TESTED | all 200, 0 failing subresources in a controlled pass | — |
-| MKT-2 | Legal/compliance pages | `legal/terms`, `legal/privacy`, `legal/refunds`, `legal/cookies`, `/compliance` | E2E TESTED | all 200 | — |
+| MKT-2 | Legal/compliance pages | `legal/terms`, `legal/privacy`, `legal/refunds`, `legal/cookies`, `/compliance` | E2E TESTED | all 200. `/compliance` → `/trust` is an INTENTIONAL `permanentRedirect`: the standalone page was superseded by the /trust Compliance Center and carried unsubstantiated SOC 2 / "carrier-grade" claims | — |
 | MKT-3 | Referral / first-1,000-users banner | none found | NOT STARTED | no referral banner component found | — |
 | SEO-1 | Titles, canonical, robots, sitemap, structured data | `layout.tsx`, `lib/seo.ts`, `robots.ts`, `sitemap.ts` | IMPLEMENTED | canonical + absolute metadataBase; deny-by-default indexing for private routes | not audited this session |
 
