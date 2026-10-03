@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import {
   Users,
   Send,
@@ -12,6 +11,7 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-react';
+import { usePipelineStatus } from './usePipelineStatus';
 
 interface PipelineStats {
   leadIngestion: { processed: number; errors: number };
@@ -102,19 +102,15 @@ const textColorMap: Record<string, string> = {
 };
 
 export function PipelineFlowVisualization() {
-  const { data, isLoading } = useQuery({
-    queryKey: ['pipeline-flow'],
-    queryFn: async () => {
-      const res = await fetch('/api/pipeline?include_config=false');
-      if (!res.ok) throw new Error('Failed to fetch pipeline status');
-      const json = await res.json();
-      return json.status as {
-        lastRun: { stats: PipelineStats } | null;
-        stageHealth: StageHealth[];
-      };
-    },
-    refetchInterval: 60000,
-  });
+  // Shared with PipelineStatusCard so both render from ONE request instead of
+  // two identical Worker invocations. See usePipelineStatus.ts.
+  const { data, isLoading } = usePipelineStatus();
+  // Cast to this component's own view of the payload; the shared hook returns
+  // the raw shape so both consumers can project differently from one request.
+  const status = (data ?? null) as {
+    lastRun: { stats: PipelineStats } | null;
+    stageHealth: StageHealth[];
+  } | null;
 
   if (isLoading) {
     return (
@@ -124,8 +120,8 @@ export function PipelineFlowVisualization() {
     );
   }
 
-  const stats = data?.lastRun?.stats;
-  const health = data?.stageHealth || [];
+  const stats = status?.lastRun?.stats;
+  const health = status?.stageHealth || [];
 
   const getStageStats = (stageId: string): { primary: number; secondary?: number } => {
     if (!stats) return { primary: 0 };

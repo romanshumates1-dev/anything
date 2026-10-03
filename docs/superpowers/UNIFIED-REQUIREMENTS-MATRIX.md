@@ -87,7 +87,39 @@ unverified.
 | G1 | Routes load without console/network errors | `scripts/deployed-browser-qa.mjs` | E2E TESTED | post-deploy crawl: login + legal acceptance verified end-to-end (lands on real `/dashboard`); **15 of 24 authenticated routes 503**, `/dashboard` 12.4s | see OPEN DEFECT 2 |
 | G2 | No intermittent homepage 500 | — | NOT VERIFIED | `TypeError: components.ComponentMod.handler is not a function` captured via `wrangler tail`; did not reproduce in 40/40 controlled requests. **Chunk-loading hypothesis investigated and DISPROVEN** — see OPEN DEFECT 1 | cause still unidentified |
 
-## SET H — CONSOLE / RUNTIME ERRORS
+## MEASURED DASHBOARD FAN-OUT (2026-10-03)
+
+The dashboard is a client component, so its cost is the SUM of its client-side
+fetches, each of which is a separate Worker invocation with its own CPU budget.
+
+| Group | Count | Endpoints |
+| --- | --- | --- |
+| Shell (every authenticated page) | 5 | `/api/usage`, `/api/user/preferences`, `/api/system/health`, `/api/approvals/count`, `/api/actions?limit=1` |
+| Dashboard page | 2 | `/api/dashboard/stats`, `/api/system/health` (deduped by React Query — same key) |
+| Dashboard components | 10 | campaigns, credits, funnel, activity, next-actions, pipeline x2, quick-stats, engagements, weekly-progress |
+
+**17 invocations on one page load.** Sequential per-endpoint timings (low-volume,
+authenticated, all 200): min 186ms, max 715ms, mean 328ms, total 4915ms. So no
+single endpoint is broken; the page is slow because of breadth, and the 503s
+appear only under cumulative load (the 24-route crawl), not per route.
+
+### Defect found and fixed: duplicated pipeline fetch
+
+`PipelineFlowVisualization` and `PipelineStatusCard` both requested
+`GET /api/pipeline?include_config=false` under DIFFERENT query keys
+(`pipeline-flow`, `pipeline-status`). React Query dedupes on the key, so both
+requests always fired — two identical Worker invocations for one payload,
+repeating every 60s on any open dashboard. Extracted to a shared
+`usePipelineStatus()` with one key.
+
+Regression test `pipeline-status-dedupe.test.tsx` renders both components and
+asserts exactly one request; verified RED by temporarily restoring the old
+behaviour (`expected 1 pipeline request, saw 2`).
+
+This is a real but SMALL win: 17 → 16 invocations. It does not by itself solve
+the render time. The remaining fan-out is the dominant cost and the next thing
+to address is consolidating the dashboard's component data into fewer
+invocations, which is a larger change than could be completed and verified here.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |

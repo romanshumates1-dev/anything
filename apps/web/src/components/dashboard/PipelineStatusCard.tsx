@@ -1,7 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { usePipelineStatus } from './usePipelineStatus';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,16 +45,10 @@ interface PipelineStatus {
 }
 
 export function PipelineStatusCard() {
-  const { data, isLoading } = useQuery({
-    queryKey: ['pipeline-status'],
-    queryFn: async () => {
-      const res = await fetch('/api/pipeline?include_config=false');
-      if (!res.ok) throw new Error('Failed to fetch pipeline status');
-      const json = await res.json();
-      return json.status as PipelineStatus;
-    },
-    refetchInterval: 60000, // Refresh every minute
-  });
+  // Shared with PipelineFlowVisualization: same url, same key, ONE request.
+  // See usePipelineStatus.ts for why the duplicate mattered.
+  const { data, isLoading } = usePipelineStatus();
+  const status = (data ?? null) as PipelineStatus | null;
 
   if (isLoading) {
     return (
@@ -66,11 +60,11 @@ export function PipelineStatusCard() {
     );
   }
 
-  if (!data) {
+  if (!status) {
     return null;
   }
 
-  const { pendingActions, stageHealth, lastRun, isRunning } = data;
+  const { pendingActions, stageHealth, lastRun, isRunning } = status;
   const healthyStages = stageHealth.filter((s) => s.status === 'healthy').length;
   const totalStages = stageHealth.length;
 

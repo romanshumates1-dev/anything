@@ -78,7 +78,7 @@ const DEFAULT_CHECKLIST: ChecklistItem[] = [
     id: 'setup-contracts',
     title: 'Set Up Contract Templates',
     description: 'Configure your contract templates for quick deal closing',
-    href: '/contracts/templates',
+    href: '/contracts',
     icon: FileText,
     actionLabel: 'Manage Contracts',
   },
