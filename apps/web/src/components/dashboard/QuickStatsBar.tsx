@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import {
   Users,
   Send,
@@ -25,23 +26,28 @@ interface QuickStat {
  * trend indicators to highlight momentum.
  */
 export function QuickStatsBar() {
-  const { data, isLoading } = useQuery({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice (absent, or the batch itself failed).
+  const slice = useDashboardSlice('quickStats');
+
+  const { data: fetched, isLoading: fetching } = useQuery({
     queryKey: ['quick-stats'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/quick-stats');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          leads: { value: 847, change: 12 },
-          contacted: { value: 623, change: 8 },
-          responses: { value: 198, change: -3 },
-          deals: { value: 12, change: 25 },
-        };
+        // A failure is reported as a failure. This used to return a fixed set of
+        // plausible numbers (847 leads, 12 deals), so a broken query rendered as a
+        // healthy-looking dashboard.
+        throw new Error(`quick-stats failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 60_000,
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   const stats: QuickStat[] = [
     {

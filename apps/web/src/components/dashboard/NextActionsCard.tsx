@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
@@ -32,58 +33,29 @@ interface NextAction {
  * emphasizing urgent items and time-sensitive actions.
  */
 export function NextActionsCard() {
-  const { data, isLoading } = useQuery<{ actions: NextAction[] }>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('nextActions');
+
+  const { data: fetched, isLoading: fetching } = useQuery<{ actions: NextAction[] }>({
     queryKey: ['next-actions'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/next-actions');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          actions: [
-            {
-              id: '1',
-              type: 'urgent',
-              title: 'Hot lead: John Smith wants to sell',
-              description: '123 Main St - Responded 30 min ago',
-              dueIn: 'Now',
-              href: '/crm?lead=1',
-              priority: 'high',
-            },
-            {
-              id: '2',
-              type: 'call',
-              title: 'Call back Sarah Davis',
-              description: '456 Oak Ave - Requested callback at 2pm',
-              dueIn: 'In 2 hours',
-              href: '/crm?lead=2',
-              priority: 'high',
-            },
-            {
-              id: '3',
-              type: 'contract',
-              title: 'Send contract to Mike Johnson',
-              description: '789 Pine Rd - Agreed on $95,000',
-              dueIn: 'Today',
-              href: '/contracts?lead=3',
-              priority: 'medium',
-            },
-            {
-              id: '4',
-              type: 'follow_up',
-              title: 'Follow up with Lisa Brown',
-              description: '321 Elm St - No response in 5 days',
-              dueIn: 'Tomorrow',
-              href: '/crm?lead=4',
-              priority: 'low',
-            },
-          ],
-        };
+        // Reported as a failure. This returned four invented leads ("Call back
+        // Sarah Davis", "Agreed on $95,000") for any non-2xx, so the priority
+        // list could show work that does not exist and hide work that does.
+        throw new Error(`next-actions failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   const typeConfig: Record<
     NextAction['type'],

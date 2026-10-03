@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
@@ -10,7 +11,6 @@ import {
   ArrowRight,
   MessageSquare,
   Zap,
-  Clock,
   Target,
   CheckCircle2,
 } from 'lucide-react';
@@ -32,10 +32,10 @@ interface Campaign {
 
 interface CampaignWithProgress extends Campaign {
   progress: number;
-  responseCount: number;
-  responseRate: number;
+  /** undefined when no real response count exists - never a guess. */
+  responseCount?: number;
+  responseRate?: number;
   isActive: boolean;
-  eta?: string;
 }
 
 /**
@@ -45,7 +45,11 @@ interface CampaignWithProgress extends Campaign {
  * wholesalers a clear feeling of momentum.
  */
 export function CampaignProgressCard() {
-  const { data: campaigns, isLoading } = useQuery<Campaign[]>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('campaigns');
+
+  const { data: fetched, isLoading: fetching } = useQuery<Campaign[]>({
     queryKey: ['campaigns'],
     queryFn: async () => {
       const res = await fetch('/api/campaigns');
@@ -53,7 +57,13 @@ export function CampaignProgressCard() {
       return res.json();
     },
     staleTime: 30_000,
+    enabled: slice.fallback,
   });
+
+  // The batch slice is the same rows `/api/campaigns` returns; the local
+  // `Campaign` interface stays the authoritative shape for this card.
+  const campaigns = (slice.data as Campaign[] | undefined) ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   if (isLoading) {
     return (
@@ -72,20 +82,25 @@ export function CampaignProgressCard() {
     .map(campaign => {
       const total = campaign.member_count || 0;
       const sent = campaign.sent_count || 0;
-      const responseCount = campaign.response_count || Math.round(sent * 0.15);
+      // Only a REAL response count is shown. This used to fall back to
+      // `Math.round(sent * 0.15)` - a 15% response rate invented from nothing -
+      // and `campaign_leads` (verified against information_schema) has no
+      // response column at all, so that number was never measured. Absent a real
+      // count, the card shows none rather than a flattering guess.
+      const responseCount = campaign.response_count;
       const progress = total > 0 ? Math.round((sent / total) * 100) : 0;
-      const responseRate = sent > 0 ? Math.round((responseCount / sent) * 100) : 0;
+      const responseRate =
+        sent > 0 && responseCount !== undefined
+          ? Math.round((responseCount / sent) * 100)
+          : undefined;
       const isActive = campaign.status === 'active' || campaign.status === 'running';
 
-      // Calculate ETA based on sending rate
-      const remaining = total - sent;
-      const dailyRate = 50; // Placeholder - would come from actual rate
-      const daysRemaining = remaining > 0 ? Math.ceil(remaining / dailyRate) : 0;
-      const eta = daysRemaining > 0
-        ? daysRemaining === 1
-          ? 'Tomorrow'
-          : `${daysRemaining} days`
-        : undefined;
+      // ETA is NOT computed here. It used to be derived from a hardcoded
+      // `dailyRate = 50` ("Placeholder - would come from actual rate"), which
+      // told every campaign it would finish in a fixed number of days regardless
+      // of how it was actually pacing. A sending-rate prediction needs a measured
+      // rate (outbound messages per day per campaign, from the message ledger);
+      // until that exists the card shows progress, not a forecast.
 
       return {
         ...campaign,
@@ -93,7 +108,6 @@ export function CampaignProgressCard() {
         responseCount,
         responseRate,
         isActive,
-        eta,
       };
     });
 
@@ -154,14 +168,9 @@ export function CampaignProgressCard() {
                     {campaign.name}
                   </span>
                 </div>
-                {campaign.progress === 100 ? (
+                {campaign.progress === 100 && (
                   <CheckCircle2 className="h-4 w-4 text-[var(--color-success)] flex-shrink-0" />
-                ) : campaign.eta ? (
-                  <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] flex-shrink-0 ml-2">
-                    <Clock className="h-3 w-3" />
-                    {campaign.eta}
-                  </span>
-                ) : null}
+                )}
               </div>
 
               {/* Progress bar with segments */}
@@ -206,13 +215,16 @@ export function CampaignProgressCard() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {campaign.responseCount > 0 && (
+                  {/* Response figures render only when they are real. There is no
+                      measured response count in this schema, so this block is
+                      usually empty - which is the honest outcome, not a defect. */}
+                  {typeof campaign.responseCount === 'number' && campaign.responseCount > 0 && (
                     <span className="flex items-center gap-1 text-[var(--color-success)]">
                       <MessageSquare className="h-3 w-3" />
                       {campaign.responseCount}
                     </span>
                   )}
-                  {campaign.responseRate > 0 && (
+                  {typeof campaign.responseRate === 'number' && campaign.responseRate > 0 && (
                     <span className="flex items-center gap-1 text-[var(--accent-purple)]">
                       <Target className="h-3 w-3" />
                       {campaign.responseRate}%

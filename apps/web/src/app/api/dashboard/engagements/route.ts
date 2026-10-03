@@ -1,24 +1,16 @@
 /**
  * Dashboard Engagements API - GET recent responses and engagement
  *
- * Returns the latest lead responses grouped by engagement type
- * for the real-time activity feed.
+ * Thin wrapper around the shared slice so this endpoint and
+ * `GET /api/dashboard/summary` cannot drift apart. The query, the org scoping
+ * and the corrected field mapping (see the slice's defect note) live in
+ * `utils/dashboardSlices.ts`.
  */
 import { NextResponse } from 'next/server';
-import sql from '@/app/api/utils/sql';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
-
-interface Engagement {
-  id: string;
-  leadName: string;
-  propertyAddress: string;
-  type: 'response' | 'interested' | 'not_interested' | 'callback' | 'hot_lead';
-  message?: string;
-  timestamp: string;
-  campaignName?: string;
-}
+import { getDashboardEngagements } from '@/app/api/utils/dashboardSlices';
 
 export async function GET() {
   const session = await auth.api.getSession({
@@ -35,70 +27,7 @@ export async function GET() {
   }
 
   try {
-    // SECURITY: All queries scoped to organization
-    // Get recent AI conversations with lead info
-    //
-    // Defect #40: this selected c.message_type, c.content, c.classification,
-    // l.first_name, l.last_name, l.property_address, l.property_city and
-    // l.property_state - NONE of which exist. ai_conversations really has
-    // (id, lead_id, channel, history jsonb, status, confidence_score,
-    // requires_human, last_message_at, created_at) and `leads` stores person and
-    // property detail inside `metadata` (tier, phase, state, propertyValue, ...),
-    // not in dedicated columns. The whole endpoint 500'd.
-    //
-    // Rewritten against the real columns. Inbound-ness is taken from the
-    // conversation's own state rather than an invented message_type: a
-    // conversation that is awaiting us is exactly the engagement being surfaced.
-    const recentResponses = await sql`
-      SELECT
-        c.id,
-        c.lead_id,
-        c.channel,
-        c.status,
-        c.requires_human,
-        c.confidence_score,
-        c.last_message_at,
-        c.created_at,
-        l.name as lead_name,
-        l.metadata->>'state' as property_state,
-        l.metadata->>'tier' as lead_tier,
-        l.metadata->>'phase' as lead_phase,
-        camp.name as campaign_name
-      FROM ai_conversations c
-      JOIN leads l ON l.id = c.lead_id
-      LEFT JOIN campaign_leads cl ON cl.lead_id = l.id
-      LEFT JOIN campaigns camp ON camp.id = cl.campaign_id
-      WHERE l.organization_id = ${org.id}
-        AND c.last_message_at IS NOT NULL
-        AND c.last_message_at >= NOW() - INTERVAL '7 days'
-      ORDER BY c.last_message_at DESC
-      LIMIT 20
-    `;
-
-    // Map classification to engagement type
-    const mapClassification = (classification: string | null): Engagement['type'] => {
-      if (!classification) return 'response';
-      const lower = classification.toLowerCase();
-      if (lower.includes('hot') || lower.includes('urgent')) return 'hot_lead';
-      if (lower.includes('interested') || lower.includes('yes')) return 'interested';
-      if (lower.includes('callback') || lower.includes('call')) return 'callback';
-      if (lower.includes('not') || lower.includes('no') || lower.includes('stop')) return 'not_interested';
-      return 'response';
-    };
-
-    const engagements: Engagement[] = recentResponses.map((row) => ({
-      id: row.id,
-      leadName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unknown',
-      propertyAddress: [row.property_address, row.property_city, row.property_state]
-        .filter(Boolean)
-        .join(', ') || 'Address unavailable',
-      type: mapClassification(row.classification),
-      message: row.content?.slice(0, 200),
-      timestamp: row.created_at,
-      campaignName: row.campaign_name,
-    }));
-
-    return NextResponse.json({ engagements });
+    return NextResponse.json(await getDashboardEngagements(org.id));
   } catch (error: any) {
     console.error('GET /api/dashboard/engagements error', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

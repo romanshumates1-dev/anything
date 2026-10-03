@@ -3,33 +3,19 @@
  *
  * Returns the organization's current credit balance and
  * tier-specific costs for all actions.
+ *
+ * Thin wrapper around the shared credits slice, which the batched
+ * `GET /api/dashboard/summary` also calls (one React Query key, one payload, so
+ * the dashboard card and the inline header balance cannot disagree).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
-import {
-  getBalanceDetails,
-  getAllCosts,
-  getTransactionHistory,
-} from '@/app/api/utils/credits';
-import { getSubscriptionStatus } from '@/app/api/utils/subscriptionGuard';
+import { getCredits, type CreditsPayload } from '@/app/api/utils/dashboardSlices';
 
-export interface CreditsResponse {
-  balance: number;
-  lifetimePurchased: number;
-  lifetimeUsed: number;
-  tier: string;
-  costs: Record<string, number>;
-  transactions?: Array<{
-    id: string;
-    type: string;
-    amount: number;
-    balanceAfter: number;
-    description: string;
-    createdAt: string;
-  }>;
-}
+/** Re-exported so components keep importing the response type from here. */
+export type CreditsResponse = CreditsPayload;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -47,38 +33,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const historyLimit = parseInt(url.searchParams.get('limit') || '20', 10);
 
   try {
-    // Get subscription tier for cost lookup
-    const subscription = await getSubscriptionStatus(organization.id);
-    const tier = subscription?.tier || 'free';
-
-    // Get balance and costs in parallel
-    const [balanceDetails, costs] = await Promise.all([
-      getBalanceDetails(organization.id),
-      getAllCosts(tier),
-    ]);
-
-    const response: CreditsResponse = {
-      balance: balanceDetails.balance,
-      lifetimePurchased: balanceDetails.lifetimePurchased,
-      lifetimeUsed: balanceDetails.lifetimeUsed,
-      tier: tier.toLowerCase(),
-      costs,
-    };
-
-    // Optionally include transaction history
-    if (includeHistory) {
-      const transactions = await getTransactionHistory(organization.id, historyLimit);
-      response.transactions = transactions.map((t) => ({
-        id: t.id,
-        type: t.type,
-        amount: t.amount,
-        balanceAfter: t.balanceAfter,
-        description: t.description,
-        createdAt: t.createdAt.toISOString(),
-      }));
-    }
-
-    return NextResponse.json(response);
+    return NextResponse.json(
+      await getCredits(organization.id, { includeHistory, historyLimit })
+    );
   } catch (error: any) {
     console.error('[CREDITS] GET error:', error);
     return NextResponse.json({ error: 'Failed to fetch credits' }, { status: 500 });

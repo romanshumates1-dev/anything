@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Coins, AlertTriangle, Loader2, Plus, Sparkles } from 'lucide-react';
@@ -13,25 +14,28 @@ import type { CreditsResponse } from '@/app/api/credits/route';
  * low balance warnings to help wholesalers manage their outreach budget.
  */
 export function CreditBalanceCard() {
-  const { data, isLoading, error } = useQuery<CreditsResponse>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('credits');
+
+  const { data: fetched, isLoading: fetching, error } = useQuery<CreditsResponse>({
     queryKey: ['credits'],
     queryFn: async () => {
       const res = await fetch('/api/credits?history=true&limit=10');
       if (!res.ok) {
-        // Return mock data if credits API not available
-        return {
-          balance: 2450,
-          lifetimePurchased: 10000,
-          lifetimeUsed: 7550,
-          tier: 'pro',
-          costs: { SMS_SEND: 5, EMAIL_SEND: 1, AI_CLASSIFY: 2 },
-          transactions: [],
-        };
+        // Reported as a failure. This returned a fabricated 2,450-credit balance
+        // for any non-2xx, so a tenant with a broken credits query saw a
+        // confident number that did not exist.
+        throw new Error(`credits failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 30_000,
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   if (isLoading) {
     return (

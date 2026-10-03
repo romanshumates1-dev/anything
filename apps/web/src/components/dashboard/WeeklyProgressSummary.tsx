@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
   Loader2,
@@ -38,33 +39,28 @@ interface WeeklyStats {
  * comparisons, streaks, and milestone celebrations.
  */
 export function WeeklyProgressSummary() {
-  const { data, isLoading } = useQuery<WeeklyStats>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('weeklyProgress');
+
+  const { data: fetched, isLoading: fetching } = useQuery<WeeklyStats>({
     queryKey: ['weekly-progress'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/weekly-progress');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          leadsContacted: 156,
-          leadsContactedLastWeek: 142,
-          responsesReceived: 38,
-          responsesLastWeek: 31,
-          dealsInProgress: 8,
-          dealsLastWeek: 6,
-          dealsClosed: 3,
-          dealsClosedLastWeek: 2,
-          streak: 12,
-          milestone: {
-            type: 'leads',
-            value: 1000,
-            label: '1,000 leads contacted!',
-          },
-        };
+        // Reported as a failure. This returned a 12-day streak and 156 leads
+        // contacted for any non-2xx, so the progress widget celebrated activity
+        // that never happened.
+        throw new Error(`weekly-progress failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 300_000, // 5 minutes
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   if (isLoading) {
     return (

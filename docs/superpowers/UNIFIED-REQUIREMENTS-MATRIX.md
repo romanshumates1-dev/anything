@@ -87,7 +87,7 @@ unverified.
 | G1 | Routes load without console/network errors | `scripts/deployed-browser-qa.mjs` | E2E TESTED | post-deploy crawl: login + legal acceptance verified end-to-end (lands on real `/dashboard`); **15 of 24 authenticated routes 503**, `/dashboard` 12.4s | see OPEN DEFECT 2 |
 | G2 | No intermittent homepage 500 | — | NOT VERIFIED | `TypeError: components.ComponentMod.handler is not a function` captured via `wrangler tail`; did not reproduce in 40/40 controlled requests. **Chunk-loading hypothesis investigated and DISPROVEN** — see OPEN DEFECT 1 | cause still unidentified |
 
-## MEASURED DASHBOARD FAN-OUT (2026-10-03)
+## MEASURED DASHBOARD FAN-OUT — AND WHAT IT WAS ACTUALLY COSTING (2026-10-03)
 
 The dashboard is a client component, so its cost is the SUM of its client-side
 fetches, each of which is a separate Worker invocation with its own CPU budget.
@@ -103,6 +103,60 @@ authenticated, all 200): min 186ms, max 715ms, mean 328ms, total 4915ms. So no
 single endpoint is broken; the page is slow because of breadth, and the 503s
 appear only under cumulative load (the 24-route crawl), not per route.
 
+### CPU attribution (`wrangler tail`, production, 15 sequential authenticated requests)
+
+Per-request CPU, in milliseconds, as reported by Cloudflare for the deployed
+Worker (`cpuTime`):
+
+| Request | CPU | Wall |
+| --- | --- | --- |
+| `/api/auth/sign-in/email` (argon2 verify) | **344** | 653 |
+| `/api/system/health` | **144** | 210 |
+| `/api/usage` | 39 | 587 |
+| `/api/actions?limit=1` | 36 | 686 |
+| `/api/credits?history=true` | 23 | 238 |
+| the 9 remaining dashboard slices | **13–19 each** | 151–352 |
+
+Two things follow, and one of them corrects a standing assumption:
+
+1. **The dashboard's slowness is round-trip count, not query cost.** Nine slices
+   cost 13–19ms of CPU each. Nothing there is slow. The 9.4s page was 17 cold
+   invocations plus 17 round trips.
+2. **The "Free plan = 10ms CPU ceiling" note in `wrangler.jsonc` is not what the
+   platform is enforcing here.** A single request using **344ms of CPU returned
+   `outcome: "ok"`, status 200.** Cloudflare also *rejected* `limits.cpu_ms` with
+   "CPU limits are not supported for the Free plan" [code: 100328]. Those two
+   facts cannot both describe a 10ms-per-invocation ceiling, so the enforced
+   limit is materially higher than the file claims. The file's own conclusion —
+   that argon2 does not fit and a plan upgrade is the only remedy — is therefore
+   **not supported by the measurement that prompted it**, and is not repeated
+   here as fact. The plan upgrade stays a decision for the owner, but it is not
+   justified by this data.
+
+Also observed, unexplained and outside this change: `GET /api/session/properties`
+returns **404 from no code in this repository** and costs 232–363ms of CPU per
+hit. Something outside the app is calling it.
+
+### Fix: one invocation for all ten cards
+
+`GET /api/dashboard/summary` serves every dashboard payload from one invocation.
+The SQL lives in `src/app/api/utils/dashboardSlices.ts` and is imported by BOTH the
+individual endpoints and the batch, so the two cannot drift.
+
+- Dashboard card data: **10 invocations -> 1** (page load: 17 -> 8)
+- A slice that fails is omitted and named in `errors`; that ONE card falls back to
+  its own endpoint. The batch failing outright degrades every card to the
+  pre-existing behaviour. The dashboard cannot go blank because of it.
+- Regression test `dashboard-summary-fanout.test.tsx`: all ten cards make exactly
+  **1** request; they render the batch's values; a partial batch causes exactly
+  **one** extra request for the missing slice; a failed batch degrades to
+  per-card fetching.
+
+**Still open, deliberately:** the Shell's own 5 requests (plus `beta-flags` from
+`DemoModeBanner` and `credits` from the header) are untouched, so an
+authenticated page still costs ~7 invocations before its own content. They are
+the next consolidation, deferred until this one is measured in production.
+
 ### Defect found and fixed: duplicated pipeline fetch
 
 `PipelineFlowVisualization` and `PipelineStatusCard` both requested
@@ -116,10 +170,38 @@ Regression test `pipeline-status-dedupe.test.tsx` renders both components and
 asserts exactly one request; verified RED by temporarily restoring the old
 behaviour (`expected 1 pipeline request, saw 2`).
 
-This is a real but SMALL win: 17 → 16 invocations. It does not by itself solve
-the render time. The remaining fan-out is the dominant cost and the next thing
-to address is consolidating the dashboard's component data into fewer
-invocations, which is a larger change than could be completed and verified here.
+## FABRICATED DASHBOARD DATA (2026-10-03)
+
+Found while consolidating, because the fake values would otherwise have been
+preserved verbatim as "existing behaviour". Each card substituted hardcoded
+sample data whenever its endpoint returned **any** non-2xx, so a failing query
+rendered a healthy-looking dashboard:
+
+| Element | Rendered on failure |
+| --- | --- |
+| `QuickStatsBar` | 847 leads, 623 contacted, 198 responses, 12 deals |
+| `LeadFunnelVisualization` | a full 6-stage funnel + $8,500 avg deal + $102,000 projected |
+| `RecentEngagementCard` | four invented leads with invented replies |
+| `LiveActivityFeed` | a fabricated event log (closed deal, signed contract, hot lead) |
+| `NextActionsCard` | four invented tasks ("Call back Sarah Davis", "Agreed on $95,000") |
+| `WeeklyProgressSummary` | 156 leads contacted and a 12-day streak |
+| `CreditBalanceCard` | a 2,450-credit balance on a "pro" tier |
+| `ProfitChart` | **always** — a hardcoded Jan–Aug P&L with "+$36,500 net this month" |
+| `CampaignProgressCard` | a 15% response rate (`Math.round(sent * 0.15)`) and an ETA from a hardcoded `dailyRate = 50` |
+
+All of these now render a real failure, or (for figures that do not exist) say
+so. `ProfitChart` states that no monthly P&L is available and why; it is not
+estimated. `campaign_leads` was checked against `information_schema` — it has no
+response column at all, so the 15% response rate was never measured.
+
+While extracting, one further data defect was corrected in place:
+`/api/dashboard/engagements` selected `lead_name`, `property_state` and
+`campaign_name` but then mapped `first_name`, `last_name`, `property_address`,
+`property_city`, `classification` and `content` — **none of which were selected**.
+Every card therefore rendered the literals "Unknown" and "Address unavailable",
+and every engagement was typed `response`. The endpoint answered 200 with a
+payload that could not be right, which is why no test caught it.
+
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |

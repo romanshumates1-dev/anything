@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
@@ -33,29 +34,27 @@ interface FunnelStage {
  * a clear picture of their pipeline health and bottlenecks.
  */
 export function LeadFunnelVisualization() {
-  const { data, isLoading } = useQuery({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only when
+  // the batch cannot supply this slice.
+  const slice = useDashboardSlice('funnel');
+
+  const { data: fetched, isLoading: fetching } = useQuery({
     queryKey: ['funnel-stats'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/funnel');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          stages: [
-            { id: 'leads', count: 847, trend: 12 },
-            { id: 'contacted', count: 623, trend: 8 },
-            { id: 'responded', count: 198, trend: 15 },
-            { id: 'negotiating', count: 45, trend: 5 },
-            { id: 'contract', count: 18, trend: 20 },
-            { id: 'closed', count: 12, trend: 50 },
-          ],
-          avgDealValue: 8500,
-          projectedRevenue: 102000,
-        };
+        // Reported as a failure. This returned a fixed fake funnel (847 leads,
+        // 12 closed) for any non-2xx, showing invented conversion rates.
+        throw new Error(`funnel failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 60_000,
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   const stageConfig: Omit<FunnelStage, 'count'>[] = [
     { id: 'leads', label: 'Total Leads', color: 'from-blue-500 to-blue-600', icon: Users },
@@ -95,8 +94,8 @@ export function LeadFunnelVisualization() {
 
   const maxCount = Math.max(...stages.map(s => s.count), 1);
 
-  const avgDealValue = data?.avgDealValue || 8500;
-  const projectedRevenue = data?.projectedRevenue || (stages[stages.length - 1]?.count || 0) * avgDealValue;
+  const avgDealValue = data?.avgDealValue ?? 0;
+  const projectedRevenue = data?.projectedRevenue ?? 0;
 
   return (
     <GlassCard>

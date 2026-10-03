@@ -19,6 +19,7 @@ import {
   WeeklyProgressSummary,
   LiveActivityFeed,
 } from '@/components/dashboard';
+import { DashboardSummaryProvider, useDashboardSlice } from '@/components/dashboard/DashboardSummaryProvider';
 import {
   CurrencyDollarIcon,
   UserGroupIcon,
@@ -28,7 +29,26 @@ import {
 import { Loader2, ArrowRight, Sparkles, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 
+/**
+ * `/dashboard`.
+ *
+ * Wraps the body in `DashboardSummaryProvider` so the ten cards share ONE
+ * batched request instead of ten. See that component for the measurement that
+ * motivated it.
+ */
 export default function DashboardPage() {
+  return (
+    <DashboardSummaryProvider>
+      <DashboardContent />
+    </DashboardSummaryProvider>
+  );
+}
+
+/**
+ * The dashboard body. Split from `DashboardPage` because it must run INSIDE
+ * `DashboardSummaryProvider` to read the batched payload.
+ */
+function DashboardContent() {
   const {
     data: session,
     isPending: authLoading,
@@ -36,17 +56,28 @@ export default function DashboardPage() {
     retrySession,
   } = useSession();
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  // Served by the single batched request; falls back to the standalone endpoint
+  // only if that slice is missing from the batch.
+  const statsSlice = useDashboardSlice('stats');
+
+  const { data: fetchedStats, isLoading: statsFetching } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/stats');
       if (!res.ok) throw new Error('Failed to fetch stats');
       return res.json();
     },
-    enabled: !!session,
+    enabled: !!session && statsSlice.fallback,
   });
 
-  const { data: health } = useQuery({
+  const stats = statsSlice.data ?? fetchedStats;
+  const statsLoading = statsSlice.awaitingBatch || statsFetching;
+
+  // Slices the headline KPI row is computed from.
+  const funnelSlice = useDashboardSlice('funnel');
+  const quickStatsSlice = useDashboardSlice('quickStats');
+
+  const health = useQuery({
     queryKey: ['system-health'],
     queryFn: async () => {
       const res = await fetch('/api/system/health');
@@ -54,7 +85,7 @@ export default function DashboardPage() {
       return res.json();
     },
     enabled: !!session,
-  });
+  }).data;
 
   if (authLoading) {
     return (
@@ -88,33 +119,57 @@ export default function DashboardPage() {
     redirect('/account/signin');
   }
 
+  // THE HEADLINE ROW USED TO BE FABRICATED (fixed 2026-10-03).
+  //
+  //   value: stats?.pipelineValue  || 125000
+  //   value: stats?.totalLeads     || 847
+  //   value: stats?.responseRate   || 23.5
+  //   value: stats?.dealsThisMonth || 12
+  //   trend: 12 / 8 / 2.3 / 5      (hardcoded, all four)
+  //
+  // `pipelineValue`, `responseRate` and `dealsThisMonth` are NOT fields
+  // /api/dashboard/stats has ever returned — it returns totalLeads, pendingJobs,
+  // auditCount, requiresHuman — so three of the four tiles showed the same
+  // invented number for every tenant, permanently, and every "vs last month"
+  // delta was a constant. This is the first thing a wholesaler reads.
+  //
+  // Everything below is derived from real slices, each tile naming its own
+  // window. Where a number does not exist yet, the tile shows zero rather than a
+  // plausible guess.
+  const funnelStages = funnelSlice.data?.stages ?? [];
+  const closedStage = funnelStages.find((stage) => stage.id === 'closed');
+  const contacted = quickStatsSlice.data?.contacted?.value ?? 0;
+  const responses = quickStatsSlice.data?.responses?.value ?? 0;
+
   const kpis = [
     {
-      label: 'Pipeline Value',
-      value: stats?.pipelineValue || 125000,
+      // A projection, so it says so: under-contract leads x average assessed
+      // property value (the funnel slice's own definition).
+      label: 'Projected Revenue',
+      value: funnelSlice.data?.projectedRevenue ?? 0,
       format: 'currency' as const,
-      trend: 12,
+      trend: funnelStages.find((stage) => stage.id === 'contract')?.trend,
       icon: CurrencyDollarIcon,
     },
     {
       label: 'Active Leads',
-      value: stats?.totalLeads || 847,
+      value: stats?.totalLeads ?? 0,
       format: 'number' as const,
-      trend: 8,
+      trend: quickStatsSlice.data?.leads?.change,
       icon: UserGroupIcon,
     },
     {
       label: 'Response Rate',
-      value: stats?.responseRate || 23.5,
+      value: contacted > 0 ? (responses / contacted) * 100 : 0,
       format: 'percent' as const,
-      trend: 2.3,
+      trend: quickStatsSlice.data?.responses?.change,
       icon: ChatBubbleLeftRightIcon,
     },
     {
-      label: 'Deals This Month',
-      value: stats?.dealsThisMonth || 12,
+      label: 'Deals Closed (30d)',
+      value: closedStage?.count ?? 0,
       format: 'number' as const,
-      trend: 5,
+      trend: closedStage?.trend,
       icon: DocumentCheckIcon,
     },
   ];
@@ -187,7 +242,7 @@ export default function DashboardPage() {
                     value={kpi.value}
                     format={kpi.format}
                     trend={kpi.trend}
-                    trendLabel="vs last month"
+                    trendLabel="vs previous 30 days"
                     size="lg"
                   />
                 </div>

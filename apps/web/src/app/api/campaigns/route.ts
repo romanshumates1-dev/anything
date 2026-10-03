@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { logEvent } from '../utils/logger';
 import { getOrganization } from '@/lib/organization-context';
 import { checkLimit, recordMetricUsage } from '@/app/api/services/tierLimits';
+import { getCampaigns } from '@/app/api/utils/dashboardSlices';
 import {
   type CampaignConfig,
   validateCampaignConfig,
@@ -181,19 +182,9 @@ export async function GET() {
   }
 
   try {
-    const campaigns = await sql`
-      SELECT
-        c.*,
-        COUNT(cl.id) AS member_count,
-        COUNT(cl.id) FILTER (WHERE cl.status = 'sent') AS sent_count
-      FROM campaigns c
-      LEFT JOIN campaign_leads cl ON cl.campaign_id = c.id
-      WHERE c.organization_id = ${organization.id}
-      GROUP BY c.id
-      ORDER BY c.created_at DESC
-      LIMIT 100
-    `;
-    return Response.json(campaigns);
+    // Shared slice: the campaigns list on /dashboard and the campaigns page read
+    // the same rows, and the batched /api/dashboard/summary calls this too.
+    return Response.json(await getCampaigns(organization.id));
   } catch (error: any) {
     console.error('GET /api/campaigns error', error);
     return Response.json({ error: 'Internal Server Error' }, { status: 500 });

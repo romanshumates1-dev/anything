@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
@@ -95,74 +96,30 @@ const iconMap: Record<
  * immediate feedback and a sense of constant progress.
  */
 export function LiveActivityFeed() {
-  const { data, isLoading } = useQuery<{ activities: ActivityItem[] }>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('activity');
+
+  const { data: fetched, isLoading: fetching } = useQuery<{ activities: ActivityItem[] }>({
     queryKey: ['live-activity'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/activity');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          activities: [
-            {
-              id: '1',
-              type: 'deal_closed',
-              title: 'Deal closed',
-              description: '123 Main St',
-              timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-              metadata: { amount: 12500, propertyAddress: '123 Main St' },
-            },
-            {
-              id: '2',
-              type: 'hot_lead',
-              title: 'Hot lead detected',
-              description: 'John Smith is ready to sell',
-              timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-              metadata: { leadId: '123', propertyAddress: '456 Oak Ave' },
-            },
-            {
-              id: '3',
-              type: 'contract_signed',
-              title: 'Contract signed',
-              description: 'Sarah Davis - 789 Pine Rd',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-            },
-            {
-              id: '4',
-              type: 'campaign_started',
-              title: 'Campaign launched',
-              description: 'Pre-Foreclosure Q4 - 250 leads',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-            },
-            {
-              id: '5',
-              type: 'response_received',
-              title: 'New response',
-              description: 'Mike Johnson replied',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-            },
-            {
-              id: '6',
-              type: 'message_sent',
-              title: '50 messages sent',
-              description: 'Tax Delinquent campaign',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-              metadata: { campaignName: 'Tax Delinquent Q3' },
-            },
-            {
-              id: '7',
-              type: 'lead_added',
-              title: '25 new leads imported',
-              description: 'From PropertyRadar',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-            },
-          ],
-        };
+        // Reported as a failure. This returned a fabricated event log (a closed
+        // deal, a signed contract, a hot lead) for any non-2xx, so the live feed
+        // could report business that never happened — the worst kind of wrong on
+        // a dashboard.
+        throw new Error(`activity failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 30_000,
     refetchInterval: 60_000, // Refresh every minute
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   if (isLoading) {
     return (

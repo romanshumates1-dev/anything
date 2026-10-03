@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 import Link from 'next/link';
 import { GlassCard } from '@/components/ui/GlassCard';
 import {
@@ -31,58 +32,29 @@ interface Engagement {
  * immediate feedback on their campaigns.
  */
 export function RecentEngagementCard() {
-  const { data, isLoading } = useQuery<{ engagements: Engagement[] }>({
+  // Prefer the batched dashboard payload; fetch the standalone endpoint only
+  // when the batch cannot supply this slice.
+  const slice = useDashboardSlice('engagements');
+
+  const { data: fetched, isLoading: fetching } = useQuery<{ engagements: Engagement[] }>({
     queryKey: ['recent-engagements'],
     queryFn: async () => {
       const res = await fetch('/api/dashboard/engagements');
       if (!res.ok) {
-        // Return mock data if endpoint not available
-        return {
-          engagements: [
-            {
-              id: '1',
-              leadName: 'John Smith',
-              propertyAddress: '123 Main St',
-              type: 'hot_lead',
-              message: 'Yes, I\'m interested in selling',
-              timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-              campaignName: 'Tax Delinquent Q3',
-            },
-            {
-              id: '2',
-              leadName: 'Sarah Davis',
-              propertyAddress: '456 Oak Ave',
-              type: 'callback',
-              message: 'Please call me tomorrow at 2pm',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-              campaignName: 'Pre-Foreclosure',
-            },
-            {
-              id: '3',
-              leadName: 'Mike Johnson',
-              propertyAddress: '789 Pine Rd',
-              type: 'interested',
-              message: 'What\'s your offer?',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-              campaignName: 'Probate Leads',
-            },
-            {
-              id: '4',
-              leadName: 'Lisa Brown',
-              propertyAddress: '321 Elm St',
-              type: 'response',
-              message: 'Need more information',
-              timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-              campaignName: 'Tax Delinquent Q3',
-            },
-          ],
-        };
+        // Reported as a failure. This returned four invented people (John Smith,
+        // Sarah Davis) with invented replies for any non-2xx — a wholesaler
+        // could act on a conversation that never happened.
+        throw new Error(`engagements failed: ${res.status}`);
       }
       return res.json();
     },
     staleTime: 30_000,
     refetchInterval: 60_000, // Refresh every minute
+    enabled: slice.fallback,
   });
+
+  const data = slice.data ?? fetched;
+  const isLoading = slice.awaitingBatch || fetching;
 
   const typeConfig: Record<
     Engagement['type'],

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useDashboardSlice } from './DashboardSummaryProvider';
 
 /**
  * Shared, DEDUPED pipeline-status fetch.
@@ -39,7 +40,11 @@ export interface PipelineStatusPayload {
 export const PIPELINE_STATUS_QUERY_KEY = ['pipeline-status'] as const;
 
 export function usePipelineStatus() {
-  return useQuery({
+  // The batched dashboard request also carries pipeline status, so this hook
+  // spends an extra Worker invocation only when that slice is unavailable.
+  const slice = useDashboardSlice('pipeline');
+
+  const query = useQuery({
     queryKey: PIPELINE_STATUS_QUERY_KEY,
     queryFn: async (): Promise<PipelineStatusPayload> => {
       const res = await fetch('/api/pipeline?include_config=false');
@@ -53,5 +58,14 @@ export function usePipelineStatus() {
     // A background refetch on tab focus competes with the route's own fan-out
     // for the same CPU budget, which is one of the ways this page goes over it.
     refetchOnWindowFocus: false,
+    enabled: slice.fallback,
   });
+
+  const batched = (slice.data as { status?: PipelineStatusPayload } | undefined)?.status;
+
+  return {
+    ...query,
+    data: slice.awaitingBatch ? query.data : (batched ?? query.data),
+    isLoading: slice.awaitingBatch || query.isLoading,
+  };
 }
