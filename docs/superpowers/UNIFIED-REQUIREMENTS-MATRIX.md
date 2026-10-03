@@ -31,8 +31,12 @@ unverified.
 | Unit/integration suite | `vitest run --config src/app/api/vitest.config.ts` | 267 files, 2946 passed, 26 skipped, 0 failed |
 | Typecheck | `tsc -p tsconfig.typecheck.json --noEmit` | exit 0 |
 | Lint | `oxlint` on changed files | 0 errors |
-| Deploy config | `wrangler deploy --dry-run` | exit 0 |
-| Production health | `GET / /pricing /features /faq /api/system/health` | 200 |
+| Build gate | `yarn cf:gate` | exit 0 (build + size + secret scan, 3120 files) |
+| Deploy | `node scripts/wrangler-deploy.mjs` | Worker `dd557bc1`, 3 cron triggers intact, 26ms startup |
+| Production smoke | `GET / /pricing /features /api/system/health` | all 200 |
+| Sign-in (deployed) | single legitimate attempt | **200 in 490ms** |
+| Sign-in throttle | 3 rapid attempts | 200, 200, **429 in 75ms** (refused pre-hash) |
+| Authenticated crawl | `deployed-browser-qa.mjs` | login OK; **15/24 routes 503** |
 
 ## SET A — AI SUPPORT
 
@@ -80,7 +84,7 @@ unverified.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| G1 | Routes load without console/network errors | `scripts/deployed-browser-qa.mjs` | E2E TESTED | authenticated crawl reached real `/dashboard`; harness hardened (commit `508ca15`) | — |
+| G1 | Routes load without console/network errors | `scripts/deployed-browser-qa.mjs` | E2E TESTED | post-deploy crawl: login + legal acceptance verified end-to-end (lands on real `/dashboard`); **15 of 24 authenticated routes 503**, `/dashboard` 12.4s | see OPEN DEFECT 2 |
 | G2 | No intermittent homepage 500 | — | NOT VERIFIED | `TypeError: components.ComponentMod.handler is not a function` captured via `wrangler tail`; did not reproduce in 40/40 controlled requests. **Chunk-loading hypothesis investigated and DISPROVEN** — see OPEN DEFECT 1 | cause still unidentified |
 
 ## SET H — CONSOLE / RUNTIME ERRORS
@@ -221,12 +225,27 @@ unverified.
    state within a reused isolate, or a module-scope cache shared across
    requests. Not yet instrumented. **Cause UNIDENTIFIED.**
 
-2. **Free-plan CPU ceiling** — scrypt costs ~98ms per verification against a
-   ~10ms budget. The pre-hash guard bounds how many verifications can START,
-   fixing the amplification, but a single legitimate login still exceeds the
-   per-invocation budget on its own. Closing that fully requires either a
-   Workers plan upgrade or accepting a weaker KDF — **an owner decision, not a
-   code change.**
+2. **Free-plan CPU ceiling — SIGN-IN FIXED, PAGE RENDERS STILL BROKEN.**
+   Root cause was scrypt, not argon2: all 152 `account.password` rows are
+   `hex32:hex128` (161 chars) = scrypt(N=16384, r=16, p=1, dkLen=64), better-auth's
+   default. Zero `$argon2` rows, so that branch was dead code. Measured ~98ms per
+   verification (native node:crypto) against a ~10ms Free-plan budget; the bundled
+   Worker uses the native path.
+
+   FIXED AND DEPLOYED (`c87d510`, Worker `dd557bc1`). `src/lib/auth-cost-guard.ts`
+   gates sign-in on the app's atomic Postgres limiter before hashing. Post-deploy
+   evidence on the deployed Worker:
+   - legitimate sign-in: **200 in 490ms** (previously 8/8 CPU-abort 503)
+   - three rapid attempts: 200, 200, **429 in 75ms** — refused BEFORE hashing
+     (a hash costs ~98ms, so a 75ms refusal proves the early exit)
+   - recovery after the 10s window: 200
+
+   **STILL BROKEN: authenticated page renders.** A deployed browser crawl after
+   the fix returned 15 of 24 authenticated routes as 503, and `/dashboard` took
+   12.4s. The guard bounds password verification only; page rendering independently
+   exceeds the budget. Closing this requires either a Workers plan upgrade or
+   per-route render cost reduction — an owner decision plus further engineering,
+   not a one-line fix. Quantified as: 15/24 routes failing, p95 render ~12s.
 
 ## EXTERNAL BLOCKERS (cannot be resolved in code)
 
