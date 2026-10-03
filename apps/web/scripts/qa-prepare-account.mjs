@@ -49,13 +49,16 @@ if (promote) {
   `;
   console.log('after promote:', JSON.stringify(updated, null, 2));
 } else {
-  const demoted = await sql`
-    UPDATE "user" SET role = NULL WHERE lower(email) = ${email} AND role = 'ADMIN'
-    RETURNING id, email, role
-  `;
-  console.log(
-    demoted.length
-      ? `demoted back to NULL: ${JSON.stringify(demoted)}`
-      : 'no ADMIN row to demote (already NULL or non-admin)'
-  );
-}
+// Restore the value a real signup gets. `user.role` is NOT NULL (measured:
+// setting it to NULL fails with 23502), so the safe demote target is the
+// default signup role, not null.
+const demoted = await sql`
+  UPDATE "user" SET role = 'MEMBER' WHERE lower(email) = ${email} AND role = 'ADMIN'
+RETURNING id, email, role
+`;
+console.log(
+  demoted.length
+      ? `demoted to the default signup role MEMBER: ${JSON.stringify(demoted)}`
+        : 'no ADMIN row to demote (already non-admin)'
+    );
+  }
