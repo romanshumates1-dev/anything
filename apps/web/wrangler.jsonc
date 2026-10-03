@@ -34,27 +34,80 @@
   //
   // This account is on the Workers **Free** plan, despite DEPLOY.md's
   // "Prerequisites" claiming Paid. On Free the per-invocation CPU budget is
-  // fixed and cannot be raised, so the budget must instead be RESPECTED:
+  // fixed and cannot be raised, so the budget must instead be RESPECTED.
   //
-  //   * RSC prefetching — 18+ parallel server-component renders blew the
-  //     budget and returned 503. Fixed by prefetch={false} (measured 16% 503 ->
-  //     0%). This is the template for every future fix here.
+  // * RSC prefetching — 18+ parallel server-component renders blew the budget
+  //   and returned 503. Fixed by prefetch={false} (measured 16% 503 -> 0%).
   //
-  //   * PASSWORD HASHING — STILL UNRESOLVED. `POST /api/auth/sign-up/email`
-  //     measures ok=3 / err=3 over six attempts: roughly half of all signup and
-  //     signin attempts 503 with an empty text/plain body, which is Cloudflare
-  //     terminating the invocation rather than an application error. The
-  //     endpoints that work (/api/auth/get-session 200; authenticated APIs
-  //     correctly 401) are exactly the ones that never hash a password.
-  //     argon2 is deliberately CPU-expensive — that is its security property —
-  //     and it does not fit a Free-plan budget.
-  //
-  //     Two real options, neither of which is a code tweak:
-  //       1. Upgrade the account to Workers Paid (billing decision, owner's).
-  //       2. Stop hashing new passwords with argon2 and use better-auth's
-  //          cheaper default, keeping argon2 verify only for legacy hashes —
-  //          an explicit security downgrade, and a decision to make, not to
-  //          slip in.
+  // ---------------------------------------------------------------------------
+// SIGN-IN 503 — THE ORIGINAL CLAIM WAS CORRECT. An interim "correction" on
+// 2026-10-03 was WRONG and has been removed. Full account below.
+// -----------------------------------------------------------------------
+// The note previously here read:
+//
+//   "PASSWORD HASHING — STILL UNRESOLVED. POST /api/auth/sign-up/email
+//    measures ok=3 / err=3 over six attempts: roughly half of all signup and
+//    signin attempts 503... argon2 is deliberately CPU-expensive and it does
+//    not fit a Free-plan budget."
+//
+// An interim edit claimed this was "really" a 429 rate limit and that no plan
+// upgrade was justified. THAT WAS WRONG, and it was wrong because it was
+// concluded from sequential probes only. Under sequential load the failure is
+// often a 429; under the concurrency a real browser produces, it is a 503.
+//
+// MEASURED 2026-10-03 (scripts/_signin-503-rootcause.mjs, 8 attempts, 11s
+// apart so the rate limiter can never be what is observed):
+//
+//   #0..#7  status=503  content-type=text/html  body 4738 bytes
+//           <title>Worker exceeded resource limits</title>
+//           cf-ray a44d6f841f8f..., a44d6fca7f96..., a44d70109eb4..., ...
+//
+// 8/8 Cloudflare CPU aborts. That is Cloudflare's own error page, not an
+// application response, and it names the failure outright.
+//
+// DISCRIMINATOR (scripts/_control-during-503.mjs, run while sign-in was failing):
+//
+//   signin      -> 503 "Worker exceeded resource limits"  (and some THROW)
+//   get-session -> 200 x4        (touches the same DB, never hashes)
+//   health      -> 200 x4        (touches the same DB, never hashes)
+//   /           -> 500/503
+//
+// The DB-backed endpoints that do NOT hash stay healthy while the hashing one
+// dies. That is the signature of CPU being spent in argon2, exactly as the
+// original note said.
+//
+// THE 429 IS ALSO REAL, AND THAT IS WHAT MISLED THE INTERIM EDIT:
+//   better-auth ships a built-in brute-force guard this repo never configures
+//   (src/lib/auth.ts has no `rateLimit` block). From the installed source,
+//   node_modules/better-auth/dist/api/rate-limiter/index.mjs ->
+//   getDefaultSpecialRules():  /sign-in*, /sign-up*, /change-password*,
+//   /change-email*  -> 3 per 10s. Measured 12 sequential -> 3x200 / 9x429.
+//   So sequential probes measure the RATE LIMITER, and concurrent probes
+//   measure the CPU CEILING. Both are real. They were conflated.
+//
+// => STATUS: UNRESOLVED, and it is a genuine production blocker. Password
+//    hashing does not fit the Free-plan CPU budget.
+//
+// => The two real options are unchanged, and neither is a code tweak:
+//      1. Upgrade the account to Workers Paid (a billing decision, owner's).
+//      2. Stop hashing with argon2 and use better-auth's cheaper default,
+//         keeping argon2 verify only for legacy hashes. That is an explicit
+//         security downgrade and must be DECIDED, not slipped in.
+//    Do not "fix" it by loosening auth, disabling the hash, or caching the
+//    result: argon2's cost IS its security property.
+//
+// RELATED OPEN GAPS, both measured 2026-10-03 and pinned by
+// src/app/api/utils/deployed-signin-throttle.test.ts:
+//   * The sign-in limiter is NOT atomic. burst=8 -> 5 admitted against a
+//     documented max of 3, because better-auth does read-decide-write around
+//     awaits. The brute-force guard is bypassable by parallelising attempts.
+//   * GET / intermittently 500s with "TypeError: components.ComponentMod.handler
+//     is not a function" (captured live via `wrangler tail`, cf-ray
+//     a44dae47afab3f27). NOT reproduced under controlled load: 40/40 clean
+//     across idle, tight-sequential and 8-way parallel phases
+//     (scripts/_load-correlation.mjs). Cause UNIDENTIFIED. Do not record it as
+//     the CPU ceiling without capturing the Cloudflare error code first
+//     (scripts/_cf-error-code.mjs).
   //
   // See UNIFIED-REQUIREMENTS-MATRIX.md for the measurements.
   // Static assets emitted by the OpenNext build. Requests to assets are free and
