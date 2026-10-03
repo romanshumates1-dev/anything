@@ -33,6 +33,7 @@ import { runWithDbRetry } from '@/app/api/utils/dbRetry';
 import { checkSignupAllowed } from '@/app/api/utils/signup-restrictions';
 import { isEmailDomainAllowedEffective } from '@/app/api/utils/email-domain-policy';
 import { isAccessDenied } from '@/lib/user-status';
+import { buildTrustedOrigins } from '@/app/api/utils/trustedOrigins';
 
 // Runtime-agnostic: global WebSocket on workerd / Node >= 22, `ws` on Node 20.
 // See src/lib/websocket.ts for why this is not a plain `import ws from 'ws'`
@@ -194,13 +195,15 @@ const hookQuery = (
 // as "Invalid origin". The request's own origin + known sandbox / published
 // URLs + the mobile iframe proxy URL are all listed here.
 // Ghost-protocol: NEXT_PUBLIC_CREATE_BASE_URL was an auth remnant (removed).
-const trustedOrigins = [
-  process.env.BETTER_AUTH_URL,
-  process.env.EXPO_PUBLIC_PROXY_BASE_URL,
-  process.env.NEXT_PUBLIC_CREATE_HOST
-    ? `https://${process.env.NEXT_PUBLIC_CREATE_HOST}`
-    : null,
-].filter((v): v is string => Boolean(v));
+//
+// The list itself now lives in @/app/api/utils/trustedOrigins, which is a pure
+// function precisely so that it is unit-testable — this file opens a `Pool` at
+// module scope and cannot be imported by a test at all. That extraction is
+// load-bearing: the deployed workers.dev host was missing from this list, which
+// made every browser sign-in from the deploy target fail 403 INVALID_ORIGIN
+// while the apex kept working. See trustedOrigins.ts for the measured evidence
+// and for the wildcard rule.
+const trustedOrigins = buildTrustedOrigins();
 
 // Social providers self-activate when the platform has injected their OAuth
 // credentials (set in project settings → Authentication, pushed in as env
