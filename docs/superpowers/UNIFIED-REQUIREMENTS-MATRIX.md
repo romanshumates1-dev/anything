@@ -228,7 +228,7 @@ be reported, not papered over.
 | **Payments** (line 2203) | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` not present → no sandbox subscription / credit-pack flow can be exercised end-to-end. | No. Needs the owner to supply sandbox keys. |
 | **Leads** (line 2219) | `APOLLO_API_KEY` absent → Apollo verified only against mocks. | No. Needs an Apollo key or a paid sandbox. |
 | **AI providers** | Bedrock returns **403** for this environment. | No. Needs an AWS principal with Bedrock access. |
-| **Live site / authenticated smoke** (lines 2012–2037) | Every authenticated route (dashboard, campaigns, billing, payouts, settings, admin) needs a real session; the scripts do not persist one. | Partly — an authenticated browser E2E **is** implementable and is the highest-value remaining work (§8 item 1). |
+| **Live site / authenticated smoke** (lines 2012–2037) | **RESOLVED — authenticated browser QA now runs.** `scripts/deployed-browser-qa.mjs` signs in with a real browser, clears the legal re-accept gate, and crawls 24 authenticated desktop + 5 authenticated mobile routes. Evidence: `apps/web/artifacts/browser-qa/deployed-results.json`. | **Yes** — see §6.1 for what it found. |
 
 Additionally: **rate-limit e2e** cannot be proven from inside this environment because Cloudflare
 intercepts the synthetic traffic before it reaches the Worker, and **authenticated performance
@@ -237,6 +237,72 @@ profiling** is impossible without a session.
 > **Honest consequence.** No amount of additional code in this repo converts
 > `IMPLEMENTED — EXTERNAL VERIFICATION BLOCKED` into `VERIFIED`. Those rows move only when the
 > owner supplies credentials or runs the sandbox themselves.
+
+---
+
+## 6.1 AUTHENTICATED BROWSER QA — WHAT IT FOUND (2026-10-03)
+
+Four defects were found only because the crawl could finally authenticate. All
+measurements are from the deployed Worker `dealswift-app.romanshumates1.workers.dev`
+(version `db485e4e`), not from `next start`.
+
+**1. Browser sign-in was 100% impossible on the deploy target (FIXED, `b20b0f4`).**
+Four `Origin` headers, one endpoint, valid credentials:
+
+| Origin | Before | After |
+|---|---|---|
+| `https://dealswiftautomation.com` | 200 | 200 |
+| `https://dealswift-app.romanshumates1.workers.dev` | **403 `INVALID_ORIGIN`** | **200** |
+| `https://evil.example` | 403 | 403 |
+
+`trustedOrigins` was built from `BETTER_AUTH_URL` (the apex) plus two optional
+env vars. `wrangler.jsonc` has no `routes` entry, so the deploy TARGET is
+workers.dev — every browser sign-in there failed deterministically. This was
+configuration, distinct from the argon2/Free-plan CPU blocker. Fixed by
+`src/app/api/utils/trustedOrigins.ts` (extracted purely so it is unit-testable;
+`auth.ts` opens a `Pool` at module scope and cannot be imported by any test).
+The gate was **not** widened: `evil.example` still 403s, and wildcards are
+refused by the builder and pinned by tests.
+
+**2. The QA harness was reporting healthy results for untested pages (FIXED).**
+`scripts/deployed-browser-qa.mjs` counted only `status >= 500` as failing, so
+three 404s (a stale route list — `/contacts`, `/billing`, `/earnings` do not
+exist; billing is `/settings/billing`) were reported as `failing: 0`. Nothing
+detected soft redirects, so eleven authenticated routes reporting `status: 200`
+were in fact rendering `/pending-access` — pages that were never loaded. The
+harness now counts 4xx, records `softRedirect`, and captures the URL behind each
+4xx (Chrome's console message carries no URL, so ~100 identical `403 ()` lines
+were unattributable).
+
+**3. A selector bug, not a performance problem (FIXED).** Six routes appeared to
+"time out at 45s". They were the legal re-accept gate plus a bad selector:
+`button[type="submit"]`'s first match is the SupportChat send button
+(`aria-label="Send message"`, permanently `disabled`). Server-side those routes
+answer **200 in 150–400ms** (`/admin/users` renders in **842ms** in a browser).
+`AcceptForm.tsx` has no `<form>` and no `type="submit"`; the button is
+`<button onClick>` labelled "Accept and continue".
+
+**4. The Free-plan CPU ceiling breaks ~half of authenticated page loads
+(BLOCKED — owner decision).** Once genuinely authenticated, 12 of 24
+authenticated desktop routes returned **503**, and it is load-dependent, not
+route-specific:
+
+- Interleaved: `/payouts` 503 → `/reports` 200 → … → `/buyers` 200 → `/profile` 503.
+- Every 503 returns in **~600–750ms** — fast termination, not a slow query.
+- A fresh browser context (the mobile pass) was **200 on every route**, including
+  ones that 503'd moments earlier on desktop.
+- Sequential single requests are **100% 200 in 150–400ms**.
+
+So the failure needs the parallel request pattern a real browser generates and is
+not reproducible one request at a time. `prefetch={false}` is already set on every
+sidebar link (`Shell.tsx`), so this is not a regression of that fix. This is the
+same ceiling already recorded in `wrangler.jsonc` for argon2 — now measured
+across authenticated pages rather than only password hashing. It needs a Workers
+plan upgrade (or a deliberate KDF change), not a code tweak.
+
+Also observed and **not yet root-caused**: `/dashboard` and `/settings` render in
+**~12s** in the browser (150–400ms over plain HTTP), matching the ~11.9s
+`application-code` figure in `src/lib/session.test.ts`. Unresolved.
 
 ---
 

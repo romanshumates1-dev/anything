@@ -62,15 +62,41 @@ const PUBLIC_ROUTES = [
   '/account/signin', '/account/signup', '/account/forgot-password',
 ];
 
-/** Authenticated routes, crawled after a real sign-in. */
+/**
+ * Authenticated routes, crawled after a real sign-in.
+ *
+ * These are REAL app-router paths, verified against the app router's page.tsx
+ * files. The list previously contained `/contacts`, `/billing` and `/earnings`,
+ * none of which exist — contacts live under `/crm` and `/leads`, billing lives
+ * at `/settings/billing`, and earnings are surfaced by `/reports`. Those three
+ * entries returned 404 and the summary still reported "failing: 0" (see the
+ * `bad` filter below), so a stale route list was indistinguishable from a
+ * healthy crawl. Keep this list in sync with the app router.
+ */
 const AUTH_ROUTES = [
-  '/dashboard', '/campaigns', '/campaigns/new', '/contacts', '/lead-finder',
-  '/crm', '/contracts', '/billing', '/payouts', '/earnings', '/settings',
-  '/analytics', '/achievements', '/leaderboard',
+  '/dashboard', '/campaigns', '/campaigns/wizard', '/crm', '/leads', '/contracts',
+  '/settings/billing', '/payouts', '/reports', '/settings', '/analytics',
+  '/analytics/advanced', '/approvals', '/inbox', '/buyers', '/templates',
+  '/profile', '/achievements', '/leaderboard', '/settings/accessibility',
+  '/funnel', '/system-health', '/admin/users', '/admin/audit',
 ];
 
 function attachCollectors(page) {
-  const state = { consoleErrors: [], pageErrors: [], failedRequests: [] };
+  const state = { consoleErrors: [], pageErrors: [], failedRequests: [], badResponses: [] };
+  // Chrome's "Failed to load resource: the server responded with a status of
+  // 403 ()" console message carries NO url, so a page emitted ~100 of them with
+  // nothing to attribute them to. This listener is the only place the actual
+  // endpoints surface, and without it a 403 storm is unattributable.
+  page.on('response', (res) => {
+    if (res.status() < 400) return;
+    let path = res.url();
+    try {
+      path = new URL(res.url()).pathname;
+    } catch {
+      /* keep the raw url */
+    }
+    state.badResponses.push({ status: res.status(), path: path.slice(0, 160) });
+  });
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;
     const text = msg.text();
@@ -118,6 +144,29 @@ async function visit(page, route, viewport) {
 
   const finalUrl = page.url();
   const redirected = finalUrl !== url && /\/account\/signin/.test(finalUrl);
+  // A soft redirect: the app answered 200 but served a DIFFERENT page than the
+  // route under test (e.g. the role gate rendering /pending-access). This is
+  // how eleven authenticated routes looked "healthy" while never being tested.
+  const finalPath = (() => {
+    try {
+      const u = new URL(finalUrl);
+      return `${u.pathname}${u.search}`;
+    } catch {
+      return finalUrl;
+    }
+  })();
+  const wantedPath = (() => {
+    try {
+      const u = new URL(url);
+      return `${u.pathname}${u.search}`;
+    } catch {
+      return url;
+    }
+  })();
+  // Only meaningful when the navigation actually completed: on a timeout,
+  // `finalUrl` is still the PREVIOUS page's url, which would otherwise be
+  // reported as a soft redirect to a page that was never reached.
+  const softRedirect = !loadError && finalPath !== wantedPath && finalPath !== '/';
 
   const bodyText = (await page.locator('body').innerText().catch(() => '')) ?? '';
   const renderedError =
@@ -135,14 +184,57 @@ async function visit(page, route, viewport) {
     elapsedMs,
     serverTiming,
     redirected,
+    softRedirect,
     renderedError,
     hydrationError,
     consoleErrors: state.consoleErrors,
     pageErrors: state.pageErrors,
     failedRequests: state.failedRequests,
+    // Deduplicated + capped: a single page produced ~100 identical 403 lines
+    // and an unbounded list would drown the artifact.
+    badResponses: Array.from(
+      new Map(state.badResponses.map((b) => [`${b.status} ${b.path}`, b])).values()
+    ).slice(0, 25),
     loadError,
     finalUrl: finalUrl.replace(BASE, '') || '/',
   };
+}
+
+/**
+ * Complete the legal re-accept gate, the way a real user does.
+ *
+ * WHY THIS EXISTS: after sign-in a brand-new account is parked on
+ * /legal/accept by middleware until it accepts the Terms + Privacy Policy.
+ * Seventeen authenticated routes soft-redirected there, which meant the crawl
+ * reported status 200 for pages it never actually loaded. Recording that as
+ * "healthy" is worse than useless, so the harness walks the real form instead
+ * of writing an acceptance row directly to the database: the point is to
+ * exercise the gate a user actually meets.
+ *
+ * Returns a short status string for the artifact rather than throwing, so a
+ * gate we cannot clear is reported instead of aborting the whole crawl.
+ */
+async function acceptLegalIfGated(page) {
+  if (!/\/legal\/accept/.test(page.url())) return 'not-required';
+  try {
+    // Selectors learned from the real component (AcceptForm.tsx): there is NO
+    // <form> element and the button has no type — it is <button onClick={accept}>
+    // labelled "Accept and continue". Two earlier attempts failed here: a bare
+    // `button[type="submit"]` matched the SupportChat send button (permanently
+    // disabled), and scoping to a `form` matched nothing at all.
+    const box = page.locator('input[type="checkbox"]').first();
+    await box.waitFor({ state: 'visible', timeout: 15000 });
+    await box.check();
+    await page.getByRole('button', { name: /accept and continue/i }).first().click();
+    // The component does a full navigation to /dashboard on success, so wait for
+    // the URL to actually leave the gate rather than for networkidle alone.
+    await page
+      .waitForURL((u) => !/\/legal\/accept/.test(u.href), { timeout: 20000 })
+      .catch(() => {});
+    return /legal\/accept/.test(page.url()) ? 'attempted-but-still-gated' : 'accepted';
+  } catch (err) {
+    return `error: ${String(err?.message ?? err).slice(0, 160)}`;
+  }
 }
 
 /** Drive the real sign-in form; no assumed selectors beyond type/name. */
@@ -154,7 +246,14 @@ async function login(page) {
   });
   await page.locator('input[type="email"], input[name="email"]').first().fill(EMAIL);
   await page.locator('input[type="password"], input[name="password"]').first().fill(PASSWORD);
-  await page.locator('button[type="submit"]').first().click();
+  // Scoped to the sign-in form for the same reason as the legal form above:
+  // an unscoped `button[type="submit"]` can resolve to the SupportChat send
+  // button, which is disabled and would make login appear to fail for no reason.
+  const form = page
+    .locator('form')
+    .filter({ has: page.locator('input[type="password"], input[name="password"]') })
+    .first();
+  await form.locator('button[type="submit"]').first().click();
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
   return !/account\/signin/.test(page.url());
 }
@@ -186,6 +285,8 @@ async function main() {
     try {
       results.authFlow.succeeded = await login(page);
       results.authFlow.finalUrlAfterLogin = page.url().replace(BASE, '') || '/';
+      results.authFlow.legalAcceptance = await acceptLegalIfGated(page);
+      results.authFlow.urlAfterLegalAcceptance = page.url().replace(BASE, '') || '/';
     } catch (err) {
       results.authFlow.error = String(err?.message ?? err).slice(0, 300);
       results.authFlow.succeeded = false;
@@ -211,7 +312,7 @@ async function main() {
   if (EMAIL && PASSWORD) {
     try {
       if (await login(mpage)) {
-        for (const r of ['/dashboard', '/campaigns', '/settings']) {
+        for (const r of ['/dashboard', '/campaigns', '/settings', '/settings/billing', '/payouts']) {
           results.mobile.push(await visit(mpage, r, 'mobile-390'));
         }
       }
@@ -229,13 +330,28 @@ async function main() {
 
   // ---------- summary ----------
   const all = [...results.public, ...results.auth, ...results.mobile];
+  // 4xx counts as failing. The previous filter only caught >= 500, which is how
+  // three 404s (a stale route list) were reported as "failing: 0".
   const bad = all.filter(
-    (r) => r.renderedError || r.hydrationError || (r.status && r.status >= 500) || r.loadError,
+    (r) =>
+      r.renderedError ||
+      r.hydrationError ||
+      (r.status != null && r.status >= 400) ||
+      r.loadError,
   );
+  // Tracked separately from `failing`: a soft redirect is a page that rendered a
+  // gate instead of the route under test, which is a coverage hole rather than
+  // an outage. Eleven authenticated routes reported status 200 while actually
+  // showing /pending-access before this was detected.
+  const soft = all.filter((r) => r.softRedirect);
   results.summary = {
     total: all.length,
     failing: bad.length,
-    failingRoutes: bad.map((r) => `${r.viewport} ${r.route} status=${r.status}`),
+    failingRoutes: bad.map(
+      (r) => `${r.viewport} ${r.route} status=${r.status} ${r.loadError ?? ''}`.trim()
+    ),
+    softRedirects: soft.length,
+    softRedirectRoutes: soft.map((r) => `${r.viewport} ${r.route} -> ${r.finalUrl}`),
     slowest: [...all]
       .sort((a, b) => (b.elapsedMs ?? 0) - (a.elapsedMs ?? 0))
       .slice(0, 10)
