@@ -434,7 +434,58 @@ a genuine ~90-second outage by probing harder than this.
 record this as fixed, and do not describe it as a memory problem until step 1
 above produces a measurement.
 
-## ⚠️ HOMEPAGE 500 — DIAGNOSTIC INSTRUMENTATION NOW SHIPPED (`a576f2f`)
+## ⚠️ 503 UNDER LOAD — PER-INVOCATION COST MEASURED (2026-10-04)
+
+The recurring assumption was "the Workers Free plan is too small, so buy a
+bigger one." That was never measured. It is now measured **at the per-invocation
+level**, and the measurement does **not** support a per-request optimisation of
+the homepage.
+
+### Measurements (bounded, sequential, low volume — no load testing)
+
+| Route | Warm | Cold / first | Payload |
+| --- | --- | --- | --- |
+| `/` (homepage) | **113–147ms** (median 124ms) | 2225ms, then 375ms after 22s idle | 146KB |
+| `/faq` (lighter marketing page) | 105–129ms | 446ms | 65KB |
+| `/api/system/health` | 81–95ms | 562ms | 69B |
+| a static CSS chunk | 174–207ms | 362ms | 277KB |
+
+Sequential homepage series: `2225, 1540, 624, 275, 366, 1031, 477, 345` — and
+`454, 147, 260, 124, 113, 119` once warm.
+
+### What this establishes
+
+1. **The homepage is NOT pathologically expensive.** Warm median **124ms**,
+   statistically indistinguishable from `/faq` (105–129ms). It is a server
+   component with exactly **one** import (`@/lib/seo`).
+2. **The expensive part is isolate cold start, not the render.** 2225ms first
+   request → 375ms after 22s idle → 113–147ms warm. That is isolate
+   initialisation, and it is the shape that produces a *burst* of slow responses
+   when many isolates spin up at once.
+3. **Per-request CPU on this route has ample headroom.** 124ms of wall clock on
+   the Free CPU budget is not what a 1102 looks like.
+
+### What this does NOT establish — do not skip this
+
+- **The 503s under SUSTAINED/CONCURRENT load are still unreproduced and still
+  unexplained.** Sequential single requests cannot trigger them. This work was
+  explicitly NOT a load test, per the standing safety rule.
+- **"The plan is too small" remains an ASSUMPTION.** It is now a *better-founded*
+  assumption — the cold-start finding is consistent with it — but nothing here
+  measured a CPU or memory ceiling being hit.
+- **The homepage-500 memory hypothesis is untouched by this.** Different failure,
+  different ceiling.
+
+### Next measurement, if pursued
+
+Not more live probing. The correct instrument is an **isolated** environment
+(`workers.dev` alias or a local miniflare run) with CPU/memory metering, driving
+the *concurrent* pattern that actually fails. Per `wrangler.jsonc`, RSC
+prefetching already caused 18+ parallel renders and was mitigated with
+`prefetch={false}` (measured 16% 503 → 0%) — so the concurrent path is known to
+be the sensitive one and has a documented prior fix to build on.
+
+### ⚠️ HOMEPAGE 500 — DIAGNOSTIC INSTRUMENTATION NOW SHIPPED (`a576f2f`)
 
 ### The blocker was silence, not the bug
 

@@ -114,9 +114,17 @@ are genuinely unmeasured rather than unbuilt.
    `patch-opennext-instrumentation.mjs` claims to mirror it and warns
    KEEP-IN-SYNC. Boot `register()` still reaches the bundle via the patch, so
    diagnostics work, but the sync cannot actually be maintained.
-2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
-   cost in isolation and mitigate in application code *before* concluding a plan
-   upgrade is required. That conclusion is currently an assumption, not a finding.
+2. **503 under sustained load** (Cloudflare 1102) — **per-invocation cost now
+   measured** (2026-10-04): homepage warm median **124ms**, indistinguishable
+   from `/faq` (105–129ms); the real cost is **isolate cold start** (2225ms
+   first → 375ms after 22s idle → 113–147ms warm). So the homepage is **not**
+   pathologically expensive and per-request optimisation will not fix the 503s.
+   **The 503s under CONCURRENT load remain unreproduced and unexplained** — this
+   was explicitly not a load test. "The plan is too small" is a *better-founded*
+   assumption, still not a finding. Next instrument is an isolated environment
+   (workers.dev/miniflare) with CPU/memory metering driving the concurrent path;
+   `wrangler.jsonc` documents RSC prefetching as the known 503 cause, already
+   mitigated `prefetch={false}` (16% → 0%).
 
 **Never** reproduce load behaviour on the live apex: a previous session caused a
 genuine ~90-second production outage that way. Load experiments belong in an

@@ -34,10 +34,16 @@ Two **unmeasured** production defects remain (not unbuilt):
    ⚠️ `src/instrumentation.ts` does not exist although
    `patch-opennext-instrumentation.mjs` claims to mirror it, so its KEEP-IN-SYNC
    instruction cannot currently be honoured.
-2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
-   cost in isolation and mitigate in application code *before* concluding a plan
-   upgrade is required. That conclusion is currently an **assumption, not a
-   finding**.
+2. **503 under sustained load** (Cloudflare 1102) — **per-invocation cost now
+   measured**: homepage warm median **124ms** (indistinguishable from `/faq` at
+   105–129ms); the real cost is **isolate cold start** (2225ms first → 375ms
+   after 22s idle → 113–147ms warm). The homepage is **not** pathologically
+   expensive — per-request optimisation will not fix this. **The 503s under
+   CONCURRENT load remain unreproduced and unexplained**; this was explicitly not
+   a load test. "The plan is too small" is a *better-founded* assumption, still
+   not a finding. Next: an isolated environment (workers.dev/miniflare) with
+   CPU/memory metering on the concurrent path. `wrangler.jsonc` documents RSC
+   prefetching as the known cause, already mitigated `prefetch={false}` (16%→0%).
 
 Never load-test the live apex; a previous session caused a real ~90s outage.
 
