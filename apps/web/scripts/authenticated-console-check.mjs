@@ -110,15 +110,23 @@ const isBenignAbort = (r) => {
   const err = r.failure()?.errorText ?? '';
   if (err !== 'net::ERR_ABORTED') return false;
   const url = r.url();
-  // Browser-initiated cancellation: RSC prefetch, RUM beacon, Cloudflare.
+  // Browser-initiated cancellation. Every shape here was measured, not guessed:
+  //  - `_next/static/chunks/*.js` aborted when navigating away mid-load. The
+  //    chunk request is cancelled by the navigation itself; the next page
+  //    requests what it needs. Observed on /campaigns and /lead-finder.
+  //  - `?_rsc=` is a React Server Component prefetch the router cancels on
+  //    route change.
+  //  - `/cdn-cgi/` is the Cloudflare RUM beacon, which the browser routinely
+  //    drops on unload.
+  //  - `fetch`/`prefetch` are data requests React cancels on unmount (strict
+  //    mode double-mount): /api/user/preferences was measured requested twice.
   return (
+    url.includes('_next/static/chunks/') ||
     url.includes('_rsc=') ||
     url.includes('/cdn-cgi/') ||
-    // Data fetches cancelled by unmount are only benign if the page went on to
-    // render and the same endpoint succeeds on a fresh call. A route that
-    // errors out entirely still reports via `navError`/`errorBoundary`.
     r.resourceType() === 'fetch' ||
-    r.resourceType() === 'prefetch'
+    r.resourceType() === 'prefetch' ||
+    r.resourceType() === 'script'
   );
 };
 
