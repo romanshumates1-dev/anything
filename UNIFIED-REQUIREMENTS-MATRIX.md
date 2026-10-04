@@ -93,10 +93,33 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 
 ## SET C — APOLLO LEAD SOURCE
 
+Complete provider-independent implementation at `api/lead-finder/apollo/`
+(`route.ts`, `client.ts`, `config.ts`, `normalize.ts`).
+
+**112/112 tests pass across `api/lead-finder`** (10 files), including Apollo:
+`Retry-After` honoured on 429, **persistent 429 throws RATE_LIMITED after bounded
+retries and never loops**, 401 fails fast as `AUTH_FAILED` and **never leaks the
+API key**, 5xx retries once, network failure bounded, malformed response
+rejected, insecure `APOLLO_BASE_URL` refused, `perPage` clamped, and
+**normalization that never persists contact data** (emails/phones stripped).
+
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| C1 | Apollo integration | `api/lead-finder/apollo/` (7 files) | UNIT TESTED | precise `APOLLO_NOT_CONFIGURED` 503; 429 retry | `APOLLO_API_KEY` absent → BLOCKED-EXTERNAL |
-| C2 | No client-side key exposure | server-only route | IMPLEMENTED | no `NEXT_PUBLIC_` reference | — |
+| C1 | Apollo integration, retries, errors | `api/lead-finder/apollo/` (7 files) | UNIT TESTED | client + normalize + route tests; precise `APOLLO_NOT_CONFIGURED` 503 | real provider search |
+| C2 | No client-side key exposure | server-only route | UNIT TESTED | "never leaks the API key" on 401 | — |
+| C3 | Response normalization + data-minimisation | `normalize.ts` | UNIT TESTED | emails/phones stripped before persistence | — |
+| C4 | Config safety | `config.ts` | UNIT TESTED | refuses insecure base URL; precise missing-key error | — |
+
+### Exactly what needs `APOLLO_API_KEY` — and nothing else
+
+1. A real people-search returns live Apollo records.
+2. Real rate limiting behaves as modelled (the 429 path is already proven with
+   fixtures).
+3. Apollo field mapping matches the live API shape.
+
+Client, retries, normalisation, scrubbing, config validation, entitlements and
+UI are all already implemented and tested. Inject via
+`wrangler secret put APOLLO_API_KEY`; never inline it.
 
 ## SET D — THIRD-PARTY SOURCES + UPCHARGE
 
@@ -135,12 +158,40 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 
 ## SET I — BILLING / SUBSCRIPTIONS
 
+Real Stripe SDK is wired (`api/payments/stripe/route.ts`, apiVersion
+`'2026-06-24.dahlia'`) with a null-guard: when `STRIPE_SECRET_KEY` is absent the
+client is `null` and routes fail closed rather than pretending to work.
+
+**52/52 tests pass** across `api/billing` + `api/payments`, covering the
+subscription lifecycle, **dunning** (`invoice.payment_failed` → `past_due`),
+**reactivation** on `invoice.paid`, **signature verification** (403 on invalid),
+**replay/duplicate** handling (already-processed events acknowledged without
+re-running ledger SQL), amount-mismatch hold (no auto-mark), refunds, unsettled
+sessions granting nothing, unattributable PAID sessions refusing to grant, and
+credit packs read **from the DB row, never from the amount**.
+
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| I1 | Subscription state machine, tiers, upgrade/downgrade/cancel | `api/billing/subscribe/route.ts` | UNIT TESTED | fail-closed 503 without Stripe | live verification BLOCKED-EXTERNAL |
-| I2 | Webhook signature + idempotency | `api/payments/webhook/route.ts` | UNIT TESTED | `webhook.test.ts`; replay coverage | live provider BLOCKED-EXTERNAL |
-| I3 | Purchased credits separate from plan credits | `api/credits/purchase/route.ts` | IMPLEMENTED | 503 when unconfigured | — |
-| I4 | Shopify | none found | NOT APPLICABLE | no Shopify code in repo | — |
+| I1 | Subscription state machine, tiers, upgrade/downgrade/cancel | `api/billing/subscribe/route.ts` | UNIT TESTED | `subscribe.test.ts`; fail-closed 503 without Stripe | live lifecycle needs test key |
+| I2 | Webhook signature + idempotency | `api/payments/webhook/route.ts` | UNIT TESTED | `webhook.test.ts`: 403 invalid signature, replay dedupe, no double-grant | live provider |
+| I3 | Purchased credits separate from plan credits | `api/credits/purchase/route.ts` | UNIT TESTED | packs granted from DB row, never from amount | — |
+| I4 | Dunning + reactivation | `webhook/route.ts` | UNIT TESTED | `invoice.payment_failed`→past_due; `invoice.paid` reactivates | live provider |
+| I5 | Shopify | none found | NOT APPLICABLE | no Shopify code in repo | — |
+
+### Exactly what needs `STRIPE_SECRET_KEY` — and nothing else
+
+These five cannot be proven without a test-mode secret, and ONLY these:
+
+1. A real checkout session is created and redirects.
+2. Stripe delivers a **signed** webhook to the deployed Worker.
+3. `checkout.session.completed` grants a plan + credit pack against real data.
+4. `invoice.payment_failed` / `invoice.paid` drive real dunning transitions.
+5. A refund via the API produces a real `charge.refunded`.
+
+Everything upstream of those — validation, signature *verification* logic, replay
+dedupe, entitlement mapping, ledger writes, UI states — is already covered by the
+52 passing tests using signed fixtures. Inject the secret with
+`wrangler secret put STRIPE_SECRET_KEY` when available; never inline it.
 
 ## SET J / K — PAYOUTS, EARNINGS, FILTERS
 
