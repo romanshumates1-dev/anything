@@ -14,6 +14,15 @@ import { readFileSync } from 'node:fs';
 
 const cred = JSON.parse(readFileSync(process.env.TEMP + '/qa-cred.json', 'utf8'));
 const BASE = cred.base;
+
+// Never burst the production apex: a previous session caused a real ~90s
+// outage that way. Require the disposable load-test worker explicitly.
+if (!BASE || !BASE.includes('loadtest')) {
+  console.error(`REFUSING to run: BASE must be the load-test worker, got "${BASE}"`);
+  console.error('Bursting the apex here is what caused the earlier production outage.');
+  process.exit(2);
+}
+console.log(`target = ${BASE} (isolated)`);
 const payload = JSON.stringify({ email: cred.email, password: cred.password });
 
 async function timed(path, init) {

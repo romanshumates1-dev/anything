@@ -1,0 +1,42 @@
+{
+  // DISPOSABLE LOAD-TEST WORKER — NOT PRODUCTION.
+  //
+  // WHY THIS FILE EXISTS
+  // -------------------
+  // The concurrent-503 investigation needs a target where exhausting CPU or
+  // memory is acceptable. `dealswiftautomation.com` and
+  // `dealswift-app.romanshumates1.workers.dev` are THE SAME WORKER — wrangler.jsonc
+  // declares no "routes" entry, so the apex resolves to that worker and
+  // workers.dev is not a separate deployment. Bursting either one bursts
+  // production. A previous session caused a real ~90-second outage that way.
+  //
+  // This file deploys the SAME code under a DIFFERENT worker name, so its
+  // hostname is entirely disjoint from the live site. Bounded concurrency here
+  // cannot affect a customer.
+  //
+  // It is a test fixture, not a deployment target. Delete it when the
+  // investigation concludes; do NOT merge it into the production path.
+  //
+  // SAFETY RULES FOR ANYTHING RUN AGAINST THIS WORKER
+  // -------------------------------------------------
+  // - Bounded concurrency only (the investigation needs ~12, not thousands).
+  // - Read-only or throwaway accounts. It shares the production DATABASE_URL,
+  //   because a separate Neon branch would need provisioning the experiment does
+  //   not justify. Never run a destructive write through it.
+  // - Never send real SMS/email. Do not touch Twilio/SES from here.
+  // - It reuses production BETTER_AUTH_SECRET so rate-limit semantics match.
+  //   That is deliberate: a limiter backed by a different secret would not test
+  //   the thing under test.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dealswift-loadtest",
+  "main": "./custom-worker.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Observability for the experiment: keep real logs so a CPU kill is visible as
+  // a log line rather than inferred from a status code.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}
