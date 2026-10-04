@@ -101,9 +101,13 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   193–315ms; dashboard summary 10/10 clean).
   `limits.cpu_ms` is **rejected on the Free plan**, so this cannot be configured;
   it can only be bought or avoided. **Owner decision.**
-- 🚨 **DO NOT load-test production.** The ceiling is shared — hitting it degrades
-  the live site for real visitors. Rate-limit live verification to a few requests
-  with cooldowns; prefer local/PGlite.
+- 🚨 **DO NOT load-test production. MANDATORY STANDING RULE.**
+  **On 2026-10-04 this session caused a real incident**: a browser sweep tripped
+  the CPU ceiling and `GET /` returned **503 / Cloudflare 1102** to real visitors
+  for ~90s. Never run burst/concurrency/load/CPU-exhaustion tests against the
+  live apex. Use local, preview, staging, workers.dev test deploys, mocks or
+  PGlite. Keep live testing to a handful of requests with cooldowns.
+  Full rule: `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` → PRODUCTION SAFETY RULE.
   **If you see 503s, stop polling and wait 60–90s** — polling keeps the ceiling
   saturated. `/api/system/health` returning 200 while `/` still 503s is the early
   signal that it has cleared.

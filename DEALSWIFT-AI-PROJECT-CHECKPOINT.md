@@ -264,7 +264,38 @@ matrix searched `src/app/api/credits/`; the implementation lives in
 
 ---
 
-## KNOWN FAILURES
+## 🚨 PRODUCTION SAFETY RULE (mandatory — binding on every future session)
+
+**On 2026-10-04 this session caused a real production incident.** A 4-route
+browser sweep tripped the Cloudflare Free-plan CPU ceiling: three consecutive
+`GET /` returned **503 / Cloudflare 1102** for roughly 90 seconds, affecting real
+visitors including logged-out ones.
+
+**NEVER, against the live apex or any production domain:**
+
+- high-concurrency authentication probes
+- burst login tests or brute-force simulations
+- CPU-exhaustion / resource-exhaustion experiments
+- repeated high-frequency browser sweeps
+- uncontrolled parallel route crawling
+- load or stress testing of any kind
+
+**Use instead:** local, an isolated Worker, a preview/staging deployment,
+`workers.dev` test deployment, mocks, or PGlite.
+
+**Production testing must stay bounded, low-volume, representative and
+non-destructive.** In practice: a handful of requests, with cooldowns between
+them, one account at a time.
+
+The scripts most likely to violate this are the automated sweeps. This is why
+`deployed-browser-qa.mjs` was given a 4s inter-route cooldown and a 503 abort
+guard (`a77ec6a`) — it sweeps ~24 routes across two viewports and was throttling
+itself into the ceiling. Prefer `scripts/authenticated-console-check.mjs`, which
+uses four routes and a hard timeout.
+
+## CURRENT DEPLOYED VERSION
+
+Worker `499ceb4c`, deployed 2026-10-04 from commit `5c52120`.
 
 | Failure | Status |
 | --- | --- |
