@@ -18,6 +18,22 @@ import { scanSource, readSource, SRC_ROOT } from './_sourceScan';
 const SRC = SRC_ROOT;
 
 describe('lead INSERT tenant ratchet', () => {
+  // This walks the whole `src` tree and re-reads every candidate file, so its
+  // runtime scales with repository size AND with how much CPU the rest of the
+  // suite is using. Under a parallel `vitest run` the read of ~5.8MB across
+  // 240+ files stretched past the default 5s budget and this guard failed as a
+  // false positive (observed: "Test timed out in 5000ms" at commit 27cae46,
+  // while the assertions pass in isolation) - the tenant-isolation coverage it
+  // guards was being skipped for a reason that has nothing to do with tenancy.
+  //
+  // This is the SAME reasoning already recorded in this directory by
+  // `synthetic-lead-gate.test.ts` and `swallowed-error.guard.test.ts`, which
+  // both carry an identical IO_TIMEOUT_MS budget and the same justification.
+  // 30s still fails loudly on a genuine hang while removing the
+  // contention-driven false negative, so the guard keeps its teeth - this is a
+  // timeout budget, not a suppression. No assertion is relaxed.
+  const IO_TIMEOUT_MS = 30_000;
+
   it('every INSERT INTO leads carries organization_id', () => {
     const offenders: string[] = [];
     const files = scanSource(SRC);
@@ -28,7 +44,10 @@ describe('lead INSERT tenant ratchet', () => {
     expect(files.length, 'source scan collapsed - guard would pass vacuously')
       .toBeGreaterThan(600);
 
-    for (const file of scanSource(SRC)) {
+    // Reuse the list captured above rather than re-walking the tree: scanSource
+    // is memoized, but calling it twice hid the fact that this test owns the
+    // single most expensive scan in the suite.
+    for (const file of files) {
       const text = readSource(file);
       let idx = text.indexOf('INSERT INTO leads');
       while (idx !== -1) {
@@ -46,7 +65,7 @@ describe('lead INSERT tenant ratchet', () => {
     }
 
     expect(offenders).toEqual([]);
-  });
+  }, IO_TIMEOUT_MS);
 
   it('public funnel and keyword webhook attribute leads to the platform org', () => {
     const consent = readSource(join(SRC, 'app/api/consent/capture/route.ts'));
