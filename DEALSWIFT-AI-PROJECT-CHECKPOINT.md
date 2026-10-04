@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `0437912` — QA harness fix; includes `fa43bd0` real-data fixes and `6b30d2c` points guard |
+| HEAD | `52ad8e5` — **FULL GATE PASSES**: typecheck OK, lint 0/0, 3006 tests passed / 0 failed, build OK, authenticated browser clean=6 noisy=0 |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `8b0da56b`** — deployed 2026-10-04 from `6b30d2c` + `fa43bd0`. LIVE VERIFIED authenticated: `/achievements` and `/inbox` 200, **no mock data**, 0 console errors, 0 page errors, no error boundary. `/dashboard` still exceeds a 45s browser timeout (pre-existing). |
@@ -53,6 +53,9 @@ number of satisfied requirements. Nothing was inflated to offset the correction
 and nothing was deflated to punish it.
 
 Still capped below 9:
+- **The full gate passes at `52ad8e5`** (3006 tests, 0 failed; build OK;
+  authenticated browser clean=6). That is the ceiling being set by the three
+  items below, not by code quality.
 - No money-moving path has **live** evidence. Stripe is verified in **test mode**
   against the real API (52 tests + a real test-mode round-trip), but signed
   webhook delivery to the deployed Worker is unproven.
@@ -60,6 +63,12 @@ Still capped below 9:
   configurable on the Free plan. *(The related claim that `/dashboard` also
   times out at 45s was a HARNESS BUG and is withdrawn — see below.)*
 - The intermittent homepage 500 remains unidentified.
+
+The last two are **unmeasured**, not unbuilt. Both are being treated as an
+assumption too readily: "the Workers plan is too small" has never been
+established by measurement, and the homepage 500 has never been reproduced at
+all. Closing either with evidence is the only route to 9 that does not depend on
+a credential.
 
 **10/10 is unreachable in this environment** — it needs the Stripe webhook
 round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
@@ -82,17 +91,25 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): run the full production gate at the current HEAD.**
+**NEXT ACTION (exactly one): attack the two remaining unidentified production
+defects — the intermittent homepage 500 and the 503-under-load.**
 
-`6b30d2c`, `fa43bd0`, `0437912` and `f0074e2` each passed *targeted* suites, by
-design, per the change-based-reverification rule. Four commits and two deployed
-Workers have landed since the last full gate, and this is now a genuine
-milestone: authentication, billing-write, data-integrity and deployment-integrity
-changes in one batch. Run typecheck, lint, the full test suite, build, the
-authenticated browser check, and the contract/security suites at one commit.
+The full gate is green at `52ad8e5`, so neither is a regression; both are
+long-standing and both still block a 9. They are also the only items left that
+are genuinely unmeasured rather than unbuilt.
 
-**Never** reproduce the 503 by hammering the live apex: a previous session caused
-a genuine ~90-second production outage that way. Load experiments belong in an
+1. **Intermittent `GET /` 500** (`components.ComponentMod.handler is not a
+   function`). The opennextjs chunk-loading hypothesis was DISPROVEN. Do not
+   revisit it without new evidence. Reproduce in a preview Worker or
+   `workers.dev`, never by hammering the apex.
+2. **503 under sustained load** (Cloudflare 1102). Application-level mitigation
+   first — measure render cost in isolation and reduce per-invocation work —
+   then decide whether a paid plan is genuinely required. Record the measured
+   evidence either way, because "upgrade the plan" is currently an assumption,
+   not a finding.
+
+**Never** reproduce load behaviour on the live apex: a previous session caused a
+genuine ~90-second production outage that way. Load experiments belong in an
 isolated environment.
 
 Before spending money on a plan upgrade, measure whether per-route render cost
@@ -251,6 +268,13 @@ deployment changed, the environment changed, or a regression demands it.
 
 | Fact | Evidence | Date |
 | --- | --- | --- |
+| ⭐ **FULL GATE PASSES at `52ad8e5`** — typecheck OK, lint 0/0, **3006 tests passed / 26 skipped / 0 failed** (277 files, 180.92s), `cf:build` OK, authenticated browser **clean=6 noisy=0** | run at this HEAD; re-run only if these files change | 2026-10-04 |
+| ⭐ **`/dashboard` is NOT slow — the 45s "timeout" never existed** | authenticated, Worker `8b0da56b`: HTTP 200, DOM ready 219ms, content visible 548ms. Cause was the harness awaiting `networkidle` (`f0074e2`) | 2026-10-04 |
+| ⭐ **`ERR_ABORTED` on authenticated pages is benign** | 19 API requests initiated / 5 aborted on `/dashboard`, **0 failures across 10s idle**, every aborted endpoint 200 on a direct call; `/api/user/preferences` requested twice = strict-mode double-mount. Aborted chunk verified served: 200, 28445 bytes | 2026-10-04 |
+| ⭐ **All 76 authenticated pages checked for fabricated data — none found** | swept by shape (`\|\| mock`, no-fetch pages, hardcoded JSX literals), not by the word "mock" | 2026-10-04 |
+| ⭐ **Achievement points are awarded exactly once** | `6b30d2c`, 11 tests written first (RED 8 failed → GREEN 11/11) | 2026-10-04 |
+| `/achievements` and `/inbox` render real data, no mock content | authenticated live run: 200, mockLeak=0, 0 console/page errors | 2026-10-04 |
+| Production sign-in is healthy | 200, `hasSession: true`, redirect to `/dashboard`. A past `401` was `cmd`-mangled credentials in the harness (`0437912`), NOT a product fault | 2026-10-04 |
 | Referral banner renders on the public homepage | live `GET /` 3/3 = 200, banner content present | 2026-10-04 |
 | `/referrals` dashboard route is live | live `GET /referrals` = 200 | 2026-10-04 |
 | `/signup?ref=` now 307s to `/account/signup` with `?ref` AND `&plan` preserved, landing 200 with `ref` in the served HTML | live, 2026-10-04 |

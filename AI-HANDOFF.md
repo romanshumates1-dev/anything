@@ -5,65 +5,61 @@
 
 ---
 
-## CURRENT HEAD
-
-`fa43bd0` (real-data fixes for `/achievements` + `/inbox`; backend fix `6b30d2c`).
-**This file's own commit follows — read `git log --oneline -3` for exact HEAD.**
-⚠️ This value was stale (`62c3c3b`) for several commits; a checkpoint whose HEAD
-does not match the repository is how a new model re-audits from scratch. Keep it
-current on every state commit.
-
 ## CURRENT BRANCH
 
 `feat/cloudflare-workers`
 
-## CURRENT SCORE
+## CURRENT HEAD
 
-**8.5/10 — after the absence-claim re-audit.** Not inherited. Raised from 8 on
-evidence: three more requirements recovered from false negatives (CRM contacts UI
-live 200, gamification XP live 200 + 11 tests). **Ten false negatives total.**
+`52ad8e5` — **FULL GATE PASSES.** typecheck OK · lint 0/0 · **3006 tests passed,
+26 skipped, 0 failed** (277 files, 180.92s) · `cf:build` OK · authenticated
+browser **clean=6 noisy=0**.
 
-Capped below 9 by: no money-moving path has **live** evidence, the public site
-503s under sustained load, and the homepage 500 is unidentified. **10/10 needs the
-Stripe webhook round-trip, live Apollo/Bedrock, and a paid Workers plan.**
-
-## CURRENT TASK
-
-State-preservation milestone COMPLETE. `N2-live` verification COMPLETE.
-Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
-**No task in flight beyond NEXT ACTION.**
+⚠️ Keep this value current on every state commit — it has been stale before, and
+a checkpoint whose HEAD does not match the repository is exactly how a new model
+re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-**The `/dashboard` "45s timeout" defect DOES NOT EXIST. It was a harness bug,
-now disproven and corrected (`f0074e2`).**
+Attack the two remaining **unmeasured** production defects (not unbuilt):
 
-Measured on Worker `8b0da56b`, authenticated, real browser:
+1. **Intermittent `GET /` 500** — `components.ComponentMod.handler is not a
+   function`. Never reproduced in 40/40 controlled requests. The opennextjs
+   chunk-loading hypothesis was **DISPROVEN**; do not revisit without new
+   evidence. Reproduce in a preview Worker or `workers.dev`.
+2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation
+   render cost in isolation and mitigate in application code *before* concluding
+   a plan upgrade is required. That conclusion is currently an **assumption,
+   not a finding**.
 
-| Measurement | Value |
-| --- | --- |
-| HTTP status | **200** |
-| DOM ready | **219ms** |
-| Content visible (`h1`) | **548ms** |
-| Rendered heading | `Welcome back, QA Audit Bot` |
-
-The harness used `waitUntil: 'networkidle'`, which requires 500ms with no
-in-flight request. That never happens on an authenticated page — the shell
-prefetch RSC payloads, React Query revalidates, and onboarding components PATCH
-preferences on mount. **The instrument was wrong, not the product.**
-
-Behind it, every endpoint measured fast: `/api/system/health` 83ms,
-`/api/achievements` 132ms, `/api/conversations` 171ms, `/api/dashboard/summary`
-389–405ms.
-
-**Do not "fix" `/dashboard` performance.** There is no evidence of a defect.
-The corrected harness now reports `domReady` per route, so if the page ever does
-become slow it will show as a number rather than being masked.
+Never load-test the live apex; a previous session caused a real ~90s outage.
 
 ## CURRENT TASK
 
-Fabricated-data sweep — **COMPLETE** (76 pages, no further instances).
-`/dashboard` investigation — **COMPLETE, defect disproven**.
+Full gate COMPLETE. No task in flight beyond NEXT ACTION.
+
+## CURRENT SCORE
+
+**8.5/10.** Raised from 8 earlier on recovered requirements; held since. The
+ceiling is set by three *unmeasured* items, not by code quality:
+
+- no money-moving path has live evidence (Stripe is test-mode verified; signed
+  webhook delivery to the deployed Worker is unproven)
+- 503s under sustained load
+- intermittent homepage 500, cause unidentified
+
+Full gate green does **not** move the score; it is the baseline the score is now
+measured against.
+
+## WITHDRAWN DEFECT — `/dashboard` "45s timeout" NEVER EXISTED (`f0074e2`)
+
+Measured on Worker `8b0da56b`, authenticated, real browser: HTTP **200**, DOM
+ready **219ms**, content visible **548ms**, heading `Welcome back, QA Audit Bot`.
+The harness awaited `waitUntil: 'networkidle'`, which never settles on an
+authenticated page (shell RSC prefetch, React Query revalidation, onboarding
+PATCH on mount). **The instrument was wrong, not the product.** Endpoints behind
+it measured 83–405ms. Do not "fix" dashboard performance — there is no evidence
+of a defect.
 
 ## LIVE-VERIFIED (authenticated, Worker `8b0da56b`)
 
@@ -86,23 +82,14 @@ every aborted endpoint returning 200 on a direct call, and
 `/api/user/preferences` requested **twice** — the strict-mode double-mount
 signature. Real failures still count.
 
-## CURRENT TASK
-
-Fabricated-data sweep — `/achievements` + `/inbox` **DONE and LIVE VERIFIED**;
-points-farming vulnerability fixed. Sweep of remaining pages is next.
-
-## CURRENT TASK
-
-Browser console verification COMPLETE — **no error boundaries, no uncaught
-exceptions.** Deployment, referral live verification, AI-credit verification and
-authenticated page rendering are all COMPLETE.
-
 ---
 
 ## COMPLETED RECENTLY
 
 | Commit | What | Verification |
 | --- | --- | --- |
+| `52ad8e5` | Aborted static chunks classified benign (asset confirmed served 200/28KB) | **FULL GATE: 3006 tests passed, 0 failed; build OK; browser clean=6 noisy=0** |
+| `f0074e2` | `/dashboard` "45s timeout" — **harness bug, defect disproven**; `networkidle`→`domcontentloaded`; benign aborts separated | 6/6 routes 200, DOM ready 153–503ms |
 | `0437912` | QA harness: creds no longer mangled by `cmd`; FATAL when logged out; mock-leak assertion added | **Live on Worker `8b0da56b`**: `/achievements` + `/inbox` 200, mockLeak=0, 0 console/page errors |
 | `fa43bd0` | `/achievements` + `/inbox` now render REAL data (were hardcoded mock rows); thread selects `body`; dead controls removed | 44/44 related suites; 9/9 endpoints.contract; typecheck + oxlint clean; live-verified above |
 | `6b30d2c` | Achievement points awarded exactly once (was repeatable by any caller); POST now gamification-gated; progress validated | **RED 8 failed/3 passed → GREEN 11/11**; 44/44 across achievements/conversations/leaderboard/gamification |
