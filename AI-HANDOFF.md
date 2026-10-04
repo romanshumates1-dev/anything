@@ -86,11 +86,15 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   has a hard per-route timeout and found **no error boundaries and no uncaught
   exceptions**.
 - ⚠️ **THE BINDING CONSTRAINT: burst load breaches the Free-plan CPU ceiling.**
-  Single requests are healthy (pages 193–315ms; dashboard summary 10/10 clean).
-  Under sustained load the **public homepage itself returned 503 twice** before
-  recovering to 200 after ~30s — so this affects logged-out visitors too.
-  `limits.cpu_ms` is **rejected on the Free plan**, so it cannot be configured;
+  **Confirmed production incident:** three consecutive `GET /` returned
+  **503 / Cloudflare 1102**, plus 503 on all four routes in a browser sweep;
+  recovered to 200 after ~90s cooldown. Single requests are healthy (pages
+  193–315ms; dashboard summary 10/10 clean).
+  `limits.cpu_ms` is **rejected on the Free plan**, so this cannot be configured;
   it can only be bought or avoided. **Owner decision.**
+- 🚨 **DO NOT load-test production.** The ceiling is shared — hitting it degrades
+  the live site for real visitors. Rate-limit live verification to a few requests
+  with cooldowns; prefer local/PGlite.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release

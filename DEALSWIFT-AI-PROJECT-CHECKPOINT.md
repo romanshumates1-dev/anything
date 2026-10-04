@@ -150,9 +150,15 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
     `/api/dashboard/summary` 964ms, **10/10 consecutive**.
   - Burst traffic is not: a fast 4-route browser sweep returned **503 on all
     four** routes.
-  - Under sustained testing the **public homepage itself returned 503 twice**,
-    then recovered to 200 after ~30s. So the ceiling can affect logged-out
+  - Under sustained testing the **public homepage itself returned 503 / Cloudflare
+    1102** ("Worker exceeded resource limit") on three consecutive requests, then
+    recovered to 200 after ~90s of cooldown. So the ceiling affects logged-out
     visitors, not just authenticated ones.
+  - ⚠️ **CAUTION FOR THE NEXT MODEL:** this ceiling is *shared*. Hitting it
+    degrades production for real visitors. **Do not run load sweeps or tight
+    request loops against production.** Rate-limit any live verification to a few
+    requests with cooldowns, and prefer local/PGlite tests. The 4-route browser
+    sweep is what triggered this incident.
   - The pre-hash sign-in throttle works correctly: 429 at 66–78ms, refusing
     before the ~98ms scrypt hash.
 - **Interpretation:** single-request performance is healthy. The defect is a
