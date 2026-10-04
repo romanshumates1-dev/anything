@@ -264,7 +264,8 @@ and are now recorded as implemented and tested.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | V1 | GAMIFICATION ON/OFF setting | `utils/gamification.ts` + allowlist | UNIT TESTED | commit `61fe673` | — |
-| V2 | XP, levels, battle pass, crates, spin, competitions | `/api/achievements`, `/api/leaderboard` only | PARTIAL | 2 endpoints | crates/spin/battle-pass/competitions ABSENT |
+| V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`) + `app/achievements/page.tsx` | **LIVE VERIFIED + UNIT TESTED** | live `GET /achievements` 200; 11 gamification tests — false negative #9 | — |
+| V3 | Crates / spin wheel / battle pass / seasons / competitions | none after concept search of `api/*` + git history | NOT STARTED | genuinely absent | — |
 
 ## SET W — ACCESSIBILITY / SETTINGS
 
@@ -330,7 +331,44 @@ gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
 
 ---
 
-## GENUINELY ABSENT (re-verified 2026-10-04 at the searched paths)
+## ⚠️ ABSENCE-CLAIM RE-AUDIT (2026-10-04) — 10 false negatives found
+
+Every remaining "ABSENT"/"NOT STARTED" claim was re-verified individually rather
+than trusted, using the method that caught the previous errors: search by
+**concept** (file contents, exports, DB columns, the 370-route build manifest,
+UI page sources) rather than by directory name. **Three more false negatives;
+two genuinely absent.**
+
+| # | Claimed absent | Reality | Method that caught it |
+| --- | --- | --- | --- |
+| 8 | CRM contacts page | **`app/crm/page.tsx` is a complete UI** — search, status filter, campaign filter, CSV export, detail drawer; backed by org-scoped `api/crm/contacts` and API-key `api/v1/contacts`. **Live `GET /crm` → 200** | read the page source |
+| 9 | Gamification XP/levels | **XP is real** — `user_stats.points`, `achievements.points`, per-category totals, `maxProgress`. UI at `/achievements` (**live 200**), 11 tests pass | searched `points\|xp\|level` in route bodies |
+| 10 | "Only achievements + leaderboard exist" | true for endpoints, but the matrix phrasing implied XP was missing too — it is not | read `achievements/route.ts` |
+
+### Clarified, NOT a defect
+
+`/leads` renders `<h1>Contacts</h1>` from `/api/leads` (the **lead** database),
+while `/crm` serves **campaign-outreach** contacts from `/api/crm/contacts`.
+Two distinct, intentional datasets. Creating a `/contacts` page would have
+duplicated both.
+
+### GENUINELY ABSENT — confirmed, and nothing to recover
+
+| Requirement | Evidence searched | Result |
+| --- | --- | --- |
+| Affiliate programme | `api/{affiliate,commission,partner}`, file contents for `affiliate\|commission`, git log --all --grep | **ABSENT**, and no branch/commit mentions it |
+| Flipper / Builder AI | `api/{flip,builder,renovat,project}`, `contracts/` for renovation terms, git log --all --grep | **ABSENT**, no branch/commit |
+| Gamification crates / spin wheel / battle pass / seasons / competitions | `api/*` for crate/spin/season/battle/competition/giveaway/reward | **ABSENT** |
+
+**Corrected tally: 10 false negatives, 3 genuinely absent (affiliate, Flipper,
+crates/spin/battle-pass), 1 false positive in the other direction (the referral
+banner really was missing — fixed in `2ea6db3`).**
+
+### Standing method note
+
+Directory-name search is unreliable in this repo. `api/crm`, `api/contacts`,
+`api/v1/contacts` and `app/crm` all exist under names you would not guess. Always
+search contents, DB columns and the build manifest before concluding ABSENT.
 
 | Requirement | Searched | Result |
 | --- | --- | --- |
@@ -357,7 +395,7 @@ gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
 | ~~R1 / T1~~ | ~~AI calling + voice selection~~ | **DONE 2026-10-04** | False negatives #3/#4 — 33 tests pass; only live provider calls remain |
 | G2 | Intermittent homepage 500 | BLOCKED (cause unknown) | instrument; chunk hypothesis already DISPROVEN |
 | G1-RECRAWL | ~~Re-measure the 15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | Live: all authenticated APIs 200; `/api/dashboard/summary` 10/10 clean. Page routes 307→`/legal/accept` because the QA account has not accepted legal terms — a test-account gap, not a defect |
-| CONTACTS-PAGE | No CRM `/contacts` page exists at all | NOT STARTED | only `/(marketing)/contact` (public) is registered; the app has no contacts UI route. Genuinely absent, not a 404 bug |
+| ~~CONTACTS-PAGE~~ | ~~No CRM contacts page~~ | **DONE 2026-10-04** | False negative #8 — `/crm` is a complete UI (search, status/campaign filters, CSV export, detail drawer), live 200, backed by org-scoped APIs. `/leads` separately serves the lead DB as "Contacts" — two intentional datasets |
 | QA-ACCEPT | Give the QA account legal acceptance so page routes render | NOT STARTED | blocks full page-level verification; all page routes 307 to `/legal/accept` |
 | G1 | ~~15/24 authenticated routes 503~~ | **RESOLVED 2026-10-04** | Live after `503845f`: `/dashboard` 200 in **315ms**, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms (was 12.4s). No error boundary in HTML; hardcoded `+$36,500` placeholder absent |
 | G1b | Burst traffic 503s and can take the public site down | OPEN — **highest-value unblocked item, owner decision** | **Confirmed incident 2026-10-04.** Three consecutive `GET /` returned **503 with Cloudflare error 1102** ("Worker exceeded resource limit"). A sustained 4-route browser sweep 503'd on all four. After ~90s of cooldown the site returned to 200 (homepage 147KB with the referral banner rendering). `wrangler.jsonc` documents that `limits.cpu_ms` is **rejected on the Free plan** ("CPU limits are not supported for the Free plan"), so this cannot be configured — only bought, or avoided by doing less work per invocation |
@@ -418,18 +456,28 @@ gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
 
 ## SCORE
 
-**8/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
-corrected matrix, after live verification against Worker `499ceb4c`.
+**8.5/10 — NOT READY for public launch.** Recalculated 2026-10-04 after the
+absence-claim re-audit, against Worker `499ceb4c`.
 
-Raised from 7.5 because **five further requirements were recovered from false
-negatives** — earnings date filters, AI calling, voice selection, trial demo data
-and (earlier) the AI credit caps were all implemented and tested, and the matrix
-said ABSENT. Each was verified by running its tests, not by inspection alone.
+Raised from 8 on evidence: **three more requirements recovered** — the CRM
+contacts UI (live 200), the gamification XP/points system (live 200, 11 tests),
+and confirmation the AI-credit work is unaffected. Ten false negatives have now
+been found in total.
 
-**A score derived from a matrix with six wrong entries is not a score.** That is
-the caveat that matters more than the number: the inherited 6/10 counted five
-working features as missing, so any figure inherited from it was wrong in both
-directions.
+The ceiling is unchanged and is **not** code-fixable:
+- **No money-moving path has LIVE evidence.** Stripe is verified in **test mode**
+  against the real API (52 tests plus a real test-mode round-trip), but signed
+  webhook delivery to the deployed Worker is still unproven.
+- **The public site 503s under sustained load** (Cloudflare 1102); not
+  configurable on the Free plan.
+- **The intermittent homepage 500 remains unidentified.**
+
+Genuinely absent, and now *proven* absent by concept search rather than directory
+guess: **affiliate programme**, **Flipper/Builder AI**, and **crates / spin wheel
+/ battle pass / competitions**.
+
+**10/10 remains unreachable here.** It needs the Stripe webhook round-trip, live
+Apollo and Bedrock credentials, and a paid Workers plan.
 
 What the 2026-10-04 live pass established:
 

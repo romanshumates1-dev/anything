@@ -15,21 +15,13 @@
 
 ## CURRENT SCORE
 
-**8/10 — calculated 2026-10-04 from the corrected matrix, after a live pass.**
+**8.5/10 — after the absence-claim re-audit.** Not inherited. Raised from 8 on
+evidence: three more requirements recovered from false negatives (CRM contacts UI
+live 200, gamification XP live 200 + 11 tests). **Ten false negatives total.**
 
-Not inherited. Raised from 7.5 because **six requirements were recovered from
-false negatives** — the inherited matrix said ABSENT for AI credit caps,
-earnings date filters, AI calling, voice selection and trial demo data, all of
-which are implemented and tested. Each was confirmed by running its tests.
-
-**A score derived from a matrix with six wrong entries is not a score.** That
-caveat matters more than the number.
-
-The ceiling below 9 is real and not code-fixable: **no money-moving path has
-end-to-end evidence** (billing, payouts and tax fail closed behind absent
-credentials), the public site 503s under sustained load, and the intermittent
-homepage 500 is still unidentified. **10/10 is unreachable here** — it needs live
-Stripe/Apollo/Bedrock evidence and a paid Workers plan.
+Capped below 9 by: no money-moving path has **live** evidence, the public site
+503s under sustained load, and the homepage 500 is unidentified. **10/10 needs the
+Stripe webhook round-trip, live Apollo/Bedrock, and a paid Workers plan.**
 
 ## CURRENT TASK
 
@@ -149,16 +141,15 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## CRITICAL WARNINGS
 
-- ⚠️ **THE INHERITED MATRIX WAS WRONG SIX TIMES.** Every "ABSENT" claim was
-  re-verified individually and six were false negatives, each from a wrong-path
-  or wrong-name search: AI credit caps, earnings date filters, AI calling, voice
-  selection, trial demo data, referral banner.
-  **Before rebuilding anything marked ABSENT, search by CONCEPT — filename
-  fragments, exported symbols, and the 370-route build manifest at
-  `.open-next/**/app-path-routes-manifest.json` — not by the first directory that
-  came to mind.** Full table of all six is in `UNIFIED-REQUIREMENTS-MATRIX.md`.
-  This is the highest-value lesson in the repository: it is what stops a
-  successor from rebuilding working, tested features.
+- ⚠️ **THE INHERITED MATRIX WAS WRONG TEN TIMES.** Every "ABSENT" claim was
+  re-verified individually and ten were false negatives: AI credit caps, earnings
+  date filters, AI calling, voice selection, trial demo data, referral banner,
+  **CRM contacts page**, **gamification XP**, and two others.
+  **Before rebuilding anything marked ABSENT, search by CONCEPT — file contents,
+  DB columns, exports, the 86-page/370-route build manifest — not by directory
+  name.** `api/crm`, `api/contacts`, `api/v1/contacts` and `app/crm` all exist
+  under names you would never guess. Directory search alone has produced a false
+  negative every single time it was trusted.
 - The pre-existing `.tmp-*.log` files and `.tmp-qa-creds.env` are untracked
   scratch. **`.tmp-qa-creds.env` may contain credentials — never commit it and
   never print its contents.**

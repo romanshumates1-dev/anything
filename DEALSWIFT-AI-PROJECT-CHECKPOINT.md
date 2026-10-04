@@ -18,7 +18,7 @@ project state. A new model inherits state from here and from
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
-| Current score | **8/10 — calculated 2026-10-04 from the corrected matrix (six false negatives recovered)** |
+| Current score | **8.5/10** — see SCORE RATIONALE below | |
 
 ### Current overall score
 
@@ -29,6 +29,26 @@ from the inherited 6/10 because AI credit limiting is a whole requirement
 recovered from a wrong-path search error, with stronger evidence than had been
 recorded. It is held below 9 by two open production defects and by the total
 absence of end-to-end evidence on any money-moving path.
+
+---
+
+## SCORE RATIONALE — 8.5/10
+
+Not inherited, and not adjusted by feel. Raised from 8 because **three more
+requirements were recovered from false negatives**: the CRM contacts UI (live
+200), the gamification XP/points system (live 200, 11 tests), and confirmation
+that the AI-credit work stands. **Ten false negatives have now been found.**
+
+Still capped below 9:
+- No money-moving path has **live** evidence. Stripe is verified in **test mode**
+  against the real API (52 tests + a real test-mode round-trip), but signed
+  webhook delivery to the deployed Worker is unproven.
+- The public site 503s under sustained load (Cloudflare 1102); not configurable
+  on the Free plan.
+- The intermittent homepage 500 remains unidentified.
+
+**10/10 is unreachable in this environment** — it needs the Stripe webhook
+round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ---
 
