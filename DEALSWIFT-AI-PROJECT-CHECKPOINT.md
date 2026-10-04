@@ -18,7 +18,7 @@ project state. A new model inherits state from here and from
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
-| Current score | **7/10 — calculated 2026-10-04 from the corrected matrix** |
+| Current score | **7.5/10 — calculated 2026-10-04 from the corrected matrix, after a live pass** |
 
 ### Current overall score
 
@@ -35,15 +35,17 @@ absence of end-to-end evidence on any money-moving path.
 ## ACTIVE TASK
 
 **NONE.** State preservation, AI-credit verification, deployment, live referral
-verification and the authenticated-API re-measurement are all COMPLETE.
+verification, API re-measurement and authenticated page verification are all
+COMPLETE.
 
-**NEXT ACTION (exactly one): give the QA account legal acceptance so
-authenticated PAGE routes render, then re-run `scripts/deployed-browser-qa.mjs`.**
+**NEXT ACTION (exactly one): get a browser crawl to complete, now that page
+routes render.**
 
-Every authenticated page route currently 307s to `/legal/accept` because the QA
-account has not accepted the legal terms. That masks page-level rendering, so
-full browser verification is impossible until it is resolved. Fix the test
-account first, then diagnose the hang (it ran >10 min with flat CPU).
+`scripts/deployed-browser-qa.mjs` hung with flat CPU before legal acceptance was
+recorded, so its hang is unexplained rather than disproven. Re-run it now that
+`/dashboard`, `/campaigns`, `/lead-finder` and `/settings/billing` all return 200
+in 193–315ms. Its remaining value is **console errors, hydration failures and
+error boundaries**, which HTTP status codes alone cannot prove absent.
 
 *(The previously recorded next action — verify AI credit caps against the real
 ledger — is now COMPLETE. Migration 088 is exercised on a real Postgres engine
@@ -104,7 +106,7 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 | N2-live | Verify AI credit caps against a real ledger | `COMPLETE` | PGlite runs migration 088 on a real engine, incl. concurrency |
 | SCORE | Recalculate score from corrected matrix | `COMPLETE` | — | 7/10, evidence-derived |
 | DEFECT-1 | Intermittent `GET /` 500 | BLOCKED (cause unknown) | needs new instrumentation | Only on new evidence |
-| DEFECT-2 | Authenticated page renders 503 under Free-plan CPU | OPEN | Workers plan decision (owner) | Deploy `503845f`, re-crawl |
+| DEFECT-2 | ~~Authenticated page renders 503~~ | **RESOLVED 2026-10-04** | pages now 193–315ms live; residual burst 1102 logged as G1b |
 | DEPLOY | Deploy `2ea6db3` + `ff3b262` to production | NOT STARTED | none | `node scripts/wrangler-deploy.mjs` |
 
 ---
@@ -164,8 +166,11 @@ deployment changed, the environment changed, or a regression demands it.
 | Purchased credits are deliberately NOT subject to included-credit caps | `aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108` | 2026-10-04 |
 | AI cap arithmetic + ISO-week/UTC correctness | 19 tests in `aiCreditLimits.test.ts` | 2026-10-04 |
 | Every AI route passes `authorizeAiRequest` | 5 tests, `ai-credit-gate.test.ts` | 2026-10-04 |
+| **Authenticated PAGES render: `/dashboard` 200 in 315ms, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms** (was 12.4s) | live 2026-10-04, after recording legal acceptance for the QA account |
+| Dashboard HTML has **no error boundary** and **no hardcoded placeholder P&L** (`+$36,500` absent) | live HTML inspection, 17050 bytes |
 | Tenant ratchet guard passes in isolation | `ff3b262`; 2 tests, 339ms | 2026-10-04 |
-| **Free-plan CPU ceiling RESOLVED for authenticated APIs** | live 2026-10-04: `POST /api/auth/sign-in/email` 200; `/api/dashboard/summary` 200 in 964ms, **10/10 consecutive**; `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms |
+| **Free-plan CPU ceiling RESOLVED for authenticated APIs** | live 2026-10-04: `POST /api/auth/sign-in/email` 200 in 598ms; `/api/dashboard/summary` 200 in 964ms, **10/10 consecutive**; `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms |
+| **Transient 1102 under rapid-fire sign-in**, self-recovered | live: 3 rapid attempts → 503 (1102), then 429, 429 at 66–78ms (pre-hash refusal); after ~25s a single attempt returned 200 in 598ms. The throttle behaves correctly; the 1102 is a genuine Free-plan CPU ceiling under burst |
 | Referral chain (401/403/400, self-referral, `?ref` preservation) | 10 tests | 2026-10-04 |
 | Sign-in 200 in 490ms; throttle 429 in 75ms pre-hash | deployed Worker `dd557bc1` | pre-session |
 | opennextjs chunk-loading cause of homepage 500 is **DISPROVEN** | deployed `handler.mjs` audited: 2038 cases, inlined requires | pre-session |
@@ -217,8 +222,9 @@ matrix searched `src/app/api/credits/`; the implementation lives in
 
 | Failure | Status |
 | --- | --- |
-| Intermittent `GET /` 500, cause unknown | OPEN |
-| 15/24 authenticated routes 503 under crawl | OPEN (partially addressed by `503845f`, undeployed) |
+| Intermittent `GET /` 500, cause unknown | OPEN — unreproduced; homepage 3/3 = 200 on 2026-10-04 |
+| ~~15/24 authenticated routes 503~~ | **RESOLVED 2026-10-04** — pages render in 193–315ms |
+| Burst sign-in can return 1102 | OPEN — bounded, self-recovers in ~25s |
 | No live billing/Apollo/Bedrock/Google verification | BLOCKED-EXTERNAL |
 
 ---

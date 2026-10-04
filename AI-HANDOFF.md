@@ -15,18 +15,16 @@
 
 ## CURRENT SCORE
 
-**7/10 — calculated 2026-10-04 from the corrected requirements matrix.**
+**7.5/10 — calculated 2026-10-04 from the corrected matrix, after a live pass.**
 
-Not inherited. The prior "6/10" came from a matrix now known to be materially
-inaccurate, so it was not authoritative. It moved **up** because AI credit
-limiting is a whole requirement recovered from a wrong-path search error, and
-its evidence turned out stronger than recorded (real-engine integration tests,
-including a concurrency test).
+Not inherited. It rose from 7 because the largest production defect is now
+closed with live evidence: authenticated pages render in **193–315ms** where
+they previously 503'd or took 12.4s, with no error boundary in the HTML.
 
-It is not higher because: two production defects remain open (homepage 500,
-Free-plan CPU ceiling), and **zero money-moving paths have end-to-end
-evidence** — billing, payouts and tax all fail closed behind absent
-credentials. That alone prevents 9/10.
+It is not 9 because **no money-moving path has end-to-end evidence** — billing,
+payouts and tax all fail closed behind absent credentials — and console/hydration
+errors are still unproven absent, since verification was over HTTP rather than in
+a browser.
 
 ## CURRENT TASK
 

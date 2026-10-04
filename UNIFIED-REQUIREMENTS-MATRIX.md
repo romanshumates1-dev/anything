@@ -254,7 +254,8 @@ and are now recorded as implemented and tested.
 | G1-RECRAWL | ~~Re-measure the 15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | Live: all authenticated APIs 200; `/api/dashboard/summary` 10/10 clean. Page routes 307→`/legal/accept` because the QA account has not accepted legal terms — a test-account gap, not a defect |
 | CONTACTS-PAGE | No CRM `/contacts` page exists at all | NOT STARTED | only `/(marketing)/contact` (public) is registered; the app has no contacts UI route. Genuinely absent, not a 404 bug |
 | QA-ACCEPT | Give the QA account legal acceptance so page routes render | NOT STARTED | blocks full page-level verification; all page routes 307 to `/legal/accept` |
-| G1 | 15/24 authenticated routes 503 | OPEN | re-crawl after deploying `503845f` |
+| G1 | ~~15/24 authenticated routes 503~~ | **RESOLVED 2026-10-04** | Live after `503845f`: `/dashboard` 200 in **315ms**, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms (was 12.4s). No error boundary in HTML; hardcoded `+$36,500` placeholder absent |
+| G1b | Burst sign-in can still 1102 | OPEN | 3 rapid attempts → 503 (1102), then 429/429 at 66–78ms; recovers to 200 in 598ms after ~25s. Throttle works; the Free-plan ceiling is real under burst |
 
 ## OPEN DEFECTS
 
@@ -262,25 +263,34 @@ and are now recorded as implemented and tested.
    2026-10-04 with no error; it has not reproduced since capture via `wrangler
    tail`. The opennextjs chunk-loading hypothesis is **DISPROVEN**. Treat as
    latent/unreproduced rather than actively broken.
-2. **Free-plan CPU ceiling — RESOLVED for authenticated APIs (2026-10-04).**
-   The historical "15/24 routes 503, /dashboard 12.4s" figure predates the
-   dashboard fan-out fix and no longer reproduces. Measured live after deploying
-   `503845f`:
+2. **Free-plan CPU ceiling — LARGELY RESOLVED, with one residual (2026-10-04).**
+   The historical "15/24 routes 503, /dashboard 12.4s" no longer reproduces.
+   After recording legal acceptance for the QA account (which had been 307-ing
+   every page route to `/legal/accept` and masking the real result):
 
    | Endpoint | Result |
    | --- | --- |
-   | `/api/dashboard/summary` (batched) | 200 in 964ms; **10/10 consecutive clean** |
-   | `/api/usage` | 200 in 504ms |
-   | `/api/credits` | 200 in 365ms |
-   | `/api/system/health` | 200 in 180ms |
-   | `POST /api/auth/sign-in/email` | 200 |
+   | `/dashboard` (page) | 200 in **315ms** (was 12.4s) |
+   | `/campaigns` (page) | 200 in 273ms |
+   | `/lead-finder` (page) | 200 in 215ms |
+   | `/settings/billing` (page) | 200 in 193ms |
+   | `/api/dashboard/summary` | 200 in 964ms — 10/10 consecutive clean |
+   | `/api/usage` / `/api/credits` / `/api/system/health` | 200 in 504 / 365 / 180ms |
+   | `POST /api/auth/sign-in/email` | 200 in 598ms |
 
-   Caveat, stated honestly: this was measured through direct authenticated HTTP
-   requests, **not** the browser crawl. `scripts/deployed-browser-qa.mjs` hung
-   (>10 min, flat CPU) and was killed, so full page-level rendering is still
-   unverified. Authenticated **page** routes currently 307 to `/legal/accept`
-   because the QA account has not accepted legal terms, which is a test-account
-   gap rather than a product defect.
+   Dashboard HTML inspected: **no error boundary**, and the hardcoded
+   `+$36,500 net this month` placeholder is **absent** — it renders a real
+   failure instead, confirming the honesty fix reached production.
+
+   **Residual (G1b):** three rapid sign-in attempts produced `503` with Cloudflare
+   error **1102**, then 429/429 at 66–78ms (the pre-hash throttle correctly
+   refusing before the ~98ms hash). A single attempt after ~25s returned 200.
+   So the burst ceiling is real but bounded and self-recovering; it is not the
+   pre-fix 8/8 failure.
+
+   Caveat: verified over authenticated HTTP, not in a browser. Console errors,
+   hydration failures and error boundaries are still unproven absent — that is
+   what the browser crawl is for.
 3. **`scripts/wrangler-deploy.mjs` DOES NOT REBUILD** — it only runs
    `wrangler deploy`. Found 2026-10-04. Running it after a code change ships a
    **stale `.open-next` bundle while reporting success.** Observed directly: a
@@ -303,8 +313,12 @@ and are now recorded as implemented and tested.
 
 ## SCORE
 
-**7/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
+**7.5/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
 corrected matrix, after live verification against Worker `499ceb4c`.
+
+Raised from 7 because the largest open production defect is now closed with live
+evidence: authenticated pages render in 193–315ms where they previously 503'd or
+took 12.4s.
 
 Method: every row counted at the level it actually reaches. `NOT STARTED` scores
 0. Implemented-but-unverified scores partial. Only rows with test or live
@@ -314,9 +328,10 @@ What the 2026-10-04 live pass established:
 
 - **Referral chain LIVE VERIFIED** (`/signup?ref=` 404 → 307 → 200, `?ref` and
   `&plan` preserved; banner on homepage 3/3; `/referrals` 200).
-- **Free-plan CPU ceiling RESOLVED for authenticated APIs** — the old "15/24
-  routes 503, /dashboard 12.4s" no longer reproduces. `/api/dashboard/summary`
-  is 10/10 clean at ~964ms after the fan-out fix.
+- **Authenticated pages render LIVE**: `/dashboard` 200 in **315ms**, `/campaigns`
+  273ms, `/lead-finder` 215ms, `/settings/billing` 193ms — versus 12.4s and 503s
+  before. No error boundary in the HTML; the hardcoded `+$36,500` placeholder is
+  gone. The largest open production defect is closed for normal traffic.
 - **AI credit limiting INTEGRATION TESTED** including atomicity under
   concurrency (N2–N8).
 
@@ -324,15 +339,15 @@ What still prevents a higher score:
 
 - **ZERO money-moving paths have end-to-end evidence.** Billing, subscriptions,
   payments, payouts and tax all fail closed behind absent credentials. This alone
-  caps the project below 9/10.
-- **Authenticated page-level rendering is still unverified.** Measured over HTTP,
-  not in a browser; the browser crawl hangs and page routes 307 to
-  `/legal/accept` for want of legal acceptance on the QA account.
-- **The intermittent homepage 500 remains unidentified** and unreproduced; it is
-  latent, not proven fixed.
+  caps the project below 9/10, and it is the single largest remaining risk.
+- **Console/hydration errors remain unproven absent** — verification was over
+  HTTP, not in a browser. A page can return 200 and still throw client-side.
+- **Burst sign-in can still return 1102** (bounded and self-recovering, but real).
+- **The intermittent homepage 500 remains unidentified** and unreproduced; latent,
+  not proven fixed.
 - **Genuinely absent features:** CRM contacts page (no route exists at all),
   trial demo data, earnings date-range filters, AI calling + voice selection,
   affiliate programme, Flipper/Builder AI.
 
-Not 10/10 by a wide margin. The direction of travel is upward and every increase
-above is backed by a live measurement rather than an inherited number.
+Not 10/10. The direction of travel is upward and every increase is backed by a
+live measurement rather than an inherited number.
