@@ -99,6 +99,9 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 - 🚨 **DO NOT load-test production.** The ceiling is shared — hitting it degrades
   the live site for real visitors. Rate-limit live verification to a few requests
   with cooldowns; prefer local/PGlite.
+  **If you see 503s, stop polling and wait 60–90s** — polling keeps the ceiling
+  saturated. `/api/system/health` returning 200 while `/` still 503s is the early
+  signal that it has cleared.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release

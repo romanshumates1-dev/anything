@@ -159,6 +159,12 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
     request loops against production.** Rate-limit any live verification to a few
     requests with cooldowns, and prefer local/PGlite tests. The 4-route browser
     sweep is what triggered this incident.
+  - **Recovery shape (measured twice, worth knowing):** both the apex domain and
+    `workers.dev` return 503 together — it is the Worker itself, not routing.
+    `/api/system/health` returning 200 while `/` still 503s is the earliest sign
+    the ceiling has cleared. Full recovery took roughly 60–90s of *no* requests.
+    If you see 503s, stop generating traffic and wait; do not poll in a loop,
+    because polling is what keeps the ceiling saturated.
   - The pre-hash sign-in throttle works correctly: 429 at 66–78ms, refusing
     before the ~98ms scrypt hash.
 - **Interpretation:** single-request performance is healthy. The defect is a
