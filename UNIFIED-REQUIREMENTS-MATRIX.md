@@ -178,20 +178,45 @@ credit packs read **from the DB row, never from the amount**.
 | I4 | Dunning + reactivation | `webhook/route.ts` | UNIT TESTED | `invoice.payment_failed`→past_due; `invoice.paid` reactivates | live provider |
 | I5 | Shopify | none found | NOT APPLICABLE | no Shopify code in repo | — |
 
-### Exactly what needs `STRIPE_SECRET_KEY` — and nothing else
+## BILLING — STRIPE STATUS (2026-10-04)
 
-These five cannot be proven without a test-mode secret, and ONLY these:
+**Test mode verified against the real Stripe API.** `scripts/verify-stripe-testmode.mjs`:
+ALL CHECKS PASSED — account reachable, `balance.livemode=false` (confirmed, not
+assumed), SDK + `apiVersion '2026-06-24.dahlia'` accepted, a $1.00 test payment
+intent created/retrieved/**cancelled**, `card_payments` capability active.
 
-1. A real checkout session is created and redirects.
-2. Stripe delivers a **signed** webhook to the deployed Worker.
-3. `checkout.session.completed` grants a plan + credit pack against real data.
-4. `invoice.payment_failed` / `invoice.paid` drive real dunning transitions.
-5. A refund via the API produces a real `charge.refunded`.
+The inline `price_data` checkout shape (unit_amount from `plan.price_cents`) is
+confirmed accepted by Stripe — this is the path `api/billing/subscribe` and
+`stripeProvider.ts` actually use. The account has **zero** pre-created products
+and prices; none are required.
 
-Everything upstream of those — validation, signature *verification* logic, replay
-dedupe, entitlement mapping, ledger writes, UI states — is already covered by the
-52 passing tests using signed fixtures. Inject the secret with
-`wrangler secret put STRIPE_SECRET_KEY` when available; never inline it.
+**`STRIPE_PROVIDER=live` requires BOTH `STRIPE_SECRET_KEY` and
+`STRIPE_WEBHOOK_SECRET`.** That is deliberate: entitlements are granted only from
+a signature-verified webhook, so selling without the webhook secret would charge
+customers and never deliver. The route refuses (503) instead.
+
+### To go live (owner action, at EOD)
+
+```bash
+cd apps/web
+npx wrangler secret put STRIPE_SECRET_KEY        # sk_live_... — prompted, not in shell history
+npx wrangler secret put STRIPE_WEBHOOK_SECRET    # whsec_... from the webhook endpoint
+npx wrangler secret put STRIPE_PROVIDER          # value: live
+```
+
+Also required: a Stripe webhook endpoint pointing at
+`https://dealswiftautomation.com/api/payments/webhook`, subscribed to
+`checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`,
+`payment_intent.succeeded/failed/refunded`.
+
+**Secrets must never be pasted into chat, files, or commits.** Use the prompts.
+
+### Still BLOCKED-EXTERNAL after all key-independent work
+
+The webhook *round-trip* cannot be proven locally: it needs a real signed
+delivery from Stripe to the deployed Worker. Everything on our side of that
+boundary — signature verification, replay dedupe, entitlement mapping, ledger
+writes, dunning transitions — is covered by the 52 passing tests.
 
 ## SET J / K — PAYOUTS, EARNINGS, FILTERS
 
