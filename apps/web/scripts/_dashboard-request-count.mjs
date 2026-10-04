@@ -28,6 +28,10 @@ const page = await ctx.newPage();
 
 /** Every request, keyed by path, so fan-out width is visible and countable. */
 const api = new Map();
+/** Timestamps per path: a burst at one instant means duplicate mounts, spread
+ *  out means polling or refetch-on-focus. That distinction decides the fix. */
+const stamps = new Map();
+let t0 = 0;
 let lastApiAt = 0;
 const failed = [];
 
@@ -35,7 +39,9 @@ page.on('request', (req) => {
   const url = new URL(req.url());
   if (!url.pathname.startsWith('/api/')) return;
   api.set(url.pathname, (api.get(url.pathname) ?? 0) + 1);
-  lastApiAt = Date.now();
+  const at = Date.now();
+  stamps.set(url.pathname, [...(stamps.get(url.pathname) ?? []), at - t0]);
+  lastApiAt = at;
 });
 page.on('response', (res) => {
   if (res.status() >= 400) {
@@ -60,11 +66,20 @@ if (/legal\/accept/.test(page.url())) {
 }
 
 console.log('signed in ->', page.url().replace(BASE, ''));
-console.log('loading /dashboard once...\n');
+
+// WARM-UP LOAD, discarded. The first navigation carries the legal-gate redirect
+// and whatever remounts that causes, which would be counted as dashboard cost
+// when it is one-time onboarding. Only the steady-state load is measured.
+await page.goto(`${BASE}/dashboard`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+await page.waitForTimeout(6000);
+console.log('warm-up load done (not counted)\n');
+
+console.log('measuring ONE /dashboard load...\n');
 
 api.clear();
+stamps.clear();
+t0 = Date.now();
 lastApiAt = 0;
-const t0 = Date.now();
 await page.goto(`${BASE}/dashboard`, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
 // Wait for the network to go quiet, up to 25s.
@@ -81,13 +96,32 @@ for (const [path, n] of [...api.entries()].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${n}x ${path}`);
 }
 
+console.log('\nrequest timing (ms after the load started):');
+for (const [path, times] of [...stamps.entries()].sort((a, b) => a[1][0] - b[1][0])) {
+  console.log(`  ${path.padEnd(28)} ${times.join(', ')}`);
+}
+
 console.log(`\nfailed responses: ${failed.length}`);
 failed.forEach((f) => console.log(`  ${f}`));
 
-// Sanity: the dashboard must actually show real data, not the old sample values.
+// Sanity: the dashboard must show real data, not the values that used to be
+// hardcoded when a query failed.
 const body = await page.textContent('body');
-const FABRICATED = ['847', '623', '102,000', 'Call back Sarah Davis', 'Net this month'];
+const FABRICATED = [
+  '847',
+  '623',
+  '102,000',
+  '125,000',
+  'Call back Sarah Davis',
+  'Net this month',
+  '23.5%',
+];
 const leaked = FABRICATED.filter((needle) => body.includes(needle));
 console.log(`\nfabricated sample values visible on the page: ${leaked.length ? leaked.join(', ') : 'none'}`);
+
+// The four headline KPIs must now be real: each names its own window.
+for (const label of ['Projected Revenue', 'Active Leads', 'Response Rate', 'Deals Closed (30d)']) {
+  console.log(`KPI "${label}" present: ${body.includes(label)}`);
+}
 
 await browser.close();

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useSession, signOut } from "@/lib/auth-client";
+import { useUserPreferences } from "@/lib/userPreferences";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus } from "lucide-react";
@@ -153,15 +154,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   // Default is ON, matching `utils/gamification.ts`. Until the query resolves
   // the default is shown rather than a flash of hidden links — the same thing
   // the user already sees today, so nothing appears to change on load.
-  const { data: preferencesData } = useQuery({
-    queryKey: ["user-preferences"],
-    queryFn: async () => {
-      const res = await fetch("/api/user/preferences");
-      if (!res.ok) return null;
-      return res.json() as Promise<{ preferences?: Record<string, unknown> }>;
-    },
-    staleTime: 60_000,
-    retry: 0,
+  const { data: preferencesData } = useUserPreferences({
     enabled: !!session && !preAccessPage,
   });
   const gamificationEnabled = isGamificationEnabled(preferencesData?.preferences);

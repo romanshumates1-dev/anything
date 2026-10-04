@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { readUserPreferences } from '@/lib/userPreferences';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/button';
 import { TutorialProgress } from './TutorialProgress';
@@ -220,6 +222,9 @@ interface OnboardingTutorialProps {
 }
 
 export function OnboardingTutorial({ onComplete, forceShow = false }: OnboardingTutorialProps) {
+  // Captured here because the preferences read happens inside an effect, where a
+  // hook may not be called.
+  const queryClient = useQueryClient();
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
@@ -252,9 +257,11 @@ export function OnboardingTutorial({ onComplete, forceShow = false }: Onboarding
       let best = local;
 
       try {
-        const res = await fetch('/api/user/preferences', { cache: 'no-store' });
-        if (res.ok) {
-          const body = (await res.json()) as { preferences?: Record<string, unknown> };
+        // Shared cache, not a private request: the Shell already reads the same
+        // object through the same key, so this used to be a third invocation for
+        // one payload (measured 2026-10-03: three requests, same millisecond).
+        const body = await readUserPreferences(queryClient);
+        if (body) {
           const remote = decodeTutorialProgress(
             typeof body.preferences?.tutorial_progress === 'string'
               ? body.preferences.tutorial_progress
@@ -283,7 +290,7 @@ export function OnboardingTutorial({ onComplete, forceShow = false }: Onboarding
     return () => {
       cancelled = true;
     };
-  }, [forceShow]);
+  }, [forceShow, queryClient]);
 
   // Persist progress: localStorage immediately (survives refresh, works
   // offline), and the server so it survives a device change. The server write

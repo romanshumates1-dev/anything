@@ -34,7 +34,9 @@
  */
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/lib/auth-client';
+import { readUserPreferences } from '@/lib/userPreferences';
 
 export interface AccessibilityPrefs {
   fontFamily: 'default' | 'dyslexic';
@@ -179,6 +181,9 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   // correct fix is to not ask. The cached/default values still apply, which is
   // exactly the pre-existing behaviour for that visitor.
   const { data: session } = useSession();
+  // Captured at component level: the read happens inside an effect, where a hook
+  // may not be called.
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     // Still resolving the session: wait rather than firing a request whose
@@ -194,10 +199,13 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/user/preferences');
-        if (!res.ok) return;
-        const body = await res.json();
-        const server = sanitizeAccessibility(body?.preferences?.accessibility);
+        // Through the shared cache, not a private request. This used to be a bare
+        // `fetch`, which meant this provider, the Shell and OnboardingTutorial
+        // each issued their own request for the same object — three invocations
+        // in the same millisecond, measured 2026-10-03.
+        const body = await readUserPreferences(queryClient);
+        if (!body) return;
+        const server = sanitizeAccessibility(body.preferences?.accessibility);
         if (!cancelled) {
           setPrefs(server);
           applyAccessibility(server);
@@ -218,7 +226,7 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, queryClient]);
 
   const persist = (next: AccessibilityPrefs) => {
     setPrefs(next);
