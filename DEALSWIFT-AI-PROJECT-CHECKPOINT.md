@@ -68,22 +68,22 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**Fabricated-data sweep.** `/achievements` and `/inbox` are fixed, deployed and
-LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement points-farming
-vulnerability is fixed and tested (`6b30d2c`).
+**Fabricated-data sweep — COMPLETE.** `/achievements` and `/inbox` fixed,
+deployed and LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement
+points-farming vulnerability fixed and tested (`6b30d2c`); all 76 authenticated
+pages swept by shape and **no further instances found**.
 
-**NEXT ACTION (exactly one): continue the fabricated-data sweep across the
-remaining authenticated pages.**
+**NEXT ACTION (exactly one): measure `/dashboard`'s authenticated render cost.**
 
-Search for **fallback** shapes, not just fixtures: `|| mock`, `?? mock`,
-`if (!res.ok) return`, `.length > 0 ? x : y`, and hardcoded literals inside JSX.
-The contact panel's "Interested" / "85" / "123 Main St" were bare literals — a
-search for `mock` would never have found them. `/admin/*` is the next candidate.
+It times out at 45s in a real browser with a real session, while the APIs behind
+it are fast (`/api/dashboard/summary` 200 in 964ms, 10/10 consecutive). That
+localises the cost to the **page render**, not the data fetch — which makes it
+fixable in application code rather than only by upgrading the plan. Measure in
+isolation (PGlite/local or a preview Worker) before changing anything.
 
-This outranks the Workers CPU item, which is an owner decision and stays open.
-CPU constraint unchanged: a burst 4-route sweep returned 503 on all four routes
-while `GET /` and `GET /api/system/health` stayed 200, and `/dashboard` still
-exceeds a 45s browser timeout when authenticated.
+**Never** reproduce the 503 by hammering the live apex: a previous session caused
+a genuine ~90-second production outage that way. Load experiments belong in an
+isolated environment.
 
 Before spending money on a plan upgrade, measure whether per-route render cost
 can be cut further — the dashboard fan-out fix already proved that route works.

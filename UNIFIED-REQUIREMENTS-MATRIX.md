@@ -350,6 +350,32 @@ Both pages were reached from a requirement already marked verified.
 | R6 | Inbox composer | **DELIBERATELY DISABLED** | Composer had no handler. `POST /api/conversations/message` works but enqueues **real outbound SMS/email to real contacts** behind consent + AI-credit gates | Left `disabled` with a stated reason, not wired | Enabling sending is a **product decision**, not a side effect of this fix |
 | R7 | QA harness credential path | **FIXED** (`0437912`) | Credentials passed via `set VAR=value` inside `cmd /c` were mangled by cmd, so the browser POSTed sign-in and got `401 Invalid email or password` **while a direct API call with the same credentials returned 200**. The run then continued and verified every route while **logged out** | Creds read from `$TEMP/qa-cred.json` inside Node; a FATAL is printed when `hasSession !== true` | Verified: authenticated session reaches `/dashboard`; `/achievements` + `/inbox` clean |
 
+### Sweep for further instances — COMPLETE, none found (2026-10-04)
+
+Searched all 76 authenticated `page.tsx` files for the shapes that actually
+produce this class, not just for the word "mock":
+
+| Shape searched | Result |
+| --- | --- |
+| `const mock…` / `sampleData` / `fakeData` / `dummyData` | 0 remaining outside marketing |
+| Pages making **no** API call at all (17 found) | all legitimate — see below |
+| `\|\| mock`, `?? mock`, `if (!res.ok) return mock…` | 0 |
+| Hardcoded name/address literals in JSX (`John Smith`, `123 Main St`, `(555)`) | only in **marketing** mockups (intentional illustration), form `placeholder=` attributes, and the explanatory comments added in `fa43bd0` |
+
+The 17 no-fetch pages break down as: marketing/legal (11, static by design),
+`campaigns/planner` (a calculator running arithmetic over the user's own inputs
+with a documented cost model), `admin/users` (a 4-line re-export of `UsersAdmin`,
+which does fetch `/api/admin/users`), `(dashboard)/automation` (50 lines, no
+fixtures), `settings/accessibility` (local UI preferences), and two access-state
+pages.
+
+`if (!res.ok) return []` appears on 19 pages. Those return an **empty** state,
+not fabricated content, so they cannot mislead a user into thinking they have
+data they do not. They are still weaker than they should be — a failed fetch and
+a genuinely empty account are indistinguishable — but that is an error-affordance
+gap, not this defect, and fixing all 19 is deliberately not bundled into this
+change. **Do not re-run this sweep.**
+
 ### Three ways a verification can be true and still worthless
 
 This cycle produced all three. They are recorded because each one *looks* like

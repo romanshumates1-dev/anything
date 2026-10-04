@@ -35,19 +35,30 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Continue the fabricated-data sweep beyond `/achievements` and `/inbox`.**
-Those two are fixed, deployed and live-verified. The same defect class has not
-been swept repo-wide.
+**Measure `/dashboard`'s authenticated render cost.** The fabricated-data sweep
+is **COMPLETE — no further instances** (all 76 authenticated pages checked by
+shape, not by the word "mock"; see the matrix for exactly what was searched and
+what the 17 no-fetch pages turned out to be).
 
-1. Search authenticated pages for **fallback** patterns specifically, not just
-   `const mock…`: `|| mock`, `?? mock`, `if (!res.ok) return`, `.length > 0 ? x
-   : y`, and hardcoded literals inside JSX (the contact panel's "Interested" /
-   "85" / "123 Main St" were literals, not an array, and a search for `mock`
-   would never have found them).
-2. `/admin/*` is the next candidate — it is the only other area where page-level
-   fixtures appeared.
-3. Verify each candidate by reading the page source and confirming it calls its
-   endpoint, then browser-verify with an authenticated session.
+`/dashboard` is now the strongest remaining measurable defect:
+
+- It **times out at 45s** in a real browser with a real session.
+- Single API calls behind it are fast (`/api/dashboard/summary` 200 in 964ms,
+  10/10 consecutive).
+- So the cost is in the **page render**, not the data fetch — which makes it
+  actionable in application code rather than only by buying a bigger plan.
+
+Method: measure render cost in isolation first (PGlite/local or a preview
+Worker), establish what the dashboard actually queries and renders, and only then
+decide whether to optimise or escalate the plan. **Never** reproduce this by
+hammering the live apex — a previous session caused a real 90-second outage that
+way.
+
+## CURRENT TASK
+
+Fabricated-data sweep — **COMPLETE**. `/achievements` + `/inbox` fixed, deployed,
+live-verified; points-farming vulnerability fixed; 76-page sweep found nothing
+else. Next: `/dashboard` render cost.
 
 ## LIVE-VERIFIED (authenticated, Worker `8b0da56b`)
 
@@ -244,6 +255,17 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 ## DO NOT REPEAT
 
 - Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** re-run the fabricated-data sweep. All 76 authenticated `page.tsx`
+  files were checked on 2026-10-04 by **shape** (`|| mock`, `?? mock`,
+  `if (!res.ok) return mock…`, pages with no API call, hardcoded name/address
+  literals) and **no further instances were found**. The 17 pages that make no
+  API call were each inspected and are legitimate: marketing/legal (static),
+  `campaigns/planner` (a calculator), `admin/users` (4-line re-export of a
+  component that does fetch), `(dashboard)/automation`, `settings/accessibility`,
+  and two access-state pages.
+- Do **not** treat the 19 `if (!res.ok) return []` sites as this same defect —
+  they return an empty state, not fabricated content. Known weaker error
+  affordance, deliberately not bundled; do not "fix" them as a side effect.
 - Do **not** re-implement/rework the achievement points-award guard — fixed in `6b30d2c`
   with 11 tests. The award now depends on a real unlocked transition, not on the request.
 - Do **not** re-wire `/achievements` or `/inbox` to their APIs — done in `fa43bd0`.
