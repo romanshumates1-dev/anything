@@ -30,21 +30,19 @@ credentials. That alone prevents 9/10.
 
 ## CURRENT TASK
 
-State-preservation milestone COMPLETE. `N2-live` verification and score
-recalculation COMPLETE. **No task in flight.**
+State-preservation milestone COMPLETE. `N2-live` verification COMPLETE.
+Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
+**No task in flight beyond NEXT ACTION.**
 
 ## NEXT ACTION
 
-**Deploy `2ea6db3`, `ff3b262` and `503845f`, then re-verify live.**
+**Re-crawl the authenticated routes and measure whether `503845f` resolved the
+15/24 503s.** Run `scripts/deployed-browser-qa.mjs`.
 
-Run `node scripts/wrangler-deploy.mjs`. Then:
-1. Re-check `GET /signup?ref=<code>` — currently **404 in production**; the fix
-   is committed but NOT deployed.
-2. Re-run the authenticated route crawl to see whether `503845f` resolved the
-   15/24 503s.
+## CURRENT TASK
 
-Nothing from this session has been verified in production. The referral fix is
-proven by 14 tests only.
+Deployment + live verification COMPLETE. Worker `499ceb4c` is live and the
+referral chain is **LIVE VERIFIED**. No task in flight beyond this next action.
 
 ---
 
@@ -60,8 +58,16 @@ proven by 14 tests only.
 
 Reusable. Do not re-verify unless the relevant code, deployment or environment changes.
 
-- **`/signup?ref=` returns 404 in production; `/account/signup` returns 200.**
-  Reproduced live 2026-10-04. Fixed in `2ea6db3`, not yet deployed.
+- **`/signup?ref=` is FIXED IN PRODUCTION.** It returned 404; it now returns
+  **307 → `/account/signup`**, with `?ref=CODE` and `&plan=pro` both preserved,
+  landing on a 200 whose HTML contains the ref. Verified live 2026-10-04.
+- **Referral banner renders on the live homepage** (3/3 requests 200) and
+  `/referrals` returns 200. LIVE VERIFIED.
+- **The deployed Worker is `499ceb4c`, built from commit `5c52120`.**
+- ⚠️ **`scripts/wrangler-deploy.mjs` does NOT rebuild.** It deploys whatever is
+  already in `.open-next`. Running it after a code change ships stale artifacts
+  *and reports success*. Always `yarn cf:build` first. This cost a full deploy
+  cycle on 2026-10-04.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release

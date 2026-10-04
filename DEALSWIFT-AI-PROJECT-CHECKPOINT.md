@@ -16,7 +16,7 @@ project state. A new model inherits state from here and from
 | HEAD | `62c3c3b` — this state file; code state described is `ff3b262` |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
-| Last known deployed version | Worker `dd557bc1` — **PREDATES this session's 2 commits; not re-deployed** |
+| Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
 | Current score | **7/10 — calculated 2026-10-04 from the corrected matrix** |
 
@@ -36,14 +36,13 @@ absence of end-to-end evidence on any money-moving path.
 
 **NONE.** The state-preservation milestone is complete.
 
-**NEXT ACTION (exactly one): deploy `2ea6db3`, `ff3b262` and `503845f`, then
-re-verify live.**
+**NEXT ACTION (exactly one): re-crawl the authenticated routes now that
+`503845f` is deployed, and measure whether the 15/24 503s are resolved.**
 
-Run `node scripts/wrangler-deploy.mjs`, then re-check
-`GET /signup?ref=<code>` — currently 404 in production; the fix is committed but
-NOT deployed. Re-run the authenticated route crawl to measure whether `503845f`
-resolved the 15/24 503s. Nothing from this session has been verified live; the
-referral fix in particular is proven only by tests.
+Run `scripts/deployed-browser-qa.mjs`. `503845f` collapsed the dashboard's 17
+Worker invocations into one, but its effect has **never been measured live** —
+the earlier 15/24 figure predates it. Record the new number either way; a
+regression here is as important as a fix.
 
 *(The previously recorded next action — verify AI credit caps against the real
 ledger — is now COMPLETE. Migration 088 is exercised on a real Postgres engine
@@ -135,6 +134,18 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 
 - **Blocker:** Workers plan choice — an **owner decision**, not engineering.
 
+### Deploy script does not rebuild (SILENT FAILURE — fix before next release)
+
+- **Blocker:** `scripts/wrangler-deploy.mjs` spawns only `npx wrangler deploy`.
+  It never rebuilds `.open-next`, so deploying after a code change ships the
+  **previous** bundle and still reports success.
+- **Observed 2026-10-04:** deploy returned Worker `6ea153be`; `/signup?ref=` still
+  404'd. `app-path-routes-manifest.json` was timestamped 20:02 against a 01:43
+  commit — 368 routes registered, `/signup/route` and `/referrals/page` absent.
+- **Work around it:** always `yarn cf:build` immediately before deploying.
+- **To fix properly:** make the deploy script run the build itself, or fail
+  loudly when `.open-next` is older than the newest source file.
+
 ---
 
 ## VERIFIED FACTS
@@ -144,7 +155,9 @@ deployment changed, the environment changed, or a regression demands it.
 
 | Fact | Evidence | Date |
 | --- | --- | --- |
-| `/signup?ref=` → 404 live; `/account/signup` → 200 live | direct HTTPS against production | 2026-10-04 |
+| Referral banner renders on the public homepage | live `GET /` 3/3 = 200, banner content present | 2026-10-04 |
+| `/referrals` dashboard route is live | live `GET /referrals` = 200 | 2026-10-04 |
+| `/signup?ref=` now 307s to `/account/signup` with `?ref` AND `&plan` preserved, landing 200 with `ref` in the served HTML | live, 2026-10-04 |
 | **AI credit caps enforced ATOMICALLY in Postgres** | PGlite (real engine) on migration 088: *"never oversells the cap under CONCURRENT consumption"*, plus daily/weekly/monthly denial, period boundaries, tenant isolation, release-never-negative — 10/10 pass | 2026-10-04 |
 | AI credit caps formula `weekly = floor(monthly/4)`, `daily = floor(monthly/20)` | `aiCreditLimits.ts:194`; present in deployed bundle `handler.mjs:4448` | 2026-10-04 |
 | Purchased credits are deliberately NOT subject to included-credit caps | `aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108` | 2026-10-04 |

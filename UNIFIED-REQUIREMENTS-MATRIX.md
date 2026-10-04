@@ -222,7 +222,7 @@ and are now recorded as implemented and tested.
 | --- | --- | --- | --- | --- | --- |
 | MKT-1 | Public marketing pages | `app/(marketing)` | E2E TESTED | all 200, 0 failing subresources | — |
 | MKT-2 | Legal/compliance pages | `legal/*`, `/compliance` | E2E TESTED | all 200; `/compliance`→`/trust` is an INTENTIONAL `permanentRedirect` (standalone page carried unsubstantiated SOC 2 claims) | — |
-| MKT-3 | Referral / first-1,000-users banner | `components/marketing/ReferralGiveawayBanner.tsx`, `app/referrals/page.tsx` | UNIT TESTED | commit `2ea6db3`; 14 tests incl. full attribution chain | **NOT DEPLOYED — live 404 of `/signup` reproduced, fix unverified live** |
+| MKT-3 | Referral / first-1,000-users banner | `components/marketing/ReferralGiveawayBanner.tsx`, `app/referrals/page.tsx`, `app/signup/route.ts` | **LIVE VERIFIED** | commit `2ea6db3`; 14 tests; live 404 reproduced pre-fix, then live 307→200 with `?ref`+`&plan` preserved; homepage 3/3 200 with banner; `/referrals` 200 | — |
 | SEO-1 | Titles, canonical, robots, sitemap, structured data | `layout.tsx`, `lib/seo.ts`, `robots.ts`, `sitemap.ts` | IMPLEMENTED | canonical + absolute metadataBase; deny-by-default private routes | not audited this cycle |
 
 ## GENUINELY ABSENT (verified absent at the searched paths)
@@ -245,7 +245,8 @@ and are now recorded as implemented and tested.
 | --- | --- | --- | --- |
 | N2-live | Verify AI credit period keys against the real ledger | **COMPLETE 2026-10-04** | Closed — PGlite runs migration 088 on a real engine incl. concurrency; see N6-N8 |
 | SCORE | Recalculate from this corrected matrix | **DONE 2026-10-04** | see SCORE section |
-| DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | NOT STARTED - **highest priority** | `node scripts/wrangler-deploy.mjs`, then re-verify `/signup?ref=` |
+| DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | **DONE 2026-10-04** | Worker `499ceb4c`; required a prior `yarn cf:build` (see OPEN DEFECT 3) |
+| G1-RECRAWL | Re-measure the 15/24 authenticated 503s now that `503845f` is live | NEXT | run `scripts/deployed-browser-qa.mjs` |
 | E1 | Free-trial demo data | NOT STARTED | genuinely absent at `api/**/demo*` |
 | K1 | Earnings date-range filters | NOT STARTED | genuinely absent at `api/payouts` |
 | R1 / T1 | AI calling + voice selection | NOT STARTED | genuinely absent; needs provider credential |
@@ -261,7 +262,16 @@ and are now recorded as implemented and tested.
    paths, `default: throw` present).
 2. **Free-plan CPU ceiling** — sign-in FIXED and deployed (`c87d510`). Authenticated
    page renders still 503 (15/24 routes, p95 ~12s). `503845f` addresses dashboard
-   fan-out but is undeployed.
+   fan-out but its effect is not yet measured live.
+3. **`scripts/wrangler-deploy.mjs` DOES NOT REBUILD** — it only runs
+   `wrangler deploy`. Found 2026-10-04. Running it after a code change ships a
+   **stale `.open-next` bundle while reporting success.** Observed directly: a
+   deploy returned a fresh Worker (`6ea153be`) yet `/signup?ref=` still 404'd,
+   because `app-path-routes-manifest.json` was timestamped 20:02 while the
+   commit was 01:43 — neither `/signup/route` nor `/referrals/page` was in the
+   bundle (368 routes registered; both absent).
+   **Always run `yarn cf:build` first.** This is a silent-failure trap: it hides
+   any code change from production while looking successful.
 
 ## EXTERNAL BLOCKERS
 
