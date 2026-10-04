@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `ff3b262a13bc87f25e438b83b717cb1d5a1f44da` |
+| HEAD | `62c3c3b` — this state file; code state described is `ff3b262` |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | Worker `dd557bc1` — **PREDATES this session's 2 commits; not re-deployed** |
