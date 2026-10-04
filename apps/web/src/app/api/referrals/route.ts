@@ -76,9 +76,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Get full stats
     const stats = await getReferralStats(userId);
 
-    // Build referral link
+    // Build referral link.
+    // `/account/signup` is the REAL signup route: the previous
+    // `${baseUrl}/signup?ref=...` target 404s in production (no such page),
+    // which silently broke every shared referral link. `src/app/signup/route.ts`
+    // now redirects legacy links, and the integrity test pins this target.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealswiftautomation.com';
-    const referralLink = `${baseUrl}/signup?ref=${code}`;
+    const referralLink = `${baseUrl}/account/signup?ref=${code}`;
 
     const response: ReferralStatsResponse = {
       referralCode: code,
@@ -138,9 +142,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const { code, isNew } = await getOrCreateReferralCode(userId, organization.id, userName);
 
-    // Build referral link
+    // Build referral link — must match the live route (/account/signup), see GET.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dealswiftautomation.com';
-    const referralLink = `${baseUrl}/signup?ref=${code}`;
+    const referralLink = `${baseUrl}/account/signup?ref=${code}`;
 
     return NextResponse.json({
       referralCode: code,

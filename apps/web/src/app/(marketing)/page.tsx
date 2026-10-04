@@ -24,6 +24,7 @@ import {
   ScarcityBadge,
   LiveSocialProof,
   LimitedTimeOffer,
+  ReferralGiveawayBanner,
 } from "@/components/marketing";
 import { canonicalFor } from '@/lib/seo';
 
@@ -54,6 +55,12 @@ export default async function LandingPage() {
           <Users className="h-3 w-3" /> Join early adopters
         </span>
       </div>
+
+      {/* REFERRAL / FIRST 1,000 USERS BANNER — logged-out only: this page
+          redirects any authenticated user to /dashboard above. Wording is
+          limited to the approved facts (first 1,000 users, referral-based
+          cash-prize giveaway); no odds or prize amounts are invented. */}
+      <ReferralGiveawayBanner />
 
       {/* Hero Section */}
       <section className="relative overflow-hidden">

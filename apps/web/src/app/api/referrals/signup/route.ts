@@ -16,7 +16,14 @@ import sql from '@/app/api/utils/sql';
 
 interface SignupRequest {
   referralCode: string;
-  referredUserId: string;
+  /**
+   * Optional. When omitted (the normal in-product signup path), the
+   * authenticated session's user is recorded as the referred user, so the
+   * signup page can attribute without first round-tripping
+   * `/api/auth/get-session`. When provided it MUST equal the session user —
+   * the check below still rejects any attempt to attribute someone else.
+   */
+  referredUserId?: string;
 }
 
 interface SignupResponse {
@@ -46,7 +53,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const body: SignupRequest = await req.json();
-    const { referralCode, referredUserId } = body;
+    const { referralCode } = body;
+    // Default to the authenticated user: the signup page posts right after
+    // registration with only the referral code.
+    const referredUserId = body.referredUserId || session.user.id;
 
     // Validate required fields
     if (!referredUserId) {

@@ -25,6 +25,10 @@ function SignUpForm() {
 	const searchParams = useSearchParams();
 	const callbackUrl = searchParams.get("callbackUrl") || "/";
 	const plan = searchParams.get("plan");
+	// Referral attribution: /account/signup?ref=CODE (see ReferralDashboard
+	// share links and the /signup legacy redirect). Kept non-fatal: a missing
+	// or invalid code must never block registration.
+	const referralCode = searchParams.get("ref");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [acceptedLegal, setAcceptedLegal] = useState(false);
@@ -62,6 +66,21 @@ function SignUpForm() {
 			});
 		} catch {
 			// Non-fatal: the middleware gate will catch a missing acceptance.
+		}
+
+		// Record referral attribution now that the user has a session.
+		// Non-fatal by design: an unknown code (400) or a self-referral must
+		// not break registration — the referral just goes unattributed.
+		if (referralCode) {
+			try {
+				await fetch("/api/referrals/signup", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ referralCode }),
+				});
+			} catch {
+				// Network failure: attribution is best-effort.
+			}
 		}
 
 		if (typeof window !== "undefined") {

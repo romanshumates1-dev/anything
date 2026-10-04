@@ -29,6 +29,7 @@ export {
   GenuineScarcityBanner,
   BetaPricingBanner,
 } from './SocialProofBanner';
+export { ReferralGiveawayBanner } from './ReferralGiveawayBanner';
 export {
   CaseStudyCard,
   CaseStudySection,
