@@ -541,7 +541,68 @@ Leading hypothesis is the **128MB memory ceiling** rather than CPU — unconfirm
 
 ---
 
-### Four ways a verification can be true and still worthless
+## ✅ ISOLATED ENVIRONMENT + LIMTER VERIFIED (`d2eb0fe`) — **the "race" was a FALSE POSITIVE**
+
+### Isolation now exists (this was the blocker for all of it)
+
+`dealswiftautomation.com` and `dealswift-app.romanshumates1.workers.dev` are
+**THE SAME WORKER** — `wrangler.jsonc` declares no `routes` entry, so the apex
+resolves to that worker. **Bursting "workers.dev" bursts production.** The
+existing probe scripts defaulted to the apex with no guard, which is exactly how
+a past session caused a real ~90-second outage.
+
+`apps/web/wrangler.loadtest.jsonc` deploys the same code as
+`dealswift-loadtest` — a hostname entirely disjoint from the live site. All 32
+secrets provisioned there so rate-limit semantics match production. Both probe
+scripts now **refuse to run unless `BASE` contains `loadtest`** (verified by
+pointing one at the apex: it exits non-zero rather than bursting it).
+
+### The sign-in limiter is NOT racy — it was mismeasured
+
+`_ratelimit-race.mjs` reported `burst=8 -> admitted=4 *** RACY ***` against a
+documented max of 3. That reads exactly like a live brute-force bypass.
+
+**It is not one.** The script slept 12s to "drain the window", but
+`rateLimitByUser` uses **FIXED** windows keyed on `floor(now / windowMs)` — the
+bucket resets on a wall-clock boundary, not 10s after the previous burst. A
+burst straddling a boundary sees the tail of one window and the head of the
+next and can be admitted up to ~2x. **That tradeoff is already documented in
+`rateLimit.ts`.**
+
+`_signin-limit-forensics.mjs` separates the cases by parking bursts mid-window:
+
+| Condition | Admitted (limit 3) |
+| --- | --- |
+| Mid-window rounds 1–5 | **3, 3, 3, 3, 1** — never exceeded |
+| Boundary rounds 1–3 | 0, 0, 3 |
+
+**8 bursts / 64 concurrent requests. The limit holds; the limiter is atomic.**
+Do not "fix" it. Both scripts carry the correction in their headers.
+
+### CPU: **zero 5xx** under bounded concurrency, hashing or not
+
+108 concurrent requests on the isolated worker (36 hashing sign-in, 36
+get-session, 36 health) produced **0/36 5xx on every endpoint**, with 429s rising
+as the limiter engaged. At this concurrency the Free plan does **not** exhaust
+CPU on any endpoint.
+
+This does **not** prove higher concurrency is safe. It does mean the documented
+"one scrypt verification ≈ 10x the entire 10ms Free budget" claim in
+`auth-cost-guard.ts` did **not** manifest as 5xx here — worth re-checking against
+a higher, still-bounded concurrency in the isolated worker before concluding
+either way.
+
+### Sign-in origin on the test worker
+
+Sign-in returned `403 INVALID_ORIGIN` there, correctly: `trustedOrigins` does
+not — and should not — contain a disposable host. Resolved via the
+**operator-only** `BETTER_AUTH_TRUSTED_ORIGINS` on that worker alone. **No
+production change, no code change, no wildcard.** The allowlist's refusal of
+wildcards is correct CSRF protection and was left intact.
+
+---
+
+### Five ways a verification can be true and still worthless
 
 This cycle produced all four. They are recorded because each one *looks* like
 a result:
@@ -560,6 +621,13 @@ a result:
    measurement (`f0074e2`): HTTP **200**, DOM ready **219ms**, content visible
    **548ms**. Every endpoint behind it answered in 83–405ms. The "evidence" had
    been describing a test harness.
+5. **A security finding that was the instrument, not the system.** The sign-in
+   limiter was reported as "RACY: limit bypassed" — a live brute-force defect —
+   across several sessions. It is atomic. A fixed-window boundary artifact in
+   the measuring script produced the verdict; mid-window retest admitted never
+   exceeded 3 across 64 concurrent requests (`d2eb0fe`). **The most dangerous
+   member of this family**, because acting on it would have meant rewriting a
+   working security control.
 
 Before treating browser evidence as proof, confirm all four: the page issued its
 request, the session was real (`hasSession === true`), the asserted strings exist

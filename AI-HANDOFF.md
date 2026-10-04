@@ -24,26 +24,23 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 Two **unmeasured** production defects remain (not unbuilt):
 
-1. **Intermittent `GET /` 500** — diagnostics are now live, so the next
-   occurrence is observable: `wrangler tail --format pretty`, grep
-   `[worker:unhandled]`. `suspected_resource_kill=true` ⇒ capacity problem;
-   `false` ⇒ the logged TypeError names the call site. Mechanism (unconfirmed):
-   `handler` is explicitly assigned, so it is undefined **iff the page module
-   failed to load**; the call is unguarded. **Not reproduced** (12/12 workers.dev,
-   6/6 apex).
-   ⚠️ `src/instrumentation.ts` does not exist although
-   `patch-opennext-instrumentation.mjs` claims to mirror it, so its KEEP-IN-SYNC
-   instruction cannot currently be honoured.
-2. **503 under sustained load** (Cloudflare 1102) — **per-invocation cost now
-   measured**: homepage warm median **124ms** (indistinguishable from `/faq` at
-   105–129ms); the real cost is **isolate cold start** (2225ms first → 375ms
-   after 22s idle → 113–147ms warm). The homepage is **not** pathologically
-   expensive — per-request optimisation will not fix this. **The 503s under
-   CONCURRENT load remain unreproduced and unexplained**; this was explicitly not
-   a load test. "The plan is too small" is a *better-founded* assumption, still
-   not a finding. Next: an isolated environment (workers.dev/miniflare) with
-   CPU/memory metering on the concurrent path. `wrangler.jsonc` documents RSC
-   prefetching as the known cause, already mitigated `prefetch={false}` (16%→0%).
+1. **Intermittent `GET /` 500** — diagnostics live (`a576f2f`, Worker `85de11a9`);
+   **root cause unresolved**. Next occurrence: `wrangler tail --format pretty`,
+   grep `[worker:unhandled]`.
+2. **503 under sustained load** — **zero 5xx across 108 concurrent requests** on
+   the isolated worker. Homepage warm median 124ms; cost is isolate cold start.
+   Higher concurrency still untested.
+3. **Sign-in rate-limit "race" — WITHDRAWN, FALSE POSITIVE** (`d2eb0fe`). Limiter
+   HOLDS (3,3,3,3,1 admitted vs limit 3, 64 concurrent requests). The old
+   "admitted=4" was a fixed-window boundary artifact. **Do not rewrite it.**
+
+### ISOLATED ENVIRONMENT EXISTS — use it, do not recreate
+
+`apps/web/wrangler.loadtest.jsonc` → Worker **`dealswift-loadtest`**, 32 secrets
+provisioned, **disjoint from the apex**. ⚠️ `dealswiftautomation.com` and
+`dealswift-app.romanshumates1.workers.dev` are **THE SAME WORKER** — "workers.dev"
+is **not** isolation. Probe scripts refuse to run unless `BASE` contains
+`loadtest`. **All concurrency/load work belongs here.**
 
 Never load-test the live apex; a previous session caused a real ~90s outage.
 
@@ -263,6 +260,18 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 ## DO NOT REPEAT
 
 - Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** "fix" the sign-in rate limiter. The "RACY: limit bypassed" verdict was
+  a **false positive** from a fixed-window boundary artifact in the measuring
+  script. Mid-window retest on the isolated worker: admitted 3,3,3,3,1 against a
+  limit of 3 over 64 concurrent requests — it **holds** (`d2eb0fe`). Acting on
+  the old claim would have meant rewriting a working security control.
+- Do **not** treat `dealswift-app.romanshumates1.workers.dev` as an isolated
+  environment. It is **THE SAME WORKER** as the apex (no `routes` entry in
+  wrangler.jsonc). Use **`dealswift-loadtest.romanshumates1.workers.dev`**
+  (`wrangler.loadtest.jsonc`), which is genuinely disjoint.
+- Do **not** run `_ratelimit-race.mjs` / `_argon2-parallel.mjs` against the apex.
+  They now refuse unless `BASE` contains `loadtest`; that guard exists because a
+  past session caused a real ~90s outage by bursting production.
 - Do **not** re-add "the homepage 500 has no telemetry" as an open finding. The
   worker `fetch` wrapper logs unhandled throws as `[worker:unhandled]` with
   `suspected_resource_kill` (`a576f2f`). The 500 itself is **still unfixed and

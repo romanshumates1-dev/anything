@@ -98,33 +98,30 @@ The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
 are genuinely unmeasured rather than unbuilt.
 
-1. **Intermittent `GET /` 500** — **diagnostics now shipped** (`a576f2f`, Worker
-   `85de11a9`). The worker previously exported `fetch: handler.fetch` directly,
-   so a throw produced a bare 500 with **no log line and nothing in
-   `wrangler tail`** — which is why this stalled across sessions. The wrapper now
-   logs method, path, query KEY NAMES, and **`suspected_resource_kill`**, which
-   separates "our bug" from "the platform killed the isolate".
-   **On the next occurrence: `wrangler tail --format pretty`, grep
-   `[worker:unhandled]`.** `suspected_resource_kill=true` ⇒ capacity;
-   `false` ⇒ the logged TypeError names the call site.
-   Mechanism (unconfirmed): `handler` is explicitly assigned, so it is undefined
-   **iff the page module failed to load**; call is unguarded. Still not
-   reproduced (12/12 workers.dev, 6/6 apex).
-   ⚠️ Also found: **`src/instrumentation.ts` does not exist** although
-   `patch-opennext-instrumentation.mjs` claims to mirror it and warns
-   KEEP-IN-SYNC. Boot `register()` still reaches the bundle via the patch, so
-   diagnostics work, but the sync cannot actually be maintained.
-2. **503 under sustained load** (Cloudflare 1102) — **per-invocation cost now
-   measured** (2026-10-04): homepage warm median **124ms**, indistinguishable
-   from `/faq` (105–129ms); the real cost is **isolate cold start** (2225ms
-   first → 375ms after 22s idle → 113–147ms warm). So the homepage is **not**
-   pathologically expensive and per-request optimisation will not fix the 503s.
-   **The 503s under CONCURRENT load remain unreproduced and unexplained** — this
-   was explicitly not a load test. "The plan is too small" is a *better-founded*
-   assumption, still not a finding. Next instrument is an isolated environment
-   (workers.dev/miniflare) with CPU/memory metering driving the concurrent path;
-   `wrangler.jsonc` documents RSC prefetching as the known 503 cause, already
-   mitigated `prefetch={false}` (16% → 0%).
+1. **Intermittent `GET /` 500** — **diagnostics shipped** (`a576f2f`, Worker
+   `85de11a9`); **root cause STILL unresolved**. The wrapper logs
+   `[worker:unhandled]` + `suspected_resource_kill`. Next occurrence:
+   `wrangler tail --format pretty`, grep that marker. Mechanism (unconfirmed):
+   `handler` is explicitly assigned, so undefined **iff the page module failed to
+   load**. Not reproduced (12/12 workers.dev, 6/6 apex, and 0/108 5xx under
+   bounded concurrency on the isolated worker).
+2. **503 under sustained load** — per-invocation cost measured (homepage warm
+   median 124ms; the cost is **isolate cold start**). **Zero 5xx across 108
+   concurrent requests** on the isolated worker. So at this concurrency the Free
+   plan is not exhausting CPU on any endpoint. Higher concurrency still untested.
+3. **Sign-in rate-limit "race" — WITHDRAWN, IT WAS A FALSE POSITIVE** (`d2eb0fe`).
+   The limiter **holds**: mid-window bursts admitted 3,3,3,3,1 against a limit of
+   3 across 64 concurrent requests. The earlier "admitted=4" was a **fixed-window
+   boundary artifact** in the measuring script. **Do not rewrite this limiter.**
+   Residual, documented and accepted: fixed windows admit ~2x across a boundary.
+
+### ISOLATED ENVIRONMENT NOW EXISTS — use it, do not recreate
+
+`apps/web/wrangler.loadtest.jsonc` → Worker **`dealswift-loadtest`** (32 secrets
+provisioned). **Fully disjoint from the apex.** ⚠️ `dealswiftautomation.com` and
+`dealswift-app.romanshumates1.workers.dev` are **THE SAME WORKER** — "workers.dev"
+is NOT isolation. Probe scripts now refuse to run unless `BASE` contains
+`loadtest`. **All concurrency/CPU/load work belongs here.**
 
 **Never** reproduce load behaviour on the live apex: a previous session caused a
 genuine ~90-second production outage that way. Load experiments belong in an
