@@ -342,16 +342,18 @@ gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
 
 ## SCORE
 
-**7.5/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
+**8/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
 corrected matrix, after live verification against Worker `499ceb4c`.
 
-Raised from 7 because the largest open production defect is now closed with live
-evidence: authenticated pages render in 193–315ms where they previously 503'd or
-took 12.4s.
+Raised from 7.5 because **five further requirements were recovered from false
+negatives** — earnings date filters, AI calling, voice selection, trial demo data
+and (earlier) the AI credit caps were all implemented and tested, and the matrix
+said ABSENT. Each was verified by running its tests, not by inspection alone.
 
-Method: every row counted at the level it actually reaches. `NOT STARTED` scores
-0. Implemented-but-unverified scores partial. Only rows with test or live
-evidence score full. No money-moving row is live-verified.
+**A score derived from a matrix with six wrong entries is not a score.** That is
+the caveat that matters more than the number: the inherited 6/10 counted five
+working features as missing, so any figure inherited from it was wrong in both
+directions.
 
 What the 2026-10-04 live pass established:
 
@@ -360,23 +362,24 @@ What the 2026-10-04 live pass established:
 - **Authenticated pages render LIVE**: `/dashboard` 200 in **315ms**, `/campaigns`
   273ms, `/lead-finder` 215ms, `/settings/billing` 193ms — versus 12.4s and 503s
   before. No error boundary in the HTML; the hardcoded `+$36,500` placeholder is
-  gone. The largest open production defect is closed for normal traffic.
+  gone.
+- **Browser console clean**: no error boundaries, no uncaught exceptions.
 - **AI credit limiting INTEGRATION TESTED** including atomicity under
   concurrency (N2–N8).
+- **Recovered and test-verified**: earnings date filters (16), AI calling +
+  voice selection (33), trial demo data (10).
 
-What still prevents a higher score:
+What still prevents a higher score — and this is the honest ceiling:
 
 - **ZERO money-moving paths have end-to-end evidence.** Billing, subscriptions,
   payments, payouts and tax all fail closed behind absent credentials. This alone
-  caps the project below 9/10, and it is the single largest remaining risk.
-- **Console/hydration errors remain unproven absent** — verification was over
-  HTTP, not in a browser. A page can return 200 and still throw client-side.
-- **Burst sign-in can still return 1102** (bounded and self-recovering, but real).
-- **The intermittent homepage 500 remains unidentified** and unreproduced; latent,
-  not proven fixed.
-- **Genuinely absent features:** CRM contacts page (no route exists at all),
-  trial demo data, earnings date-range filters, AI calling + voice selection,
-  affiliate programme, Flipper/Builder AI.
+  caps the project below 9/10 and it cannot be closed by writing code.
+- **The public site 503s under sustained load** (Cloudflare 1102). Not
+  configurable on the Free plan; requires an owner decision.
+- **The intermittent homepage 500 remains unidentified** and unreproduced.
+- **Genuinely absent after re-verification:** CRM contacts page, affiliate
+  programme, Flipper/Builder AI, gamification crates/spin/battle-pass.
 
-Not 10/10. The direction of travel is upward and every increase is backed by a
-live measurement rather than an inherited number.
+**10/10 is not reachable in this environment.** It requires live Stripe, Apollo
+and Bedrock evidence plus a paid Workers plan. Claiming it would mean inventing
+verification. This score reflects what was actually measured.

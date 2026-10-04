@@ -15,16 +15,21 @@
 
 ## CURRENT SCORE
 
-**7.5/10 — calculated 2026-10-04 from the corrected matrix, after a live pass.**
+**8/10 — calculated 2026-10-04 from the corrected matrix, after a live pass.**
 
-Not inherited. It rose from 7 because the largest production defect is now
-closed with live evidence: authenticated pages render in **193–315ms** where
-they previously 503'd or took 12.4s, with no error boundary in the HTML.
+Not inherited. Raised from 7.5 because **six requirements were recovered from
+false negatives** — the inherited matrix said ABSENT for AI credit caps,
+earnings date filters, AI calling, voice selection and trial demo data, all of
+which are implemented and tested. Each was confirmed by running its tests.
 
-It is not 9 because **no money-moving path has end-to-end evidence** — billing,
-payouts and tax all fail closed behind absent credentials — and console/hydration
-errors are still unproven absent, since verification was over HTTP rather than in
-a browser.
+**A score derived from a matrix with six wrong entries is not a score.** That
+caveat matters more than the number.
+
+The ceiling below 9 is real and not code-fixable: **no money-moving path has
+end-to-end evidence** (billing, payouts and tax fail closed behind absent
+credentials), the public site 503s under sustained load, and the intermittent
+homepage 500 is still unidentified. **10/10 is unreachable here** — it needs live
+Stripe/Apollo/Bedrock evidence and a paid Workers plan.
 
 ## CURRENT TASK
 

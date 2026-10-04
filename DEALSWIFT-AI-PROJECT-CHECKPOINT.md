@@ -18,7 +18,7 @@ project state. A new model inherits state from here and from
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
-| Current score | **7.5/10 — calculated 2026-10-04 from the corrected matrix, after a live pass** |
+| Current score | **8/10 — calculated 2026-10-04 from the corrected matrix (six false negatives recovered)** |
 
 ### Current overall score
 
