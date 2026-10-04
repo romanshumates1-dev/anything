@@ -130,7 +130,7 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 
 | ID | Requirement | Implementation | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| H1 | No avoidable console errors | partial | IN PROGRESS | logged-out routes clean; authenticated sweep incomplete |
+| H1 | No avoidable console errors | **PARTIAL** | Browser sweep 2026-10-04: **no error boundaries and no uncaught exceptions** on `/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`. Remaining console noise is a Cloudflare RUM beacon aborted on navigation (`/cdn-cgi/rum?`) plus the 503/1102 burst. Not yet clean under sustained load |
 | H2 | Dashboard shows real data, never invented | commits `503845f`, `753e1b9` | UNIT TESTED | `ProfitChart` etc. now render real failure instead of hardcoded sample numbers |
 
 ## SET I — BILLING / SUBSCRIPTIONS
@@ -255,7 +255,7 @@ and are now recorded as implemented and tested.
 | CONTACTS-PAGE | No CRM `/contacts` page exists at all | NOT STARTED | only `/(marketing)/contact` (public) is registered; the app has no contacts UI route. Genuinely absent, not a 404 bug |
 | QA-ACCEPT | Give the QA account legal acceptance so page routes render | NOT STARTED | blocks full page-level verification; all page routes 307 to `/legal/accept` |
 | G1 | ~~15/24 authenticated routes 503~~ | **RESOLVED 2026-10-04** | Live after `503845f`: `/dashboard` 200 in **315ms**, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms (was 12.4s). No error boundary in HTML; hardcoded `+$36,500` placeholder absent |
-| G1b | Burst sign-in can still 1102 | OPEN | 3 rapid attempts → 503 (1102), then 429/429 at 66–78ms; recovers to 200 in 598ms after ~25s. Throttle works; the Free-plan ceiling is real under burst |
+| G1b | Burst traffic returns 503/1102 | OPEN | Reproduced twice under rapid repeated loads: 3 rapid sign-ins → 503 (1102) then 429; a fast 4-route browser sweep → **503 on all four**. Site root and `/api/system/health` stayed 200 throughout, so it is a per-invocation CPU ceiling under burst, not an outage. Recovers after ~25s idle |
 
 ## OPEN DEFECTS
 
