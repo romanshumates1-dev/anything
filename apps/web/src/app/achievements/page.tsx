@@ -37,7 +37,18 @@ interface Achievement {
   icon: string;
   progress?: number;
   maxProgress?: number;
+  unlocked?: boolean;
   unlockedAt?: string;
+}
+
+/**
+ * `unlocked` is the server's authoritative flag and decides whether the
+ * achievement counts. `unlockedAt` is only a display detail — the database can
+ * legitimately hold an unlocked row with a null timestamp, so it must never be
+ * what decides state. `??` rather than `||` keeps a real `false` meaning false.
+ */
+function isUnlockedAch(a: Achievement): boolean {
+  return a.unlocked ?? Boolean(a.unlockedAt);
 }
 
 const RARITY_CONFIG: Record<Rarity, { label: string; color: string; bg: string; glow: string }> = {
@@ -63,42 +74,17 @@ const ICON_MAP: Record<string, React.ElementType> = {
   award: Award,
 };
 
-const mockAchievements: Achievement[] = [
-  // Getting Started
-  { id: '1', name: 'First Steps', description: 'Complete your profile setup', category: 'Getting Started', rarity: 'common', points: 50, icon: 'star', unlockedAt: '2024-01-15' },
-  { id: '2', name: 'Hello World', description: 'Send your first campaign message', category: 'Getting Started', rarity: 'common', points: 100, icon: 'message', unlockedAt: '2024-01-16' },
-  { id: '3', name: 'Contact Collector', description: 'Import your first 100 contacts', category: 'Getting Started', rarity: 'common', points: 75, icon: 'users', progress: 67, maxProgress: 100 },
-
-  // Campaign Master
-  { id: '4', name: 'Campaign Creator', description: 'Launch 5 campaigns', category: 'Campaign Master', rarity: 'uncommon', points: 150, icon: 'rocket', progress: 3, maxProgress: 5 },
-  { id: '5', name: 'Message Maven', description: 'Send 1,000 messages', category: 'Campaign Master', rarity: 'uncommon', points: 200, icon: 'message', progress: 456, maxProgress: 1000 },
-  { id: '6', name: 'Response Magnet', description: 'Get 100 responses', category: 'Campaign Master', rarity: 'rare', points: 250, icon: 'zap', progress: 42, maxProgress: 100 },
-  { id: '7', name: 'Engagement Expert', description: 'Achieve 30% response rate on a campaign', category: 'Campaign Master', rarity: 'rare', points: 300, icon: 'target' },
-
-  // Deal Closer
-  { id: '8', name: 'First Blood', description: 'Close your first deal', category: 'Deal Closer', rarity: 'uncommon', points: 500, icon: 'trophy', unlockedAt: '2024-02-01' },
-  { id: '9', name: 'Dealmaker', description: 'Close 10 deals', category: 'Deal Closer', rarity: 'rare', points: 1000, icon: 'trophy', progress: 4, maxProgress: 10 },
-  { id: '10', name: 'Whale Hunter', description: 'Close a deal over $50,000', category: 'Deal Closer', rarity: 'epic', points: 750, icon: 'dollar' },
-  { id: '11', name: 'Revenue Machine', description: 'Generate $100,000 in total revenue', category: 'Deal Closer', rarity: 'epic', points: 1500, icon: 'dollar', progress: 58000, maxProgress: 100000 },
-
-  // Networking Pro
-  { id: '12', name: 'Network Builder', description: 'Add 500 contacts', category: 'Networking Pro', rarity: 'uncommon', points: 200, icon: 'users', progress: 234, maxProgress: 500 },
-  { id: '13', name: 'Conversation Starter', description: 'Have 50 active conversations', category: 'Networking Pro', rarity: 'rare', points: 300, icon: 'message' },
-  { id: '14', name: 'Relationship Master', description: 'Convert 25 leads to deals', category: 'Networking Pro', rarity: 'epic', points: 600, icon: 'users', progress: 8, maxProgress: 25 },
-
-  // Power User
-  { id: '15', name: 'Daily Driver', description: 'Log in 30 consecutive days', category: 'Power User', rarity: 'rare', points: 400, icon: 'flame', progress: 12, maxProgress: 30 },
-  { id: '16', name: 'Automation Expert', description: 'Set up 10 automated sequences', category: 'Power User', rarity: 'uncommon', points: 350, icon: 'zap' },
-  { id: '17', name: 'Data Analyst', description: 'Export 50 analytics reports', category: 'Power User', rarity: 'uncommon', points: 200, icon: 'target' },
-
-  // Rare & Legendary
-  { id: '18', name: 'Platinum Club', description: 'Generate $500,000 in total revenue', category: 'Rare & Legendary', rarity: 'legendary', points: 2000, icon: 'crown' },
-  { id: '19', name: 'Legend', description: 'Reach #1 on the leaderboard', category: 'Rare & Legendary', rarity: 'legendary', points: 1500, icon: 'crown' },
-  { id: '20', name: 'Perfectionist', description: 'Achieve 50% response rate on 5 campaigns', category: 'Rare & Legendary', rarity: 'legendary', points: 2500, icon: 'sparkles' },
-];
+/** Server-computed aggregates, mirrored by `GET /api/achievements`. */
+interface Summary {
+  totalPoints: number;
+  totalUnlocked: number;
+  totalAchievements: number;
+  progressPercent: number;
+  byCategory: Record<string, { earned: number; total: number }>;
+}
 
 function AchievementCard({ achievement }: { achievement: Achievement }) {
-  const isUnlocked = !!achievement.unlockedAt;
+  const isUnlocked = isUnlockedAch(achievement);
   const isInProgress = achievement.progress !== undefined && !isUnlocked;
   const rarity = RARITY_CONFIG[achievement.rarity];
   const Icon = ICON_MAP[achievement.icon] || Award;
@@ -187,11 +173,27 @@ export default function AchievementsPage() {
   const { data: session, isPending: authLoading } = useSession();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const { data: achievements, isLoading } = useQuery({
+  // Real data only. This page previously returned a hardcoded 20-row array
+  // after a synthetic 500ms delay and never called the API, so every number on
+  // screen — points, unlocks, a $500,000 "Platinum Club" tier — was fabricated
+  // and identical for every user. The endpoint has existed, has been
+  // organization/auth scoped and gamification-gated all along; it simply was
+  // never called. Mirrors the /leaderboard page, which was already fixed this way.
+  const { data, isLoading, isError, error } = useQuery<{
+    achievements: Achievement[];
+    summary: Summary;
+  }>({
     queryKey: ['achievements'],
     queryFn: async () => {
-      await new Promise((r) => setTimeout(r, 500));
-      return mockAchievements;
+      const res = await fetch('/api/achievements', { credentials: 'include' });
+      if (!res.ok) {
+        throw new Error(
+          res.status === 404
+            ? 'Achievements are turned off for your account.'
+            : 'Could not load your achievements.',
+        );
+      }
+      return res.json();
     },
     enabled: !!session,
   });
@@ -208,22 +210,36 @@ export default function AchievementsPage() {
     redirect('/account/signin');
   }
 
+  // Totals are computed from the SERVER's numbers when available rather than
+  // re-derived in the browser. The endpoint already aggregates points,
+  // unlocked count and per-category totals in SQL; recomputing them here is how
+  // the page and the database drift apart.
+  const achievements = data?.achievements;
+  const summary = data?.summary;
+
   const categories = ['all', ...new Set(achievements?.map((a) => a.category) || [])];
   const filtered = selectedCategory === 'all'
     ? achievements
     : achievements?.filter((a) => a.category === selectedCategory);
 
-  const totalPoints = achievements?.reduce((sum, a) => sum + (a.unlockedAt ? a.points : 0), 0) || 0;
-  const totalUnlocked = achievements?.filter((a) => a.unlockedAt).length || 0;
-  const totalAchievements = achievements?.length || 0;
-  const progressPercent = Math.round((totalUnlocked / totalAchievements) * 100);
+  const totalPoints = summary?.totalPoints
+    ?? achievements?.reduce((sum, a) => sum + (isUnlockedAch(a) ? a.points : 0), 0)
+    ?? 0;
+  const totalUnlocked = summary?.totalUnlocked
+    ?? achievements?.filter((a) => isUnlockedAch(a)).length
+    ?? 0;
+  const totalAchievements = summary?.totalAchievements ?? achievements?.length ?? 0;
+  const progressPercent = summary?.progressPercent
+    ?? Math.round((totalUnlocked / totalAchievements) * 100);
 
-  const pointsByCategory = achievements?.reduce((acc, a) => {
-    if (!acc[a.category]) acc[a.category] = { earned: 0, total: 0 };
-    acc[a.category].total += a.points;
-    if (a.unlockedAt) acc[a.category].earned += a.points;
-    return acc;
-  }, {} as Record<string, { earned: number; total: number }>) || {};
+  const pointsByCategory = summary?.byCategory
+    ?? achievements?.reduce((acc, a) => {
+      if (!acc[a.category]) acc[a.category] = { earned: 0, total: 0 };
+      acc[a.category].total += a.points;
+      if (isUnlockedAch(a)) acc[a.category].earned += a.points;
+      return acc;
+    }, {} as Record<string, { earned: number; total: number }>)
+    ?? {};
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -242,6 +258,27 @@ export default function AchievementsPage() {
         <div className="py-20 flex justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-[var(--accent-blue)]" />
         </div>
+      ) : isError ? (
+        // A 404 here means the user turned gamification OFF — the API
+        // deliberately 404s rather than 403s so the feature's existence is not
+        // disclosed. That case gets its own copy instead of a generic failure.
+        <GlassCard className="text-center py-12">
+          <p className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+            {error instanceof Error ? error.message : 'Could not load your achievements.'}
+          </p>
+          <p className="text-sm text-[var(--text-muted)]">
+            You can turn achievements back on in Settings → Preferences.
+          </p>
+        </GlassCard>
+      ) : !achievements?.length ? (
+        <GlassCard className="text-center py-12">
+          <p className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+            No achievements available yet
+          </p>
+          <p className="text-sm text-[var(--text-muted)]">
+            Achievements appear here once your account has some to work toward.
+          </p>
+        </GlassCard>
       ) : (
         <>
           {/* Stats Overview */}
@@ -281,7 +318,7 @@ export default function AchievementsPage() {
               </div>
               {(() => {
                 const rarestUnlocked = achievements
-                  ?.filter((a) => a.unlockedAt)
+                  ?.filter((a) => isUnlockedAch(a))
                   .sort((a, b) => {
                     const order = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
                     return order.indexOf(a.rarity) - order.indexOf(b.rarity);

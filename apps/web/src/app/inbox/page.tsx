@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { StatusDot } from '@/components/ui/StatusDot';
-import { Loader2, Search, MessageSquare, Mail, Phone, User, Bot, Send, Sparkles } from 'lucide-react';
+import { Loader2, Search, MessageSquare, Mail, Phone, Send } from 'lucide-react';
 import Link from 'next/link';
 
 const channelTabs = [
@@ -16,40 +16,58 @@ const channelTabs = [
   { id: 'phone', label: 'Phone', icon: Phone },
 ];
 
+// "Unread" was removed: `GET /api/conversations` returns no read/unread state
+// (there is no read-receipt column to filter on), so the filter could only ever
+// have matched the mock rows. Needs-response and responded both map to the
+// real `requires_human` flag.
 const statusFilters = [
   { id: 'all', label: 'All' },
-  { id: 'unread', label: 'Unread' },
   { id: 'needs_response', label: 'Needs Response' },
   { id: 'responded', label: 'Responded' },
 ];
 
-const mockConversations = [
-  { id: 1, lead_id: 1, lead_name: 'John Smith', phone: '+1 (555) 123-4567', last_message: 'Hi, I got your message about my property. What\'s your offer?', time: '2m ago', status: 'requires_human', channel: 'sms', unread: true, last_sender: 'contact' },
-  { id: 2, lead_id: 2, lead_name: 'Sarah Johnson', phone: '+1 (555) 234-5678', last_message: 'That sounds interesting. Can you tell me more about the process?', time: '1h ago', status: 'requires_human', channel: 'sms', unread: true, last_sender: 'contact' },
-  { id: 3, lead_id: 3, lead_name: 'Bob Wilson', phone: '+1 (555) 345-6789', last_message: 'Thanks, I\'ll think about it and get back to you.', time: '3h ago', status: 'active', channel: 'sms', unread: false, last_sender: 'ai' },
-  { id: 4, lead_id: 4, lead_name: 'Jane Doe', phone: '+1 (555) 456-7890', last_message: 'Not interested at this time.', time: '1d ago', status: 'closed', channel: 'email', unread: false, last_sender: 'contact' },
-];
+/**
+ * Fabricated data, removed.
+ *
+ * This page previously fell back to four hardcoded rows ("John Smith",
+ * "+1 (555) 123-4567") whenever the request failed OR simply returned nothing:
+ *
+ *     if (!res.ok) return mockConversations;
+ *     return data.length > 0 ? data : mockConversations;
+ *
+ * That second clause was the damaging one. An account with zero conversations
+ * is the normal case, and it rendered four strangers' fake conversations — so
+ * an empty inbox looked populated and a backend outage was indistinguishable
+ * from success. Empty now means empty; failure now means failure.
+ */
 
-const mockMessages = [
-  { id: 1, sender: 'them', text: 'Hi, I got your message about my property at 123 Main St.', time: '10:23 AM' },
-  { id: 2, sender: 'ai', text: 'Thanks for reaching out! Based on the current market, I can offer you a fair cash price. What condition is the property in?', time: '10:25 AM' },
-  { id: 3, sender: 'them', text: 'It needs some work. The roof is old and the kitchen needs updating. What\'s your offer?', time: '10:28 AM' },
-];
+/** One row from `GET /api/conversations`, which is organization-scoped. */
+interface Conversation {
+  id: number;
+  lead_id: number;
+  channel: string;
+  status: string;
+  requires_human: boolean;
+  last_message_at: string | null;
+  lead_name: string | null;
+  lead_phone: string | null;
+  last_message: string | null;
+}
 
 export default function InboxPage() {
   const { data: session, isPending } = useSession();
   const [channelFilter, setChannelFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedConv, setSelectedConv] = useState<number | null>(1);
+  const [selectedConv, setSelectedConv] = useState<number | null>(null);
   const [message, setMessage] = useState('');
 
-  const { data: conversations, isLoading } = useQuery({
+  const { data: conversations, isLoading, isError, error } = useQuery<Conversation[]>({
     queryKey: ['conversations'],
     queryFn: async () => {
-      const res = await fetch('/api/conversations');
-      if (!res.ok) return mockConversations;
-      const data = await res.json();
-      return data.length > 0 ? data : mockConversations;
+      const res = await fetch('/api/conversations', { credentials: 'include' });
+      if (!res.ok) throw new Error('Could not load your conversations.');
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : [];
     },
     enabled: !!session,
   });
@@ -66,17 +84,38 @@ export default function InboxPage() {
     redirect('/account/signin');
   }
 
-  const convList = conversations || mockConversations;
+  // No mock fallback: an empty array is a real, correct empty inbox.
+  const convList: Conversation[] = conversations ?? [];
 
-  const filteredConversations = convList.filter((c: any) => {
+  const filteredConversations = convList.filter((c) => {
     if (channelFilter !== 'all' && c.channel !== channelFilter) return false;
-    if (statusFilter === 'unread' && !c.unread) return false;
-    if (statusFilter === 'needs_response' && c.status !== 'requires_human') return false;
-    if (statusFilter === 'responded' && c.status === 'requires_human') return false;
+    if (statusFilter === 'needs_response' && !c.requires_human) return false;
+    if (statusFilter === 'responded' && c.requires_human) return false;
     return true;
   });
 
-  const selectedConversation = convList.find((c: any) => c.id === selectedConv);
+  const selectedConversation = convList.find((c) => c.id === selectedConv);
+
+  // Thread messages come from the org-scoped endpoint, not from local mock state.
+  const { data: thread, isLoading: threadLoading } = useQuery<{
+    id: number;
+    direction: string;
+    status: string;
+    provider: string | null;
+    body: string | null;
+    created_at: string;
+  }[]>({
+    queryKey: ['conversation-thread', selectedConversation?.lead_id],
+    queryFn: async () => {
+      const res = await fetch(`/api/conversations/thread/${selectedConversation!.lead_id}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Could not load this conversation.');
+      const rows = await res.json();
+      return Array.isArray(rows) ? rows : [];
+    },
+    enabled: !!selectedConversation,
+  });
 
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-4">
@@ -135,6 +174,14 @@ export default function InboxPage() {
               <div className="py-8 flex justify-center">
                 <Loader2 className="h-5 w-5 animate-spin text-[var(--accent-blue)]" />
               </div>
+            ) : isError ? (
+              // Previously any failure rendered four fake conversations, so an
+              // outage looked like a working inbox full of strangers.
+              <div className="py-8 text-center px-4">
+                <p className="text-sm text-[var(--color-warning)]">
+                  {error instanceof Error ? error.message : 'Could not load conversations.'}
+                </p>
+              </div>
             ) : filteredConversations.length === 0 ? (
               <div className="py-8 text-center">
                 <p className="text-sm text-[var(--text-muted)]">No conversations</p>
@@ -153,19 +200,23 @@ export default function InboxPage() {
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] flex items-center justify-center">
                         <span className="text-white font-medium text-sm">{conv.lead_name?.[0] || 'U'}</span>
                       </div>
-                      {conv.unread && (
-                        <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[var(--accent-blue)] rounded-full border-2 border-[var(--bg-secondary)]" />
+                      {conv.requires_human && (
+                        <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[var(--accent-blue)] rounded-full border-2 border-[var(--bg-secondary)]" title="Needs response" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className={`text-sm font-medium ${conv.unread ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+                        <p className={`text-sm font-medium ${conv.requires_human ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
                           {conv.lead_name || 'Unknown'}
                         </p>
-                        <span className="text-xs text-[var(--text-muted)]">{conv.time}</span>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {conv.last_message_at
+                            ? new Date(conv.last_message_at).toLocaleString()
+                            : ''}
+                        </span>
                       </div>
                       <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">{conv.last_message}</p>
-                      {conv.status === 'requires_human' && (
+                      {conv.requires_human && (
                         <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-xs bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
                           <StatusDot status="warning" size="sm" />
                           Needs response
@@ -189,7 +240,7 @@ export default function InboxPage() {
               <div className="p-4 border-b border-[var(--border-subtle)] flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-[var(--text-primary)]">{selectedConversation.lead_name}</p>
-                  <p className="text-sm text-[var(--text-muted)]">{selectedConversation.phone}</p>
+                  <p className="text-sm text-[var(--text-muted)]">{selectedConversation.lead_phone}</p>
                 </div>
                 <Link
                   href={`/leads?id=${selectedConversation.lead_id}`}
@@ -201,60 +252,71 @@ export default function InboxPage() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {mockMessages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${msg.sender === 'them' ? 'justify-start' : 'justify-end'}`}
-                  >
-                    <div
-                      className={`max-w-[70%] px-4 py-2 rounded-2xl ${
-                        msg.sender === 'them'
-                          ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                          : 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
-                      }`}
-                    >
-                      {msg.sender === 'ai' && (
-                        <div className="flex items-center gap-1 mb-1 text-xs opacity-70">
-                          <Bot className="h-3 w-3" />
-                          AI Generated
-                        </div>
-                      )}
-                      <p className="text-sm">{msg.text}</p>
-                      <p className={`text-xs mt-1 ${msg.sender === 'them' ? 'text-[var(--text-muted)]' : 'opacity-70'}`}>
-                        {msg.time}
-                      </p>
-                    </div>
+                {threadLoading ? (
+                  <div className="py-8 flex justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-[var(--accent-blue)]" />
                   </div>
-                ))}
+                ) : !thread?.length ? (
+                  <p className="text-sm text-[var(--text-muted)] text-center py-8">
+                    No messages in this conversation yet.
+                  </p>
+                ) : (
+                  thread.map((msg) => {
+                    // `direction` is the ledger's own inbound/outbound flag; an
+                    // outbound message is ours (sent), inbound is the contact.
+                    const outbound = msg.direction === 'outbound';
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[70%] px-4 py-2 rounded-2xl ${
+                            outbound
+                              ? 'bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] text-white'
+                              : 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                          }`}
+                        >
+                          <p className="text-sm break-words">
+                            {msg.body ?? <span className="italic opacity-70">No message body recorded</span>}
+                          </p>
+                          <p
+                            className={`text-xs mt-1 ${outbound ? 'opacity-70' : 'text-[var(--text-muted)]'}`}
+                          >
+                            {new Date(msg.created_at).toLocaleString()}
+                            {msg.status ? ` · ${msg.status}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
-              {/* Smart replies */}
-              <div className="px-4 py-2 border-t border-[var(--border-subtle)] flex gap-2 overflow-x-auto">
-                <button className="px-3 py-1.5 rounded-full text-xs bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] whitespace-nowrap">
-                  "I can offer $X based on..."
-                </button>
-                <button className="px-3 py-1.5 rounded-full text-xs bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] whitespace-nowrap">
-                  "When can we schedule..."
-                </button>
-                <button className="px-3 py-1.5 rounded-full text-xs bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] whitespace-nowrap">
-                  "Let me check and..."
-                </button>
-              </div>
-
-              {/* Input */}
+              {/* The composer is intentionally DISABLED rather than wired up here.
+                `POST /api/conversations/message` exists and works, but it
+                enqueues real outbound SMS/email to a real contact, gated by
+                consent checks and the AI-credit gate. Enabling it is a product
+                decision that needs explicit approval, so the control states its
+                own status instead of silently discarding what the user typed. */}
               <div className="p-4 border-t border-[var(--border-subtle)]">
-                <div className="flex gap-2">
-                  <button className="p-2 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--accent-blue)]">
-                    <Sparkles className="h-5 w-5" />
-                  </button>
+                <div className="flex gap-2 items-center">
                   <input
                     type="text"
+                    disabled
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Type a message..."
-                    className="flex-1 px-4 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                    placeholder="Sending from this view isn't available yet."
+                    title="Message sending from the inbox is not yet enabled."
+                    aria-label="Compose a message (not yet available)"
+                    className="flex-1 px-4 py-2 bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] rounded-lg text-sm text-[var(--text-muted)] placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-70"
                   />
-                  <button className="btn-gradient px-4 py-2 rounded-lg flex items-center gap-2">
+                  <button
+                    disabled
+                    aria-label="Send message (not yet available)"
+                    title="Message sending from the inbox is not yet enabled."
+                    className="btn-gradient px-4 py-2 rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     <Send className="h-4 w-4" />
                   </button>
                 </div>
@@ -277,34 +339,44 @@ export default function InboxPage() {
                 <span className="text-white font-bold text-xl">{selectedConversation.lead_name?.[0] || 'U'}</span>
               </div>
               <p className="font-semibold text-[var(--text-primary)]">{selectedConversation.lead_name}</p>
-              <p className="text-sm text-[var(--text-muted)]">{selectedConversation.phone}</p>
+              <p className="text-sm text-[var(--text-muted)]">{selectedConversation.lead_phone}</p>
             </div>
 
+            {/* Was hardcoded: Stage "Interested", Lead Score 85, Property
+                "123 Main St, Miami FL" — the same for every conversation, and
+                not backed by any field the API returns. Now shows the real
+                status, and omits what genuinely is not known rather than
+                inventing a value. */}
             <div className="space-y-3 py-4 border-t border-[var(--border-subtle)]">
               <div>
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Stage</p>
-                <p className="text-sm text-[var(--text-primary)]">Interested</p>
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Channel</p>
+                <p className="text-sm text-[var(--text-primary)] capitalize">
+                  {selectedConversation.channel || 'unknown'}
+                </p>
               </div>
               <div>
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Lead Score</p>
-                <p className="text-sm font-mono text-[var(--color-success)]">85</p>
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Status</p>
+                <p className="text-sm text-[var(--text-primary)]">
+                  {selectedConversation.status || 'unknown'}
+                </p>
               </div>
               <div>
-                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Property</p>
-                <p className="text-sm text-[var(--text-primary)]">123 Main St, Miami FL</p>
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Needs Response</p>
+                <p className="text-sm text-[var(--text-primary)]">
+                  {selectedConversation.requires_human ? 'Yes' : 'No'}
+                </p>
               </div>
             </div>
 
+            {/* These three had no handler and never did anything. Removed rather
+                than left as buttons that look actionable but are inert. */}
             <div className="space-y-2 pt-4 border-t border-[var(--border-subtle)]">
-              <button className="w-full py-2 rounded-lg bg-[var(--bg-tertiary)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]">
-                Create Contract
-              </button>
-              <button className="w-full py-2 rounded-lg bg-[var(--bg-tertiary)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]">
-                Update Stage
-              </button>
-              <button className="w-full py-2 rounded-lg bg-[var(--bg-tertiary)] text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]">
-                Add Note
-              </button>
+              <Link
+                href={`/leads?id=${selectedConversation.lead_id}`}
+                className="block w-full py-2 rounded-lg bg-[var(--bg-tertiary)] text-center text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]"
+              >
+                View Contact
+              </Link>
             </div>
           </GlassCard>
         </div>

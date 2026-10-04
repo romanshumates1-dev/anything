@@ -27,6 +27,8 @@ export async function GET(
         me.direction,
         me.status,
         me.provider,
+        me.channel,
+        me.body,
         me.metadata,
         me.created_at,
         cc.phone as to_phone
