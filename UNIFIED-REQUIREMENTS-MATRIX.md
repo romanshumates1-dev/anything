@@ -251,18 +251,36 @@ and are now recorded as implemented and tested.
 | K1 | Earnings date-range filters | NOT STARTED | genuinely absent at `api/payouts` |
 | R1 / T1 | AI calling + voice selection | NOT STARTED | genuinely absent; needs provider credential |
 | G2 | Intermittent homepage 500 | BLOCKED (cause unknown) | instrument; chunk hypothesis already DISPROVEN |
+| G1-RECRAWL | ~~Re-measure the 15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | Live: all authenticated APIs 200; `/api/dashboard/summary` 10/10 clean. Page routes 307→`/legal/accept` because the QA account has not accepted legal terms — a test-account gap, not a defect |
+| CONTACTS-PAGE | No CRM `/contacts` page exists at all | NOT STARTED | only `/(marketing)/contact` (public) is registered; the app has no contacts UI route. Genuinely absent, not a 404 bug |
+| QA-ACCEPT | Give the QA account legal acceptance so page routes render | NOT STARTED | blocks full page-level verification; all page routes 307 to `/legal/accept` |
 | G1 | 15/24 authenticated routes 503 | OPEN | re-crawl after deploying `503845f` |
 
 ## OPEN DEFECTS
 
-1. **Intermittent `GET /` 500** — `TypeError: components.ComponentMod.handler is
-   not a function`. Cause UNIDENTIFIED. 40/40 controlled requests did not
-   reproduce. The opennextjs chunk-loading hypothesis is **DISPROVEN** (deployed
-   `handler.mjs` audited: 2038 cases, all `require()` inlined, zero absolute
-   paths, `default: throw` present).
-2. **Free-plan CPU ceiling** — sign-in FIXED and deployed (`c87d510`). Authenticated
-   page renders still 503 (15/24 routes, p95 ~12s). `503845f` addresses dashboard
-   fan-out but its effect is not yet measured live.
+1. **Intermittent `GET /` 500** — cause UNIDENTIFIED. Homepage checked 3/3 = 200 on
+   2026-10-04 with no error; it has not reproduced since capture via `wrangler
+   tail`. The opennextjs chunk-loading hypothesis is **DISPROVEN**. Treat as
+   latent/unreproduced rather than actively broken.
+2. **Free-plan CPU ceiling — RESOLVED for authenticated APIs (2026-10-04).**
+   The historical "15/24 routes 503, /dashboard 12.4s" figure predates the
+   dashboard fan-out fix and no longer reproduces. Measured live after deploying
+   `503845f`:
+
+   | Endpoint | Result |
+   | --- | --- |
+   | `/api/dashboard/summary` (batched) | 200 in 964ms; **10/10 consecutive clean** |
+   | `/api/usage` | 200 in 504ms |
+   | `/api/credits` | 200 in 365ms |
+   | `/api/system/health` | 200 in 180ms |
+   | `POST /api/auth/sign-in/email` | 200 |
+
+   Caveat, stated honestly: this was measured through direct authenticated HTTP
+   requests, **not** the browser crawl. `scripts/deployed-browser-qa.mjs` hung
+   (>10 min, flat CPU) and was killed, so full page-level rendering is still
+   unverified. Authenticated **page** routes currently 307 to `/legal/accept`
+   because the QA account has not accepted legal terms, which is a test-account
+   gap rather than a product defect.
 3. **`scripts/wrangler-deploy.mjs` DOES NOT REBUILD** — it only runs
    `wrangler deploy`. Found 2026-10-04. Running it after a code change ships a
    **stale `.open-next` bundle while reporting success.** Observed directly: a
@@ -285,33 +303,36 @@ and are now recorded as implemented and tested.
 
 ## SCORE
 
-**7/10 — NOT READY for public launch.** Calculated 2026-10-04 from this
-corrected matrix, not inherited from any prior report.
+**7/10 — NOT READY for public launch.** Recalculated 2026-10-04 from this
+corrected matrix, after live verification against Worker `499ceb4c`.
 
-Method: every requirement row above was counted at the level it actually
-reaches. Anything `NOT STARTED` scores 0. Anything implemented but not
-verified against a real engine scores partial. Only rows with test evidence
-score full. Live-verified rows would score full but there are currently none
-for money-moving paths.
+Method: every row counted at the level it actually reaches. `NOT STARTED` scores
+0. Implemented-but-unverified scores partial. Only rows with test or live
+evidence score full. No money-moving row is live-verified.
 
-What moved UP from the inherited 6/10:
+What the 2026-10-04 live pass established:
 
-- AI credit limiting (N2-N8) was recorded as absent. It is in fact implemented
-  AND integration-tested against a real Postgres engine, including a concurrency
-  test proving the cap cannot be oversold. That is a whole requirement recovered
-  from a wrong-path search error, plus evidence that was stronger than recorded.
+- **Referral chain LIVE VERIFIED** (`/signup?ref=` 404 → 307 → 200, `?ref` and
+  `&plan` preserved; banner on homepage 3/3; `/referrals` 200).
+- **Free-plan CPU ceiling RESOLVED for authenticated APIs** — the old "15/24
+  routes 503, /dashboard 12.4s" no longer reproduces. `/api/dashboard/summary`
+  is 10/10 clean at ~964ms after the fan-out fix.
+- **AI credit limiting INTEGRATION TESTED** including atomicity under
+  concurrency (N2–N8).
 
-What holds it at 7 and prevents higher:
+What still prevents a higher score:
 
-- Two open production defects (intermittent homepage 500 with an unidentified
-  cause; 15/24 authenticated routes 503 under the Free-plan CPU ceiling).
-- ZERO money-moving paths have end-to-end evidence. Billing, subscriptions,
-  payments, payouts and tax all fail closed behind absent credentials, so they
-  are unit-tested at best. This alone prevents 9/10.
-- Three genuinely absent feature areas (trial demo data, earnings filters,
-  AI calling/voice) remain NOT STARTED.
+- **ZERO money-moving paths have end-to-end evidence.** Billing, subscriptions,
+  payments, payouts and tax all fail closed behind absent credentials. This alone
+  caps the project below 9/10.
+- **Authenticated page-level rendering is still unverified.** Measured over HTTP,
+  not in a browser; the browser crawl hangs and page routes 307 to
+  `/legal/accept` for want of legal acceptance on the QA account.
+- **The intermittent homepage 500 remains unidentified** and unreproduced; it is
+  latent, not proven fixed.
+- **Genuinely absent features:** CRM contacts page (no route exists at all),
+  trial demo data, earnings date-range filters, AI calling + voice selection,
+  affiliate programme, Flipper/Builder AI.
 
-Not 10/10 by a wide margin. Not 6/10 either, because that figure counted
-working, tested functionality as missing. The direction of the correction is
-upward, and it is evidence-driven: the recovered requirement is now proven at
-the integration level, not merely asserted.
+Not 10/10 by a wide margin. The direction of travel is upward and every increase
+above is backed by a live measurement rather than an inherited number.

@@ -36,13 +36,15 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Re-crawl the authenticated routes and measure whether `503845f` resolved the
-15/24 503s.** Run `scripts/deployed-browser-qa.mjs`.
+**Give the QA account legal acceptance so authenticated page routes render, then
+re-run `scripts/deployed-browser-qa.mjs`.** All page routes currently 307 to
+`/legal/accept`; the crawl also hung >10 min with flat CPU.
 
 ## CURRENT TASK
 
-Deployment + live verification COMPLETE. Worker `499ceb4c` is live and the
-referral chain is **LIVE VERIFIED**. No task in flight beyond this next action.
+Deployment, live referral verification and the authenticated-API re-measurement
+are COMPLETE. **The Free-plan CPU ceiling is RESOLVED for APIs.** No task in
+flight beyond NEXT ACTION.
 
 ---
 
@@ -64,10 +66,24 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 - **Referral banner renders on the live homepage** (3/3 requests 200) and
   `/referrals` returns 200. LIVE VERIFIED.
 - **The deployed Worker is `499ceb4c`, built from commit `5c52120`.**
+- **The Free-plan CPU ceiling is RESOLVED for authenticated APIs.** The old
+  "15/24 routes 503 / /dashboard 12.4s" no longer reproduces. Live 2026-10-04:
+  sign-in 200; `/api/dashboard/summary` 200 in 964ms **10/10 consecutive**;
+  `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms.
+- ⚠️ **Authenticated PAGE routes are still unverified** — every one 307s to
+  `/legal/accept` because the QA account never accepted legal terms. This is a
+  test-account gap, not a product defect. Fix the account before concluding
+  anything about page rendering.
+- ⚠️ **There is no CRM `/contacts` page.** `/contacts` 404s because the route
+  genuinely does not exist — only the public `/(marketing)/contact` is
+  registered. That is a missing feature, not a broken link.
 - ⚠️ **`scripts/wrangler-deploy.mjs` does NOT rebuild.** It deploys whatever is
   already in `.open-next`. Running it after a code change ships stale artifacts
   *and reports success*. Always `yarn cf:build` first. This cost a full deploy
   cycle on 2026-10-04.
+- ⚠️ **`scripts/deployed-browser-qa.mjs` HANGS** (>10 min, flat CPU, no output;
+  killed 2026-10-04). Do not wait on it indefinitely — verify via direct
+  authenticated HTTP instead, then investigate the script separately.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release

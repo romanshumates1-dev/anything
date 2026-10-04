@@ -34,15 +34,16 @@ absence of end-to-end evidence on any money-moving path.
 
 ## ACTIVE TASK
 
-**NONE.** The state-preservation milestone is complete.
+**NONE.** State preservation, AI-credit verification, deployment, live referral
+verification and the authenticated-API re-measurement are all COMPLETE.
 
-**NEXT ACTION (exactly one): re-crawl the authenticated routes now that
-`503845f` is deployed, and measure whether the 15/24 503s are resolved.**
+**NEXT ACTION (exactly one): give the QA account legal acceptance so
+authenticated PAGE routes render, then re-run `scripts/deployed-browser-qa.mjs`.**
 
-Run `scripts/deployed-browser-qa.mjs`. `503845f` collapsed the dashboard's 17
-Worker invocations into one, but its effect has **never been measured live** —
-the earlier 15/24 figure predates it. Record the new number either way; a
-regression here is as important as a fix.
+Every authenticated page route currently 307s to `/legal/accept` because the QA
+account has not accepted the legal terms. That masks page-level rendering, so
+full browser verification is impossible until it is resolved. Fix the test
+account first, then diagnose the hang (it ran >10 min with flat CPU).
 
 *(The previously recorded next action — verify AI credit caps against the real
 ledger — is now COMPLETE. Migration 088 is exercised on a real Postgres engine
@@ -164,6 +165,7 @@ deployment changed, the environment changed, or a regression demands it.
 | AI cap arithmetic + ISO-week/UTC correctness | 19 tests in `aiCreditLimits.test.ts` | 2026-10-04 |
 | Every AI route passes `authorizeAiRequest` | 5 tests, `ai-credit-gate.test.ts` | 2026-10-04 |
 | Tenant ratchet guard passes in isolation | `ff3b262`; 2 tests, 339ms | 2026-10-04 |
+| **Free-plan CPU ceiling RESOLVED for authenticated APIs** | live 2026-10-04: `POST /api/auth/sign-in/email` 200; `/api/dashboard/summary` 200 in 964ms, **10/10 consecutive**; `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms |
 | Referral chain (401/403/400, self-referral, `?ref` preservation) | 10 tests | 2026-10-04 |
 | Sign-in 200 in 490ms; throttle 429 in 75ms pre-hash | deployed Worker `dd557bc1` | pre-session |
 | opennextjs chunk-loading cause of homepage 500 is **DISPROVEN** | deployed `handler.mjs` audited: 2038 cases, inlined requires | pre-session |
