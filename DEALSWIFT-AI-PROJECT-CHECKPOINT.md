@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `62c3c3b` — this state file; code state described is `ff3b262` |
+| HEAD | `fa43bd0` — real-data fixes for `/achievements` + `/inbox`; achievement points guard in `6b30d2c` |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
@@ -32,12 +32,21 @@ absence of end-to-end evidence on any money-moving path.
 
 ---
 
-## SCORE RATIONALE — 8.5/10
+## SCORE RATIONALE — 8.5/10 (unchanged, but one supporting claim WITHDRAWN)
 
-Not inherited, and not adjusted by feel. Raised from 8 because **three more
+Not inherited, and not adjusted by feel. Raised from 8 because **three
 requirements were recovered from false negatives**: the CRM contacts UI (live
-200), the gamification XP/points system (live 200, 11 tests), and confirmation
-that the AI-credit work stands. **Ten false negatives have now been found.**
+200), the gamification XP/points **backend** (11 tests), and confirmation that
+the AI-credit work stands. **Ten false negatives have now been found.**
+
+**WITHDRAWN (2026-10-04, commit `fa43bd0`):** the "gamification XP — live 200"
+evidence in the earlier tally was **not valid**. `/achievements` returned 200
+while serving a hardcoded array and never calling its API. That page is now real
+but **not yet browser-verified**, so the requirement is recorded as
+UNIT TESTED, not LIVE VERIFIED. The score does not move in either direction
+from this withdrawal: the capability was already counted on backend evidence,
+and the page is now built. What changed is the *honesty of the evidence*, and
+that is recorded rather than scored.
 
 Still capped below 9:
 - No money-moving path has **live** evidence. Stripe is verified in **test mode**
@@ -54,19 +63,18 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**NONE.** State preservation, AI-credit verification, deployment, live referral
-verification, API re-measurement and authenticated page verification are all
-COMPLETE.
+**Fabricated-data sweep.** `/achievements` and `/inbox` are fixed and unit
+tested (`fa43bd0`); the achievement points-farming vulnerability is fixed
+(`6b30d2c`). Awaiting browser verification on the deployed Worker.
 
-**NEXT ACTION (exactly one): raise the Workers CPU limit, or reduce per-invocation
-cost under burst.**
+**NEXT ACTION (exactly one): browser-verify `/achievements` and `/inbox`, then
+continue the sweep for other pages returning hardcoded data.**
 
-This is now the single highest-value unblocked item, and it is an **owner
-decision**, not a code change. Evidence that it is the binding constraint: a
-burst 4-route browser sweep returned 503 on all four routes, while `GET /` and
-`GET /api/system/health` stayed 200 throughout. Single requests are fast
-(pages 193–315ms; `/api/dashboard/summary` 10/10 clean at 964ms); it is
-*sustained/concurrent* load that breaches the per-invocation CPU ceiling.
+This outranks the Workers CPU item, which is an owner decision and stays
+open. The CPU constraint is unchanged: a burst 4-route browser sweep returned
+503 on all four routes, while `GET /` and `GET /api/system/health` stayed 200.
+Single requests are fast (pages 193–315ms; `/api/dashboard/summary` 10/10 clean
+at 964ms); it is *sustained/concurrent* load that breaches the CPU ceiling.
 
 Before spending money on a plan upgrade, measure whether per-route render cost
 can be cut further — the dashboard fan-out fix already proved that route works.

@@ -263,9 +263,9 @@ and are now recorded as implemented and tested.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| V1 | GAMIFICATION ON/OFF setting | `utils/gamification.ts` + allowlist | UNIT TESTED | commit `61fe673` | — |
-| V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`) + `app/achievements/page.tsx` | **LIVE VERIFIED + UNIT TESTED** | live `GET /achievements` 200; 11 gamification tests — false negative #9 | — |
-| V3 | Crates / spin wheel / battle pass / seasons / competitions | none after concept search of `api/*` + git history | NOT STARTED | genuinely absent | — |
+| V1 | GAMIFICATION ON/OFF setting | `utils/gamification.ts` + allowlist + `gamification.server.ts` | UNIT TESTED | commit `61fe673`; **write path gated in `6b30d2c`** (POST was ungated — see R4) | — |
+| V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`, server-side `summary`) + `app/achievements/page.tsx` | **UNIT TESTED — was a FALSE POSITIVE, corrected** | **The `/achievements` page never called the API**: it returned a hardcoded 20-row array after a fake `setTimeout(500)`. Fixed in `fa43bd0`. Prior "LIVE VERIFIED (200)" evidence is **INVALIDATED** — the 200 served mock data. 11 tests pass but tested only the setting, not the page | browser re-verification required |
+| V3 | Crates / spin wheel / battle pass / seasons / competitions | none after concept search of `api/*` + git history | NOT STARTED | genuinely absent (`spin_wheel\|battle_?pass\|crateOpen` = 0 hits in 1071 source files) | — |
 
 ## SET W — ACCESSIBILITY / SETTINGS
 
@@ -331,6 +331,42 @@ gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
 
 ---
 
+## ⚠️ FABRICATED-DATA DEFECTS (2026-10-04) — false POSITIVES
+
+The re-audit above searched only for **absent** code. This pass searched for the
+opposite and safer failure: code that **exists and returns 200 while showing
+invented data**. Those never trip a "does it exist?" search, so they survive
+every audit run so far — including the ten false negatives above.
+
+Both pages were reached from a requirement already marked verified.
+
+| ID | Requirement | Status | Root cause | Fix | Verification |
+| --- | ----------- | ------ | ---------- | --- | ------------ |
+| R1 | `/achievements` shows real progress | **FIXED, unit tested** | Page never called `GET /api/achievements`; returned a 20-row hardcoded array after `setTimeout(500)`. Fake points, fake 2024 unlock dates, a fabricated "$500,000 Platinum Club" tier, identical for every user | `fa43bd0` — real `fetch`, server `summary`, honest error/empty states | 44/44 related suites; typecheck+lint clean. **Not browser-verified** |
+| R2 | `/inbox` shows real conversations | **FIXED, unit tested** | `if (!res.ok) return mockConversations;` **and** `return data.length > 0 ? data : mockConversations;` — a brand-new account with zero conversations rendered four strangers' rows, and an outage looked identical to success | `fa43bd0` — real fetch, error state distinct from empty | as above |
+| R3 | Contact panel / composer truthful | **FIXED** | Hardcoded Stage "Interested", Lead Score 85, Property "123 Main St, Miami FL" for every conversation; Create Contract / Update Stage / Add Note had no handler | `fa43bd0` — real fields, inert buttons removed | as above |
+| R4 | Achievement points awarded once | **FIXED, 11 tests** | `POST` credited `user_stats.points` whenever the **request** said `unlock`, not on the actual locked→unlocked transition. Repeatable by any authenticated caller. POST was also **not** gated on the gamification setting (GET was), and `progress` was unvalidated | `6b30d2c` — single statement returns `just_unlocked`; award only on transition; POST gated; progress validated | RED 8 failed/3 passed → GREEN 11/11. **Documented residual:** two callers racing on a never-touched achievement could both be credited; closing it needs a stored function as migration 088 does for AI credits |
+| R5 | Thread transcript renders | **FIXED** | `body` and `channel` exist on `message_events` since migration 095 but were never selected | `fa43bd0` | as above |
+| R6 | Inbox composer | **DELIBERATELY DISABLED** | Composer had no handler. `POST /api/conversations/message` works but enqueues **real outbound SMS/email to real contacts** behind consent + AI-credit gates | Left `disabled` with a stated reason, not wired | Enabling sending is a **product decision**, not a side effect of this fix |
+
+### Method note, and the mistake this cycle nearly repeated
+
+While checking whether the achievements tables existed I used a **non-recursive**
+`Get-ChildItem -File` on `apps/web/db/`, which silently skipped `db/migrations/`
+and reported 0 hits. I was about to record an **11th** false negative. The tables
+are in `068_user_profile_and_gamification.sql`.
+
+The rule now covers tooling as well as intuition:
+
+> **Confirm the search path before believing an absence — including your own
+> glob flags.** A search that returned zero has not proven anything until you
+> have shown it *looked in the right place*. `Get-ChildItem -File` without
+> `-Recurse` is the specific trap; `git ls-files '*.sql'` is the reliable check.
+
+Two "unreachable" things are NOT blockers: the thread body column exists (R5),
+and the inbox send endpoint exists (R6). Both were confirmed by column/function
+existence before being labelled unavailable.
+
 ## ⚠️ ABSENCE-CLAIM RE-AUDIT (2026-10-04) — 10 false negatives found
 
 Every remaining "ABSENT"/"NOT STARTED" claim was re-verified individually rather
@@ -342,7 +378,7 @@ two genuinely absent.**
 | # | Claimed absent | Reality | Method that caught it |
 | --- | --- | --- | --- |
 | 8 | CRM contacts page | **`app/crm/page.tsx` is a complete UI** — search, status filter, campaign filter, CSV export, detail drawer; backed by org-scoped `api/crm/contacts` and API-key `api/v1/contacts`. **Live `GET /crm` → 200** | read the page source |
-| 9 | Gamification XP/levels | **XP is real** — `user_stats.points`, `achievements.points`, per-category totals, `maxProgress`. UI at `/achievements` (**live 200**), 11 tests pass | searched `points\|xp\|level` in route bodies |
+| 9 | Gamification XP/levels | **XP is real in the backend** — `user_stats.points`, `achievements.points`, per-category totals, `maxProgress`. **But the `/achievements` page showed none of it** (hardcoded rows; see FABRICATED-DATA DEFECTS R1), so the "live 200" originally recorded here was not evidence | searched `points\|xp\|level` in route bodies — **the mistake: never read the page source, only the route** |
 | 10 | "Only achievements + leaderboard exist" | true for endpoints, but the matrix phrasing implied XP was missing too — it is not | read `achievements/route.ts` |
 
 ### Clarified, NOT a defect

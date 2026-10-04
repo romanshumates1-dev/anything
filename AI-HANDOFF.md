@@ -7,7 +7,11 @@
 
 ## CURRENT HEAD
 
-`62c3c3b` (the commit that added this file; the code state it describes is `ff3b262`)
+`fa43bd0` (real-data fixes for `/achievements` + `/inbox`; backend fix `6b30d2c`).
+**This file's own commit follows — read `git log --oneline -3` for exact HEAD.**
+⚠️ This value was stale (`62c3c3b`) for several commits; a checkpoint whose HEAD
+does not match the repository is how a new model re-audits from scratch. Keep it
+current on every state commit.
 
 ## CURRENT BRANCH
 
@@ -31,11 +35,25 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Raise the Workers CPU limit, or reduce per-invocation render cost under burst.**
-This is the highest-value unblocked item and is an **owner decision** — the
-binding constraint is proven: a burst 4-route sweep 503'd while `/` and
-`/api/system/health` stayed 200. Measure whether render cost can be cut before
-paying for a plan upgrade.
+**Browser-verify `/achievements` and `/inbox` on the deployed Worker, then continue
+the fabricated-data sweep on the remaining authenticated pages.**
+
+1. Deploy `6b30d2c` + `fa43bd0` (bounded, no load testing).
+2. Confirm both pages render real rows, and that an account with no achievements
+   shows the empty state rather than mock data. This is the evidence that
+   downgrades the old V2 "LIVE VERIFIED" claim to settled.
+3. Continue the sweep: any other page that returns a hardcoded array or
+   `mock`/`sample` literal as a fallback. `/admin/*` was the only other place a
+   page-level `const mock…` appeared, so it is the next candidate.
+
+**Explicitly NOT next, despite being genuinely absent:** affiliate programme,
+Flipper/Builder AI, and gamification crates/spin/battle-pass. A live points-farming
+vulnerability outranked all three; they remain unimplemented and unblocked.
+
+## CURRENT TASK
+
+Fabricated-data sweep — **COMPLETE for `/achievements` and `/inbox`**, awaiting
+browser verification. No other task in flight.
 
 ## CURRENT TASK
 
@@ -49,9 +67,31 @@ authenticated page rendering are all COMPLETE.
 
 | Commit | What | Verification |
 | --- | --- | --- |
+| `fa43bd0` | `/achievements` + `/inbox` now render REAL data (were hardcoded mock rows); thread selects `body`; dead controls removed | 44/44 related suites; 9/9 endpoints.contract; typecheck + oxlint clean. **Not browser-verified** |
+| `6b30d2c` | Achievement points awarded exactly once (was repeatable by any caller); POST now gamification-gated; progress validated | **RED 8 failed/3 passed → GREEN 11/11**; 44/44 across achievements/conversations/leaderboard/gamification |
 | `ff3b262` | Tenant-isolation guard given an I/O timeout budget (fixed the suite's only failure) | 2 passed in 339ms; 27 passed across sibling guards |
 | `2ea6db3` | Referral share links pointed at the real signup route (`/signup` 404'd in production) | 14 passed; live 404 reproduced pre-fix |
 | `27cae46` | Single source for `/api/user/preferences` reads | pre-existing |
+
+## ⚠️ FABRICATED-DATA CLASS — read before trusting any "LIVE VERIFIED" UI row
+
+Ten false negatives were found earlier (code missing that was assumed absent).
+This class is the **opposite** and had never been searched for: pages that
+**exist, return 200, and display invented data**. They survive every
+"does it exist?" audit. Both were found under requirements already marked
+verified.
+
+| Where | What it showed | Now |
+| --- | --- | --- |
+| `/achievements` | Hardcoded 20 rows after a fake `setTimeout(500)`; never called the API. Fake points, fake 2024 dates, invented "$500,000 Platinum Club" tier | Real `fetch` + server aggregates (`fa43bd0`) |
+| `/inbox` | `return data.length > 0 ? data : mockConversations;` — **an empty inbox rendered four strangers' rows**, and an outage was indistinguishable from success | Real fetch; error ≠ empty (`fa43bd0`) |
+| Contact panel | Hardcoded Stage "Interested", Score 85, "123 Main St, Miami FL" | Real fields (`fa43bd0`) |
+| Achievement POST | Credited points whenever the **request** said `unlock` — repeatable | Award on real transition only (`6b30d2c`) |
+
+**When verifying a UI requirement, confirm the page actually CALLS its endpoint.**
+A 200 plus a passing API test proves nothing if the component never issues the
+request. `/leaderboard` was already correct and says so in a comment — that is
+the pattern to expect.
 
 ## VERIFIED FACTS
 
@@ -150,7 +190,21 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   name.** `api/crm`, `api/contacts`, `api/v1/contacts` and `app/crm` all exist
   under names you would never guess. Directory search alone has produced a false
   negative every single time it was trusted.
-- The pre-existing `.tmp-*.log` files and `.tmp-qa-creds.env` are untracked
+- ⚠️ **THE MATRIX HAS PRODUCED TEN FALSE NEGATIVES *AND* FALSE POSITIVES.**
+  False negatives (assumed absent, actually present) are recorded above.
+  False positives — **code that exists, returns 200, and shows invented data** —
+  were never searched for until 2026-10-04 and are just as dangerous: they
+  certify a requirement as verified when the verification proves nothing.
+  `/achievements` and `/inbox` both passed "live 200" while rendering hardcoded
+  rows. **Before believing any UI evidence, confirm the component actually CALLS
+  its endpoint.** A passing API test does not help if the page never issues the
+  request.
+- ⚠️ **CHECK YOUR OWN SEARCH FLAGS BEFORE BELIEVING A ZERO.** This cycle I used a
+  non-recursive `Get-ChildItem -File` on `apps/web/db/`, which silently skipped
+  `db/migrations/`, and nearly recorded an 11th false negative claiming the
+  achievements tables did not exist. They do — in migration 068. Use
+  `git ls-files` to enumerate files reliably before concluding anything is absent.
+  The pre-existing `.tmp-*.log` files and `.tmp-qa-creds.env` are untracked
   scratch. **`.tmp-qa-creds.env` may contain credentials — never commit it and
   never print its contents.**
 - `git status` shows `docs/superpowers/PRODUCTION_ENGINEERING_AUDIT.md` as
@@ -159,7 +213,17 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## DO NOT REPEAT
 
-- Do **not** re-implement AI credit weekly/daily caps — they exist and are tested.
+- Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** re-implement/rework the achievement points-award guard — fixed in `6b30d2c`
+  with 11 tests. The award now depends on a real unlocked transition, not on the request.
+- Do **not** re-wire `/achievements` or `/inbox` to their APIs — done in `fa43bd0`.
+  Do not reintroduce a mock fallback there; that fallback was the defect.
+- Do **not** re-audit whether the achievements/leaderboard backends exist — they do,
+  with schema in `db/migrations/068_user_profile_and_gamification.sql`. Note
+  `apps/web/db/migrations/` is the real path: `apps/web/db/` also holds loose
+  `.sql` files, and a non-recursive search of the parent **misses the migrations**.
+- Do **not** enable the inbox message composer without an explicit product decision —
+  it triggers real outbound SMS/email.
 - Do **not** re-implement/rework the sign-in pre-hash cost guard — deployed and measured.
 - Do **not** re-investigate the opennextjs chunk-loading cause of the homepage 500 — disproven.
 - Do **not** re-run the full 3013-test suite for an isolated change. It takes ~6
