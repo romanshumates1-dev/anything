@@ -76,6 +76,11 @@ export async function GET() {
         icon: a.icon,
         progress: a.progress,
         maxProgress: a.max_progress,
+        // `unlocked` is sent explicitly so the client never has to infer state
+        // from `unlocked_at`. An unlocked row may legitimately carry a null
+        // timestamp, and inferring "locked" from a missing date would silently
+        // under-count a user's real progress.
+        unlocked: Boolean(a.unlocked),
         unlockedAt: a.unlocked_at?.toISOString() || null,
       })),
       summary: {
@@ -102,9 +107,28 @@ export async function POST(request: Request) {
   try {
     const { achievementKey, progress, unlock } = await request.json();
 
-    if (!achievementKey) {
+    if (!achievementKey || typeof achievementKey !== 'string') {
       return NextResponse.json({ error: 'Achievement key required' }, { status: 400 });
     }
+
+    // Progress arrives from the wire, so it is validated rather than trusted.
+    // `NaN`, `'lots'`, `Infinity` and `-5` must never reach the ledger: the
+    // upsert below uses GREATEST() for monotonicity, which quietly defeats a
+    // malformed value rather than rejecting it.
+    if (progress !== undefined && progress !== null) {
+      if (typeof progress !== 'number' || !Number.isFinite(progress)) {
+        return NextResponse.json({ error: 'Progress must be a finite number' }, { status: 400 });
+      }
+      if (progress < 0) {
+        return NextResponse.json({ error: 'Progress cannot be negative' }, { status: 400 });
+      }
+    }
+
+    // Set V: the same gate GET uses. POST was ungated, so a user who had turned
+    // gamification off could still mint progress through a direct call — the
+    // setting was enforced on display but not on write.
+    const disabled = await requireGamificationEnabled(session.userId);
+    if (disabled) return disabled;
 
     // Get achievement definition
     const [achievement] = await sql`
@@ -115,37 +139,91 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Achievement not found' }, { status: 404 });
     }
 
-    // Upsert user achievement
-    const shouldUnlock = unlock || (achievement.max_progress && progress >= achievement.max_progress);
+    const maxProgress: number | null = achievement.max_progress ?? null;
+    const requested = typeof progress === 'number' ? Math.floor(progress) : 0;
+    // Clamping rather than rejecting: a caller that overshoots has still
+    // satisfied the achievement, and refusing the write would leave a genuinely
+    // earned unlock unwritable.
+    const clamped = maxProgress === null ? requested : Math.min(requested, maxProgress);
+    const shouldUnlock = Boolean(unlock) || (maxProgress !== null && clamped >= maxProgress);
 
-    await sql`
-      INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, unlocked_at)
-      VALUES (
-        ${session.userId},
-        ${achievement.id},
-        ${progress || 0},
-        ${shouldUnlock || false},
-        ${shouldUnlock ? new Date() : null}
+    // ONE statement decides whether this call is the one that unlocks.
+    //
+    // The defect this replaces paid out whenever the REQUEST said `unlock`, not
+    // when the row actually transitioned, so repeating one request credited the
+    // same achievement's points indefinitely from an endpoint any authenticated
+    // user can call. `was_unlocked` is captured from the pre-upsert row and
+    // combined with the stored result, so the payout is a consequence of state
+    // rather than of intent.
+    //
+    // GREATEST/OR/COALESCE keep progress monotonic and preserve the original
+    // unlock timestamp, so a lower or replayed progress value cannot rewind a
+    // record or restamp it.
+    //
+    // KNOWN LIMIT, stated rather than hidden: two callers racing on an
+    // achievement that has NEVER been touched could both read `was_unlocked =
+    // false` and both be credited. Closing that needs the award to live in a
+    // stored function (as migration 088 does for AI credits) or a points ledger
+    // keyed by unlock event. It is not fixed here, and this comment is the
+    // record of it. Every sequential repeat — the actual exploit — is exact.
+    const [row] = await sql`
+      WITH prev AS (
+        SELECT unlocked AS was_unlocked
+        FROM user_achievements
+        WHERE user_id = ${session.userId} AND achievement_id = ${achievement.id}
+      ),
+      upsert AS (
+        INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, unlocked_at)
+        VALUES (
+          ${session.userId},
+          ${achievement.id},
+          ${clamped},
+          ${shouldUnlock || false},
+          ${shouldUnlock ? new Date() : null}
+        )
+        ON CONFLICT (user_id, achievement_id) DO UPDATE SET
+          progress = GREATEST(user_achievements.progress, EXCLUDED.progress),
+          unlocked = user_achievements.unlocked OR EXCLUDED.unlocked,
+          unlocked_at = COALESCE(user_achievements.unlocked_at, EXCLUDED.unlocked_at),
+          updated_at = NOW()
+        RETURNING progress, unlocked
       )
-      ON CONFLICT (user_id, achievement_id) DO UPDATE SET
-        progress = GREATEST(user_achievements.progress, EXCLUDED.progress),
-        unlocked = user_achievements.unlocked OR EXCLUDED.unlocked,
-        unlocked_at = COALESCE(user_achievements.unlocked_at, EXCLUDED.unlocked_at),
-        updated_at = NOW()
+      SELECT
+        upsert.progress AS progress,
+        upsert.unlocked AS unlocked,
+        (COALESCE(prev.was_unlocked, false) = false AND upsert.unlocked) AS just_unlocked
+      FROM upsert
+      LEFT JOIN prev ON true
     `;
 
-    // If unlocked, update user points
-    if (shouldUnlock) {
+    const unlocked = Boolean(row?.unlocked ?? shouldUnlock);
+    // Award ONLY on a real transition. A replayed or already-unlocked write
+    // falls through here with just_unlocked = false and adds nothing.
+    const justUnlocked = Boolean(row?.just_unlocked);
+    const pointsAwarded = justUnlocked ? achievement.points : 0;
+
+    // If unlocked by THIS call, update user points
+    if (justUnlocked) {
+      // INSERT..ON CONFLICT, not a bare UPDATE: `user_stats` has no row for a
+      // user until something creates one, and this endpoint was the only thing
+      // that did. A bare UPDATE would match zero rows and silently award nothing
+      // to exactly the newest users. The increment stays guarded by
+      // `justUnlocked`, so the upsert cannot become a second payout path.
       await sql`
         INSERT INTO user_stats (user_id, points)
         VALUES (${session.userId}, ${achievement.points})
         ON CONFLICT (user_id) DO UPDATE SET
-          points = user_stats.points + ${achievement.points},
+          points = COALESCE(user_stats.points, 0) + ${achievement.points},
           updated_at = NOW()
       `;
     }
 
-    return NextResponse.json({ success: true, unlocked: shouldUnlock });
+    return NextResponse.json({
+      success: true,
+      unlocked,
+      progress: row ? row.progress : clamped,
+      pointsAwarded,
+    });
   } catch (error) {
     console.error('[ACHIEVEMENTS] Error updating achievement:', error);
     return NextResponse.json({ error: 'Failed to update achievement' }, { status: 500 });
