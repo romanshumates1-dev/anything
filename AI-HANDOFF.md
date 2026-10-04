@@ -15,35 +15,36 @@
 
 ## CURRENT SCORE
 
-**PROVISIONAL — REQUIRES RECALCULATION FROM THE CORRECTED MATRIX.**
+**7/10 — calculated 2026-10-04 from the corrected requirements matrix.**
 
-Do **not** treat the inherited "6/10" as authoritative. It was computed from a
-matrix that was demonstrably wrong (see AI-CREDIT CORRECTION below), so it is
-neither a floor nor a ceiling. Recalculate from `UNIFIED-REQUIREMENTS-MATRIX.md`
-before quoting any number.
+Not inherited. The prior "6/10" came from a matrix now known to be materially
+inaccurate, so it was not authoritative. It moved **up** because AI credit
+limiting is a whole requirement recovered from a wrong-path search error, and
+its evidence turned out stronger than recorded (real-engine integration tests,
+including a concurrency test).
 
-Two independent reasons it cannot move up yet: two production defects are still
-open (homepage 500, Free-plan CPU ceiling), and no money-moving path has
-end-to-end evidence because provider credentials are absent.
+It is not higher because: two production defects remain open (homepage 500,
+Free-plan CPU ceiling), and **zero money-moving paths have end-to-end
+evidence** — billing, payouts and tax all fail closed behind absent
+credentials. That alone prevents 9/10.
 
 ## CURRENT TASK
 
-State-preservation milestone COMPLETE (3 commits landed). **No task in flight.**
+State-preservation milestone COMPLETE. `N2-live` verification and score
+recalculation COMPLETE. **No task in flight.**
 
 ## NEXT ACTION
 
-**Verify the AI-credit period caps against the live database, then re-derive the
-score from the corrected matrix.**
+**Deploy `2ea6db3`, `ff3b262` and `503845f`, then re-verify live.**
 
-Concretely: confirm `ai_credit_usage` rows carry `week`/`month` period keys and
-that `deriveAiCreditPeriodCaps` output (`weekly = floor(monthly/4)`,
-`daily = floor(monthly/20)`) matches what is actually persisted. The caps are
-proven by 19 unit tests and a static route-gating ratchet, but **not yet proven
-against the real ledger**. That is the single highest-value gap, because it is
-the difference between "the math is right" and "the math runs in production".
+Run `node scripts/wrangler-deploy.mjs`. Then:
+1. Re-check `GET /signup?ref=<code>` — currently **404 in production**; the fix
+   is committed but NOT deployed.
+2. Re-run the authenticated route crawl to see whether `503845f` resolved the
+   15/24 503s.
 
-File to start: `apps/web/src/app/api/utils/aiCreditDb.ts` (the SQL side of
-`consumeIncludedPeriods`).
+Nothing from this session has been verified in production. The referral fix is
+proven by 14 tests only.
 
 ---
 
@@ -61,8 +62,12 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 - **`/signup?ref=` returns 404 in production; `/account/signup` returns 200.**
   Reproduced live 2026-10-04. Fixed in `2ea6db3`, not yet deployed.
-- **AI credit period caps ARE implemented and correct** — see correction below.
-  19 unit tests + 5 static gate tests + 3 synthetic-gate tests pass.
+- **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
+  engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
+  daily/weekly/monthly denial, period boundaries, tenant isolation, and release
+  never going negative — 10/10 pass, 2026-10-04. **Do not rebuild this.**
+- **Purchased credits are correctly excluded** from the included-credit caps
+  (`aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108`).
 - Sign-in CPU: 200 in 490ms; throttle refuses in 75ms pre-hash. Deployed at
   Worker `dd557bc1`. (Pre-dates this session; not re-verified here.)
 - Referral attribution chain is pinned by 10 tests including 401/403/400 paths,

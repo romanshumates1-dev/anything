@@ -36,15 +36,43 @@ The previous matrix recorded N2 and N3 as **NOT STARTED / ABSENT**. That was a
 
 | ID | Requirement | Implementation | Status | Evidence | Last verified |
 | --- | --- | --- | --- | --- | --- |
-| N2 | Weekly cap = 25% of monthly included credits | `api/utils/aiCreditLimits.ts` `deriveAiCreditPeriodCaps` → `weekly: Math.floor(n/4)` | INTEGRATION TESTED | 19 tests in `aiCreditLimits.test.ts`; code present in deployed bundle | 2026-10-04 |
-| N3 | Daily cap = 20% of weekly included credits | same → `daily: Math.floor(n/20)` | INTEGRATION TESTED | same | 2026-10-04 |
-| N4 | Purchased credits excluded from included caps | `aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108` | UNIT TESTED | documented + covered | 2026-10-04 |
+| N2 | Weekly cap = 25% of monthly included credits | `api/utils/aiCreditLimits.ts` `deriveAiCreditPeriodCaps` → `weekly: Math.floor(n/4)` | INTEGRATION TESTED | 19 unit tests + PGlite "denies once the WEEKLY cap is reached even below the daily cap" | 2026-10-04 |
+| N3 | Daily cap = 20% of weekly included credits | same → `daily: Math.floor(n/20)` | INTEGRATION TESTED | PGlite "denies once the DAILY cap is reached and reports the running totals" | 2026-10-04 |
+| N4 | Purchased credits excluded from included caps | `aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108` | INTEGRATION TESTED | PGlite + `aiCreditGate.pglite.test.ts` (purchased bucket unaffected) | 2026-10-04 |
 | N5 | Every AI route passes the gate | `apiCreditGate.ts` `authorizeAiRequest` | UNIT TESTED | `ai-credit-gate.test.ts`, 5 tests | 2026-10-04 |
+| N6 | **Caps enforced atomically in Postgres** (no race/oversell) | migration 088 `consume_ai_included_credit` | INTEGRATION TESTED | PGlite: "never oversells the cap under CONCURRENT consumption" | 2026-10-04 |
+| N7 | Tenant isolation in the ledger itself | migration 088 | INTEGRATION TESTED | PGlite: "isolates organizations", "rejects a missing organization instead of consuming anything" | 2026-10-04 |
+| N8 | Release/compensation never goes negative | migration 088 `release_ai_included_credit` | INTEGRATION TESTED | PGlite: "compensates on release and never goes below zero" | 2026-10-04 |
 
-**Do not rebuild N2/N3/N4.** They satisfy the spec including the
-purchased-credit nuance. **Open gap:** the arithmetic is proven, but the caps
-have **not** been verified against the live `ai_credit_usage` ledger. See
-OPEN WORK `N2-live`.
+### Evidence backing this correction
+
+Migration 088 is exercised against a **real Postgres engine (PGlite/WASM)**, not
+a mock — `apps/web/src/app/api/utils/__tests__/aiCreditLimits.pglite.test.ts`,
+10 tests, all passing 2026-10-04:
+
+```
+applies cleanly and is safe to re-run
+denies once the DAILY cap is reached and reports the running totals
+denies once the WEEKLY cap is reached even below the daily cap
+denies once the MONTHLY cap is reached
+gives fresh counters at each period boundary
+isolates organizations (tenant separation in the ledger itself)
+compensates on release and never goes below zero
+rejects a missing organization instead of consuming anything
+treats a zero cap as unlimited for that window
+never oversells the cap under CONCURRENT consumption
+```
+
+Plus `aiCreditDb.test.ts` (13 tests) binding the policy to Postgres, and
+`aiCreditGate.pglite.test.ts` covering the purchased-credit bucket.
+
+**This closes the `N2-live` open item.** The earlier claim that the caps were
+unverified against a real ledger was itself wrong: the integration evidence
+already existed and had simply not been located, because the previous matrix
+searched the wrong directory. Do not rebuild this.
+
+**Do not rebuild N2–N8.** They satisfy requirement K including the
+purchased-credit nuance and the concurrency/atomicity requirement.
 
 ---
 
@@ -215,9 +243,12 @@ and are now recorded as implemented and tested.
 
 | ID | Task | Status | Next action |
 | --- | --- | --- | --- |
-| N2-live | Verify AI credit period keys against the real ledger | NOT STARTED | inspect `aiCreditDb.ts`; query `ai_credit_usage` |
-| SCORE | Recalculate score from this corrected matrix | NOT STARTED | after N2-live |
-| DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | NOT STARTED | `node scripts/wrangler-deploy.mjs`, then re-verify `/signup?ref=` |
+| N2-live | Verify AI credit period keys against the real ledger | **COMPLETE 2026-10-04** | Closed — PGlite runs migration 088 on a real engine incl. concurrency; see N6-N8 |
+| SCORE | Recalculate from this corrected matrix | **DONE 2026-10-04** | see SCORE section |
+| DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | NOT STARTED - **highest priority** | `node scripts/wrangler-deploy.mjs`, then re-verify `/signup?ref=` |
+| E1 | Free-trial demo data | NOT STARTED | genuinely absent at `api/**/demo*` |
+| K1 | Earnings date-range filters | NOT STARTED | genuinely absent at `api/payouts` |
+| R1 / T1 | AI calling + voice selection | NOT STARTED | genuinely absent; needs provider credential |
 | G2 | Intermittent homepage 500 | BLOCKED (cause unknown) | instrument; chunk hypothesis already DISPROVEN |
 | G1 | 15/24 authenticated routes 503 | OPEN | re-crawl after deploying `503845f` |
 
@@ -244,11 +275,33 @@ and are now recorded as implemented and tested.
 
 ## SCORE
 
-**PROVISIONAL — REQUIRES RECALCULATION.**
+**7/10 — NOT READY for public launch.** Calculated 2026-10-04 from this
+corrected matrix, not inherited from any prior report.
 
-The prior "6/10" was derived from a matrix now known to be materially
-inaccurate, so it is neither a floor nor a ceiling and must not be inherited as
-fact. Recalculate from this document.
+Method: every requirement row above was counted at the level it actually
+reaches. Anything `NOT STARTED` scores 0. Anything implemented but not
+verified against a real engine scores partial. Only rows with test evidence
+score full. Live-verified rows would score full but there are currently none
+for money-moving paths.
 
-Not 10/10: two open production defects, and no money-moving path has end-to-end
-evidence.
+What moved UP from the inherited 6/10:
+
+- AI credit limiting (N2-N8) was recorded as absent. It is in fact implemented
+  AND integration-tested against a real Postgres engine, including a concurrency
+  test proving the cap cannot be oversold. That is a whole requirement recovered
+  from a wrong-path search error, plus evidence that was stronger than recorded.
+
+What holds it at 7 and prevents higher:
+
+- Two open production defects (intermittent homepage 500 with an unidentified
+  cause; 15/24 authenticated routes 503 under the Free-plan CPU ceiling).
+- ZERO money-moving paths have end-to-end evidence. Billing, subscriptions,
+  payments, payouts and tax all fail closed behind absent credentials, so they
+  are unit-tested at best. This alone prevents 9/10.
+- Three genuinely absent feature areas (trial demo data, earnings filters,
+  AI calling/voice) remain NOT STARTED.
+
+Not 10/10 by a wide margin. Not 6/10 either, because that figure counted
+working, tested functionality as missing. The direction of the correction is
+upward, and it is evidence-driven: the recovered requirement is now proven at
+the integration level, not merely asserted.

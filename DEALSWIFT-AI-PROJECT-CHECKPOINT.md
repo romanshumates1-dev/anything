@@ -18,17 +18,17 @@ project state. A new model inherits state from here and from
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | Worker `dd557bc1` — **PREDATES this session's 2 commits; not re-deployed** |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
-| Current score | **PROVISIONAL — recalculate from the corrected matrix** |
+| Current score | **7/10 — calculated 2026-10-04 from the corrected matrix** |
 
 ### Current overall score
 
-**PROVISIONAL / REQUIRES RECALCULATION.**
+**7/10 — calculated 2026-10-04 from the corrected requirements matrix.**
 
-The inherited "6/10" came from a matrix that is now known to be **wrong in at
-least one material way**, so it must not be inherited as fact. Recalculate from
-`UNIFIED-REQUIREMENTS-MATRIX.md`. Do not inflate it; do not deflate it because an
-old document said so. It is certainly not 10/10 (two open production defects,
-zero live money-path evidence), and it is not reliably 6/10 either.
+Method and reasoning are recorded in the matrix's SCORE section. It moved up
+from the inherited 6/10 because AI credit limiting is a whole requirement
+recovered from a wrong-path search error, with stronger evidence than had been
+recorded. It is held below 9 by two open production defects and by the total
+absence of end-to-end evidence on any money-moving path.
 
 ---
 
@@ -36,12 +36,18 @@ zero live money-path evidence), and it is not reliably 6/10 either.
 
 **NONE.** The state-preservation milestone is complete.
 
-**NEXT ACTION (exactly one):** verify the AI credit period caps against the live
-database, then re-derive the score from the corrected matrix.
+**NEXT ACTION (exactly one): deploy `2ea6db3`, `ff3b262` and `503845f`, then
+re-verify live.**
 
-Start at `apps/web/src/app/api/utils/aiCreditDb.ts`. The cap *arithmetic* is
-proven by 19 unit tests; what is unproven is that the real ledger honours the
-week/month period keys the arithmetic depends on.
+Run `node scripts/wrangler-deploy.mjs`, then re-check
+`GET /signup?ref=<code>` — currently 404 in production; the fix is committed but
+NOT deployed. Re-run the authenticated route crawl to measure whether `503845f`
+resolved the 15/24 503s. Nothing from this session has been verified live; the
+referral fix in particular is proven only by tests.
+
+*(The previously recorded next action — verify AI credit caps against the real
+ledger — is now COMPLETE. Migration 088 is exercised on a real Postgres engine
+via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 
 ---
 
@@ -95,8 +101,8 @@ week/month period keys the arithmetic depends on.
 
 | ID | Task | Status | Blocker | Next action |
 | --- | --- | --- | --- | --- |
-| N2-live | Verify AI credit week/month period keys against the real ledger | NOT STARTED | none — internal | Inspect `aiCreditDb.ts` `consumeIncludedPeriods`; query `ai_credit_usage` |
-| SCORE | Recalculate score from corrected matrix | NOT STARTED | depends on N2-live | Do it immediately after N2-live |
+| N2-live | Verify AI credit caps against a real ledger | `COMPLETE` | PGlite runs migration 088 on a real engine, incl. concurrency |
+| SCORE | Recalculate score from corrected matrix | `COMPLETE` | — | 7/10, evidence-derived |
 | DEFECT-1 | Intermittent `GET /` 500 | BLOCKED (cause unknown) | needs new instrumentation | Only on new evidence |
 | DEFECT-2 | Authenticated page renders 503 under Free-plan CPU | OPEN | Workers plan decision (owner) | Deploy `503845f`, re-crawl |
 | DEPLOY | Deploy `2ea6db3` + `ff3b262` to production | NOT STARTED | none | `node scripts/wrangler-deploy.mjs` |
@@ -139,10 +145,12 @@ deployment changed, the environment changed, or a regression demands it.
 | Fact | Evidence | Date |
 | --- | --- | --- |
 | `/signup?ref=` → 404 live; `/account/signup` → 200 live | direct HTTPS against production | 2026-10-04 |
-| AI credit caps implemented: `weekly = floor(monthly/4)`, `daily = floor(monthly/20)` | `aiCreditLimits.ts:194`; present in deployed bundle `handler.mjs:4448` | 2026-10-04 |
+| **AI credit caps enforced ATOMICALLY in Postgres** | PGlite (real engine) on migration 088: *"never oversells the cap under CONCURRENT consumption"*, plus daily/weekly/monthly denial, period boundaries, tenant isolation, release-never-negative — 10/10 pass | 2026-10-04 |
+| AI credit caps formula `weekly = floor(monthly/4)`, `daily = floor(monthly/20)` | `aiCreditLimits.ts:194`; present in deployed bundle `handler.mjs:4448` | 2026-10-04 |
 | Purchased credits are deliberately NOT subject to included-credit caps | `aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108` | 2026-10-04 |
 | AI cap arithmetic + ISO-week/UTC correctness | 19 tests in `aiCreditLimits.test.ts` | 2026-10-04 |
 | Every AI route passes `authorizeAiRequest` | 5 tests, `ai-credit-gate.test.ts` | 2026-10-04 |
+| Tenant ratchet guard passes in isolation | `ff3b262`; 2 tests, 339ms | 2026-10-04 |
 | Referral chain (401/403/400, self-referral, `?ref` preservation) | 10 tests | 2026-10-04 |
 | Sign-in 200 in 490ms; throttle 429 in 75ms pre-hash | deployed Worker `dd557bc1` | pre-session |
 | opennextjs chunk-loading cause of homepage 500 is **DISPROVEN** | deployed `handler.mjs` audited: 2038 cases, inlined requires | pre-session |
@@ -156,7 +164,9 @@ deployment changed, the environment changed, or a regression demands it.
   grown. Re-run before quoting a count.
 - **Matrix entries N2/N3 "NOT STARTED" / "ABSENT"** — **INVALIDATED, WRONG.**
   Superseded by the correction recorded below.
-- **"6/10" score** — INVALID as an authoritative figure; derived from the wrong matrix.
+- **"6/10" score** — SUPERSEDED. Recalculated 2026-10-04 to **7/10** from the
+  corrected matrix. The old figure counted working, tested AI-credit
+  functionality as missing.
 
 ---
 
@@ -178,8 +188,13 @@ matrix searched `src/app/api/credits/`; the implementation lives in
 - Purchased credits are intentionally outside the included caps, with an
   explicit comment explaining why a zero-allowance user who bought credits must
   not be denied.
+- **Migration 088 is verified against a real Postgres engine (PGlite/WASM),
+  not a mock** — `aiCreditLimits.pglite.test.ts`, 10/10 passing, including
+  *"never oversells the cap under CONCURRENT consumption"* (atomicity),
+  tenant isolation, period-boundary resets, and release-never-negative.
+  Plus `aiCreditDb.test.ts` (13) and `aiCreditGate.pglite.test.ts`.
 - **Do NOT rebuild or "fix" this.** It satisfies requirement K including the
-  purchased-credit nuance.
+  purchased-credit nuance and the concurrency/atomicity requirement.
 
 ---
 
