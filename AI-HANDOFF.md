@@ -81,10 +81,14 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   already in `.open-next`. Running it after a code change ships stale artifacts
   *and reports success*. Always `yarn cf:build` first. This cost a full deploy
   cycle on 2026-10-04.
-- ⚠️ **`scripts/deployed-browser-qa.mjs` HANGS** (>10 min, flat CPU, no output;
-  killed 2026-10-04). Use `scripts/authenticated-console-check.mjs` instead — it
-  has a hard per-route timeout and found **no error boundaries and no uncaught
-  exceptions**.
+- ⚠️ **`scripts/deployed-browser-qa.mjs` HANGS** — and the cause is now understood.
+  It sweeps ~24 routes across two viewports with **no delay between routes**,
+  each allowing `domcontentloaded` 45s + `load` 20s + `networkidle` 12s. That is
+  exactly the burst pattern that trips the shared CPU ceiling, so the script was
+  very likely being throttled into its own long timeouts rather than being stuck
+  on a bug. **Do not re-run it against production as written.** Use
+  `scripts/authenticated-console-check.mjs` (hard per-route timeout, fewer
+  routes), and add cooldowns between navigations if you extend it.
 - ⚠️ **THE BINDING CONSTRAINT: burst load breaches the Free-plan CPU ceiling.**
   **Confirmed production incident:** three consecutive `GET /` returned
   **503 / Cloudflare 1102**, plus 503 on all four routes in a browser sweep;

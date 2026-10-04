@@ -167,6 +167,16 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
   render cost. The dashboard fan-out fix (`503845f`, 17 invocations → 1) proves
   that route is viable and is the pattern to follow.
 
+### `deployed-browser-qa.mjs` hangs — root cause identified, do not re-run as-is
+
+It sweeps ~24 routes across two viewports with **no delay between navigations**,
+each allowing `domcontentloaded` 45s + `load` 20s + `networkidle` 12s. That is
+precisely the burst shape that trips the shared CPU ceiling, so the script was
+almost certainly being throttled into its own long timeouts rather than hanging
+on a bug. Fix it by inserting cooldowns and lowering the per-route budgets before
+using it in anger; `scripts/authenticated-console-check.mjs` is the bounded
+alternative.
+
 ### Deploy script does not rebuild (SILENT FAILURE — fix before next release)
 
 - **Blocker:** `scripts/wrangler-deploy.mjs` spawns only `npx wrangler deploy`.
