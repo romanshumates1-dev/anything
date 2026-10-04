@@ -137,9 +137,29 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 - **Blocker:** no `APOLLO_API_KEY`. Route correctly returns a precise
   `APOLLO_NOT_CONFIGURED` 503 rather than faking success.
 
-### Free-plan CPU headroom
+### Free-plan CPU ceiling — this is the binding production constraint
 
 - **Blocker:** Workers plan choice — an **owner decision**, not engineering.
+- **Why it cannot be configured away:** `wrangler.jsonc` records that
+  `limits.cpu_ms` was tried on 2026-10-03 and Cloudflare **rejected the deploy**:
+  *"CPU limits are not supported for the Free plan."* The `limits` block is
+  deliberately absent and documented as load-bearing. There is no knob — only a
+  paid plan or less work per request.
+- **Evidence, measured 2026-10-04 against Worker `499ceb4c`:**
+  - Single requests are fast: authenticated pages 200 in **193–315ms**;
+    `/api/dashboard/summary` 964ms, **10/10 consecutive**.
+  - Burst traffic is not: a fast 4-route browser sweep returned **503 on all
+    four** routes.
+  - Under sustained testing the **public homepage itself returned 503 twice**,
+    then recovered to 200 after ~30s. So the ceiling can affect logged-out
+    visitors, not just authenticated ones.
+  - The pre-hash sign-in throttle works correctly: 429 at 66–78ms, refusing
+    before the ~98ms scrypt hash.
+- **Interpretation:** single-request performance is healthy. The defect is a
+  per-invocation CPU ceiling under concurrency, not a slow app.
+- **To resolve:** either move to a paid Workers plan, or keep reducing per-route
+  render cost. The dashboard fan-out fix (`503845f`, 17 invocations → 1) proves
+  that route is viable and is the pattern to follow.
 
 ### Deploy script does not rebuild (SILENT FAILURE — fix before next release)
 

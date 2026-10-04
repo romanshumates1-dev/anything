@@ -85,9 +85,12 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   killed 2026-10-04). Use `scripts/authenticated-console-check.mjs` instead — it
   has a hard per-route timeout and found **no error boundaries and no uncaught
   exceptions**.
-- ⚠️ **Burst load still breaches the CPU ceiling.** A fast 4-route browser sweep
-  503'd on all four routes while `/` and `/api/system/health` stayed 200. Single
-  requests are fast; sustained/concurrent load is not. Recovers after ~25s idle.
+- ⚠️ **THE BINDING CONSTRAINT: burst load breaches the Free-plan CPU ceiling.**
+  Single requests are healthy (pages 193–315ms; dashboard summary 10/10 clean).
+  Under sustained load the **public homepage itself returned 503 twice** before
+  recovering to 200 after ~30s — so this affects logged-out visitors too.
+  `limits.cpu_ms` is **rejected on the Free plan**, so it cannot be configured;
+  it can only be bought or avoided. **Owner decision.**
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release
