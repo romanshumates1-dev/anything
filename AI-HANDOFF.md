@@ -35,25 +35,42 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Browser-verify `/achievements` and `/inbox` on the deployed Worker, then continue
-the fabricated-data sweep on the remaining authenticated pages.**
+**Continue the fabricated-data sweep beyond `/achievements` and `/inbox`.**
+Those two are fixed, deployed and live-verified. The same defect class has not
+been swept repo-wide.
 
-1. Deploy `6b30d2c` + `fa43bd0` (bounded, no load testing).
-2. Confirm both pages render real rows, and that an account with no achievements
-   shows the empty state rather than mock data. This is the evidence that
-   downgrades the old V2 "LIVE VERIFIED" claim to settled.
-3. Continue the sweep: any other page that returns a hardcoded array or
-   `mock`/`sample` literal as a fallback. `/admin/*` was the only other place a
-   page-level `const mock…` appeared, so it is the next candidate.
+1. Search authenticated pages for **fallback** patterns specifically, not just
+   `const mock…`: `|| mock`, `?? mock`, `if (!res.ok) return`, `.length > 0 ? x
+   : y`, and hardcoded literals inside JSX (the contact panel's "Interested" /
+   "85" / "123 Main St" were literals, not an array, and a search for `mock`
+   would never have found them).
+2. `/admin/*` is the next candidate — it is the only other area where page-level
+   fixtures appeared.
+3. Verify each candidate by reading the page source and confirming it calls its
+   endpoint, then browser-verify with an authenticated session.
 
-**Explicitly NOT next, despite being genuinely absent:** affiliate programme,
-Flipper/Builder AI, and gamification crates/spin/battle-pass. A live points-farming
-vulnerability outranked all three; they remain unimplemented and unblocked.
+## LIVE-VERIFIED (authenticated, Worker `8b0da56b`)
+
+Verified 2026-10-04 with a real session (`hasSession: true`), single sequential
+browser run — no load testing, per the production safety rule.
+
+| Route | Status | Mock data | Console | Page errors | Error boundary |
+| --- | --- | --- | --- | --- | --- |
+| `/achievements` | 200 | **none** | 0 | 0 | none |
+| `/inbox` | 200 | **none** | 0 | 0 | none |
+| `/campaigns` | 200 | — | 0 | 0 | none |
+| `/lead-finder` | 200 | — | 0 | 0 | none |
+| `/settings/billing` | 200 | — | 0 | 0 | none |
+| `/dashboard` | **TIMEOUT 45s** | — | 0 | 0 | none |
+
+⚠️ **`/dashboard` still exceeds a 45s browser timeout** — pre-existing, unchanged
+by `6b30d2c`/`fa43bd0`, and consistent with the known Workers CPU ceiling. This is
+the strongest remaining symptom of that problem and is worth measuring next.
 
 ## CURRENT TASK
 
-Fabricated-data sweep — **COMPLETE for `/achievements` and `/inbox`**, awaiting
-browser verification. No other task in flight.
+Fabricated-data sweep — `/achievements` + `/inbox` **DONE and LIVE VERIFIED**;
+points-farming vulnerability fixed. Sweep of remaining pages is next.
 
 ## CURRENT TASK
 
@@ -67,7 +84,8 @@ authenticated page rendering are all COMPLETE.
 
 | Commit | What | Verification |
 | --- | --- | --- |
-| `fa43bd0` | `/achievements` + `/inbox` now render REAL data (were hardcoded mock rows); thread selects `body`; dead controls removed | 44/44 related suites; 9/9 endpoints.contract; typecheck + oxlint clean. **Not browser-verified** |
+| `0437912` | QA harness: creds no longer mangled by `cmd`; FATAL when logged out; mock-leak assertion added | **Live on Worker `8b0da56b`**: `/achievements` + `/inbox` 200, mockLeak=0, 0 console/page errors |
+| `fa43bd0` | `/achievements` + `/inbox` now render REAL data (were hardcoded mock rows); thread selects `body`; dead controls removed | 44/44 related suites; 9/9 endpoints.contract; typecheck + oxlint clean; live-verified above |
 | `6b30d2c` | Achievement points awarded exactly once (was repeatable by any caller); POST now gamification-gated; progress validated | **RED 8 failed/3 passed → GREEN 11/11**; 44/44 across achievements/conversations/leaderboard/gamification |
 | `ff3b262` | Tenant-isolation guard given an I/O timeout budget (fixed the suite's only failure) | 2 passed in 339ms; 27 passed across sibling guards |
 | `2ea6db3` | Referral share links pointed at the real signup route (`/signup` 404'd in production) | 14 passed; live 404 reproduced pre-fix |
@@ -190,6 +208,18 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   name.** `api/crm`, `api/contacts`, `api/v1/contacts` and `app/crm` all exist
   under names you would never guess. Directory search alone has produced a false
   negative every single time it was trusted.
+- ⚠️ **NEVER PASS QA CREDENTIALS VIA `cmd /c set VAR=value`.** cmd re-parses that
+  line, so Node received values that were not the ones in the file. This produced
+  a browser `401 Invalid email or password` **while a direct API call with the same
+  credentials returned 200** — indistinguishable from a dead production login.
+  Fixed in `0437912`: `authenticated-console-check.mjs` now reads
+  `$TEMP\qa-cred.json` inside Node. **Production sign-in is healthy** — verified
+  200, `hasSession: true`, redirect to `/dashboard`. Do not re-diagnose it.
+- ⚠️ **A CLEAN BROWSER SWEEP MEANS NOTHING IF THE SESSION WAS NOT REAL.** The same
+  script used to continue after sign-in failed, verifying every route logged out —
+  and unauthenticated pages render clean, so it reported tidy results. It now
+  prints `SESSION_PROBE` and a FATAL when `hasSession !== true`. Always read that
+  line before trusting any route result from it.
 - ⚠️ **THE MATRIX HAS PRODUCED TEN FALSE NEGATIVES *AND* FALSE POSITIVES.**
   False negatives (assumed absent, actually present) are recorded above.
   False positives — **code that exists, returns 200, and shows invented data** —

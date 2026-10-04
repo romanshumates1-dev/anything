@@ -13,10 +13,10 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `fa43bd0` — real-data fixes for `/achievements` + `/inbox`; achievement points guard in `6b30d2c` |
+| HEAD | `0437912` — QA harness fix; includes `fa43bd0` real-data fixes and `6b30d2c` points guard |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
-| Last known deployed version | **Worker `499ceb4c`** — deployed 2026-10-04 from commit `5c52120`; includes `2ea6db3`, `ff3b262`, `503845f`. LIVE VERIFIED. |
+| Last known deployed version | **Worker `8b0da56b`** — deployed 2026-10-04 from `6b30d2c` + `fa43bd0`. LIVE VERIFIED authenticated: `/achievements` and `/inbox` 200, **no mock data**, 0 console errors, 0 page errors, no error boundary. `/dashboard` still exceeds a 45s browser timeout (pre-existing). |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
 | Current score | **8.5/10** — see SCORE RATIONALE below | |
 
@@ -39,21 +39,26 @@ requirements were recovered from false negatives**: the CRM contacts UI (live
 200), the gamification XP/points **backend** (11 tests), and confirmation that
 the AI-credit work stands. **Ten false negatives have now been found.**
 
-**WITHDRAWN (2026-10-04, commit `fa43bd0`):** the "gamification XP — live 200"
-evidence in the earlier tally was **not valid**. `/achievements` returned 200
-while serving a hardcoded array and never calling its API. That page is now real
-but **not yet browser-verified**, so the requirement is recorded as
-UNIT TESTED, not LIVE VERIFIED. The score does not move in either direction
-from this withdrawal: the capability was already counted on backend evidence,
-and the page is now built. What changed is the *honesty of the evidence*, and
-that is recorded rather than scored.
+**WITHDRAWN, THEN RE-ESTABLISHED (2026-10-04, commits `fa43bd0`, `0437912`):**
+the original "gamification XP — live 200" evidence was **not valid**. `/achievements`
+returned 200 while serving a hardcoded array and never calling its API, so that
+200 certified nothing. The page is now real and **re-verified properly** — an
+authenticated session, on the deployed Worker, asserting the fabricated strings
+are absent from the rendered HTML, not merely that a request returned 200. The
+requirement is back at LIVE VERIFIED on evidence that can actually fail.
+
+The score itself does not move for this: the capability was already counted on
+backend evidence, and what changed is the *quality* of the evidence, not the
+number of satisfied requirements. Nothing was inflated to offset the correction
+and nothing was deflated to punish it.
 
 Still capped below 9:
 - No money-moving path has **live** evidence. Stripe is verified in **test mode**
   against the real API (52 tests + a real test-mode round-trip), but signed
   webhook delivery to the deployed Worker is unproven.
-- The public site 503s under sustained load (Cloudflare 1102); not configurable
-  on the Free plan.
+- **The public site 503s under sustained load** (Cloudflare 1102) and
+  **`/dashboard` still exceeds a 45s browser timeout** while authenticated. Same
+  root cause: the Workers CPU ceiling. Not configurable on the Free plan.
 - The intermittent homepage 500 remains unidentified.
 
 **10/10 is unreachable in this environment** — it needs the Stripe webhook
@@ -63,18 +68,22 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**Fabricated-data sweep.** `/achievements` and `/inbox` are fixed and unit
-tested (`fa43bd0`); the achievement points-farming vulnerability is fixed
-(`6b30d2c`). Awaiting browser verification on the deployed Worker.
+**Fabricated-data sweep.** `/achievements` and `/inbox` are fixed, deployed and
+LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement points-farming
+vulnerability is fixed and tested (`6b30d2c`).
 
-**NEXT ACTION (exactly one): browser-verify `/achievements` and `/inbox`, then
-continue the sweep for other pages returning hardcoded data.**
+**NEXT ACTION (exactly one): continue the fabricated-data sweep across the
+remaining authenticated pages.**
 
-This outranks the Workers CPU item, which is an owner decision and stays
-open. The CPU constraint is unchanged: a burst 4-route browser sweep returned
-503 on all four routes, while `GET /` and `GET /api/system/health` stayed 200.
-Single requests are fast (pages 193–315ms; `/api/dashboard/summary` 10/10 clean
-at 964ms); it is *sustained/concurrent* load that breaches the CPU ceiling.
+Search for **fallback** shapes, not just fixtures: `|| mock`, `?? mock`,
+`if (!res.ok) return`, `.length > 0 ? x : y`, and hardcoded literals inside JSX.
+The contact panel's "Interested" / "85" / "123 Main St" were bare literals — a
+search for `mock` would never have found them. `/admin/*` is the next candidate.
+
+This outranks the Workers CPU item, which is an owner decision and stays open.
+CPU constraint unchanged: a burst 4-route sweep returned 503 on all four routes
+while `GET /` and `GET /api/system/health` stayed 200, and `/dashboard` still
+exceeds a 45s browser timeout when authenticated.
 
 Before spending money on a plan upgrade, measure whether per-route render cost
 can be cut further — the dashboard fan-out fix already proved that route works.

@@ -264,7 +264,7 @@ and are now recorded as implemented and tested.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | V1 | GAMIFICATION ON/OFF setting | `utils/gamification.ts` + allowlist + `gamification.server.ts` | UNIT TESTED | commit `61fe673`; **write path gated in `6b30d2c`** (POST was ungated — see R4) | — |
-| V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`, server-side `summary`) + `app/achievements/page.tsx` | **UNIT TESTED — was a FALSE POSITIVE, corrected** | **The `/achievements` page never called the API**: it returned a hardcoded 20-row array after a fake `setTimeout(500)`. Fixed in `fa43bd0`. Prior "LIVE VERIFIED (200)" evidence is **INVALIDATED** — the 200 served mock data. 11 tests pass but tested only the setting, not the page | browser re-verification required |
+| V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`, server-side `summary`) + `app/achievements/page.tsx` | **LIVE VERIFIED** (was a FALSE POSITIVE, corrected then re-verified) | Fixed in `fa43bd0`; prior "LIVE VERIFIED (200)" **INVALIDATED** (page served a hardcoded array). **Re-verified properly** on Worker `8b0da56b` with an authenticated session: `/achievements` 200, mockLeak=0, 0 console errors, 0 page errors, no error boundary (`0437912`) | — |
 | V3 | Crates / spin wheel / battle pass / seasons / competitions | none after concept search of `api/*` + git history | NOT STARTED | genuinely absent (`spin_wheel\|battle_?pass\|crateOpen` = 0 hits in 1071 source files) | — |
 
 ## SET W — ACCESSIBILITY / SETTINGS
@@ -342,12 +342,31 @@ Both pages were reached from a requirement already marked verified.
 
 | ID | Requirement | Status | Root cause | Fix | Verification |
 | --- | ----------- | ------ | ---------- | --- | ------------ |
-| R1 | `/achievements` shows real progress | **FIXED, unit tested** | Page never called `GET /api/achievements`; returned a 20-row hardcoded array after `setTimeout(500)`. Fake points, fake 2024 unlock dates, a fabricated "$500,000 Platinum Club" tier, identical for every user | `fa43bd0` — real `fetch`, server `summary`, honest error/empty states | 44/44 related suites; typecheck+lint clean. **Not browser-verified** |
-| R2 | `/inbox` shows real conversations | **FIXED, unit tested** | `if (!res.ok) return mockConversations;` **and** `return data.length > 0 ? data : mockConversations;` — a brand-new account with zero conversations rendered four strangers' rows, and an outage looked identical to success | `fa43bd0` — real fetch, error state distinct from empty | as above |
+| R1 | `/achievements` shows real progress | **FIXED — LIVE VERIFIED** | Page never called `GET /api/achievements`; returned a 20-row hardcoded array after `setTimeout(500)`. Fake points, fake 2024 unlock dates, a fabricated "$500,000 Platinum Club" tier, identical for every user | `fa43bd0` — real `fetch`, server `summary`, honest error/empty states | Worker `8b0da56b`, authenticated: **200, mockLeak=0, 0 console/page errors, no error boundary** (`0437912`) |
+| R2 | `/inbox` shows real conversations | **FIXED — LIVE VERIFIED** | `if (!res.ok) return mockConversations;` **and** `return data.length > 0 ? data : mockConversations;` — a brand-new account with zero conversations rendered four strangers' rows, and an outage looked identical to success | `fa43bd0` — real fetch, error state distinct from empty | Worker `8b0da56b`, authenticated: **200, mockLeak=0**, clean |
 | R3 | Contact panel / composer truthful | **FIXED** | Hardcoded Stage "Interested", Lead Score 85, Property "123 Main St, Miami FL" for every conversation; Create Contract / Update Stage / Add Note had no handler | `fa43bd0` — real fields, inert buttons removed | as above |
 | R4 | Achievement points awarded once | **FIXED, 11 tests** | `POST` credited `user_stats.points` whenever the **request** said `unlock`, not on the actual locked→unlocked transition. Repeatable by any authenticated caller. POST was also **not** gated on the gamification setting (GET was), and `progress` was unvalidated | `6b30d2c` — single statement returns `just_unlocked`; award only on transition; POST gated; progress validated | RED 8 failed/3 passed → GREEN 11/11. **Documented residual:** two callers racing on a never-touched achievement could both be credited; closing it needs a stored function as migration 088 does for AI credits |
 | R5 | Thread transcript renders | **FIXED** | `body` and `channel` exist on `message_events` since migration 095 but were never selected | `fa43bd0` | as above |
 | R6 | Inbox composer | **DELIBERATELY DISABLED** | Composer had no handler. `POST /api/conversations/message` works but enqueues **real outbound SMS/email to real contacts** behind consent + AI-credit gates | Left `disabled` with a stated reason, not wired | Enabling sending is a **product decision**, not a side effect of this fix |
+| R7 | QA harness credential path | **FIXED** (`0437912`) | Credentials passed via `set VAR=value` inside `cmd /c` were mangled by cmd, so the browser POSTed sign-in and got `401 Invalid email or password` **while a direct API call with the same credentials returned 200**. The run then continued and verified every route while **logged out** | Creds read from `$TEMP/qa-cred.json` inside Node; a FATAL is printed when `hasSession !== true` | Verified: authenticated session reaches `/dashboard`; `/achievements` + `/inbox` clean |
+
+### Three ways a verification can be true and still worthless
+
+This cycle produced all three. They are recorded because each one *looks* like
+a result:
+
+1. **A 200 from a page that never made a request.** `/achievements` and `/inbox`
+   returned 200 while serving hardcoded arrays (R1, R2).
+2. **A clean sweep that was authenticated as nobody.** The browser check reported
+   tidy per-route results after sign-in silently failed, so every page was
+   verified logged out (R7).
+3. **A failing assertion that was itself wrong.** The first mock-leak check named
+   "Platinum Club" and "Revenue Machine", which are *real seeded rows* in
+   migration 068. The check was corrected, not the app.
+
+Before treating browser evidence as proof, confirm all three: the page issued
+its request, the session was real (`hasSession === true`), and the strings being
+asserted on actually exist nowhere in the database.
 
 ### Method note, and the mistake this cycle nearly repeated
 
