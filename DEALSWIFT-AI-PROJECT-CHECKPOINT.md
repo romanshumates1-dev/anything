@@ -38,14 +38,18 @@ absence of end-to-end evidence on any money-moving path.
 verification, API re-measurement and authenticated page verification are all
 COMPLETE.
 
-**NEXT ACTION (exactly one): get a browser crawl to complete, now that page
-routes render.**
+**NEXT ACTION (exactly one): raise the Workers CPU limit, or reduce per-invocation
+cost under burst.**
 
-`scripts/deployed-browser-qa.mjs` hung with flat CPU before legal acceptance was
-recorded, so its hang is unexplained rather than disproven. Re-run it now that
-`/dashboard`, `/campaigns`, `/lead-finder` and `/settings/billing` all return 200
-in 193–315ms. Its remaining value is **console errors, hydration failures and
-error boundaries**, which HTTP status codes alone cannot prove absent.
+This is now the single highest-value unblocked item, and it is an **owner
+decision**, not a code change. Evidence that it is the binding constraint: a
+burst 4-route browser sweep returned 503 on all four routes, while `GET /` and
+`GET /api/system/health` stayed 200 throughout. Single requests are fast
+(pages 193–315ms; `/api/dashboard/summary` 10/10 clean at 964ms); it is
+*sustained/concurrent* load that breaches the per-invocation CPU ceiling.
+
+Before spending money on a plan upgrade, measure whether per-route render cost
+can be cut further — the dashboard fan-out fix already proved that route works.
 
 *(The previously recorded next action — verify AI credit caps against the real
 ledger — is now COMPLETE. Migration 088 is exercised on a real Postgres engine

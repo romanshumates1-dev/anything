@@ -34,15 +34,17 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Give the QA account legal acceptance so authenticated page routes render, then
-re-run `scripts/deployed-browser-qa.mjs`.** All page routes currently 307 to
-`/legal/accept`; the crawl also hung >10 min with flat CPU.
+**Raise the Workers CPU limit, or reduce per-invocation render cost under burst.**
+This is the highest-value unblocked item and is an **owner decision** — the
+binding constraint is proven: a burst 4-route sweep 503'd while `/` and
+`/api/system/health` stayed 200. Measure whether render cost can be cut before
+paying for a plan upgrade.
 
 ## CURRENT TASK
 
-Deployment, live referral verification and the authenticated-API re-measurement
-are COMPLETE. **The Free-plan CPU ceiling is RESOLVED for APIs.** No task in
-flight beyond NEXT ACTION.
+Browser console verification COMPLETE — **no error boundaries, no uncaught
+exceptions.** Deployment, referral live verification, AI-credit verification and
+authenticated page rendering are all COMPLETE.
 
 ---
 
@@ -80,8 +82,12 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   *and reports success*. Always `yarn cf:build` first. This cost a full deploy
   cycle on 2026-10-04.
 - ⚠️ **`scripts/deployed-browser-qa.mjs` HANGS** (>10 min, flat CPU, no output;
-  killed 2026-10-04). Do not wait on it indefinitely — verify via direct
-  authenticated HTTP instead, then investigate the script separately.
+  killed 2026-10-04). Use `scripts/authenticated-console-check.mjs` instead — it
+  has a hard per-route timeout and found **no error boundaries and no uncaught
+  exceptions**.
+- ⚠️ **Burst load still breaches the CPU ceiling.** A fast 4-route browser sweep
+  503'd on all four routes while `/` and `/api/system/health` stayed 200. Single
+  requests are fast; sustained/concurrent load is not. Recovers after ~25s idle.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release
