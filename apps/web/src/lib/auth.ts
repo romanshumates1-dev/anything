@@ -499,6 +499,28 @@ export const auth = betterAuth({
   },
   advanced: {
     cookiePrefix: 'better-auth',
+    // Better Auth's built-in limiter resolves the client IP independently of
+    // the app's atomic pre-hash guard. Both must agree, or one bad actor can
+    // exhaust a bucket the other does not police. Mirror the trusted edge
+    // headers from `src/app/api/utils/clientIp.ts`, in the same trust order.
+    //
+    // Why only these headers: Better Auth's resolver FAILS CLOSED on a header
+    // carrying a multi-entry chain (with `trustedProxies` unset it accepts only
+    // a single address). On failure it does not skip the request - it keys
+    // every caller into ONE shared `no-trusted-ip` bucket for that path, which
+    // is worse than no limiter: one unauthenticated actor could lock out every
+    // real user. So every header listed here must be one the edge overwrites to
+    // a single value, and all supported edges must be present. Listing only
+    // `cf-connecting-ip` fixed Workers but left Vercel and the Docker/nginx
+    // deployment on that shared bucket.
+    //
+    // `x-forwarded-for` is deliberately absent: the client chooses everything
+    // to the left of the rightmost entry, which is the rate-limit bypass
+    // already fixed in clientIp.ts. The edge-controlled Vercel equivalent is
+    // `x-vercel-forwarded-for`.
+    ipAddress: {
+      ipAddressHeaders: ['cf-connecting-ip', 'x-real-ip', 'x-vercel-forwarded-for'],
+    },
     defaultCookieAttributes: {
       sameSite: 'none', // Required for iframes
       secure: true,
