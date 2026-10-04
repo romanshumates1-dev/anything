@@ -376,6 +376,64 @@ a genuinely empty account are indistinguishable — but that is an error-afforda
 gap, not this defect, and fixing all 19 is deliberately not bundled into this
 change. **Do not re-run this sweep.**
 
+## ⚠️ HOMEPAGE 500 — ROOT CAUSE MECHANISM IDENTIFIED (2026-10-04), not yet reproduced
+
+`TypeError: components.ComponentMod.handler is not a function` on intermittent
+`GET /`. **Still not reproduced** (18/18 clean below), so this is a mechanism
+derived from the deployed bundle, not an observed reproduction. Stated as such.
+
+### What the deployed bundle actually does
+
+`apps/web/.open-next/server-functions/default/apps/web/handler.mjs`, page-route
+renderer:
+
+    a1 = { ...E2, tree: K, handler: U2, routeModule: R, __next_app__: Q };
+    ...
+    return await components.ComponentMod.handler(handlerReq, handlerRes, {...})
+
+`handler` is assigned **explicitly** from `U2`, and the spread `{...E2}` is not
+the problem. `E2 = a2.i(44293)` — a **synchronous, inlined module load by
+numeric index**. So `components.ComponentMod.handler` is `undefined` if and only
+if `U2` is `undefined`, i.e. the page module did not load successfully. The call
+site then throws with no guard.
+
+Verified in the same bundle: **0** `require()` calls with relative or absolute
+filesystem paths; **574** `require("node:…")` builtin calls. This re-confirms the
+earlier finding that the chunk-loading hypothesis is wrong — there is no
+filesystem require to fail.
+
+### Why that points at memory, not code
+
+A synchronous inlined module load returning nothing, intermittently, on a
+Free-plan Worker, is the signature of the **128MB memory limit**, not of a
+missing file. The handler bundle is **26.4MB** of source on disk. CPU exhaustion
+(1102) and memory exhaustion (script error / handler-is-not-a-function) are
+different ceilings that both present as intermittent 5xx, and only the CPU one has
+been measured.
+
+This yields a **testable hypothesis** rather than a guess:
+
+1. Instrument `GET /` to record `wrangler`/runtime memory signals, or add a
+   guarded call so a failed module load returns a diagnosable error instead of a
+   `TypeError`.
+2. Compare peak memory for `/` against a lighter route under identical load.
+3. If memory is the binding constraint, application-level mitigation is
+   **bundle-splitting the homepage render path** — not a plan upgrade.
+
+### Reproduction attempts (all negative — do not repeat verbatim)
+
+| Target | Requests | Result |
+| --- | --- | --- |
+| `dealswift-app.romanshumates1.workers.dev/` | 12 sequential, ~0.9s apart | **12/12 = 200** |
+| `dealswiftautomation.com/` | 6 sequential, ~1.4s apart | **6/6 = 200** |
+
+Low volume only, per the standing production safety rule. A past session caused
+a genuine ~90-second outage by probing harder than this.
+
+**STATUS: mechanism identified, cause unconfirmed, fix not started.** Do not
+record this as fixed, and do not describe it as a memory problem until step 1
+above produces a measurement.
+
 ### Four ways a verification can be true and still worthless
 
 This cycle produced all four. They are recorded because each one *looks* like

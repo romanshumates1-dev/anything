@@ -98,15 +98,19 @@ The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
 are genuinely unmeasured rather than unbuilt.
 
-1. **Intermittent `GET /` 500** (`components.ComponentMod.handler is not a
-   function`). The opennextjs chunk-loading hypothesis was DISPROVEN. Do not
-   revisit it without new evidence. Reproduce in a preview Worker or
-   `workers.dev`, never by hammering the apex.
-2. **503 under sustained load** (Cloudflare 1102). Application-level mitigation
-   first — measure render cost in isolation and reduce per-invocation work —
-   then decide whether a paid plan is genuinely required. Record the measured
-   evidence either way, because "upgrade the plan" is currently an assumption,
-   not a finding.
+1. **Intermittent `GET /` 500** — **mechanism now identified** (2026-10-04). In
+   the deployed `handler.mjs`: `a1 = {...E2, tree:K, handler:U2, ...}` followed by
+   `await components.ComponentMod.handler(...)`. `handler` is assigned
+   *explicitly*, so it is undefined **iff `U2` is undefined** — i.e. the page
+   module (`E2 = a2.i(44293)`, a synchronous inlined load) failed to load. The
+   call is unguarded. Verified **0** relative/absolute `require()` calls (574
+   `node:` builtins), so the chunk hypothesis stays disproven.
+   **Still not reproduced:** 12/12 200 on workers.dev, 6/6 on the apex, low volume.
+   Leading hypothesis is the **128MB memory ceiling**, not CPU — unconfirmed.
+   Next step is instrumentation, not another reproduction attempt.
+2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
+   cost in isolation and mitigate in application code *before* concluding a plan
+   upgrade is required. That conclusion is currently an assumption, not a finding.
 
 **Never** reproduce load behaviour on the live apex: a previous session caused a
 genuine ~90-second production outage that way. Load experiments belong in an

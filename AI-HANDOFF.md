@@ -23,14 +23,15 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 Attack the two remaining **unmeasured** production defects (not unbuilt):
 
-1. **Intermittent `GET /` 500** — `components.ComponentMod.handler is not a
-   function`. Never reproduced in 40/40 controlled requests. The opennextjs
-   chunk-loading hypothesis was **DISPROVEN**; do not revisit without new
-   evidence. Reproduce in a preview Worker or `workers.dev`.
-2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation
-   render cost in isolation and mitigate in application code *before* concluding
-   a plan upgrade is required. That conclusion is currently an **assumption,
-   not a finding**.
+1. **Intermittent `GET /` 500** — mechanism identified: `handler` is explicitly
+   assigned (`a1={...E2,handler:U2}`), so it is undefined **iff the page module
+   failed to load**; the call is unguarded. Leading hypothesis is the **128MB
+   memory ceiling**, not CPU — unconfirmed. **Not reproduced** (12/12 workers.dev,
+   6/6 apex). Next step is instrumentation, not more probing.
+2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
+   cost in isolation and mitigate in application code *before* concluding a plan
+   upgrade is required. That conclusion is currently an **assumption, not a
+   finding**.
 
 Never load-test the live apex; a previous session caused a real ~90s outage.
 
