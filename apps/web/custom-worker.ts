@@ -63,8 +63,120 @@ type CronController = { cron: string; scheduledTime: number };
 
 type CronContext = { waitUntil(promise: Promise<unknown>): void };
 
+/**
+ * Fetch wrapper: the observation point the intermittent homepage-500
+ * investigation never had.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * This worker previously exported `fetch: handler.fetch` directly. Nothing
+ * observed a throw at the entry point, so an unhandled error inside the
+ * OpenNext handler — which is exactly what
+ * `TypeError: components.ComponentMod.handler is not a function` is — produced
+ * a bare 500 with:
+ *
+ *   - no log line, so nothing appeared in `wrangler tail`,
+ *   - no request identity, so an existing line could not be tied to a request,
+ *   - no distinction between "our bug" and "the platform killed the isolate",
+ *     which are indistinguishable from the outside.
+ *
+ * That silence is the single biggest reason the homepage-500 investigation
+ * stalled across several sessions: the failure left no evidence behind, so each
+ * attempt started from nothing.
+ *
+ * WHAT THIS DOES, PRECISELY
+ * -------------------------
+ * Only three things, all of them additive:
+ *
+ *   1. Logs a throw with enough identity to find it later (method, path, and
+ *      whether it looked like a resource-limit kill rather than a code bug).
+ *   2. Returns a well-formed 500 instead of letting the error escape the Worker.
+ *   3. Never sends the internal message to the client.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO
+ * ----------------------------------
+ * - It does not retry. The handler has no idempotency guarantee at this layer,
+ *   and a retry of a non-idempotent request could double-apply an effect.
+ * - It does not rebuild the response on the happy path. A successful response
+ *   is returned as the SAME object, so a streaming body or a `Set-Cookie` cannot
+ *   be lost in a path that is not under test.
+ * - It does not log request headers, bodies, or query strings. They carry
+ *   session cookies, tokens and PII.
+ */
+
+/** Short, stable marker so a tail line can be grepped. */
+const UNHANDLED_MARKER = '[worker:unhandled]';
+
+/**
+ * Cloudflare kills an isolate when it exceeds a memory or CPU ceiling. That
+ * surfaces here as a thrown error whose message is a platform string rather than
+ * anything from this codebase, and it is the difference between "investigate our
+ * code" and "this is a capacity problem". Worth one extra field in the log.
+ */
+function looksLikeResourceKill(err: unknown): boolean {
+  const text = (() => {
+    try {
+      return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } catch {
+      return '';
+    }
+  })().toLowerCase();
+  return (
+    text.includes('memory') ||
+    text.includes('exceeded') ||
+    text.includes('out of memory') ||
+    text.includes('worker exceeded resource limits') ||
+    text.includes('1102') ||
+    text.includes('internal error')
+  );
+}
+
+async function fetchWithObservability(
+  request: Request,
+  env: CronEnv,
+  ctx: CronContext
+): Promise<Response> {
+  try {
+    return await (handler.fetch as (r: Request, e: CronEnv, c: CronContext) => Promise<Response>)(
+      request,
+      env,
+      ctx as never
+    );
+  } catch (err) {
+    // Deliberately narrow: method + pathname + query KEY NAMES only. Never
+    // values — those can carry tokens or PII. Never headers or cookies.
+    let method = request.method;
+    let path = '/';
+    let queryKeys: string[] = [];
+    try {
+      const url = new URL(request.url);
+      path = url.pathname;
+      queryKeys = [...url.searchParams.keys()];
+    } catch {
+      // A malformed URL must not stop us logging the original failure.
+    }
+
+    console.error(
+      `${UNHANDLED_MARKER} ${method} ${path}` +
+        (queryKeys.length ? ` query_keys=${queryKeys.join(',')}` : '') +
+        ` suspected_resource_kill=${looksLikeResourceKill(err)}`,
+      err
+    );
+
+    // Generic body only. The real message stays in the log above; it can contain
+    // SQL, provider payloads, file paths or identifiers.
+    return new Response(
+      JSON.stringify({ error: 'Internal Server Error', reference: `unhandled_${Date.now().toString(36)}` }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      }
+    );
+  }
+}
+
 export default {
-  fetch: handler.fetch,
+  fetch: fetchWithObservability,
 
   async scheduled(event: CronController, env: CronEnv, ctx: CronContext) {
     const route = routeForCron(event.cron);
