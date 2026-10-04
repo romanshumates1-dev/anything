@@ -112,3 +112,10 @@ apps/web/e2e/.auth/
 /tc.cmd
 /ins.cmd
 /probe.cmd
+
+# Agent scratch + QA credentials. NEVER commit these.
+# .tmp-qa-creds.env holds a real production QA account password; .tmp-*.log
+# are session logs. Both are local scratch, not project state.
+.tmp-*.log
+.tmp-*.env
+.tmp-qa-creds.env

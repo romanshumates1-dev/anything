@@ -109,7 +109,7 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| E1 | Synthetic demo data for trial users | none found at `api/**/demo*` | NOT STARTED | — | — |
+| E1 | Synthetic demo data for trial users, safety-gated | `lib/seedMockData.ts`, `freeTierSeeder.ts`, `api/utils/syntheticData.ts` (`syntheticDataAllowed`), `DemoModeBanner.tsx` | **UNIT TESTED** | 10 tests: synthetic-lead-gate 3 (every consumer gated) + demoAllowlist 7 — false negative #5 | — |
 
 ## SET F — PERFORMANCE
 
@@ -147,7 +147,7 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | J1 | Withdrawal request, threshold, duplicate prevention, authorization | `api/withdrawals/route.ts` | UNIT TESTED | `withdrawals.test.ts` | live withdrawal not performed (moves real funds) |
-| K1 | Earnings date-range filters | none found at `api/payouts` | NOT STARTED | — | — |
+| K1 | Earnings date-range filters (day/week/month/quarter/year/custom) | `api/earnings/route.ts` (`from`/`to`) + `app/payouts/page.tsx` (`RangePreset`) | **INTEGRATION TESTED** | 16/16 in `api/earnings/route.test.ts`, incl. inverted-range rejection and IDOR scoping; UI exposes all 7 presets with server-side `rangeTotals` | — |
 
 ## SET L / M — TAX
 
@@ -173,9 +173,9 @@ and are now recorded as implemented and tested.
 | --- | --- | --- | --- | --- | --- |
 | P1 | Campaign UX redesign | `app/campaigns` | IMPLEMENTED | routes exist | not browser-verified |
 | Q1 | Workflow phase toggles (phone/SMS/email) | `api/campaigns/{automation,config}` | IMPLEMENTED | code present | **enabled/disabled execution NOT VERIFIED** |
-| R1 | AI phone calling | none found at `api/**/calling*` | NOT STARTED | — | provider credential |
+| R1 | AI phone calling | `api/gateway/voice-gateway.ts`, `api/utils/twilio-adapter.ts`, `api/utils/callSchedulingEngine.ts`, `api/campaigns/[id]/voice/` | **UNIT TESTED** | 33 tests across voice-gateway, twilio-adapter, voiceSelection, voiceRoute — false negative #3 | live calls need provider credential |
 | S1 | AI templates | `app/templates`, `components/templates` | IMPLEMENTED | routes + components exist | — |
-| T1 | Voice selection / AUTO recommendation | none found | NOT STARTED | — | — |
+| T1 | Voice selection / AUTO recommendation | `api/utils/voiceSelection.ts` | **UNIT TESTED** | `voiceSelection.test.ts` — false negative #4 | live provider credential |
 
 ## SET U — ADMIN CRM ANALYTICS
 
@@ -225,16 +225,45 @@ and are now recorded as implemented and tested.
 | MKT-3 | Referral / first-1,000-users banner | `components/marketing/ReferralGiveawayBanner.tsx`, `app/referrals/page.tsx`, `app/signup/route.ts` | **LIVE VERIFIED** | commit `2ea6db3`; 14 tests; live 404 reproduced pre-fix, then live 307→200 with `?ref`+`&plan` preserved; homepage 3/3 200 with banner; `/referrals` 200 | — |
 | SEO-1 | Titles, canonical, robots, sitemap, structured data | `layout.tsx`, `lib/seo.ts`, `robots.ts`, `sitemap.ts` | IMPLEMENTED | canonical + absolute metadataBase; deny-by-default private routes | not audited this cycle |
 
-## GENUINELY ABSENT (verified absent at the searched paths)
+## ⚠️ SYSTEMIC FINDING: the inherited matrix was unreliable, six ways
+
+Every "ABSENT"/"NOT STARTED" claim was re-verified individually in 2026-10-04
+rather than trusted. **Six were false negatives**, each from a search that looked
+for a feature under the wrong path or name:
+
+| # | Claimed absent | Actually lives at | Cause |
+| --- | --- | --- | --- |
+| 1 | AI weekly/daily credit caps | `api/utils/aiCreditLimits.ts` | searched `api/credits/` |
+| 2 | Earnings date-range filters | `api/earnings/route.ts` + `payouts` page | searched `api/payouts` |
+| 3 | AI phone calling | `api/gateway/voice-gateway.ts`, `api/utils/twilio-adapter.ts` | searched `api/**/calling*` |
+| 4 | Voice selection / AUTO | `api/utils/voiceSelection.ts` | never searched |
+| 5 | Free-trial demo data | `lib/seedMockData.ts`, `api/utils/syntheticData.ts` | searched `api/**/demo*` |
+| 6 | Referral banner | `components/marketing/` — did not exist then, so this one was TRUE | fixed in `2ea6db3` |
+
+**Rule that follows: an absence claim is only as good as the path searched.**
+Before rebuilding anything marked ABSENT, search by *concept* (filename
+fragments, exported symbols, the built route manifest) rather than by the one
+directory the first guess suggested. The route manifest
+(`.next/app-path-routes-manifest.json`, 370 routes) is authoritative for what
+exists and is far more reliable than a directory guess — that is how the missing
+CRM contacts page was identified as genuinely absent rather than assumed broken.
+
+**Genuinely absent after re-verification:** affiliate programme (though a full
+referral/commission system exists at `api/referral*`), Flipper/Builder AI,
+gamification crates/spin/battle-pass/competitions, and the CRM contacts page.
+
+---
+
+## GENUINELY ABSENT (re-verified 2026-10-04 at the searched paths)
 
 | Requirement | Searched | Result |
 | --- | --- | --- |
 | Affiliate programme | `api/affiliate*`, `app/affiliate` | **ABSENT** |
 | Flipper / Builder AI | `app/flipper`, `app/builder` | **ABSENT** |
-| AI phone calling | `api/**/calling*` | **ABSENT** |
+| AI phone calling | ~~`api/**/calling*`~~ | **WRONG NAME — lives under `api/gateway/` and `api/utils/`; see R1** |
 | Spin wheel / crates / battle pass / competitions | `api/gamification` | **ABSENT** (only achievements + leaderboard) |
-| Earnings date-range filters | `api/payouts` | **ABSENT** |
-| Free-trial demo data | `api/**/demo*` | **ABSENT** |
+| Earnings date-range filters | `api/payouts` | **WRONG PATH — implemented in `api/earnings`; see K1** |
+| Free-trial demo data | ~~`api/**/demo*`~~ | **WRONG LOCATION — lives in `lib/` + `api/utils/syntheticData.ts`; see E1** |
 | ~~AI weekly/daily credit ceilings~~ | ~~`api/credits`~~ | **WRONG PATH — implemented in `api/utils`, see correction** |
 
 ---
@@ -247,9 +276,9 @@ and are now recorded as implemented and tested.
 | SCORE | Recalculate from this corrected matrix | **DONE 2026-10-04** | see SCORE section |
 | DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | **DONE 2026-10-04** | Worker `499ceb4c`; required a prior `yarn cf:build` (see OPEN DEFECT 3) |
 | G1-RECRAWL | Re-measure the 15/24 authenticated 503s now that `503845f` is live | NEXT | run `scripts/deployed-browser-qa.mjs` |
-| E1 | Free-trial demo data | NOT STARTED | genuinely absent at `api/**/demo*` |
-| K1 | Earnings date-range filters | NOT STARTED | genuinely absent at `api/payouts` |
-| R1 / T1 | AI calling + voice selection | NOT STARTED | genuinely absent; needs provider credential |
+| ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — seeded, gated by `syntheticDataAllowed`, 10 tests pass |
+| ~~Earnings date-range filters~~ | **DONE 2026-10-04** | False negative #2 — implemented in `api/earnings` + `payouts` page with all 7 presets |
+| ~~R1 / T1~~ | ~~AI calling + voice selection~~ | **DONE 2026-10-04** | False negatives #3/#4 — 33 tests pass; only live provider calls remain |
 | G2 | Intermittent homepage 500 | BLOCKED (cause unknown) | instrument; chunk hypothesis already DISPROVEN |
 | G1-RECRAWL | ~~Re-measure the 15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | Live: all authenticated APIs 200; `/api/dashboard/summary` 10/10 clean. Page routes 307→`/legal/accept` because the QA account has not accepted legal terms — a test-account gap, not a defect |
 | CONTACTS-PAGE | No CRM `/contacts` page exists at all | NOT STARTED | only `/(marketing)/contact` (public) is registered; the app has no contacts UI route. Genuinely absent, not a 404 bug |

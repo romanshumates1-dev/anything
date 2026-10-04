@@ -140,11 +140,16 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## CRITICAL WARNINGS
 
-- **The old root matrix was WRONG and has been replaced.** If you find a claim
-  that AI credit ceilings are "ABSENT" / "NOT STARTED", it is the discarded
-  false negative. They ship in `src/app/api/utils/`, NOT `src/app/api/credits/`.
-  **A wrong-path grep caused this error — verify the path before believing an
-  absence claim.**
+- ⚠️ **THE INHERITED MATRIX WAS WRONG SIX TIMES.** Every "ABSENT" claim was
+  re-verified individually and six were false negatives, each from a wrong-path
+  or wrong-name search: AI credit caps, earnings date filters, AI calling, voice
+  selection, trial demo data, referral banner.
+  **Before rebuilding anything marked ABSENT, search by CONCEPT — filename
+  fragments, exported symbols, and the 370-route build manifest at
+  `.open-next/**/app-path-routes-manifest.json` — not by the first directory that
+  came to mind.** Full table of all six is in `UNIFIED-REQUIREMENTS-MATRIX.md`.
+  This is the highest-value lesson in the repository: it is what stops a
+  successor from rebuilding working, tested features.
 - The pre-existing `.tmp-*.log` files and `.tmp-qa-creds.env` are untracked
   scratch. **`.tmp-qa-creds.env` may contain credentials — never commit it and
   never print its contents.**
