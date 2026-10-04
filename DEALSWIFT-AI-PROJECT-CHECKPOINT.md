@@ -56,9 +56,9 @@ Still capped below 9:
 - No money-moving path has **live** evidence. Stripe is verified in **test mode**
   against the real API (52 tests + a real test-mode round-trip), but signed
   webhook delivery to the deployed Worker is unproven.
-- **The public site 503s under sustained load** (Cloudflare 1102) and
-  **`/dashboard` still exceeds a 45s browser timeout** while authenticated. Same
-  root cause: the Workers CPU ceiling. Not configurable on the Free plan.
+- **The public site 503s under sustained load** (Cloudflare 1102). Not
+  configurable on the Free plan. *(The related claim that `/dashboard` also
+  times out at 45s was a HARNESS BUG and is withdrawn — see below.)*
 - The intermittent homepage 500 remains unidentified.
 
 **10/10 is unreachable in this environment** — it needs the Stripe webhook
@@ -68,18 +68,28 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**Fabricated-data sweep — COMPLETE.** `/achievements` and `/inbox` fixed,
-deployed and LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement
-points-farming vulnerability fixed and tested (`6b30d2c`); all 76 authenticated
-pages swept by shape and **no further instances found**.
+**None in flight. Two investigations CLOSED.**
 
-**NEXT ACTION (exactly one): measure `/dashboard`'s authenticated render cost.**
+1. **Fabricated-data sweep — COMPLETE.** `/achievements` and `/inbox` fixed,
+   deployed and LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement
+   points-farming vulnerability fixed and tested (`6b30d2c`); all 76
+   authenticated pages swept by shape, **no further instances found**.
+2. **`/dashboard` "45s timeout" — DEFECT DISPROVEN (`f0074e2`).** It never
+   existed. Measured authenticated on Worker `8b0da56b`: HTTP **200**, DOM ready
+   **219ms**, content visible **548ms**, heading `Welcome back, QA Audit Bot`.
+   The cause was the QA harness waiting on `waitUntil: 'networkidle'`, which
+   never settles on an authenticated page (shell RSC prefetch, React Query
+   revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
+   product.** Endpoints behind it measured 83–405ms.
 
-It times out at 45s in a real browser with a real session, while the APIs behind
-it are fast (`/api/dashboard/summary` 200 in 964ms, 10/10 consecutive). That
-localises the cost to the **page render**, not the data fetch — which makes it
-fixable in application code rather than only by upgrading the plan. Measure in
-isolation (PGlite/local or a preview Worker) before changing anything.
+**NEXT ACTION (exactly one): run the full production gate at the current HEAD.**
+
+`6b30d2c`, `fa43bd0`, `0437912` and `f0074e2` each passed *targeted* suites, by
+design, per the change-based-reverification rule. Four commits and two deployed
+Workers have landed since the last full gate, and this is now a genuine
+milestone: authentication, billing-write, data-integrity and deployment-integrity
+changes in one batch. Run typecheck, lint, the full test suite, build, the
+authenticated browser check, and the contract/security suites at one commit.
 
 **Never** reproduce the 503 by hammering the live apex: a previous session caused
 a genuine ~90-second production outage that way. Load experiments belong in an

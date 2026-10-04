@@ -35,48 +35,56 @@ Deployment COMPLETE — Worker `499ceb4c` live, referral chain LIVE VERIFIED.
 
 ## NEXT ACTION
 
-**Measure `/dashboard`'s authenticated render cost.** The fabricated-data sweep
-is **COMPLETE — no further instances** (all 76 authenticated pages checked by
-shape, not by the word "mock"; see the matrix for exactly what was searched and
-what the 17 no-fetch pages turned out to be).
+**The `/dashboard` "45s timeout" defect DOES NOT EXIST. It was a harness bug,
+now disproven and corrected (`f0074e2`).**
 
-`/dashboard` is now the strongest remaining measurable defect:
+Measured on Worker `8b0da56b`, authenticated, real browser:
 
-- It **times out at 45s** in a real browser with a real session.
-- Single API calls behind it are fast (`/api/dashboard/summary` 200 in 964ms,
-  10/10 consecutive).
-- So the cost is in the **page render**, not the data fetch — which makes it
-  actionable in application code rather than only by buying a bigger plan.
+| Measurement | Value |
+| --- | --- |
+| HTTP status | **200** |
+| DOM ready | **219ms** |
+| Content visible (`h1`) | **548ms** |
+| Rendered heading | `Welcome back, QA Audit Bot` |
 
-Method: measure render cost in isolation first (PGlite/local or a preview
-Worker), establish what the dashboard actually queries and renders, and only then
-decide whether to optimise or escalate the plan. **Never** reproduce this by
-hammering the live apex — a previous session caused a real 90-second outage that
-way.
+The harness used `waitUntil: 'networkidle'`, which requires 500ms with no
+in-flight request. That never happens on an authenticated page — the shell
+prefetch RSC payloads, React Query revalidates, and onboarding components PATCH
+preferences on mount. **The instrument was wrong, not the product.**
+
+Behind it, every endpoint measured fast: `/api/system/health` 83ms,
+`/api/achievements` 132ms, `/api/conversations` 171ms, `/api/dashboard/summary`
+389–405ms.
+
+**Do not "fix" `/dashboard` performance.** There is no evidence of a defect.
+The corrected harness now reports `domReady` per route, so if the page ever does
+become slow it will show as a number rather than being masked.
 
 ## CURRENT TASK
 
-Fabricated-data sweep — **COMPLETE**. `/achievements` + `/inbox` fixed, deployed,
-live-verified; points-farming vulnerability fixed; 76-page sweep found nothing
-else. Next: `/dashboard` render cost.
+Fabricated-data sweep — **COMPLETE** (76 pages, no further instances).
+`/dashboard` investigation — **COMPLETE, defect disproven**.
 
 ## LIVE-VERIFIED (authenticated, Worker `8b0da56b`)
 
-Verified 2026-10-04 with a real session (`hasSession: true`), single sequential
-browser run — no load testing, per the production safety rule.
+`routes=6 clean=6 noisy=0` — the first genuinely clean authenticated run in this
+project (`f0074e2`). Single sequential browser run; no load testing, per the
+production safety rule.
 
-| Route | Status | Mock data | Console | Page errors | Error boundary |
-| --- | --- | --- | --- | --- | --- |
-| `/achievements` | 200 | **none** | 0 | 0 | none |
-| `/inbox` | 200 | **none** | 0 | 0 | none |
-| `/campaigns` | 200 | — | 0 | 0 | none |
-| `/lead-finder` | 200 | — | 0 | 0 | none |
-| `/settings/billing` | 200 | — | 0 | 0 | none |
-| `/dashboard` | **TIMEOUT 45s** | — | 0 | 0 | none |
+| Route | Status | DOM ready | Mock data | Console | Page errors | Boundary |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/dashboard` | 200 | 268ms | none | 0 | 0 | none |
+| `/campaigns` | 200 | 248ms | — | 0 | 0 | none |
+| `/lead-finder` | 200 | 298ms | — | 0 | 0 | none |
+| `/settings/billing` | 200 | 432ms | — | 0 | 0 | none |
+| `/achievements` | 200 | 206ms | **none** | 0 | 0 | none |
+| `/inbox` | 200 | 258ms | **none** | 0 | 0 | none |
 
-⚠️ **`/dashboard` still exceeds a 45s browser timeout** — pre-existing, unchanged
-by `6b30d2c`/`fa43bd0`, and consistent with the known Workers CPU ceiling. This is
-the strongest remaining symptom of that problem and is worth measuring next.
+`ERR_ABORTED` counts are **benign** and tracked separately: measured 19 API
+requests initiated / 5 aborted on `/dashboard`, **0 failures across 10s idle**,
+every aborted endpoint returning 200 on a direct call, and
+`/api/user/preferences` requested **twice** — the strict-mode double-mount
+signature. Real failures still count.
 
 ## CURRENT TASK
 
@@ -255,6 +263,15 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 ## DO NOT REPEAT
 
 - Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** "fix" `/dashboard` performance. **The 45s timeout defect never
+  existed** — it was the QA harness waiting on `networkidle` (`f0074e2`). Real
+  measurement: HTTP 200, DOM ready 219ms, content visible 548ms. The harness now
+  reports `domReady` per route, so genuine slowness would show as a number.
+- Do **not** treat `ERR_ABORTED` counts as failures. Measured: 19 API requests
+  initiated / 5 aborted on `/dashboard`, **0 failures in 10s idle**, every aborted
+  endpoint returning 200 directly, and `/api/user/preferences` requested twice —
+  the strict-mode double-mount signature. The harness separates `benignAborts`.
+  Timeouts, 4xx/5xx and connection errors still count as failures.
 - Do **not** re-run the fabricated-data sweep. All 76 authenticated `page.tsx`
   files were checked on 2026-10-04 by **shape** (`|| mock`, `?? mock`,
   `if (!res.ok) return mock…`, pages with no API call, hardcoded name/address

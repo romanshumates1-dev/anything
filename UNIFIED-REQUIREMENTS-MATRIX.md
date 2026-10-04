@@ -376,9 +376,9 @@ a genuinely empty account are indistinguishable — but that is an error-afforda
 gap, not this defect, and fixing all 19 is deliberately not bundled into this
 change. **Do not re-run this sweep.**
 
-### Three ways a verification can be true and still worthless
+### Four ways a verification can be true and still worthless
 
-This cycle produced all three. They are recorded because each one *looks* like
+This cycle produced all four. They are recorded because each one *looks* like
 a result:
 
 1. **A 200 from a page that never made a request.** `/achievements` and `/inbox`
@@ -389,10 +389,17 @@ a result:
 3. **A failing assertion that was itself wrong.** The first mock-leak check named
    "Platinum Club" and "Revenue Machine", which are *real seeded rows* in
    migration 068. The check was corrected, not the app.
+4. **A defect that was the instrument, not the product.** `/dashboard` was
+   recorded as "TIMEOUT 45s" because the harness awaited `waitUntil:
+   'networkidle'`, which never settles on an authenticated page. Real
+   measurement (`f0074e2`): HTTP **200**, DOM ready **219ms**, content visible
+   **548ms**. Every endpoint behind it answered in 83–405ms. The "evidence" had
+   been describing a test harness.
 
-Before treating browser evidence as proof, confirm all three: the page issued
-its request, the session was real (`hasSession === true`), and the strings being
-asserted on actually exist nowhere in the database.
+Before treating browser evidence as proof, confirm all four: the page issued its
+request, the session was real (`hasSession === true`), the asserted strings exist
+nowhere in the database, and the wait condition can actually settle on an
+authenticated page (`networkidle` cannot — see item 4).
 
 ### Method note, and the mistake this cycle nearly repeated
 
