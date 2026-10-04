@@ -11,9 +11,10 @@
 
 ## CURRENT HEAD
 
-`52ad8e5` — **FULL GATE PASSES.** typecheck OK · lint 0/0 · **3006 tests passed,
-26 skipped, 0 failed** (277 files, 180.92s) · `cf:build` OK · authenticated
-browser **clean=6 noisy=0**.
+`a576f2f` — worker `fetch` now **logs unhandled throws** (`[worker:unhandled]`),
+the missing diagnostic for the homepage 500. **FULL GATE GREEN:** typecheck OK ·
+lint 0/0 · **3017 tests passed, 0 failed** · `cf:build` OK · authenticated browser
+**clean=6 noisy=0**. Deployed as Worker `85de11a9`.
 
 ⚠️ Keep this value current on every state commit — it has been stale before, and
 a checkpoint whose HEAD does not match the repository is exactly how a new model
@@ -21,13 +22,18 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-Attack the two remaining **unmeasured** production defects (not unbuilt):
+Two **unmeasured** production defects remain (not unbuilt):
 
-1. **Intermittent `GET /` 500** — mechanism identified: `handler` is explicitly
-   assigned (`a1={...E2,handler:U2}`), so it is undefined **iff the page module
-   failed to load**; the call is unguarded. Leading hypothesis is the **128MB
-   memory ceiling**, not CPU — unconfirmed. **Not reproduced** (12/12 workers.dev,
-   6/6 apex). Next step is instrumentation, not more probing.
+1. **Intermittent `GET /` 500** — diagnostics are now live, so the next
+   occurrence is observable: `wrangler tail --format pretty`, grep
+   `[worker:unhandled]`. `suspected_resource_kill=true` ⇒ capacity problem;
+   `false` ⇒ the logged TypeError names the call site. Mechanism (unconfirmed):
+   `handler` is explicitly assigned, so it is undefined **iff the page module
+   failed to load**; the call is unguarded. **Not reproduced** (12/12 workers.dev,
+   6/6 apex).
+   ⚠️ `src/instrumentation.ts` does not exist although
+   `patch-opennext-instrumentation.mjs` claims to mirror it, so its KEEP-IN-SYNC
+   instruction cannot currently be honoured.
 2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
    cost in isolation and mitigate in application code *before* concluding a plan
    upgrade is required. That conclusion is currently an **assumption, not a
@@ -251,6 +257,10 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 ## DO NOT REPEAT
 
 - Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** re-add "the homepage 500 has no telemetry" as an open finding. The
+  worker `fetch` wrapper logs unhandled throws as `[worker:unhandled]` with
+  `suspected_resource_kill` (`a576f2f`). The 500 itself is **still unfixed and
+  unreproduced** — only its observability changed. Do not read that as a fix.
 - Do **not** "fix" `/dashboard` performance. **The 45s timeout defect never
   existed** — it was the QA harness waiting on `networkidle` (`f0074e2`). Real
   measurement: HTTP 200, DOM ready 219ms, content visible 548ms. The harness now

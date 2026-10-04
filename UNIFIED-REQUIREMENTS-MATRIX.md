@@ -434,6 +434,62 @@ a genuine ~90-second outage by probing harder than this.
 record this as fixed, and do not describe it as a memory problem until step 1
 above produces a measurement.
 
+## ⚠️ HOMEPAGE 500 — DIAGNOSTIC INSTRUMENTATION NOW SHIPPED (`a576f2f`)
+
+### The blocker was silence, not the bug
+
+The Worker exported `fetch: handler.fetch` **directly**. Nothing observed a
+throw at the entry point, so this failure produced a bare 500 with **no log line,
+nothing in `wrangler tail`, and no request identity**. That is why the
+investigation stalled across several sessions: every attempt restarted from
+nothing because the failure left no evidence.
+
+`custom-worker.ts` now wraps `fetch` and logs a throw with method, path, query
+KEY NAMES (never values), plus **`suspected_resource_kill`** — which separates
+"our code has a bug" from "the platform killed the isolate". Those look identical
+from outside and lead to opposite investigations. Verified it sits above
+OpenNext's own fetch, so it observes the middleware layer too.
+
+Deployed as **Worker `85de11a9`**. Full gate green: typecheck OK, lint 0/0,
+**3017 tests passed / 0 failed** (+11 new), `cf:build` OK, authenticated browser
+**clean=6 noisy=0**.
+
+**What this does NOT do:** reproduce or fix the 500. It makes the next occurrence
+diagnosable. Do not record the defect as resolved.
+
+### How to use it on the next occurrence
+
+```
+wrangler tail --format pretty      # then watch for [worker:unhandled]
+```
+
+If `suspected_resource_kill=true`, it is capacity, not code. If false, the logged
+`TypeError` names the failing call site directly.
+
+### Separate gap found while instrumenting
+
+`src/instrumentation.ts` **does not exist**, but
+`scripts/patch-opennext-instrumentation.mjs` documents itself as mirroring it and
+warns "KEEP-IN-SYNC". The `register()` boot check does reach the deployed bundle
+(the patch script injects it), so boot-time env diagnostics work — but the
+canonical source the script points at is missing, so the two cannot actually be
+kept in sync. Not fixed; recorded so a future session does not assume the sync is
+maintained. `scripts/verify-stripe-testmode.mjs` is an unrelated tracked script.
+
+### Mechanism, from the deployed bundle (still unconfirmed)
+
+`a1 = {...E2, tree:K, handler:U2, ...}` then
+`await components.ComponentMod.handler(...)`. `handler` is assigned
+*explicitly*, so it is undefined **iff `U2` is undefined** — i.e. the page module
+(`E2 = a2.i(44293)`, synchronous inlined load) failed to load. The call is
+unguarded. Verified **0** relative/absolute `require()` (574 `node:` builtins),
+so the chunk hypothesis stays disproven.
+
+**Not reproduced:** 12/12 = 200 on workers.dev, 6/6 on the apex, low volume.
+Leading hypothesis is the **128MB memory ceiling** rather than CPU — unconfirmed.
+
+---
+
 ### Four ways a verification can be true and still worthless
 
 This cycle produced all four. They are recorded because each one *looks* like

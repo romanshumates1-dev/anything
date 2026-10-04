@@ -13,10 +13,10 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `52ad8e5` — **FULL GATE PASSES**: typecheck OK, lint 0/0, 3006 tests passed / 0 failed, build OK, authenticated browser clean=6 noisy=0 |
+| HEAD | `a576f2f` — worker fetch wrapper adds unhandled-throw telemetry; full gate green (3017 tests, 0 failed) |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
-| Last known deployed version | **Worker `8b0da56b`** — deployed 2026-10-04 from `6b30d2c` + `fa43bd0`. LIVE VERIFIED authenticated: `/achievements` and `/inbox` 200, **no mock data**, 0 console errors, 0 page errors, no error boundary. `/dashboard` still exceeds a 45s browser timeout (pre-existing). |
+| Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
 | Current score | **8.5/10** — see SCORE RATIONALE below | |
 
@@ -98,16 +98,22 @@ The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
 are genuinely unmeasured rather than unbuilt.
 
-1. **Intermittent `GET /` 500** — **mechanism now identified** (2026-10-04). In
-   the deployed `handler.mjs`: `a1 = {...E2, tree:K, handler:U2, ...}` followed by
-   `await components.ComponentMod.handler(...)`. `handler` is assigned
-   *explicitly*, so it is undefined **iff `U2` is undefined** — i.e. the page
-   module (`E2 = a2.i(44293)`, a synchronous inlined load) failed to load. The
-   call is unguarded. Verified **0** relative/absolute `require()` calls (574
-   `node:` builtins), so the chunk hypothesis stays disproven.
-   **Still not reproduced:** 12/12 200 on workers.dev, 6/6 on the apex, low volume.
-   Leading hypothesis is the **128MB memory ceiling**, not CPU — unconfirmed.
-   Next step is instrumentation, not another reproduction attempt.
+1. **Intermittent `GET /` 500** — **diagnostics now shipped** (`a576f2f`, Worker
+   `85de11a9`). The worker previously exported `fetch: handler.fetch` directly,
+   so a throw produced a bare 500 with **no log line and nothing in
+   `wrangler tail`** — which is why this stalled across sessions. The wrapper now
+   logs method, path, query KEY NAMES, and **`suspected_resource_kill`**, which
+   separates "our bug" from "the platform killed the isolate".
+   **On the next occurrence: `wrangler tail --format pretty`, grep
+   `[worker:unhandled]`.** `suspected_resource_kill=true` ⇒ capacity;
+   `false` ⇒ the logged TypeError names the call site.
+   Mechanism (unconfirmed): `handler` is explicitly assigned, so it is undefined
+   **iff the page module failed to load**; call is unguarded. Still not
+   reproduced (12/12 workers.dev, 6/6 apex).
+   ⚠️ Also found: **`src/instrumentation.ts` does not exist** although
+   `patch-opennext-instrumentation.mjs` claims to mirror it and warns
+   KEEP-IN-SYNC. Boot `register()` still reaches the bundle via the patch, so
+   diagnostics work, but the sync cannot actually be maintained.
 2. **503 under sustained load** (Cloudflare 1102) — measure per-invocation render
    cost in isolation and mitigate in application code *before* concluding a plan
    upgrade is required. That conclusion is currently an assumption, not a finding.
