@@ -18,17 +18,70 @@
  * Nothing is written to disk and no secret is ever logged.
  */
 import { chromium } from 'playwright-core';
+import { readFileSync } from 'node:fs';
 
 const BASE = process.env.QA_BASE || 'https://dealswiftautomation.com';
-const EMAIL = process.env.QA_EMAIL || '';
-const PASSWORD = process.env.QA_PASSWORD || '';
+
+/**
+ * Credentials come from $TEMP/qa-cred.json, NOT from QA_EMAIL / QA_PASSWORD env
+ * vars.
+ *
+ * WHY THIS CHANGED (2026-10-04)
+ * -----------------------------
+ * The previous version read `process.env.QA_EMAIL` / `QA_PASSWORD` and the
+ * caller supplied them with `set VAR=value` inside a `cmd /c` chain. cmd applies
+ * its own parsing to that line, so the values reaching Node were not the values
+ * in the file. The result was a silent, completely misleading failure: the
+ * browser POSTed /api/auth/sign-in/email and got
+ *
+ *     401 {"message":"Invalid email or password"}
+ *
+ * while a direct API call with the SAME credentials returned 200. That reads
+ * exactly like a broken production login, and it is not one.
+ *
+ * Reading the JSON file inside Node removes the shell from the credential path
+ * entirely. It matches what `scripts/_postdeploy-auth-smoke.mjs` already does.
+ *
+ * A green run here must never be reported as evidence about authentication
+ * without ALSO asserting `hasSession === true` — an unauthenticated run
+ * produces clean-looking pages and proves nothing.
+ */
+const credPath = process.env.QA_CRED_FILE || `${process.env.TEMP}\\qa-cred.json`;
+let EMAIL = '';
+let PASSWORD = '';
+try {
+  const cred = JSON.parse(readFileSync(credPath, 'utf8'));
+  EMAIL = cred.email ?? '';
+  PASSWORD = cred.password ?? '';
+} catch {
+  // Fall back to env only if it is actually populated; never silently continue.
+  EMAIL = process.env.QA_EMAIL || '';
+  PASSWORD = process.env.QA_PASSWORD || '';
+}
 
 if (!EMAIL || !PASSWORD) {
-  console.error('QA_EMAIL / QA_PASSWORD required');
+  console.error(`Credentials required: write {"email":...,"password":...} to ${credPath}`);
   process.exit(2);
 }
 
-const ROUTES = ['/dashboard', '/campaigns', '/lead-finder', '/settings/billing'];
+const ROUTES = [
+  '/dashboard',
+  '/campaigns',
+  '/lead-finder',
+  '/settings/billing',
+  // Added 2026-10-04 after `fa43bd0`: these two pages served HARDCODED rows and
+  // never called their API. A status of 200 proved nothing about them, so each
+  // carries an explicit assertion that the fabricated content is gone.
+  //
+  // NOTE ON THE STRINGS: the first version of this check flagged "Platinum Club"
+  // and "Revenue Machine" as leaked mock data. That was the CHECK being wrong,
+  // not the page. Both are real rows seeded by migration 068
+  // (db/migrations/068_user_profile_and_gamification.sql), so a page correctly
+  // rendering live data will contain them. Only strings that appear nowhere in
+  // the database are valid evidence of a hardcoded fallback.
+  { path: '/achievements', mustNotContain: ['2024-01-15', '2024-02-01'] },
+  { path: '/inbox', mustNotContain: ['John Smith', 'Sarah Johnson', 'Bob Wilson', 'Jane Doe', '(555)'] },
+];
 const PER_PAGE_TIMEOUT_MS = 45_000;
 
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -77,6 +130,16 @@ const signinStatus = await (async () => {
     });
     console.log(`SESSION_PROBE=${JSON.stringify(probe)}`);
 
+    // An unauthenticated run renders clean pages and would report everything as
+    // fine while proving nothing. Fail loudly instead of continuing.
+    if (!probe.hasSession) {
+      console.error(
+        'FATAL: no authenticated session. Every route below would be verified ' +
+          'while logged OUT, which is worthless evidence. Fix sign-in before ' +
+          'trusting any result from this script.',
+      );
+    }
+
     return res ? res.status() : 0;
   } catch (e) {
     console.error('SIGNIN FAILED:', String(e).slice(0, 200));
@@ -88,7 +151,9 @@ console.log(`AFTER_SIGNIN_URL=${page.url()}`);
 
 // ---- visit each authenticated route --------------------------------------
 const results = [];
-for (const route of ROUTES) {
+for (const entry of ROUTES) {
+  const route = typeof entry === 'string' ? entry : entry.path;
+  const mustNotContain = typeof entry === 'string' ? [] : (entry.mustNotContain ?? []);
   bucket = { consoleErrors: [], pageErrors: [], failedRequests: [] };
   let status = 0;
   let error = null;
@@ -107,11 +172,16 @@ for (const route of ROUTES) {
   const body = await page.content().catch(() => '');
   const errorBoundary = /Application error|error-boundary|Something went wrong/i.test(body);
 
+  // A 200 is not evidence that a page shows real data. Assert the fabricated
+  // strings from the old mock arrays are absent from the rendered HTML.
+  const leakedMockData = mustNotContain.filter((s) => body.includes(s));
+
   results.push({
     route,
     status,
     finalUrl: page.url(),
     errorBoundary,
+    leakedMockData,
     navError: error,
     consoleErrors: bucket.consoleErrors,
     pageErrors: bucket.pageErrors,
@@ -120,6 +190,7 @@ for (const route of ROUTES) {
 
   console.log(
     `${route} -> status=${status} boundary=${errorBoundary} ` +
+      `mockLeak=${leakedMockData.length}${leakedMockData.length ? `(${leakedMockData.join(',')})` : ''} ` +
       `console=${bucket.consoleErrors.length} pageErr=${bucket.pageErrors.length} ` +
       `failedReq=${bucket.failedRequests.length}${error ? ` navError=${error}` : ''}`,
   );
@@ -128,7 +199,13 @@ for (const route of ROUTES) {
 await browser.close();
 
 const noisy = results.filter(
-  (r) => r.errorBoundary || r.pageErrors.length || r.consoleErrors.length || r.failedRequests.length || r.error,
+  (r) =>
+    r.errorBoundary ||
+    r.pageErrors.length ||
+    r.consoleErrors.length ||
+    r.failedRequests.length ||
+    r.error ||
+    r.leakedMockData.length,
 );
 
 console.log('\n=== SUMMARY ===');
@@ -140,4 +217,7 @@ for (const r of noisy) {
   if (r.failedRequests.length) console.log(`  failedReq: ${r.failedRequests.slice(0, 4).join(' | ')}`);
   if (r.errorBoundary) console.log('  ERROR BOUNDARY RENDERED');
   if (r.error) console.log(`  navError: ${r.error}`);
+  if (r.leakedMockData.length) {
+    console.log(`  FABRICATED DATA STILL RENDERED: ${r.leakedMockData.join(', ')}`);
+  }
 }
