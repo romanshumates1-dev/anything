@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-04 (session following commit `27cae46`)
+**Last updated:** 2026-10-04 (session following commit `cab6955`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,10 +11,12 @@
 
 ## CURRENT HEAD
 
-`a576f2f` — worker `fetch` now **logs unhandled throws** (`[worker:unhandled]`),
-the missing diagnostic for the homepage 500. **FULL GATE GREEN:** typecheck OK ·
-lint 0/0 · **3017 tests passed, 0 failed** · `cf:build` OK · authenticated browser
-**clean=6 noisy=0**. Deployed as Worker `85de11a9`.
+`cab6955` — restores the missing canonical `src/instrumentation.ts` and adds a
+6-test contract guard to keep it aligned with the OpenNext Worker patch. Targeted
+verification: **6/6 pass**, lint 0/0, `cf:build` OK; final built handler has the
+self-contained boot register and lacks the broken Turbopack stub. **Not deployed.**
+The last deployed Worker remains `85de11a9` from `a576f2f` (the fetch-wrapper
+homepage-500 telemetry; full gate green there).
 
 ⚠️ Keep this value current on every state commit — it has been stale before, and
 a checkpoint whose HEAD does not match the repository is exactly how a new model
@@ -22,7 +24,11 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-Two **unmeasured** production defects remain (not unbuilt):
+Exactly one immediate action: **use the isolated `dealswift-loadtest` Worker for
+the next bounded concurrency tier, measuring the 503 admission/resource
+threshold. Do not burst the production apex.**
+
+Open findings that must not be confused with completed work:
 
 1. **Intermittent `GET /` 500** — diagnostics live (`a576f2f`, Worker `85de11a9`);
    **root cause unresolved**. Next occurrence: `wrangler tail --format pretty`,
@@ -98,6 +104,7 @@ signature. Real failures still count.
 
 | Commit | What | Verification |
 | --- | --- | --- |
+| `cab6955` | Restored canonical `src/instrumentation.ts`; added sync contract guard for the required OpenNext Worker stub | **6/6 targeted tests; lint 0/0; `cf:build` passed; final handler asserted patched. Not deployed.** |
 | `52ad8e5` | Aborted static chunks classified benign (asset confirmed served 200/28KB) | **FULL GATE: 3006 tests passed, 0 failed; build OK; browser clean=6 noisy=0** |
 | `f0074e2` | `/dashboard` "45s timeout" — **harness bug, defect disproven**; `networkidle`→`domcontentloaded`; benign aborts separated | 6/6 routes 200, DOM ready 153–503ms |
 | `0437912` | QA harness: creds no longer mangled by `cmd`; FATAL when logged out; mock-leak assertion added | **Live on Worker `8b0da56b`**: `/achievements` + `/inbox` 200, mockLeak=0, 0 console/page errors |

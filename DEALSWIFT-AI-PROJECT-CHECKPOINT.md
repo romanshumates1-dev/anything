@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `a576f2f` — worker fetch wrapper adds unhandled-throw telemetry; full gate green (3017 tests, 0 failed) |
+| HEAD | `cab6955` — restores the missing canonical `src/instrumentation.ts` and a 6-test source/Worker-patch contract guard; targeted verification green. **Not deployed.** |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -22,13 +22,14 @@ project state. A new model inherits state from here and from
 
 ### Current overall score
 
-**7/10 — calculated 2026-10-04 from the corrected requirements matrix.**
+**8.5/10 — calculated 2026-10-04 from the corrected requirements matrix.**
 
-Method and reasoning are recorded in the matrix's SCORE section. It moved up
-from the inherited 6/10 because AI credit limiting is a whole requirement
-recovered from a wrong-path search error, with stronger evidence than had been
-recorded. It is held below 9 by two open production defects and by the total
-absence of end-to-end evidence on any money-moving path.
+Method and reasoning are recorded in the matrix's SCORE section. It rose from
+the inherited 6/10 because working requirements had been recovered from
+wrong-path search errors, then to 8.5/10 on cumulative verified scope. It is
+held below 9 by two open production defects and by the absence of end-to-end
+evidence on any money-moving path. Restoring the instrumentation source does
+not change the score: it closes a maintenance gap, not a product requirement.
 
 ---
 
@@ -77,7 +78,15 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**None in flight. Two investigations CLOSED.**
+**G1b — ISOLATED WORKER CONCURRENCY THRESHOLD INVESTIGATION — IN PROGRESS.**
+
+Use the existing guarded probes against the disjoint `dealswift-loadtest` Worker
+only. Increase one bounded concurrency tier at a time, stop on the first 5xx or
+resource signal, and record request count, success/failure, latency and the
+endpoint class. This is not a production load test and does not authorize traffic
+against the apex.
+
+Two prior investigations are CLOSED:
 
 1. **Fabricated-data sweep — COMPLETE.** `/achievements` and `/inbox` fixed,
    deployed and LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement
@@ -91,8 +100,9 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): attack the two remaining unidentified production
-defects — the intermittent homepage 500 and the 503-under-load.**
+**NEXT ACTION (exactly one): run the next bounded, isolated-worker concurrency
+tier against `dealswift-loadtest` to identify the 503 admission/resource
+threshold; do not send burst traffic to the production apex.**
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
@@ -114,6 +124,14 @@ are genuinely unmeasured rather than unbuilt.
    3 across 64 concurrent requests. The earlier "admitted=4" was a **fixed-window
    boundary artifact** in the measuring script. **Do not rewrite this limiter.**
    Residual, documented and accepted: fixed windows admit ~2x across a boundary.
+4. **Instrumentation source/patch maintenance gap — RESOLVED (`cab6955`), not
+   deployed.** `src/instrumentation.ts` is again the canonical dev/Docker/Vercel
+   source; OpenNext still needs the self-contained Worker stub because adapter
+   1.20.6 omits the Turbopack instrumentation chunk. The new contract guard
+   compares fatal/degraded env lists and Workers no-throw semantics (6/6 pass).
+   `cf:build` passed and the built `handler.mjs` contains the self-contained boot
+   register while the broken Turbopack stub is absent. This preserves diagnostics;
+   it does **not** reproduce or fix the intermittent homepage 500.
 
 ### ISOLATED ENVIRONMENT NOW EXISTS — use it, do not recreate
 

@@ -517,15 +517,22 @@ wrangler tail --format pretty      # then watch for [worker:unhandled]
 If `suspected_resource_kill=true`, it is capacity, not code. If false, the logged
 `TypeError` names the failing call site directly.
 
-### Separate gap found while instrumenting
+### Instrumentation source/Worker-patch maintenance gap — RESOLVED (`cab6955`)
 
-`src/instrumentation.ts` **does not exist**, but
-`scripts/patch-opennext-instrumentation.mjs` documents itself as mirroring it and
-warns "KEEP-IN-SYNC". The `register()` boot check does reach the deployed bundle
-(the patch script injects it), so boot-time env diagnostics work — but the
-canonical source the script points at is missing, so the two cannot actually be
-kept in sync. Not fixed; recorded so a future session does not assume the sync is
-maintained. `scripts/verify-stripe-testmode.mjs` is an unrelated tracked script.
+The patch script had documented itself as mirroring `src/instrumentation.ts`, but
+that source file did not exist on this branch: it existed only on an unrelated,
+non-ancestor branch and imported a helper unavailable here. `cab6955` restores a
+self-contained canonical source with the actual branch contract
+(`HARD_REQUIRED`, `SOFT_RECOMMENDED`, Workers no-throw), while retaining the
+patch script because OpenNext 1.20.6 still omits the Turbopack instrumentation
+chunk from the Worker bundle.
+
+`scripts/instrumentation-sync.test.ts` makes the relationship enforceable: 6/6
+tests compare the fatal and degraded environment lists and guard the Workers
+health-probe behavior. `cf:build` passed; its generated final `handler.mjs`
+contains the self-contained boot register and no longer contains the broken
+Turbopack instrumentation stub. **This is a maintenance/diagnostic fix only;
+the intermittent homepage 500 remains unresolved and `cab6955` is not deployed.**
 
 ### Mechanism, from the deployed bundle (still unconfirmed)
 
