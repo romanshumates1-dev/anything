@@ -123,6 +123,35 @@ function attachCollectors(page) {
  * script that never settles must not be able to hang the whole crawl, and a slow
  * tail is recorded as a slow `elapsedMs` rather than silently dropped.
  */
+/**
+ * COOLDOWN BETWEEN NAVIGATIONS — do not remove without reading why.
+ *
+ * The deployed Worker runs on the Cloudflare **Free plan**, where
+ * `limits.cpu_ms` is rejected outright ("CPU limits are not supported for the
+ * Free plan"), so the per-invocation CPU ceiling cannot be configured. It is
+ * also *shared*: exhausting it returns Cloudflare error **1102** and 503s the
+ * site for everyone, including logged-out visitors on `/`.
+ *
+ * This script originally fired ~24 routes across two viewports back-to-back
+ * with no pause, each allowing 45s + 20s + 12s. That is precisely the burst
+ * shape that trips the ceiling, and because a throttled response does not fail
+ * fast - it consumes the whole budget - the run appeared to hang with flat CPU
+ * instead of reporting failures. It was throttling itself.
+ *
+ * The cooldown is therefore load-bearing, not cosmetic. If a sweep trips the
+ * ceiling, results become meaningless: a 503 caused by your own traffic is
+ * indistinguishable from a real defect.
+ */
+const COOLDOWN_MS = 4_000;
+
+/** Ceiling-trip signature, so the run aborts loudly rather than reporting 503s as defects. */
+const CEILING_STATUSES = new Set([503]);
+
+async function cooldown(reason) {
+  process.stdout.write(`    (cooldown ${COOLDOWN_MS}ms after ${reason})\n`);
+  await new Promise((r) => setTimeout(r, COOLDOWN_MS));
+}
+
 async function visit(page, route, viewport) {
   const state = attachCollectors(page);
   const url = `${BASE}${route}`;
@@ -140,7 +169,22 @@ async function visit(page, route, viewport) {
   } catch (err) {
     loadError = String(err?.message ?? err).slice(0, 200);
   }
+
+  // If we are hitting the CPU ceiling, every remaining measurement is noise
+  // caused by this script. Stop and say so instead of publishing garbage.
+  if (status !== null && CEILING_STATUSES.has(status)) {
+    process.stderr.write(
+      `\n!! ${route} returned ${status}. This sweep has tripped the shared Worker CPU\n` +
+        '   ceiling, so it is about to measure its own load. Aborting.\n' +
+        '   Wait ~90s, reduce ROUTES/COOLDOWN_MS, or raise the Workers plan.\n\n',
+    );
+    throw new Error(`aborted: ${route} returned ${status} (Worker CPU ceiling)`);
+  }
+
   const elapsedMs = Date.now() - started;
+
+  // Cool down between routes so the sweep stays under the ceiling.
+  await cooldown(route);
 
   const finalUrl = page.url();
   const redirected = finalUrl !== url && /\/account\/signin/.test(finalUrl);
