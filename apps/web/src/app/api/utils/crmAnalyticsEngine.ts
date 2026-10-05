@@ -200,9 +200,14 @@ export async function getOutreachMethodAnalytics(
   organizationId: string,
   dateRange?: DateRange
 ): Promise<OutreachMethodAnalytics[]> {
-  const dateFilter = dateRange
-    ? sql`AND created_at BETWEEN ${dateRange.start.toISOString()} AND ${dateRange.end.toISOString()}`
-    : sql``;
+  // Defect 32: this driver turns EVERY template interpolation into a positional
+  // `$n` parameter and cannot splice a previously-built query. The previous
+  // shape built `const dateFilter = sql`...` and interpolated it into five
+  // outer queries, so every call with a date range broke with
+  // `syntax error at or near "$2"`. The window is now inlined as plain scalar
+  // bindings, exactly like `getRegionalAnalytics`.
+  const startDate = dateRange?.start.toISOString() || '1970-01-01';
+  const endDate = dateRange?.end.toISOString() || '2099-12-31';
 
   // Email analytics
   const emailStats = await sql`
@@ -216,7 +221,7 @@ export async function getOutreachMethodAnalytics(
     FROM message_events
     WHERE organization_id = ${organizationId}
       AND channel = 'email'
-      ${dateFilter}
+      AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
   `;
 
   // SMS analytics
@@ -231,7 +236,7 @@ export async function getOutreachMethodAnalytics(
     FROM message_events
     WHERE organization_id = ${organizationId}
       AND channel = 'sms'
-      ${dateFilter}
+      AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
   `;
 
   // Social media analytics (per platform)
@@ -245,7 +250,7 @@ export async function getOutreachMethodAnalytics(
       0 as bounces
     FROM social_messages
     WHERE organization_id = ${organizationId}
-      ${dateFilter}
+      AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     GROUP BY platform
   `.catch(() => []);
 
@@ -257,7 +262,7 @@ export async function getOutreachMethodAnalytics(
     FROM leads
     WHERE organization_id = ${organizationId}
       AND status IN ('contracted', 'closed')
-      ${dateFilter}
+      AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     GROUP BY source
   `;
 
@@ -268,7 +273,7 @@ export async function getOutreachMethodAnalytics(
       COUNT(*) as opt_outs
     FROM opt_outs
     WHERE organization_id = ${organizationId}
-      ${dateFilter}
+      AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     GROUP BY channel
   `.catch(() => []);
 
@@ -357,9 +362,9 @@ export async function getChannelAttribution(
   organizationId: string,
   dateRange?: DateRange
 ): Promise<ChannelAttribution[]> {
-  const dateFilter = dateRange
-    ? sql`AND l.created_at BETWEEN ${dateRange.start.toISOString()} AND ${dateRange.end.toISOString()}`
-    : sql``;
+  // Same defect-32 fix as above: no fragment variable, scalar bindings only.
+  const startDate = dateRange?.start.toISOString() || '1970-01-01';
+  const endDate = dateRange?.end.toISOString() || '2099-12-31';
 
   const results = await sql`
     WITH touch_points AS (
@@ -373,7 +378,7 @@ export async function getChannelAttribution(
       FROM leads l
       LEFT JOIN contracts c ON c.lead_id = l.id AND c.status = 'closed'
       WHERE l.organization_id = ${organizationId}
-        ${dateFilter}
+        AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     )
     SELECT
       channel,
@@ -407,9 +412,10 @@ export async function getConversionFunnel(
   organizationId: string,
   dateRange?: DateRange
 ): Promise<FunnelStage[]> {
-  const dateFilter = dateRange
-    ? sql`AND created_at BETWEEN ${dateRange.start.toISOString()} AND ${dateRange.end.toISOString()}`
-    : sql``;
+  // Same defect-32 fix: the single date fragment was interpolated twice here,
+  // once per CTE.
+  const startDate = dateRange?.start.toISOString() || '1970-01-01';
+  const endDate = dateRange?.end.toISOString() || '2099-12-31';
 
   const stages = await sql`
     WITH stage_counts AS (
@@ -419,13 +425,13 @@ export async function getConversionFunnel(
         AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 3600) as avg_hours
       FROM leads
       WHERE organization_id = ${organizationId}
-        ${dateFilter}
+        AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
       GROUP BY status
     ),
     totals AS (
       SELECT COUNT(*) as total FROM leads
       WHERE organization_id = ${organizationId}
-        ${dateFilter}
+        AND created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     )
     SELECT
       sc.status,

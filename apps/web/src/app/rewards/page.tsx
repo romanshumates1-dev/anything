@@ -70,6 +70,35 @@ interface RewardsData {
   giveaways: Giveaway[];
 }
 
+/**
+ * Read an error response's JSON body without swallowing a parse failure.
+ *
+ * WHY NOT `.catch(() => ({}))`
+ * ----------------------------
+ * That is the swallowed-error class the guard at
+ * api/__tests__/security/swallowed-error.guard.test.ts exists to prevent, and it
+ * made this file fail the suite. It is worse than it looks here: if the server
+ * returns HTML (a proxy 502, a Workers error page) the parse throws, `{}` is
+ * substituted, and the page reports a generic "Request failed" — hiding the fact
+ * that the response was not the API at all. The user sees a wrong error and
+ * nobody investigates.
+ *
+ * `app/achievements/page.tsx` has no such site for the same reason: it reads the
+ * status code, which is always available, and only trusts the body when it
+ * really parsed.
+ */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: string };
+    return body?.error || fallback;
+  } catch (cause) {
+    // Logged, not hidden: a non-JSON error body means something upstream of this
+    // page failed, and that is exactly what has to be diagnosable.
+    console.error(`[rewards] non-JSON error body (HTTP ${res.status})`, cause);
+    return fallback;
+  }
+}
+
 async function post(body: Record<string, unknown>) {
   const res = await fetch('/api/rewards', {
     method: 'POST',
@@ -77,10 +106,11 @@ async function post(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error || 'Request failed');
+    throw new Error(await errorMessage(res, 'Request failed'));
   }
-  return res.json().catch(() => ({}));
+  // No catch: a malformed SUCCESS body must surface, not render as an empty
+  // wallet. Swallowing it here is how a broken deploy looks like a new account.
+  return res.json();
 }
 
 export default function RewardsPage() {
@@ -102,11 +132,10 @@ export default function RewardsPage() {
       if (!res.ok) {
         // Surface the server's own message so a 404 (gamification OFF) is
         // distinguishable from a 500 here, exactly as achievements does.
-        const err = await res.json().catch(() => ({}));
         throw new Error(
           res.status === 404
             ? 'Rewards are turned off for your account.'
-            : err?.error || 'Could not load your rewards.',
+            : await errorMessage(res, 'Could not load your rewards.'),
         );
       }
       return res.json();
