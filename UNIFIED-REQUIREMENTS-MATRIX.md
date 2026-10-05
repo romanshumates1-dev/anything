@@ -265,7 +265,7 @@ and are now recorded as implemented and tested.
 | --- | --- | --- | --- | --- | --- |
 | V1 | GAMIFICATION ON/OFF setting | `utils/gamification.ts` + allowlist + `gamification.server.ts` | UNIT TESTED | commit `61fe673`; **write path gated in `6b30d2c`** (POST was ungated — see R4) | — |
 | V2 | XP, points, levels, categories | `api/achievements/route.ts` (`user_stats.points`, `achievements.points`, `maxProgress`, server-side `summary`) + `app/achievements/page.tsx` | **LIVE VERIFIED** (was a FALSE POSITIVE, corrected then re-verified) | Fixed in `fa43bd0`; prior "LIVE VERIFIED (200)" **INVALIDATED** (page served a hardcoded array). **Re-verified properly** on Worker `8b0da56b` with an authenticated session: `/achievements` 200, mockLeak=0, 0 console errors, 0 page errors, no error boundary (`0437912`) | — |
-| V3 | Crates / spin wheel / battle pass / seasons / competitions | none after concept search of `api/*` + git history | NOT STARTED | genuinely absent (`spin_wheel\|battle_?pass\|crateOpen` = 0 hits in 1071 source files) | — |
+| V3 | Crates / spin wheel / battle pass / seasons / competitions | **IMPLEMENTED 2026-10-04** (`ed683e5` + `141e063`) — migration `099_gamification_rewards.sql` (13 tables), `utils/gamificationRewards.ts` (pure economy), `utils/gamificationRewards.server.ts` (claims), `api/rewards` route | **IMPLEMENTED / TESTED** | Was genuinely absent (0 hits in 1071 files — re-verified this session by file name, `src/**` content, migrations, git history). Now: reward suite **58 passed**, route suite **13 passed**, `pglite` **14/14** incl. 20-concurrent-spins-vs-3-wallet (≤3 granted) and 15-replay-code (exactly 1), migration gate **PASS**. **UI not built; not deployed.** | — |
 
 ## SET W — ACCESSIBILITY / SETTINGS
 
@@ -714,6 +714,9 @@ search contents, DB columns and the build manifest before concluding ABSENT.
 
 | ID | Task | Status | Next action |
 | --- | --- | --- | --- |
+| **Y1 / U1** | Metrics must reflect only ENABLED phases | **NEXT — IMPLEMENTED BUT UNVERIFIED** | Read `api/analytics`; write a test that disables a phase and asserts it is excluded from campaign / CRM-pipeline / admin-funnel metrics |
+| **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Live probe: apex **and** workers.dev are `server: cloudflare`, no `x-vercel-*`; `git ls-files` finds 0 nginx/Caddy/traefik configs; Dockerfile exposes :4000 with no proxy. Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
+| **V3-BACKEND** | Gamification reward layer | **DONE 2026-10-04** (`ed683e5`, `141e063`) | Was NOT STARTED; now migration 099 + economy + claims + `/api/rewards`, 85 tests green. **Remaining: UI page + deploy** |
 | N2-live | Verify AI credit period keys against the real ledger | **COMPLETE 2026-10-04** | Closed — PGlite runs migration 088 on a real engine incl. concurrency; see N6-N8 |
 | SCORE | Recalculate from this corrected matrix | **DONE 2026-10-04** | see SCORE section |
 | DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | **DONE 2026-10-04** | Worker `499ceb4c`; required a prior `yarn cf:build` (see OPEN DEFECT 3) |

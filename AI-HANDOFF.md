@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-04 (session following commit `cab6955`)
+**Last updated:** 2026-10-04 (session following commit `141e063`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,12 +11,20 @@
 
 ## CURRENT HEAD
 
-`cab6955` — restores the missing canonical `src/instrumentation.ts` and adds a
-6-test contract guard to keep it aligned with the OpenNext Worker patch. Targeted
-verification: **6/6 pass**, lint 0/0, `cf:build` OK; final built handler has the
-self-contained boot register and lacks the broken Turbopack stub. **Not deployed.**
-The last deployed Worker remains `85de11a9` from `a576f2f` (the fetch-wrapper
-homepage-500 telemetry; full gate green there).
+`141e063` — four commits since `8451715` (all on `feat/cloudflare-workers`,
+none deployed; last deployed Worker is still `85de11a9` from `a576f2f`):
+
+| Commit | What |
+| --- | --- |
+| `dac5d6e` | Better Auth's built-in limiter now resolves the client IP from `['cf-connecting-ip', 'x-real-ip', 'x-vercel-forwarded-for']`. **Self-corrected**: an earlier `['cf-connecting-ip']`-only version would have left Vercel/Docker on Better Auth's shared `no-trusted-ip` bucket. |
+| `d5d6094` | Closed the `x-real-ip` caveat with evidence: live probe shows **both** apex and workers.dev are `server: cloudflare` (no `x-vercel-*`), and `git ls-files` finds **0** nginx/Caddy/traefik configs. Added `DEPLOYMENT-ARCHITECTURE.md` + a test pinning `auth.ts` to `clientIp.ts`. |
+| `ed683e5` | **V3 gamification reward layer** (was NOT STARTED): migration 099 + pure economy module + server claims. |
+| `141e063` | `/api/rewards` surface, gated on session + the ON/OFF setting. |
+
+**Evidence at `141e063`:** targeted regression **136 passed / 0 failed**,
+reward suite **58 passed**, route suite **13 passed**, migration gate **PASS**
+(99 migrations fresh-install + idempotent re-run, 17/17 tables), typecheck
+`TC_EXIT=0`, lint 0/0.
 
 ⚠️ Keep this value current on every state commit — it has been stale before, and
 a checkpoint whose HEAD does not match the repository is exactly how a new model
@@ -24,9 +32,22 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-Exactly one immediate action: **use the isolated `dealswift-loadtest` Worker for
-the next bounded concurrency tier, measuring the 503 admission/resource
-threshold. Do not burst the production apex.**
+Highest-priority genuinely unfinished item: **Y1 + U1 — "metrics must reflect
+only ENABLED phases" is IMPLEMENTED but explicitly NOT VERIFIED** in the matrix
+(matrix lines 260, 286). Both are `api/analytics` / `app/{admin,analytics,funnel}`.
+Next action: read the analytics aggregation, find where campaign workflow
+phases gate the output, then write a test that disables a phase and asserts the
+disabled phase is excluded from campaign metrics, CRM pipeline metrics and admin
+funnel analytics. **Do not rebuild the analytics — it exists; verify it.**
+
+Order of remaining master work (see the matrix OPEN WORK table):
+
+1. **Y1 / U1** — enabled-phase exclusion, not yet verified *(NEXT)*
+2. **X1** — "UI must not claim what backend denies", IN PROGRESS
+3. **H1** — console-cleanliness, PARTIAL (only the RUM beacon + 503 burst remain)
+4. **V3 UI** — the reward API is live but no page renders it yet
+5. **G2** — intermittent `GET /` 500, cause unidentified
+6. `BLOCKED-EXTERNAL` items: Stripe live keys, OAuth credentials, Apollo keys
 
 Open findings that must not be confused with completed work:
 
@@ -52,7 +73,25 @@ Never load-test the live apex; a previous session caused a real ~90s outage.
 
 ## CURRENT TASK
 
-Full gate COMPLETE. No task in flight beyond NEXT ACTION.
+Master requirements, not a single subsystem. Completed this session: the
+`x-real-ip` deployment-architecture caveat (`d5d6094`) and the whole **V3**
+gamification reward layer (`ed683e5` + `141e063`). Moved to **Y1 / U1**.
+
+## DO NOT REPEAT (learned the hard way)
+
+- **Do not re-audit `COMPLETE` / `LIVE VERIFIED` matrix rows.** That is the
+  model-switch loop this file exists to prevent. Check the matrix first.
+- **Do not declare a feature absent from one grep or one directory.** Eight
+  false negatives are already recorded in the matrix (wrong path, wrong name).
+  Before "ABSENT": check `src/**`, `api/**` routes, DB migrations, git history
+  and branches.
+- **Do not load/concurrency/CPU-stress the production apex.** A prior session
+  caused a real ~90s outage. All of that belongs on `dealswift-loadtest`.
+- **Do not trust `x-forwarded-for`** as a client IP. Use the canonical
+  `clientIp.ts` trust list; a new test now fails if `auth.ts` and `clientIp.ts`
+  disagree.
+- **Do not claim a negative result without a control.** When tailing logs to
+  prove a warning is *gone*, first prove the tail can surface *a* warning.
 
 ## CURRENT SCORE
 

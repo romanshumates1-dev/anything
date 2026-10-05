@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `cab6955` — restores the missing canonical `src/instrumentation.ts` and a 6-test source/Worker-patch contract guard; targeted verification green. **Not deployed.** |
+| HEAD | `141e063` — four commits since `8451715`: `dac5d6e` (Better Auth limiter IP config), `d5d6094` (deployment-architecture caveat closed), `ed683e5` (**V3** gamification reward layer), `141e063` (`/api/rewards` route). **All not deployed.** |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -78,15 +78,34 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**G1b — ISOLATED WORKER CONCURRENCY THRESHOLD INVESTIGATION — IN PROGRESS.**
+**Y1 / U1 — ENABLED-PHASE EXCLUSION IN ANALYTICS — NOT YET VERIFIED.**
 
-Use the existing guarded probes against the disjoint `dealswift-loadtest` Worker
-only. Increase one bounded concurrency tier at a time, stop on the first 5xx or
-resource signal, and record request count, success/failure, latency and the
-endpoint class. This is not a production load test and does not authorize traffic
-against the apex.
+The matrix records both as code-present but unproven: Y1 "Metrics reflect only
+enabled phases" (`IMPLEMENTED`, **NOT VERIFIED**) and U1 "Admin analytics from
+real records … must reflect only ENABLED phases — NOT VERIFIED". Next action:
+read `api/analytics` and the admin/funnel routes, locate where campaign workflow
+phases gate the aggregation, then write a test that disables a phase and asserts
+the disabled phase is excluded. **The analytics exist — verify, do not rebuild.**
 
-Two prior investigations are CLOSED:
+Closed this session:
+
+1. **`x-real-ip` deployment caveat — CLOSED (`d5d6094`).** Live probe shows both
+   the apex and workers.dev return `server: cloudflare` with `cf-ray` and **no**
+   `x-vercel-*` headers, so Cloudflare is the only live edge. `git ls-files`
+   finds **zero** nginx/Caddy/traefik/haproxy configs, and the root Dockerfile
+   exposes the Next server directly on `:4000`. Conclusion: `cf-connecting-ip`
+   is the only header guaranteed edge-overwritten today; `x-real-ip` and
+   `x-vercel-forwarded-for` are retained as *defensive* entries for the
+   documented-but-inactive runtimes, and `x-forwarded-for` stays excluded.
+   Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`; pinned by
+   `clientIp.deployment-architecture.test.ts`, which also fails if someone adds
+   a reverse proxy without re-verifying.
+2. **V3 gamification reward layer — IMPLEMENTED (`ed683e5`, `141e063`).** Was
+   genuinely NOT STARTED. Now: migration 099 (13 tables), pure economy module,
+   exactly-once server claims, `/api/rewards`. **85 tests green** incl. a PGlite
+   concurrency proof. **Remaining: UI page and deploy.**
+
+Prior investigations remain CLOSED:
 
 1. **Fabricated-data sweep — COMPLETE.** `/achievements` and `/inbox` fixed,
    deployed and LIVE VERIFIED (`fa43bd0`, `0437912`); the achievement
@@ -100,9 +119,8 @@ Two prior investigations are CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): run the next bounded, isolated-worker concurrency
-tier against `dealswift-loadtest` to identify the 503 admission/resource
-threshold; do not send burst traffic to the production apex.**
+**NEXT ACTION (exactly one): verify Y1/U1 — write the enabled-phase exclusion
+test for `api/analytics`. Do not send burst traffic to the production apex.**
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
@@ -413,12 +431,15 @@ Worker `499ceb4c`, deployed 2026-10-04 from commit `5c52120`.
 ## RECENT COMMITS
 
 ```
+141e063  feat(gamification): expose the V3 reward surface behind session + ON/OFF gates  → 13 tests PASS
+ed683e5  feat(gamification): add V3 reward layer (seasons, battle pass, crates, spins…)  → 58 tests + migration gate PASS
+d5d6094  docs(auth): verify deployment architecture behind the client-IP trust list     → 4 tests PASS
+dac5d6e  fix(auth): resolve Better Auth limiter IP from trusted edge headers            → 136 tests PASS
 ff3b262  test(security): give the tenant ratchet an I/O timeout budget  → 2 tests + 27 siblings PASS
 2ea6db3  fix(referrals): point share links at the real signup route    → 14 tests PASS, live 404 reproduced
-27cae46  fix(web): single source for /api/user/preferences reads       → pre-existing
-503845f  perf(dashboard): serve all card data in one Worker invocation → pre-existing, UNDEPLOYED
-753e1b9  fix(dashboard): remove a duplicated Worker invocation         → pre-existing
 ```
+
+None of the four are deployed. Last deployed Worker remains `85de11a9`.
 
 ---
 
@@ -431,6 +452,14 @@ ff3b262  test(security): give the tenant ratchet an I/O timeout budget  → 2 te
 5. Full 3013-test suite for isolated changes — ~6 min, `collect` 268s. Target instead.
 6. Billing/tax/withdrawals/Apollo/migration re-audits absent a dependency change.
 7. Repository-wide archaeology — architecture is already mapped in the matrix.
+8. **V3 gamification reward layer** — now built and tested (`ed683e5`, `141e063`).
+   Do not re-verify its absence; do not rebuild it. Only the UI page is missing.
+9. **`x-real-ip` deployment question** — answered with live evidence (`d5d6094`).
+   Do not re-probe unless the deployment target changes.
+10. **`better-auth` IP-header self-correction** — the wrong `['cf-connecting-ip']`-only
+    config was caught by inspecting the compiled bundle and comparing against
+    `clientIp.ts`. Do not "simplify" that list back down; the shared-bucket
+    failure it causes is documented in `DEPLOYMENT-ARCHITECTURE.md`.
 
 ## SECURITY NOTE
 
