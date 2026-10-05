@@ -257,7 +257,7 @@ and are now recorded as implemented and tested.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| U1 | Admin analytics from real records | `app/{admin,analytics,funnel}` | IMPLEMENTED | routes exist | must reflect only ENABLED phases — NOT VERIFIED |
+| U1 | Admin analytics from real records; must reflect only ENABLED phases | `app/{admin,analytics,funnel}` + `api/{admin/stats,analytics,funnel}` | **VERIFIED 2026-10-04** | Verified by inspection (the prior "NOT VERIFIED" was unproven, not known-broken). No admin route reports a channel/stage dimension at all — `git grep -niE 'sms|email|calling|by_channel' -- apps/web/src/app/api/admin` returns only unrelated `email` column reads, so admin analytics cannot show a disabled workflow stage. `api/admin/stats` counts users/campaigns/messages/leads from real rows. `api/analytics/route.ts` derives every per-campaign figure from real rows (`COUNT(cc.id) FILTER (WHERE cc.status::text = 'NEGOTIATING')` → `negotiating`, line 85→185) and renders a stage only when rows exist. The one fixed stage list, `stageOrder` in `api/funnel/route.ts:122`, is **lead pipeline stages** (NEW→ASSIGNED), a different concept from campaign workflow channels. | — |
 
 ## SET V — GAMIFICATION
 
@@ -283,7 +283,7 @@ and are now recorded as implemented and tested.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| Y1 | Metrics reflect only enabled phases | `api/analytics` | IMPLEMENTED | code present | **NOT VERIFIED** that disabled phases are excluded |
+| Y1 | Metrics reflect only enabled phases | `api/analytics` + `campaignBuilder` | **VERIFIED 2026-10-04** | Two independent properties, both proven. (1) `campaignBuilder` is the ONLY place stages are defined for display; `campaignPhases.enabled.test.ts` (`a5fc054`) proves every reporting path (`getCampaignSummary().phaseCount`, `getChannelStats`, `estimateCampaignDuration`, `estimateCampaignCost`) excludes disabled phases, using roman.agent.md's own Campaign A (calling+SMS on, email off) and Campaign B (calling off), plus validation rejecting all-off (`SEQUENCE_NONE_ENABLED`) and enabled-phase-on-disabled-channel (`SEQUENCE_CHANNEL_DISABLED`) — **15/15 pass**, plus 28/28 existing siblings. (2) `api/analytics/route.ts` does not hardcode the full phase list; it aggregates over real rows via `contact_status` filters, so it can only ever report stages present in the data. | — |
 
 ## LOGGED-OUT WEBSITE
 
