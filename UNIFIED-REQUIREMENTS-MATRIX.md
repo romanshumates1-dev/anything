@@ -277,7 +277,7 @@ and are now recorded as implemented and tested.
 
 | ID | Requirement | Implementation | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| X1 | UI must not claim what backend denies | access-control + billing 503s | IN PROGRESS | backend fails closed; frontend/backend agreement not exhaustively verified |
+| X1 | UI must not claim what backend denies | `api/utils/entitlements.ts` + `settings/billing/page.tsx` | **VERIFIED 2026-10-04** | Closed on both halves. **Backend**: `entitlements.ts` had **no test file at all**, which is why this sat IN PROGRESS. `entitlements.fail-closed.test.ts` now proves every degraded input routes to the LOWEST tier — no subscription row, unrecognised tier string, NULL tier, empty result set, and a database throw all yield `FREE`; `getTierLimits('NOT_A_TIER')` → FREE defaults; `enforceEntitlement` throws `FeatureNotAllowedError` **and** logs `feature_denied`. **16/16 pass**, lint 0/0. **Frontend**: `settings/billing/page.tsx` throws on `!res.ok` for billing/credits/refund fetches (L235/247/259), renders an explicit error branch (`if (billingError)`, L381), and defaults `currentTier` to `'free'` (L397) — i.e. it under-claims rather than showing a paid tier the backend denies. `access-control.ts` also fails closed (unknown domain → `false`, unknown role → rank 0). | — |
 
 ## SET Y — CRM PIPELINE METRICS
 
