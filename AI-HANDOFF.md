@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-04 (session following commit `68a67b4`)
+**Last updated:** 2026-10-05 (session following commit `8681150`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,22 +11,25 @@
 
 ## CURRENT HEAD
 
-`68a67b4` — on `feat/cloudflare-workers`. None of this is deployed; the last
+`8681150` — on `feat/cloudflare-workers`. None of this is deployed; the last
 deployed Worker is still `85de11a9` from `a576f2f`.
 
 | Commit | What | Evidence |
 | --- | --- | --- |
-| `dac5d6e` | Better Auth limiter resolves client IP from `['cf-connecting-ip','x-real-ip','x-vercel-forwarded-for']` (self-corrected: cf-only would leave Vercel/Docker on Better Auth's shared `no-trusted-ip` bucket) | 136 tests |
-| `d5d6094` | Closed the `x-real-ip` caveat with live evidence; `DEPLOYMENT-ARCHITECTURE.md` | 4 tests |
-| `ed683e5` | **V3** reward layer: migration 099 + economy + exactly-once claims | 58 tests, migration gate PASS |
-| `141e063` | `/api/rewards` route behind session + ON/OFF gates | 13 tests |
-| `b9462e1` | State docs | — |
-| `a5fc054` | **Y1/U1 VERIFIED** — disabled workflow stages never reported active | 15 + 28 tests |
-| `eced6d4` | Matrix: Y1/U1 closed | — |
-| `68a67b4` | **X1 VERIFIED** — `entitlements.ts` had NO test file; now proves fail-closed on every degraded input | 16 tests |
+| `8681150` | **run-migrations silently skipped commented statements** (deployed live 500). Comment-gated statements never ran: **388 of 773** statements applied corpus-wide, **1 of 13** CREATE TABLEs in 099, then "All migrations complete!" + exit 0. Also fixed a semicolon-then-trailing-comment merge in 082 and 3 swallowed `.catch` sites in `rewards/page.tsx` | 9 new guard tests; 3133 pass / 26 skip / 0 fail; gate PASS |
+| `7e63233` | docs(matrix): V3 complete incl. rewards page | — |
+| `2a6bc1a` | **V3-UI** rewards page + gamification sidebar gating | — |
+| `a857b31` | docs(state): Y1/U1 and X1 verified at `68a67b4` | — |
+| `68a67b4` | **X1 VERIFIED** — `entitlements.ts` fails closed on every degraded input | 16 tests |
+| `a5fc054` | **Y1/U1 VERIFIED** — disabled stages never reported active | 15 + 28 tests |
+| `ed683e5` | **V3** reward layer: migration 099 + economy + exactly-once claims | 58 tests |
+| `141e063` | `/api/rewards` behind session + ON/OFF gates | 13 tests |
+| `d5d6094` | `x-real-ip` caveat closed | 4 tests |
+| `dac5d6e` | Better Auth limiter resolves client IP from the canonical trust list | 136 tests |
 
-Gates at `68a67b4`: typecheck `TC_EXIT=0`, lint 0/0, migration gate PASS
-(99 migrations fresh-install + idempotent re-run, 17/17 tables).
+Gates at `8681150`: typecheck `TC_EXIT=0`, oxlint 0/0, **3133 passed / 26 skipped /
+0 failed** (290 files), MIGRATION_GATE PASS (99 fresh-install + 101 idempotent
+re-run, 17/17 tables).
 
 ⚠️ Keep this value current on every state commit — it has been stale before, and
 a checkpoint whose HEAD does not match the repository is exactly how a new model
@@ -34,23 +37,22 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-**V3-UI — build the rewards page.** `/api/rewards` exists and is fully tested
-(`141e063`) but no page renders it, so V3 is backend-only. Next action: add
-`app/rewards/page.tsx` reading `/api/rewards`, honouring the gamification ON/OFF
-setting the same way `app/achievements/page.tsx` does, and add the nav entry
-alongside the existing gamification links in `Shell.tsx`. **Do not rebuild the
-reward backend — it is done and tested.**
+**QA-ACCEPT — give the QA account legal acceptance.** Every page route 307s to
+`/legal/accept`, which blocks page-level browser QA. This is a test-account gap,
+not a product defect, but it is what currently prevents the browser sweep from
+measuring anything real. `scripts/qa-accept.mjs` and `scripts/qa-page-probe.mjs`
+exist uncommitted for this.
 
 After that, in order:
 
 1. **X1 / Y1 / U1** — ✅ CLOSED `a5fc054`, `68a67b4`. Do not redo.
-2. **V3-UI** — *(NEXT)*
-3. **QA-ACCEPT** — give the QA account legal acceptance; every page route
-   currently 307s to `/legal/accept`, which blocks page-level browser QA
-4. **H1** — console cleanliness, PARTIAL (only the RUM beacon + 503 burst remain)
-5. **G2** — intermittent `GET /` 500, cause unidentified
-6. **Deployment** — none of the above is deployed; last live Worker is `85de11a9`
-7. `BLOCKED-EXTERNAL`: Stripe live keys, OAuth credentials, Apollo keys
+2. **V3-UI** — ✅ CLOSED `2a6bc1a`. Do not rebuild.
+3. **QA-ACCEPT** — *(NEXT)*
+4. **G2** — intermittent `GET /` 500, cause unidentified
+5. **G1b** — Free-plan resource ceiling (Cloudflare 1102); owner decision
+6. **Deployment** — none of this is deployed; last live Worker is `85de11a9`
+7. `BLOCKED-EXTERNAL`: Stripe live keys, Apollo keys, Bedrock, Google OAuth,
+   Workers paid plan
 
 Open findings that must not be confused with completed work:
 
@@ -74,40 +76,58 @@ is **not** isolation. Probe scripts refuse to run unless `BASE` contains
 
 Never load-test the live apex; a previous session caused a real ~90s outage.
 
-## CURRENT TASK
+## THE `run-migrations.mjs` TRAP — read before touching migrations
 
-Master requirements. Closed this session: `x-real-ip` caveat (`d5d6094`), V3
-reward backend (`ed683e5`, `141e063`), **Y1/U1** (`a5fc054`), **X1** (`68a67b4`).
-Moved to **V3-UI**.
+`db/migrations/` is applied by **three different runners** and they are not
+interchangeable:
+
+| Runner | Splitter | Used by |
+| --- | --- | --- |
+| `scripts/migrate.mjs` | its own `splitSql` | `DEPLOY.md`, docker seed |
+| `scripts/migration-gate.mjs` | `scripts/lib/split-sql.mjs` (**vetted**) | the PASS/FAIL gate |
+| `scripts/run-migrations.mjs` | its own copy | single-file apply |
+
+`run-migrations.mjs` drifted from the vetted splitter and lost statements
+silently. **MIGRATION_GATE PASS does not imply `run-migrations.mjs` is correct** —
+they are different code paths. That is now pinned by
+`scripts/run-migrations.guard.test.ts`, which asserts the two agree statement
+for statement across all 99 files. If you add a migration and the gate passes,
+confirm the guard still passes too.
 
 ## DO NOT REPEAT (learned the hard way)
 
 - **Do not re-audit `COMPLETE` / `LIVE VERIFIED` matrix rows.** That is the
   model-switch loop this file exists to prevent. Check the matrix first.
-- **Do not declare a feature absent from one grep or one directory.** Eight
+- **Do not declare a feature absent from one grep or one directory.** Ten
   false negatives are already recorded in the matrix (wrong path, wrong name).
   Before "ABSENT": check `src/**`, `api/**` routes, DB migrations, git history
   and branches.
+- **Do not trust a passing gate as proof a sibling code path is also correct.**
+  This is how the migration defect survived: `MIGRATION_GATE: PASS` while
+  `run-migrations.mjs` applied half the corpus. Diff the paths.
 - **Do not load/concurrency/CPU-stress the production apex.** A prior session
   caused a real ~90s outage. All of that belongs on `dealswift-loadtest`.
 - **Do not trust `x-forwarded-for`** as a client IP. Use the canonical
-  `clientIp.ts` trust list; a new test now fails if `auth.ts` and `clientIp.ts`
+  `clientIp.ts` trust list; a new test fails if `auth.ts` and `clientIp.ts`
   disagree.
 - **Do not claim a negative result without a control.** When tailing logs to
   prove a warning is *gone*, first prove the tail can surface *a* warning.
 
 ## CURRENT SCORE
 
-**8.5/10.** Raised from 8 earlier on recovered requirements; held since. The
-ceiling is set by three *unmeasured* items, not by code quality:
+**8.5/10.** Unchanged by this session, and deliberately so: everything fixed
+here was a *correctness* defect, not a missing capability. Full gate green does
+not move the score; it is the baseline the score is measured against.
+
+The ceiling is set by three *unmeasured* items, none of them code-fixable here:
 
 - no money-moving path has live evidence (Stripe is test-mode verified; signed
   webhook delivery to the deployed Worker is unproven)
-- 503s under sustained load
+- 503s under sustained load (Free plan, not configurable)
 - intermittent homepage 500, cause unidentified
 
-Full gate green does **not** move the score; it is the baseline the score is now
-measured against.
+`PRODUCTION_ENGINEERING_AUDIT.md` says 6/10. **It is stale** — dated 2026-10-03
+against `c87d510`, and superseded by the matrix. Do not act on it.
 
 ## WITHDRAWN DEFECT — `/dashboard` "45s timeout" NEVER EXISTED (`f0074e2`)
 
