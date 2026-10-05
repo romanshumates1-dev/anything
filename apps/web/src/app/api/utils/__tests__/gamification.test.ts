@@ -156,4 +156,48 @@ describe('Set V — gamification ON/OFF setting', () => {
       // catch a hanging in-process test body, not to cap a deliberate file walk.
     }, 30_000);
   });
+
+  /**
+   * The sidebar gate (added with the Rewards nav entry).
+   *
+   * The user-menu links were always gated, but `navItems` in `Shell.tsx` was
+   * rendered unfiltered, so a user who had switched gamification OFF still saw
+   * Leaderboard and Achievements in the sidebar. roman.agent.md is explicit:
+   * "When OFF: remove unnecessary UI." A link to a route that now 404s is
+   * exactly the unnecessary UI the requirement forbids.
+   *
+   * Asserted on the source because the component is a large client shell; what
+   * matters is that a gamification nav entry is DECLARED with the flag and that
+   * the render honours it. Adding a fourth gamification link without the flag
+   * fails the first assertion.
+   */
+  describe('sidebar navigation respects the setting', () => {
+    const shell = readSource(join(COMPONENTS_ROOT, 'Shell.tsx'));
+    const lineFor = (href: string) =>
+      shell.split('\n').find((l) => l.includes(`href: '${href}'`));
+
+    it('marks every gamification nav entry with requiresGamification', () => {
+      for (const href of ['/leaderboard', '/achievements', '/rewards']) {
+        const line = lineFor(href);
+        expect(line, `${href} must be marked requiresGamification`).toBeTruthy();
+        expect(line).toContain('requiresGamification');
+      }
+    });
+
+    it('drops those entries from the render when the feature is off', () => {
+      expect(shell).toMatch(
+        /requiresGamification[\s\S]{0,200}!gamificationEnabled[\s\S]{0,120}return null/,
+      );
+    });
+
+    it('does not gate non-gamification navigation', () => {
+      // Over-gating would hide real product navigation from users who turned
+      // gamification off, which is a different and equally wrong failure.
+      for (const href of ['/dashboard', '/campaigns', '/settings', '/inbox']) {
+        const line = lineFor(href);
+        expect(line, `${href} exists in navItems`).toBeTruthy();
+        expect(line).not.toContain('requiresGamification');
+      }
+    });
+  });
 });

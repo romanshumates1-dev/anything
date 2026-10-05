@@ -70,8 +70,14 @@ const navItems = [
   { href: '/funnel', label: 'Funnel', icon: Filter },
   { href: '/campaigns/planner', label: 'Planner', icon: Calendar },
   { type: 'separator' as const },
-  { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-  { href: '/achievements', label: 'Achievements', icon: Award },
+  // Set V: "When OFF — remove unnecessary UI." These three are gamification
+  // surfaces, so they carry `requiresGamification` and are filtered out of the
+  // sidebar render (not merely hidden behind the user menu) when the user has
+  // switched the feature off. The user-menu links already did this; the sidebar
+  // did not, so a disabled user still saw them.
+  { href: '/leaderboard', label: 'Leaderboard', icon: Trophy, requiresGamification: true },
+  { href: '/achievements', label: 'Achievements', icon: Award, requiresGamification: true },
+  { href: '/rewards', label: 'Rewards', icon: Sparkles, requiresGamification: true },
   { href: '/feedback', label: 'Feedback', icon: MessageSquarePlus },
   { type: 'separator' as const },
   { href: '/system-health', label: 'System Health', icon: Activity },
@@ -263,6 +269,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             if (item.adminOnly && userWithRole?.role !== 'ADMIN') {
               return null;
             }
+            // Set V: "When OFF: remove unnecessary UI." The user-menu links
+            // already respected this; the sidebar did not, so a user with
+            // gamification switched off still saw Leaderboard / Achievements /
+            // Rewards. The routes themselves 404 via `requireGamificationEnabled`,
+            // so hiding the links is removing dead UI rather than hiding access.
+            if (
+              'requiresGamification' in item &&
+              item.requiresGamification &&
+              !gamificationEnabled
+            ) {
+              return null;
+            }
             const Icon = item.icon!;
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
             const isAdminItem = item.adminOnly;
@@ -419,6 +437,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   >
                     <Award className="h-4 w-4" />
                     <span>Achievements</span>
+                  </Link>
+                  <Link
+                    href="/rewards"
+                    prefetch={false}
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    <span>Rewards</span>
                   </Link>
                 </>
               )}
