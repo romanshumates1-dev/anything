@@ -712,27 +712,50 @@ search contents, DB columns and the build manifest before concluding ABSENT.
 
 ## OPEN WORK (highest priority first)
 
+**Refreshed 2026-10-05 at `8681150`.** Rows below marked DONE are closed; do not
+re-open them.
+
 | ID | Task | Status | Next action |
 | --- | --- | --- | --- |
-| **Y1 / U1** | Metrics must reflect only ENABLED phases | **NEXT — IMPLEMENTED BUT UNVERIFIED** | Read `api/analytics`; write a test that disables a phase and asserts it is excluded from campaign / CRM-pipeline / admin-funnel metrics |
-| **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Live probe: apex **and** workers.dev are `server: cloudflare`, no `x-vercel-*`; `git ls-files` finds 0 nginx/Caddy/traefik configs; Dockerfile exposes :4000 with no proxy. Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
-| **V3-BACKEND** | Gamification reward layer | **DONE 2026-10-04** (`ed683e5`, `141e063`) | Was NOT STARTED; now migration 099 + economy + claims + `/api/rewards`, 85 tests green. **Remaining: UI page + deploy** |
-| N2-live | Verify AI credit period keys against the real ledger | **COMPLETE 2026-10-04** | Closed — PGlite runs migration 088 on a real engine incl. concurrency; see N6-N8 |
-| SCORE | Recalculate from this corrected matrix | **DONE 2026-10-04** | see SCORE section |
-| DEPLOY | Ship `2ea6db3` + `ff3b262` + `503845f` | **DONE 2026-10-04** | Worker `499ceb4c`; required a prior `yarn cf:build` (see OPEN DEFECT 3) |
-| G1-RECRAWL | Re-measure the 15/24 authenticated 503s now that `503845f` is live | NEXT | run `scripts/deployed-browser-qa.mjs` |
-| ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — seeded, gated by `syntheticDataAllowed`, 10 tests pass |
-| ~~Earnings date-range filters~~ | **DONE 2026-10-04** | False negative #2 — implemented in `api/earnings` + `payouts` page with all 7 presets |
-| ~~R1 / T1~~ | ~~AI calling + voice selection~~ | **DONE 2026-10-04** | False negatives #3/#4 — 33 tests pass; only live provider calls remain |
-| G2 | Intermittent homepage 500 | BLOCKED (cause unknown) | instrument; chunk hypothesis already DISPROVEN |
-| G1-RECRAWL | ~~Re-measure the 15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | Live: all authenticated APIs 200; `/api/dashboard/summary` 10/10 clean. Page routes 307→`/legal/accept` because the QA account has not accepted legal terms — a test-account gap, not a defect |
-| ~~CONTACTS-PAGE~~ | ~~No CRM contacts page~~ | **DONE 2026-10-04** | False negative #8 — `/crm` is a complete UI (search, status/campaign filters, CSV export, detail drawer), live 200, backed by org-scoped APIs. `/leads` separately serves the lead DB as "Contacts" — two intentional datasets |
-| QA-ACCEPT | Give the QA account legal acceptance so page routes render | NOT STARTED | blocks full page-level verification; all page routes 307 to `/legal/accept` |
-| G1 | ~~15/24 authenticated routes 503~~ | **RESOLVED 2026-10-04** | Live after `503845f`: `/dashboard` 200 in **315ms**, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms (was 12.4s). No error boundary in HTML; hardcoded `+$36,500` placeholder absent |
-| G1b | Burst traffic 503s and can take the public site down | OPEN — **highest-value unblocked item, owner decision** | **Confirmed incident 2026-10-04.** Three consecutive `GET /` returned **503 with Cloudflare error 1102** ("Worker exceeded resource limit"). A sustained 4-route browser sweep 503'd on all four. After ~90s of cooldown the site returned to 200 (homepage 147KB with the referral banner rendering). `wrangler.jsonc` documents that `limits.cpu_ms` is **rejected on the Free plan** ("CPU limits are not supported for the Free plan"), so this cannot be configured — only bought, or avoided by doing less work per invocation |
+| **QA-ACCEPT** | Give the QA account legal acceptance so page routes render | **NEXT** | Every page route 307s to `/legal/accept`, which blocks page-level browser QA. Test-account gap, not a product defect. `scripts/qa-accept.mjs` + `qa-page-probe.mjs` exist (uncommitted) |
+| **RUNMIG** | `run-migrations.mjs` silently skipped commented statements | **DONE 2026-10-05** (`8681150`) | Was a **deployed live 500**. Comment-gated statements never ran: 388/773 statements and 1/13 CREATE TABLEs in 099, then exit 0 with "All migrations complete!". Second defect: 082's `; -- $5k` line merged statements, losing a `COMMENT ON COLUMN`. 9 guard tests now pin it to the vetted splitter |
+| **SQLFRAG** | Defect 32 — nested `sql` fragments in `crmAnalyticsEngine` | **DONE 2026-10-05** (`8681150`) | Broke `GET /api/analytics/crm` with HTTP 500. Fixed to scalar bindings; `sqlFragmentComposition.guard.test.ts` prevents reintroduction |
+| **V3-UI** | Rewards page | **DONE** (`2a6bc1a`) | Closed. 3 swallowed `.catch` sites in the new page were fixed in `8681150` |
+| **V3-BACKEND** | Gamification reward layer | **DONE 2026-10-04** (`ed683e5`, `141e063`) | Migration 099 + economy + claims + `/api/rewards`, 85 tests green |
+| **Y1 / U1** | Metrics reflect only ENABLED phases | **DONE 2026-10-04** (`a5fc054`) | 15 + 28 tests |
+| **X1** | Entitlements fail closed | **DONE 2026-10-04** (`68a67b4`) | 16 tests |
+| **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
+| G2 | Intermittent homepage 500 | **BLOCKED** (cause unknown) | opennextjs chunk hypothesis DISPROVEN. Tail with `wrangler tail --format pretty`, grep `[worker:unhandled]` |
+| G1b | Free-plan resource ceiling (Cloudflare 1102) | OPEN — owner decision | `limits.cpu_ms` is rejected on the Free plan. Buy capacity or do less work per invocation |
+| DEPLOY | Ship current HEAD | **NOT STARTED** | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` does NOT rebuild — run `yarn cf:build` first |
+| ~~N2-live~~ | ~~AI credit period keys vs real ledger~~ | **DONE 2026-10-04** | PGlite runs migration 088 on a real engine incl. concurrency |
+| ~~G1-RECRAWL~~ | ~~15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | `/dashboard` 315ms, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms |
+| ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — 10 tests |
+| ~~Earnings filters~~ | ~~Earnings date-range~~ | **DONE 2026-10-04** | False negative #2 — `api/earnings` + `api/payouts`, 7 presets |
+| ~~R1 / T1~~ | ~~AI calling + voice selection~~ | **DONE 2026-10-04** | False negatives #3/#4 — 33 tests |
+| ~~CONTACTS-PAGE~~ | ~~No CRM contacts page~~ | **DONE 2026-10-04** | False negative #8 — `/crm` is a complete UI, live 200 |
+
+### ⚠️ Gates are not sufficient — read `AI-HANDOFF.md` § run-migrations trap
+
+`MIGRATION_GATE: PASS` and `3133 tests pass` did **not** catch the migration
+defect, because three different runners apply `db/migrations/` and only one of
+them is the gate. A green gate proves one code path, not all of them.
 
 ## OPEN DEFECTS
 
+0. **CLOSED 2026-10-05 (`8681150`) — `run-migrations.mjs` applied half the schema
+   while reporting success.** Recorded here because the *shape* of this failure is
+   the reusable lesson. `splitStatements` attaches each statement's leading
+   comment block to the statement, and the runner gated on the first line, so any
+   statement under a `--` header was skipped whole. Measured on the real corpus:
+   **388 of 773** statements applied, **1 of 13** `CREATE TABLE`s in migration
+   099, exit code 0, "All migrations complete!" — then HTTP 500
+   `relation "public.user_spin_wallet" does not exist` in production. A second,
+   independent defect in the same splitter dropped a statement whose semicolon
+   was followed by a trailing comment (`082` line 12, `; -- $5k`).
+   **Why it survived a green gate:** `MIGRATION_GATE` exercises
+   `lib/split-sql.mjs`, not this runner. Both are now pinned together by
+   `scripts/run-migrations.guard.test.ts`.
 1. **Intermittent `GET /` 500** — cause UNIDENTIFIED. Homepage checked 3/3 = 200 on
    2026-10-04 with no error; it has not reproduced since capture via `wrangler
    tail`. The opennextjs chunk-loading hypothesis is **DISPROVEN**. Treat as
