@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-04 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `141e063` — four commits since `8451715`: `dac5d6e` (Better Auth limiter IP config), `d5d6094` (deployment-architecture caveat closed), `ed683e5` (**V3** gamification reward layer), `141e063` (`/api/rewards` route). **All not deployed.** |
+| HEAD | `68a67b4` — V3 reward layer (`ed683e5`, `141e063`) + **Y1/U1 VERIFIED** (`a5fc054`, `eced6d4`) + **X1 VERIFIED** (`68a67b4`), on top of the client-IP work (`dac5d6e`, `d5d6094`). **All not deployed.** |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -78,32 +78,40 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**Y1 / U1 — ENABLED-PHASE EXCLUSION IN ANALYTICS — NOT YET VERIFIED.**
+**V3-UI — BUILD THE REWARDS PAGE.**
 
-The matrix records both as code-present but unproven: Y1 "Metrics reflect only
-enabled phases" (`IMPLEMENTED`, **NOT VERIFIED**) and U1 "Admin analytics from
-real records … must reflect only ENABLED phases — NOT VERIFIED". Next action:
-read `api/analytics` and the admin/funnel routes, locate where campaign workflow
-phases gate the aggregation, then write a test that disables a phase and asserts
-the disabled phase is excluded. **The analytics exist — verify, do not rebuild.**
+`/api/rewards` is implemented and tested (`141e063`, 13 route tests) but no page
+renders it, so V3 is backend-only. Next action: add `app/rewards/page.tsx`
+reading `/api/rewards`, honouring the gamification ON/OFF setting the same way
+`app/achievements/page.tsx` does, and add the nav entry beside the existing
+gamification links in `Shell.tsx`. **Do not rebuild the reward backend.**
 
 Closed this session:
 
-1. **`x-real-ip` deployment caveat — CLOSED (`d5d6094`).** Live probe shows both
-   the apex and workers.dev return `server: cloudflare` with `cf-ray` and **no**
-   `x-vercel-*` headers, so Cloudflare is the only live edge. `git ls-files`
-   finds **zero** nginx/Caddy/traefik/haproxy configs, and the root Dockerfile
-   exposes the Next server directly on `:4000`. Conclusion: `cf-connecting-ip`
-   is the only header guaranteed edge-overwritten today; `x-real-ip` and
-   `x-vercel-forwarded-for` are retained as *defensive* entries for the
-   documented-but-inactive runtimes, and `x-forwarded-for` stays excluded.
-   Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`; pinned by
-   `clientIp.deployment-architecture.test.ts`, which also fails if someone adds
-   a reverse proxy without re-verifying.
-2. **V3 gamification reward layer — IMPLEMENTED (`ed683e5`, `141e063`).** Was
-   genuinely NOT STARTED. Now: migration 099 (13 tables), pure economy module,
-   exactly-once server claims, `/api/rewards`. **85 tests green** incl. a PGlite
-   concurrency proof. **Remaining: UI page and deploy.**
+1. **Y1 / U1 — VERIFIED (`a5fc054`, `eced6d4`).** Both were code-present but
+   unproven. The campaign builder is the only place workflow stages are defined
+   for display, and `campaignPhases.enabled.test.ts` proves every reporting path
+   (`getCampaignSummary().phaseCount`, `getChannelStats`,
+   `estimateCampaignDuration`, `estimateCampaignCost`) excludes disabled phases —
+   using roman.agent.md's own Campaign A and Campaign B — plus validation
+   rejecting all-off and enabled-on-disabled-channel. **15/15 pass**, 28/28
+   existing siblings. `api/analytics` derives stages from real rows, and no admin
+   route has a stage dimension at all.
+2. **X1 — VERIFIED (`68a67b4`).** `entitlements.ts` had **no test file at all**,
+   which is why this sat IN PROGRESS. Now proven fail-closed: no subscription
+   row, unknown tier string, NULL tier, empty result and a DB throw all resolve
+   to `FREE`; `enforceEntitlement` throws and audits `feature_denied`. The
+   billing UI already throws on `!res.ok`, renders an error branch, and defaults
+   `currentTier` to `'free'`. **16/16 pass.**
+3. **`x-real-ip` caveat — CLOSED (`d5d6094`).** Live probe shows both the apex and
+   workers.dev are `server: cloudflare` with no `x-vercel-*`; `git ls-files` finds
+   **zero** nginx/Caddy/traefik configs; the Dockerfile exposes :4000 with no
+   proxy. `cf-connecting-ip` is the only header guaranteed edge-overwritten today;
+   the other two are defensive for documented-but-inactive runtimes.
+   `x-forwarded-for` stays excluded. Documented in `DEPLOYMENT-ARCHITECTURE.md`.
+4. **V3 reward layer — IMPLEMENTED (`ed683e5`, `141e063`).** Was genuinely NOT
+   STARTED. Migration 099 (13 tables), pure economy, exactly-once claims, route.
+   **85 tests green** incl. a PGlite concurrency proof.
 
 Prior investigations remain CLOSED:
 
@@ -119,8 +127,9 @@ Prior investigations remain CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): verify Y1/U1 — write the enabled-phase exclusion
-test for `api/analytics`. Do not send burst traffic to the production apex.**
+**NEXT ACTION (exactly one): build `app/rewards/page.tsx` + its `Shell.tsx` nav
+entry so the tested V3 backend is reachable. Do not send burst traffic to the
+production apex.**
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
@@ -431,15 +440,17 @@ Worker `499ceb4c`, deployed 2026-10-04 from commit `5c52120`.
 ## RECENT COMMITS
 
 ```
-141e063  feat(gamification): expose the V3 reward surface behind session + ON/OFF gates  → 13 tests PASS
-ed683e5  feat(gamification): add V3 reward layer (seasons, battle pass, crates, spins…)  → 58 tests + migration gate PASS
-d5d6094  docs(auth): verify deployment architecture behind the client-IP trust list     → 4 tests PASS
-dac5d6e  fix(auth): resolve Better Auth limiter IP from trusted edge headers            → 136 tests PASS
-ff3b262  test(security): give the tenant ratchet an I/O timeout budget  → 2 tests + 27 siblings PASS
-2ea6db3  fix(referrals): point share links at the real signup route    → 14 tests PASS, live 404 reproduced
+68a67b4  test(billing): prove entitlements fail closed, closing X1        → 16 tests PASS
+eced6d4  docs(matrix): close Y1/U1 as VERIFIED with evidence
+a5fc054  test(campaigns): verify disabled workflow stages are never active  → 15 + 28 tests PASS
+b9462e1  docs(state): record IP-architecture closure and V3 reward layer
+141e063  feat(gamification): expose the V3 reward surface behind gates       → 13 tests PASS
+ed683e5  feat(gamification): add V3 reward layer                           → 58 tests + migration gate PASS
+d5d6094  docs(auth): verify deployment architecture behind the IP list      → 4 tests PASS
+dac5d6e  fix(auth): resolve Better Auth limiter IP from trusted edge headers → 136 tests PASS
 ```
 
-None of the four are deployed. Last deployed Worker remains `85de11a9`.
+None of these are deployed. Last deployed Worker remains `85de11a9`.
 
 ---
 
@@ -460,6 +471,11 @@ None of the four are deployed. Last deployed Worker remains `85de11a9`.
     config was caught by inspecting the compiled bundle and comparing against
     `clientIp.ts`. Do not "simplify" that list back down; the shared-bucket
     failure it causes is documented in `DEPLOYMENT-ARCHITECTURE.md`.
+11. **Y1 / U1 (enabled-phase exclusion) — VERIFIED `a5fc054`.** Do not re-audit.
+    The campaign builder already filters disabled phases; the test now pins it.
+12. **X1 (UI must not claim what the backend denies) — VERIFIED `68a67b4`.**
+    `entitlements.ts` now has a test file proving fail-closed. Do not rebuild
+    the gate; it is correct.
 
 ## SECURITY NOTE
 
