@@ -235,7 +235,7 @@ writes, dunning transitions — is covered by the 52 passing tests.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | L1 | Ledger-derived earnings/tax report | `api/tax/` (5 files) | UNIT TESTED | `tax-withdrawal-integration.test.ts` | — |
-| M1 | Optional auto tax withholding | `api/tax/withhold*` | IMPLEMENTED | code present | not verified against real ledger |
+| M1 | Optional auto tax withholding | `api/tax/withhold*`, `api/tax/settings/route.ts` | **PGlite VERIFIED 2026-10-07** | `taxWithholdingStore.pglite.test.ts`: migration 090 applied to real Postgres (PGlite); settings upsert + CHECK constraint, `recordWithholding` idempotency, `getWithheldBalance` tenant-scoped aggregate, `listLedger` tenant-scoped date-range, cross-tenant isolation, money conservation. **18/18 tests pass.** | — |
 
 ## SET N — AI CREDIT LIMITING
 

@@ -79,12 +79,26 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**G2 — ROOT-CAUSE THE INTERMITTENT HOMEPAGE 500.**
+**G2 — BLOCKED-EXTERNAL (2026-10-07)**
 
-Diagnostics ship in `a576f2f` (Worker `85de11a9`): the fetch wrapper logs
+Attempted: controlled concurrency load test against `dealswift-loadtest` with `wrangler tail` capture.
+
+Precondition verification results:
+- `CF_API_TOKEN` env: unset
+- `CF_ACCOUNT_ID` env: unset
+- `npx wrangler whoami`: hangs → times out (no stored auth in `.wrangler/state/v3`)
+- Result: **NOT AUTHENTICATED**
+
+`BLOCKER: Cloudflare diagnostic execution unavailable`
+`REASON: No Wrangler authentication credentials (CF_API_TOKEN/CF_ACCOUNT_ID) present locally; wrangler whoami times out with no stored auth config.`
+`NEXT ACTION WHEN UNBLOCKED: run G2 isolated concurrency diagnostic (10 concurrent + 2 heavy authenticated routes, 60s/180-req cap, early-stop on 5xx, wrangler tail capture for [worker:unhandled] / suspected_resource_kill markers)`
+
+Diagnostics code ships in `a576f2f` (Worker `85de11a9`): the fetch wrapper logs
 `[worker:unhandled]` + `suspected_resource_kill`. On the next occurrence run
 `wrangler tail --format pretty` and grep that marker. Not reproduced in 40/40
 checks. Do not send burst traffic to the production apex.
+
+Continuing with locally-executable requirements while G2 is blocked — see OPEN WORK below.
 
 Closed this session (2026-10-07):
 
@@ -137,9 +151,7 @@ Prior investigations remain CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): G2 — root-cause the intermittent `GET /` 500 via
-`wrangler tail --format pretty` on the next occurrence (grep `[worker:unhandled]`).
-Do not send burst traffic to the production apex.**
+**NEXT ACTION (exactly one): G2 is BLOCKED-EXTERNAL — no Cloudflare auth available locally. M1 closed (tax withholding store verified against real Postgres via PGlite, 18/18). Next: B1/B2 — verify Shell.tsx test coverage for long-email layout robustness.
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
