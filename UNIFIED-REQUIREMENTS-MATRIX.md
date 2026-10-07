@@ -731,9 +731,9 @@ re-open them.
 | **Y1 / U1** | Metrics reflect only ENABLED phases | **DONE 2026-10-04** (`a5fc054`) | 15 + 28 tests |
 | **X1** | Entitlements fail closed | **DONE 2026-10-04** (`68a67b4`) | 16 tests |
 | **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
-| G2 | Intermittent homepage 500 | **BLOCKED** (cause unknown) | opennextjs chunk hypothesis DISPROVEN. Tail with `wrangler tail --format pretty`, grep `[worker:unhandled]` |
+| G2 | Intermittent homepage 500 | **BLOCKED-EXTERNAL** (2026-10-07) | No CF_API_TOKEN/CF_ACCOUNT_ID locally; wrangler whoami times out. opennextjs chunk hypothesis DISPROVEN. Controlled concurrency diagnostic requires Cloudflare auth. |
 | G1b | Free-plan resource ceiling (Cloudflare 1102) | OPEN — owner decision | `limits.cpu_ms` is rejected on the Free plan. Buy capacity or do less work per invocation |
-| DEPLOY | Ship current HEAD (through `a0c9ec6`) | **NOT STARTED** | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` does NOT rebuild — run `yarn cf:build` first |
+| DEPLOY | Ship current HEAD (through `a0c9ec6`) | **NOT STARTED** (blocked: no CF auth) | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` has stale-artifact guard (tested by `6ff97f0`). Run `yarn cf:build` first, then deploy. |
 | ~~N2-live~~ | ~~AI credit period keys vs real ledger~~ | **DONE 2026-10-04** | PGlite runs migration 088 on a real engine incl. concurrency |
 | ~~G1-RECRAWL~~ | ~~15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | `/dashboard` 315ms, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms |
 | ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — 10 tests |

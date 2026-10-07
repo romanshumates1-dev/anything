@@ -45,10 +45,25 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-**G2 — root-cause the intermittent `GET /` 500.** Diagnostics are live
+**G2 — BLOCKED-EXTERNAL (2026-10-07).** Diagnostics are live
 (`a576f2f`, Worker `85de11a9`); on the next occurrence run
 `wrangler tail --format pretty` and grep `[worker:unhandled]`. 40/40 no-repro
 so far — act only on new evidence.
+
+**BLOCKER**: No Cloudflare authentication credentials (CF_API_TOKEN/CF_ACCOUNT_ID)
+present locally; `npx wrangler whoami` times out with no stored auth config.
+The controlled concurrency diagnostic against `dealswift-loadtest` cannot execute.
+This is an environment prerequisite, not a code defect.
+
+**Local work completed while G2 is blocked:**
+1. **M1 — CLOSED (`d0a9921`):** `taxWithholdingStore.pglite.test.ts` (18 tests)
+   verifies the tax withholding store against real Postgres (PGlite). Migration 090
+   applied; settings upsert + CHECK constraint, `recordWithholding` idempotency,
+   `getWithheldBalance` tenant-scoped aggregate, `listLedger` date-range scoping,
+   cross-tenant isolation, money conservation. All 18/18 pass.
+2. **DEPLOY guard — CLOSED (`6ff97f0`):** `wrangler-deploy.guard.test.ts` (11 tests)
+   pins the stale-artifact guard in `wrangler-deploy.mjs`, preventing the silent-
+   stale-deploy defect from regressing. All 11/11 pass.
 
 Queue, in order:
 
