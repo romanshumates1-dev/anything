@@ -63,7 +63,7 @@ export async function GET() {
       -- Revenue from closed deals
       COALESCE(SUM(ba.assignment_fee_cents) FILTER (WHERE ba.status = 'SIGNED'), 0)::bigint AS revenue_cents
     FROM leads l
-    LEFT JOIN contracts c ON c.lead_id = l.id
+    LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
     LEFT JOIN buyer_assignments ba ON ba.contract_id = c.id
     WHERE l.organization_id = ${organization.id}
     GROUP BY COALESCE(l.metadata->>'inbound_source', l.source, 'unknown')

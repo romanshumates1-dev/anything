@@ -95,7 +95,7 @@ export async function getRegionalAnalytics(
         COALESCE(SUM(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as total_revenue,
         COALESCE(AVG(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as avg_deal_size
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${organizationId}
         AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
         AND l.state IS NOT NULL
@@ -116,7 +116,7 @@ export async function getRegionalAnalytics(
         COALESCE(SUM(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as total_revenue,
         COALESCE(AVG(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as avg_deal_size
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${organizationId}
         AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
         AND l.county IS NOT NULL
@@ -137,7 +137,7 @@ export async function getRegionalAnalytics(
         COALESCE(SUM(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as total_revenue,
         COALESCE(AVG(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as avg_deal_size
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${organizationId}
         AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
         AND l.city IS NOT NULL
@@ -148,7 +148,7 @@ export async function getRegionalAnalytics(
   } else {
     results = await sql`
       SELECT
-        l.zip_code as region,
+        l.zip as region,
         COUNT(DISTINCT l.id)::int as total_leads,
         COUNT(DISTINCT l.id) FILTER (WHERE l.status NOT IN ('lost', 'closed'))::int as active_leads,
         COUNT(DISTINCT l.id) FILTER (WHERE l.status IN ('contacted', 'engaged', 'negotiating', 'contracted', 'closed'))::int as contacted_leads,
@@ -158,11 +158,11 @@ export async function getRegionalAnalytics(
         COALESCE(SUM(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as total_revenue,
         COALESCE(AVG(c.assignment_fee_cents) FILTER (WHERE c.status = 'closed'), 0)::bigint / 100 as avg_deal_size
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text
       WHERE l.organization_id = ${organizationId}
         AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
-        AND l.zip_code IS NOT NULL
-      GROUP BY l.zip_code
+        AND l.zip IS NOT NULL
+      GROUP BY l.zip
       ORDER BY COUNT(DISTINCT l.id) DESC
       LIMIT 100
     `;
@@ -215,7 +215,10 @@ export async function getOutreachMethodAnalytics(
       'email' as method,
       COUNT(*) FILTER (WHERE direction = 'outbound') as sent,
       COUNT(*) FILTER (WHERE direction = 'outbound' AND status = 'delivered') as delivered,
-      COUNT(*) FILTER (WHERE direction = 'outbound' AND opened_at IS NOT NULL) as opened,
+      -- message_events has NO open-tracking column (never created by any
+      -- migration — see schemaColumnTruth.guard.test.ts). Opens are honestly 0
+      -- rather than a filter on a phantom column that 500'd this view.
+      0 as opened,
       COUNT(*) FILTER (WHERE direction = 'inbound') as responses,
       COUNT(*) FILTER (WHERE status = 'bounced') as bounces
     FROM message_events
@@ -376,7 +379,7 @@ export async function getChannelAttribution(
         ROW_NUMBER() OVER (PARTITION BY l.id ORDER BY l.created_at) as touch_order,
         COUNT(*) OVER (PARTITION BY l.id) as total_touches
       FROM leads l
-      LEFT JOIN contracts c ON c.lead_id = l.id AND c.status = 'closed'
+      LEFT JOIN contracts c ON c.seller_lead_id = l.id::text AND c.status = 'closed'
       WHERE l.organization_id = ${organizationId}
         AND l.created_at BETWEEN ${startDate}::timestamptz AND ${endDate}::timestamptz
     )

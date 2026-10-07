@@ -95,6 +95,16 @@ const API_ROUTES = [
   '/api/earnings', '/api/system/health', '/api/funnel', '/api/analytics',
   '/api/analytics/crm', '/api/optimization/pipeline-analytics',
   '/api/legal', '/api/user/profile', '/api/legal/messaging-acceptance',
+  // Parameterised analytics variants — the regional zip view 500'd ONLY when
+  // explicitly requested (?view=regional&groupBy=zipCode); a probe that hits
+  // only the bare endpoint never sees parameter-dependent defects.
+  '/api/analytics/crm?view=outreach',
+  '/api/analytics/crm?view=regional',
+  '/api/analytics/crm?view=regional&groupBy=zipCode',
+  '/api/analytics/crm?view=regional&groupBy=county',
+  '/api/analytics/crm?view=regional&groupBy=city',
+  '/api/analytics/crm?view=attribution',
+  '/api/analytics/crm?view=funnel',
 ];
 
 function createJar() {
