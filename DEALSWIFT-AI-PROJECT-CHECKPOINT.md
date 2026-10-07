@@ -345,6 +345,7 @@ deployment changed, the environment changed, or a regression demands it.
 
 | Fact | Evidence | Date |
 | --- | --- | --- |
+| ⭐ **FULL SUITE PASSES at code HEAD `a0c9ec6`** — **3139 passed / 26 skipped / 0 failed** (290 files, 207.6s), vitest with project config | run 2026-10-07; re-run only if relevant files change | 2026-10-07 |
 | ⭐ **Page probe: 104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** on `dealswift-loadtest`, incl. all 8 `analytics/crm` variants (`view=regional&groupBy=zipCode` 200, `view=outreach` 200) | `qa-page-probe.mjs` at `a0c9ec6` | 2026-10-07 |
 | ⭐ **Schema-truth guard pins the phantom-column rules** — contracts joins via `seller_lead_id = l.id::text`; no `message_events.opened_at`; `leads.zip` not `zip_code`. Regression samples prove the scan is not vacuous | `schemaColumnTruth.guard.test.ts`, 8/8 pass with `sqlFragmentComposition.guard` | 2026-10-07 |
 | ⭐ **FULL GATE PASSES at `52ad8e5`** — typecheck OK, lint 0/0, **3006 tests passed / 26 skipped / 0 failed** (277 files, 180.92s), `cf:build` OK, authenticated browser **clean=6 noisy=0** | run at this HEAD; re-run only if these files change | 2026-10-04 |

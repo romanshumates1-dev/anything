@@ -31,10 +31,10 @@ production; the last live Worker is still `85de11a9` from `a576f2f`. The
 | `d5d6094` | `x-real-ip` caveat closed | 4 tests |
 | `dac5d6e` | Better Auth limiter resolves client IP from the canonical trust list | 136 tests |
 
-Gates at `a0c9ec6`: typecheck (`tsc -p tsconfig.typecheck.json --noEmit`) clean,
-oxlint 0/0 on changed files, schema-truth + SQL-fragment guards 8/8, utils +
-pglite suites **1146 passed / 0 failed**, page probe **104 routes / 0
-SERVER_FAULTS** against `dealswift-loadtest`.
+Gates at `a0c9ec6`: **full suite 3139 passed / 26 skipped / 0 failed** (290
+files, 207.6s), typecheck (`tsc -p tsconfig.typecheck.json --noEmit`) clean,
+oxlint 0/0 on changed files, schema-truth + SQL-fragment guards 8/8, page probe
+**104 routes / 0 SERVER_FAULTS** against `dealswift-loadtest`.
 Gates at `8681150`: typecheck `TC_EXIT=0`, oxlint 0/0, **3133 passed / 26 skipped /
 0 failed** (290 files), MIGRATION_GATE PASS (99 fresh-install + 101 idempotent
 re-run, 17/17 tables).
