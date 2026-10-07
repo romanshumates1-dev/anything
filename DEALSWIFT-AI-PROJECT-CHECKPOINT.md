@@ -10,15 +10,16 @@ project state. A new model inherits state from here and from
 
 | Field | Value |
 | --- | --- |
-| Date | 2026-10-04 |
+| Date | 2026-10-07 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `68a67b4` — V3 reward layer (`ed683e5`, `141e063`) + **Y1/U1 VERIFIED** (`a5fc054`, `eced6d4`) + **X1 VERIFIED** (`68a67b4`), on top of the client-IP work (`dac5d6e`, `d5d6094`). **All not deployed.** |
+| HEAD | `a0c9ec6` — analytics schema-truth fix (phantom `lead_id`/`opened_at`/`zip_code` + `schemaColumnTruth.guard.test`), on top of QA probes (`4036224`), migration-runner fixes (`8681150`), rewards page (`2a6bc1a`), Y1/U1 + X1 verified (`a5fc054`, `68a67b4`), client-IP work (`dac5d6e`, `d5d6094`). **None deployed to production** (last live Worker `85de11a9`); the `dealswift-loadtest` worker serves the analytics fix. |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
 | Environment note | Windows + opennext 1.20.6 + Next 16.3.6 |
-| Current score | **8.5/10** — see SCORE RATIONALE below | |
+| Current score | **8.5/10** — baseline on model switch; do NOT reset (see matrix SCORE) |
+| Score last calculated at commit | `ff3b262` (matrix regenerated 2026-10-04); evidence refreshed through `a0c9ec6` (2026-10-07) — no requirement changes, score unchanged |
 
 ### Current overall score
 
@@ -78,13 +79,22 @@ round-trip, live Apollo and Bedrock credentials, and a paid Workers plan.
 
 ## ACTIVE TASK
 
-**V3-UI — BUILD THE REWARDS PAGE.**
+**G2 — ROOT-CAUSE THE INTERMITTENT HOMEPAGE 500.**
 
-`/api/rewards` is implemented and tested (`141e063`, 13 route tests) but no page
-renders it, so V3 is backend-only. Next action: add `app/rewards/page.tsx`
-reading `/api/rewards`, honouring the gamification ON/OFF setting the same way
-`app/achievements/page.tsx` does, and add the nav entry beside the existing
-gamification links in `Shell.tsx`. **Do not rebuild the reward backend.**
+Diagnostics ship in `a576f2f` (Worker `85de11a9`): the fetch wrapper logs
+`[worker:unhandled]` + `suspected_resource_kill`. On the next occurrence run
+`wrangler tail --format pretty` and grep that marker. Not reproduced in 40/40
+checks. Do not send burst traffic to the production apex.
+
+Closed this session (2026-10-07):
+
+1. **QA-ACCEPT — DONE.** Legal acceptance recorded for the QA account;
+   `qa-accept.mjs` + `qa-page-probe.mjs` committed (`4036224`).
+2. **Analytics phantom columns — DONE (`a0c9ec6`).** `contracts.lead_id`,
+   `message_events.opened_at`, `leads.zip_code` never existed; fixed at 7 query
+   sites, pinned by `schemaColumnTruth.guard.test.ts`. Probe 2026-10-07:
+   **104 routes / 100 OK / 0 SERVER_FAULTS**, all 8 `analytics/crm` variants 200
+   including `groupBy=zipCode`.
 
 Closed this session:
 
@@ -127,9 +137,9 @@ Prior investigations remain CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): build `app/rewards/page.tsx` + its `Shell.tsx` nav
-entry so the tested V3 backend is reachable. Do not send burst traffic to the
-production apex.**
+**NEXT ACTION (exactly one): G2 — root-cause the intermittent `GET /` 500 via
+`wrangler tail --format pretty` on the next occurrence (grep `[worker:unhandled]`).
+Do not send burst traffic to the production apex.**
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
@@ -188,8 +198,10 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 | Commit 1 — referral share-link fix | `COMPLETE` (`2ea6db3`) |
 | Commit 2 — tenant ratchet I/O budget | `COMPLETE` (`ff3b262`) |
 | Commit 3 — persistent project memory | `COMPLETE` (this commit) |
-| AI credit caps live-ledger verification | `NOT STARTED` |
-| Score recalculation from corrected matrix | `NOT STARTED` |
+| AI credit caps live-ledger verification | `COMPLETE` (PGlite runs migration 088 on a real engine, incl. concurrency) |
+| Score recalculation from corrected matrix | `COMPLETE` (8.5/10, matrix SCORE section) |
+| QA-ACCEPT — legal acceptance + page-route probe | `COMPLETE` (`4036224`; probe 104 routes / 0 SERVER_FAULTS) |
+| Analytics phantom-column fix + schema-truth guard | `COMPLETE` (`a0c9ec6`; guards 8/8, all crm variants 200) |
 
 ---
 
@@ -232,10 +244,12 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 | ID | Task | Status | Blocker | Next action |
 | --- | --- | --- | --- | --- |
 | N2-live | Verify AI credit caps against a real ledger | `COMPLETE` | PGlite runs migration 088 on a real engine, incl. concurrency |
-| SCORE | Recalculate score from corrected matrix | `COMPLETE` | — | 7/10, evidence-derived |
+| SCORE | Recalculate score from corrected matrix | `COMPLETE` | — | 8.5/10, evidence-derived (matrix SCORE section) |
+| ANALYTICS | CRM analytics phantom-column 500s | `COMPLETE` (`a0c9ec6`) | guards 8/8; probe: all 8 crm variants 200 |
+| QA-ACCEPT | Legal acceptance so page routes render | `COMPLETE` (`4036224`) | probe: 104 routes / 0 SERVER_FAULTS |
 | DEFECT-1 | Intermittent `GET /` 500 | BLOCKED (cause unknown) | needs new instrumentation | Only on new evidence |
 | DEFECT-2 | ~~Authenticated page renders 503~~ | **RESOLVED 2026-10-04** | pages now 193–315ms live; residual burst 1102 logged as G1b |
-| DEPLOY | Deploy `2ea6db3` + `ff3b262` to production | NOT STARTED | none | `node scripts/wrangler-deploy.mjs` |
+| DEPLOY | Ship current HEAD (through `a0c9ec6`) to production | NOT STARTED | none | `yarn cf:build` first — `scripts/wrangler-deploy.mjs` does NOT rebuild |
 
 ---
 
@@ -243,7 +257,10 @@ via PGlite, including a concurrency test proving the cap cannot be oversold.)*
 
 ### Live billing / subscriptions / payments / payouts
 
-- **Blocker:** `STRIPE_SECRET_KEY` absent from the environment.
+- **Blocker:** a **test-mode** `STRIPE_SECRET_KEY` is now present in
+  `apps/web/.env` (never commit or print it; `STRIPE_PROVIDER=mock`). Still
+  owner-blocked: the **live** round-trip needs production key material and a
+  `STRIPE_WEBHOOK_SECRET` for signed webhook delivery to the deployed Worker.
 - **Why:** no live provider is reachable. Code paths exist and are unit-tested
   (fail-closed 503 without Stripe), but **no money-moving path has end-to-end
   evidence**.
@@ -328,6 +345,8 @@ deployment changed, the environment changed, or a regression demands it.
 
 | Fact | Evidence | Date |
 | --- | --- | --- |
+| ⭐ **Page probe: 104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** on `dealswift-loadtest`, incl. all 8 `analytics/crm` variants (`view=regional&groupBy=zipCode` 200, `view=outreach` 200) | `qa-page-probe.mjs` at `a0c9ec6` | 2026-10-07 |
+| ⭐ **Schema-truth guard pins the phantom-column rules** — contracts joins via `seller_lead_id = l.id::text`; no `message_events.opened_at`; `leads.zip` not `zip_code`. Regression samples prove the scan is not vacuous | `schemaColumnTruth.guard.test.ts`, 8/8 pass with `sqlFragmentComposition.guard` | 2026-10-07 |
 | ⭐ **FULL GATE PASSES at `52ad8e5`** — typecheck OK, lint 0/0, **3006 tests passed / 26 skipped / 0 failed** (277 files, 180.92s), `cf:build` OK, authenticated browser **clean=6 noisy=0** | run at this HEAD; re-run only if these files change | 2026-10-04 |
 | ⭐ **`/dashboard` is NOT slow — the 45s "timeout" never existed** | authenticated, Worker `8b0da56b`: HTTP 200, DOM ready 219ms, content visible 548ms. Cause was the harness awaiting `networkidle` (`f0074e2`) | 2026-10-04 |
 | ⭐ **`ERR_ABORTED` on authenticated pages is benign** | 19 API requests initiated / 5 aborted on `/dashboard`, **0 failures across 10s idle**, every aborted endpoint 200 on a direct call; `/api/user/preferences` requested twice = strict-mode double-mount. Aborted chunk verified served: 200, 28445 bytes | 2026-10-04 |
@@ -426,7 +445,10 @@ uses four routes and a hard timeout.
 
 ## CURRENT DEPLOYED VERSION
 
-Worker `499ceb4c`, deployed 2026-10-04 from commit `5c52120`.
+Worker `85de11a9`, deployed 2026-10-04 from commit `a576f2f` (supersedes the
+older `499ceb4c` / `5c52120` figure). Nothing since `a576f2f` is deployed to
+production; the `dealswift-loadtest` worker separately serves the analytics
+fix (probe 2026-10-07: 104 routes / 0 faults).
 
 | Failure | Status |
 | --- | --- |
@@ -440,17 +462,20 @@ Worker `499ceb4c`, deployed 2026-10-04 from commit `5c52120`.
 ## RECENT COMMITS
 
 ```
-68a67b4  test(billing): prove entitlements fail closed, closing X1        → 16 tests PASS
-eced6d4  docs(matrix): close Y1/U1 as VERIFIED with evidence
-a5fc054  test(campaigns): verify disabled workflow stages are never active  → 15 + 28 tests PASS
-b9462e1  docs(state): record IP-architecture closure and V3 reward layer
-141e063  feat(gamification): expose the V3 reward surface behind gates       → 13 tests PASS
-ed683e5  feat(gamification): add V3 reward layer                           → 58 tests + migration gate PASS
-d5d6094  docs(auth): verify deployment architecture behind the IP list      → 4 tests PASS
-dac5d6e  fix(auth): resolve Better Auth limiter IP from trusted edge headers → 136 tests PASS
+a0c9ec6  fix(analytics): correct phantom columns in CRM engine      → guards 8/8; probe 104 routes / 0 faults
+4036224  test(qa): legal-acceptance setup + page-route probes       → probe 104 routes / 0 faults
+a19cbdc  docs(matrix): close RUNMIG/SQLFRAG/V3-UI, record the green-gate lesson
+9a25669  docs(state): refresh handoff to 8681150, record migration-runner trap
+8681150  fix(migrations): stop run-migrations skipping comments     → 9 guard tests; 3133 pass / 0 fail
+7e63233  docs(matrix): V3 complete incl. rewards page
+2a6bc1a  feat(gamification): rewards page + gamification sidebar gating
+68a67b4  test(billing): prove entitlements fail closed, closing X1  → 16 tests PASS
+a5fc054  test(campaigns): disabled workflow stages never active     → 15 + 28 tests PASS
 ```
 
-None of these are deployed. Last deployed Worker remains `85de11a9`.
+None of these are deployed to production; last live production Worker remains
+`85de11a9`. The `dealswift-loadtest` worker serves the analytics fix (probe
+2026-10-07).
 
 ---
 
@@ -476,6 +501,13 @@ None of these are deployed. Last deployed Worker remains `85de11a9`.
 12. **X1 (UI must not claim what the backend denies) — VERIFIED `68a67b4`.**
     `entitlements.ts` now has a test file proving fail-closed. Do not rebuild
     the gate; it is correct.
+13. **CRM analytics phantom columns — FIXED `a0c9ec6`.** Do not hand-scan for
+    `lead_id`/`opened_at`/`zip_code`; `schemaColumnTruth.guard.test.ts` fails the
+    build on all three. Do not re-run the probe just to prove the analytics
+    views 200 — probe 2026-10-07 (104 routes / 0 faults) is the evidence.
+14. **QA-ACCEPT — DONE.** Legal acceptance is recorded; `qa-accept.mjs` and
+    `qa-page-probe.mjs` are committed (`4036224`). Do not re-open the
+    "every page 307s to /legal/accept" finding.
 
 ## SECURITY NOTE
 

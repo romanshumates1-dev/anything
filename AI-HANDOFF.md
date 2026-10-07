@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-05 (session following commit `8681150`)
+**Last updated:** 2026-10-07 (session following commit `a0c9ec6`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,11 +11,15 @@
 
 ## CURRENT HEAD
 
-`8681150` — on `feat/cloudflare-workers`. None of this is deployed; the last
-deployed Worker is still `85de11a9` from `a576f2f`.
+`a0c9ec6` — on `feat/cloudflare-workers`. None of this is deployed to
+production; the last live Worker is still `85de11a9` from `a576f2f`. The
+`dealswift-loadtest` worker DOES serve the analytics fix (probe 2026-10-07:
+104 routes / 0 server faults).
 
 | Commit | What | Evidence |
 | --- | --- | --- |
+| `a0c9ec6` | **CRM analytics phantom columns** — `contracts.lead_id`, `message_events.opened_at`, `leads.zip_code` never existed; joins now use `seller_lead_id = l.id::text`, opens report honestly 0, regional view uses `zip`. New `schemaColumnTruth.guard.test.ts` static tree-scan guard + regression samples; `qa-page-probe` parameterised with all `analytics/crm` view variants | guards 8/8; oxlint 0/0; tsc clean; utils+pglite suites 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS, all 8 crm variants 200 incl. `groupBy=zipCode`** |
+| `4036224` | `qa-accept.mjs` + `qa-page-probe.mjs` — legal-acceptance setup + authenticated page-route HTTP baseline | probe: 104 routes, 0 server faults (2026-10-07) |
 | `8681150` | **run-migrations silently skipped commented statements** (deployed live 500). Comment-gated statements never ran: **388 of 773** statements applied corpus-wide, **1 of 13** CREATE TABLEs in 099, then "All migrations complete!" + exit 0. Also fixed a semicolon-then-trailing-comment merge in 082 and 3 swallowed `.catch` sites in `rewards/page.tsx` | 9 new guard tests; 3133 pass / 26 skip / 0 fail; gate PASS |
 | `7e63233` | docs(matrix): V3 complete incl. rewards page | — |
 | `2a6bc1a` | **V3-UI** rewards page + gamification sidebar gating | — |
@@ -27,6 +31,10 @@ deployed Worker is still `85de11a9` from `a576f2f`.
 | `d5d6094` | `x-real-ip` caveat closed | 4 tests |
 | `dac5d6e` | Better Auth limiter resolves client IP from the canonical trust list | 136 tests |
 
+Gates at `a0c9ec6`: typecheck (`tsc -p tsconfig.typecheck.json --noEmit`) clean,
+oxlint 0/0 on changed files, schema-truth + SQL-fragment guards 8/8, utils +
+pglite suites **1146 passed / 0 failed**, page probe **104 routes / 0
+SERVER_FAULTS** against `dealswift-loadtest`.
 Gates at `8681150`: typecheck `TC_EXIT=0`, oxlint 0/0, **3133 passed / 26 skipped /
 0 failed** (290 files), MIGRATION_GATE PASS (99 fresh-install + 101 idempotent
 re-run, 17/17 tables).
@@ -37,22 +45,25 @@ re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-**QA-ACCEPT — give the QA account legal acceptance.** Every page route 307s to
-`/legal/accept`, which blocks page-level browser QA. This is a test-account gap,
-not a product defect, but it is what currently prevents the browser sweep from
-measuring anything real. `scripts/qa-accept.mjs` and `scripts/qa-page-probe.mjs`
-exist uncommitted for this.
+**G2 — root-cause the intermittent `GET /` 500.** Diagnostics are live
+(`a576f2f`, Worker `85de11a9`); on the next occurrence run
+`wrangler tail --format pretty` and grep `[worker:unhandled]`. 40/40 no-repro
+so far — act only on new evidence.
 
-After that, in order:
+Queue, in order:
 
 1. **X1 / Y1 / U1** — ✅ CLOSED `a5fc054`, `68a67b4`. Do not redo.
 2. **V3-UI** — ✅ CLOSED `2a6bc1a`. Do not rebuild.
-3. **QA-ACCEPT** — *(NEXT)*
-4. **G2** — intermittent `GET /` 500, cause unidentified
-5. **G1b** — Free-plan resource ceiling (Cloudflare 1102); owner decision
-6. **Deployment** — none of this is deployed; last live Worker is `85de11a9`
-7. `BLOCKED-EXTERNAL`: Stripe live keys, Apollo keys, Bedrock, Google OAuth,
-   Workers paid plan
+3. **QA-ACCEPT** — ✅ CLOSED (legal acceptance recorded; `qa-accept.mjs` +
+   `qa-page-probe.mjs` committed `4036224`; probe 104 routes / 0 SERVER_FAULTS).
+4. **Analytics phantom columns** — ✅ CLOSED `a0c9ec6` (all 8 `analytics/crm`
+   variants 200, incl. `groupBy=zipCode` and `view=outreach`).
+5. **G2** — *(NEXT)* intermittent `GET /` 500, cause unidentified.
+6. **G1b** — Free-plan resource ceiling (Cloudflare 1102); owner decision.
+7. **Deployment** — none of this is deployed to production; last live Worker is
+   `85de11a9`. Always `yarn cf:build` before `scripts/wrangler-deploy.mjs`.
+8. `BLOCKED-EXTERNAL`: Stripe live keys/webhook secret, Apollo keys, Bedrock,
+   Google OAuth, Workers paid plan.
 
 Open findings that must not be confused with completed work:
 
@@ -60,8 +71,11 @@ Open findings that must not be confused with completed work:
    **root cause unresolved**. Next occurrence: `wrangler tail --format pretty`,
    grep `[worker:unhandled]`.
 2. **503 under sustained load** — **zero 5xx across 108 concurrent requests** on
-   the isolated worker. Homepage warm median 124ms; cost is isolate cold start.
-   Higher concurrency still untested.
+   the isolated worker, but probe5/probe6 (2026-10-06) hit alternating 200/503
+   under sustained sequential probing with `wrangler tail` confirming **CPU
+   limit hit (Free plan)** — sustained traffic trips the ceiling too, not just
+   bursts. Homepage warm median 124ms; cost is isolate cold start. Owner
+   decision (G1b).
 3. **Sign-in rate-limit "race" — WITHDRAWN, FALSE POSITIVE** (`d2eb0fe`). Limiter
    HOLDS (3,3,3,3,1 admitted vs limit 3, 64 concurrent requests). The old
    "admitted=4" was a fixed-window boundary artifact. **Do not rewrite it.**
@@ -205,18 +219,28 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   landing on a 200 whose HTML contains the ref. Verified live 2026-10-04.
 - **Referral banner renders on the live homepage** (3/3 requests 200) and
   `/referrals` returns 200. LIVE VERIFIED.
-- **The deployed Worker is `499ceb4c`, built from commit `5c52120`.**
+- **The deployed production Worker is `85de11a9`, built from commit `a576f2f`**
+  (2026-10-04). The older `499ceb4c` / `5c52120` figure is superseded.
 - **The Free-plan CPU ceiling is RESOLVED for authenticated APIs.** The old
   "15/24 routes 503 / /dashboard 12.4s" no longer reproduces. Live 2026-10-04:
   sign-in 200; `/api/dashboard/summary` 200 in 964ms **10/10 consecutive**;
   `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms.
-- ⚠️ **Authenticated PAGE routes are still unverified** — every one 307s to
-  `/legal/accept` because the QA account never accepted legal terms. This is a
-  test-account gap, not a product defect. Fix the account before concluding
-  anything about page rendering.
-- ⚠️ **There is no CRM `/contacts` page.** `/contacts` 404s because the route
-  genuinely does not exist — only the public `/(marketing)/contact` is
-  registered. That is a missing feature, not a broken link.
+- ✅ **Authenticated PAGE routes ARE verified.** Legal acceptance was recorded
+  for the QA account; `scripts/qa-page-probe.mjs` (committed `4036224`) reports
+  **104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** against
+  `dealswift-loadtest` (2026-10-07). The old "every route 307s to
+  `/legal/accept`" note is historical — do not re-open it.
+- ✅ **CRM analytics schema-truth fix (`a0c9ec6`).** `contracts.lead_id`,
+  `message_events.opened_at` and `leads.zip_code` were phantom columns that
+  500'd the outreach and regional-zip views. Joins now use
+  `seller_lead_id = l.id::text`, opens report honestly 0, regional uses
+  `leads.zip`. Pinned by `schemaColumnTruth.guard.test.ts` (static tree scan +
+  regression samples). All 8 `analytics/crm` variants 200 on the deployed
+  loadtest worker.
+- ⚠️ **`/contacts` is a 404 because that route genuinely does not exist** — only
+  the public `/(marketing)/contact` is registered. The CRM contacts requirement
+  is **CLOSED** via `/crm` (matrix false negative #8). Not a broken link; do not
+  create a duplicate page.
 - ⚠️ **`scripts/wrangler-deploy.mjs` does NOT rebuild.** It deploys whatever is
   already in `.open-next`. Running it after a code change ships stale artifacts
   *and reports success*. Always `yarn cf:build` first. This cost a full deploy

@@ -5,6 +5,10 @@ tree at `ff3b262`. Supersedes the earlier root-level copy, which contained
 internal contradictions (it asserted both "all 200 routes pass" and "15/24 routes
 failed" in the same document).
 
+**Last updated 2026-10-07 at `a0c9ec6`** — analytics schema-truth fix and QA
+probe evidence recorded; score unchanged at 8.5/10 (no requirement-status
+change that moves it).
+
 Requirements source: `.github/agents/roman.agent.md` (sets A–AB plus the
 logged-out, marketing, SEO, testing and scoring sections).
 
@@ -146,8 +150,9 @@ UI are all already implemented and tested. Inject via
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| G1 | Authenticated routes render | `scripts/deployed-browser-qa.mjs` | E2E TESTED (FAILING) | login OK; **15/24 routes 503**, `/dashboard` 12.4s | CPU ceiling → OPEN DEFECT 2 |
+| G1 | Authenticated routes render | `scripts/deployed-browser-qa.mjs`, `scripts/qa-page-probe.mjs` | **LIVE VERIFIED 2026-10-07** | `qa-page-probe.mjs`: **104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** on `dealswift-loadtest`. The historical 15/24 503s RESOLVED 2026-10-04 (pages 193–315ms) | residual burst 1102 → G1b |
 | G2 | No intermittent homepage 500 | — | **NOT VERIFIED** | `ComponentMod.handler is not a function`; 40/40 no repro | cause UNIDENTIFIED |
+| G3 | Analytics views serve every parameter variant without 5xx | `crmAnalyticsEngine.ts`, `analytics/attribution/route.ts`, `schemaColumnTruth.guard.test.ts` | **DONE 2026-10-07** (`a0c9ec6`) | phantom `contracts.lead_id` / `message_events.opened_at` / `leads.zip_code` corrected at 7 sites; probe: all 8 `analytics/crm` variants 200 incl. `groupBy=zipCode` + `view=outreach`; static tree-scan guard + regression samples | — |
 
 ## SET H — CONSOLE / DATA HONESTY
 
@@ -712,12 +717,13 @@ search contents, DB columns and the build manifest before concluding ABSENT.
 
 ## OPEN WORK (highest priority first)
 
-**Refreshed 2026-10-05 at `8681150`.** Rows below marked DONE are closed; do not
+**Refreshed 2026-10-07 at `a0c9ec6`.** Rows below marked DONE are closed; do not
 re-open them.
 
 | ID | Task | Status | Next action |
 | --- | --- | --- | --- |
-| **QA-ACCEPT** | Give the QA account legal acceptance so page routes render | **NEXT** | Every page route 307s to `/legal/accept`, which blocks page-level browser QA. Test-account gap, not a product defect. `scripts/qa-accept.mjs` + `qa-page-probe.mjs` exist (uncommitted) |
+| **QA-ACCEPT** | Give the QA account legal acceptance so page routes render | **DONE 2026-10-05** (`4036224`) | Acceptance recorded; probe scripts committed. Probe 2026-10-07: 104 routes / 100 OK / 0 SERVER_FAULTS |
+| **ANALYTICS** | CRM analytics views 500'd on phantom columns | **DONE 2026-10-07** (`a0c9ec6`) | `contracts.lead_id`, `message_events.opened_at`, `leads.zip_code` never existed; fixed at 7 query sites; `schemaColumnTruth.guard.test.ts` pins all three with regression samples; all 8 `analytics/crm` variants 200 |
 | **RUNMIG** | `run-migrations.mjs` silently skipped commented statements | **DONE 2026-10-05** (`8681150`) | Was a **deployed live 500**. Comment-gated statements never ran: 388/773 statements and 1/13 CREATE TABLEs in 099, then exit 0 with "All migrations complete!". Second defect: 082's `; -- $5k` line merged statements, losing a `COMMENT ON COLUMN`. 9 guard tests now pin it to the vetted splitter |
 | **SQLFRAG** | Defect 32 — nested `sql` fragments in `crmAnalyticsEngine` | **DONE 2026-10-05** (`8681150`) | Broke `GET /api/analytics/crm` with HTTP 500. Fixed to scalar bindings; `sqlFragmentComposition.guard.test.ts` prevents reintroduction |
 | **V3-UI** | Rewards page | **DONE** (`2a6bc1a`) | Closed. 3 swallowed `.catch` sites in the new page were fixed in `8681150` |
@@ -727,7 +733,7 @@ re-open them.
 | **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
 | G2 | Intermittent homepage 500 | **BLOCKED** (cause unknown) | opennextjs chunk hypothesis DISPROVEN. Tail with `wrangler tail --format pretty`, grep `[worker:unhandled]` |
 | G1b | Free-plan resource ceiling (Cloudflare 1102) | OPEN — owner decision | `limits.cpu_ms` is rejected on the Free plan. Buy capacity or do less work per invocation |
-| DEPLOY | Ship current HEAD | **NOT STARTED** | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` does NOT rebuild — run `yarn cf:build` first |
+| DEPLOY | Ship current HEAD (through `a0c9ec6`) | **NOT STARTED** | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` does NOT rebuild — run `yarn cf:build` first |
 | ~~N2-live~~ | ~~AI credit period keys vs real ledger~~ | **DONE 2026-10-04** | PGlite runs migration 088 on a real engine incl. concurrency |
 | ~~G1-RECRAWL~~ | ~~15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | `/dashboard` 315ms, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms |
 | ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — 10 tests |
@@ -742,6 +748,17 @@ defect, because three different runners apply `db/migrations/` and only one of
 them is the gate. A green gate proves one code path, not all of them.
 
 ## OPEN DEFECTS
+
+0b. **CLOSED 2026-10-07 (`a0c9ec6`) — CRM analytics 500'd on columns that do
+   not exist.** `contracts.lead_id` (6 join sites), `message_events.opened_at`
+   (email opens filter) and `leads.zip_code` (regional zip view) are phantom
+   columns. The zip defect only surfaced for `?view=regional&groupBy=zipCode`,
+   which the pre-parameterisation probe never requested — a defect the default
+   probe structurally could not see. Fixed to `seller_lead_id = l.id::text`,
+   honest `0` opens (no open-tracking column exists in any migration), and
+   `leads.zip`; pinned by `schemaColumnTruth.guard.test.ts` — a static tree scan
+   with regression samples so the scan cannot be vacuous. Probe 2026-10-07:
+   all 8 `analytics/crm` variants 200; **104 routes / 0 SERVER_FAULTS**.
 
 0. **CLOSED 2026-10-05 (`8681150`) — `run-migrations.mjs` applied half the schema
    while reporting success.** Recorded here because the *shape* of this failure is
@@ -802,7 +819,7 @@ them is the gate. A green gate proves one code path, not all of them.
 
 | Blocker | Blocks |
 | --- | --- |
-| `STRIPE_SECRET_KEY` absent | live billing, subscriptions, payments, payouts end-to-end |
+| Live Stripe key material + `STRIPE_WEBHOOK_SECRET` (test-mode `STRIPE_SECRET_KEY` now present in `apps/web/.env`) | live billing, subscriptions, payments, payouts end-to-end |
 | Apollo API key absent | live Apollo lead search |
 | Bedrock credentials absent | live AI provider calls |
 | Google OAuth credentials absent | live Google sign-in |
