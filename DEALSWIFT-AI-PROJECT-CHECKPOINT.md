@@ -98,7 +98,24 @@ Diagnostics code ships in `a576f2f` (Worker `85de11a9`): the fetch wrapper logs
 `wrangler tail --format pretty` and grep that marker. Not reproduced in 40/40
 checks. Do not send burst traffic to the production apex.
 
-Continuing with locally-executable requirements while G2 is blocked — see OPEN WORK below.
+**DO NOT REPEAT (model-switch protection):** Cloudflare authentication was checked
+and is unavailable. Do not re-check unless credentials/environment changed.
+
+## FROZEN EXTERNAL BLOCKERS
+
+| Blocker | Status | Exact unblock action |
+| --- | --- | --- |
+| G2 — intermittent homepage 500 live diagnostic | BLOCKED-EXTERNAL | Authenticate Wrangler (CF_API_TOKEN/CF_ACCOUNT_ID or `wrangler login`); then run the existing controlled isolated G2 test against `dealswift-loadtest` with `wrangler tail` |
+| G1b — Free-plan CPU ceiling (Cloudflare 1102) | OWNER-DECISION | Owner evaluates/approves Workers plan upgrade (only if final evidence demonstrates it is necessary). Do NOT upgrade it yourself; do NOT weaken auth security |
+| DEPLOY — ship current HEAD to production | BLOCKED-EXTERNAL | Authorized Cloudflare deployment credentials/environment |
+| STRIPE live webhook round-trip | BLOCKED-EXTERNAL | Live `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` via `wrangler secret put` |
+| APOLLO live API calls | BLOCKED-EXTERNAL | `APOLLO_API_KEY` via `wrangler secret put` |
+| Twilio/Bedrock live calls | BLOCKED-EXTERNAL | Provider credentials (Twilio keys, AWS Bedrock keys) |
+| Google OAuth live sign-in | BLOCKED-EXTERNAL | OAuth client credentials |
+| Real inbox delivery verification | BLOCKED-EXTERNAL | Live email provider + real inbox |
+
+All provider-independent engineering is continuing. See OPEN WORK below for
+the engineering-owned requirements in dependency order.
 
 Closed this session (2026-10-07):
 
@@ -151,7 +168,7 @@ Prior investigations remain CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): G2 is BLOCKED-EXTERNAL — no Cloudflare auth available locally. M1 closed (tax withholding store verified against real Postgres via PGlite, 18/18). Next: B1/B2 — verify Shell.tsx test coverage for long-email layout robustness.
+**NEXT ACTION (exactly one): G2 is BLOCKED-EXTERNAL — no Cloudflare auth available locally. B1/B2 CLOSED (`954c910`): Shell.tsx long-identity contract re-verified with 10 tests, mutation-proven (temp copy with `truncate`/`min-w-0`/`title` stripped → 2 new tests FAIL; real impl → 10/10 pass); production code unchanged (Shell.tsx correct as-is). Anti-loop: do not revisit B1/B2 unless its code changes or the evidence is invalidated. Next genuinely unfinished item after B1/B2 is G1b (Free-plan resource ceiling — owner decision) — see AI-HANDOFF queue.
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that

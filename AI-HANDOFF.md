@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-07 (session following commit `a0c9ec6`)
+**Last updated:** 2026-10-08 (session following commit `954c910`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,14 +11,15 @@
 
 ## CURRENT HEAD
 
-`a0c9ec6` — on `feat/cloudflare-workers`. None of this is deployed to
+`954c910` — on `feat/cloudflare-workers`. None of this is deployed to
 production; the last live Worker is still `85de11a9` from `a576f2f`. The
 `dealswift-loadtest` worker DOES serve the analytics fix (probe 2026-10-07:
 104 routes / 0 server faults).
 
 | Commit | What | Evidence |
 | --- | --- | --- |
-| `a0c9ec6` | **CRM analytics phantom columns** — `contracts.lead_id`, `message_events.opened_at`, `leads.zip_code` never existed; joins now use `seller_lead_id = l.id::text`, opens report honestly 0, regional view uses `zip`. New `schemaColumnTruth.guard.test.ts` static tree-scan guard + regression samples; `qa-page-probe` parameterised with all `analytics/crm` view variants | guards 8/8; oxlint 0/0; tsc clean; utils+pglite suites 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS, all 8 crm variants 200 incl. `groupBy=zipCode`** |
+| `954c910` | **B1/B2 CLOSED — Shell sidebar long-identity contract** — 2 tests added to `apps/web/src/components/Shell.test.tsx` (10 total in file). Pins `truncate` + `min-w-0` + `title` on BOTH identity blocks for an explicit 120-char display name and a 254-char RFC-limit email. **`Shell.tsx` deliberately NOT modified** — no defect was demonstrated | real impl **10/10 pass** (`npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.mutcheck.tmp.tsx` with all 12 `truncate`/`min-w-0`/`title=` sites stripped → **both new tests FAIL** (`expected ... to contain 'truncate'`); temp files deleted after. Behavioural assertions on rendered DOM, not source text |
+| `a0c9ec6` | **CRM analytics phantom columns** — see below | guards 8/8; oxlint 0/0; tsc clean; utils+pglite 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS** |
 | `4036224` | `qa-accept.mjs` + `qa-page-probe.mjs` — legal-acceptance setup + authenticated page-route HTTP baseline | probe: 104 routes, 0 server faults (2026-10-07) |
 | `8681150` | **run-migrations silently skipped commented statements** (deployed live 500). Comment-gated statements never ran: **388 of 773** statements applied corpus-wide, **1 of 13** CREATE TABLEs in 099, then "All migrations complete!" + exit 0. Also fixed a semicolon-then-trailing-comment merge in 082 and 3 swallowed `.catch` sites in `rewards/page.tsx` | 9 new guard tests; 3133 pass / 26 skip / 0 fail; gate PASS |
 | `7e63233` | docs(matrix): V3 complete incl. rewards page | — |
@@ -64,6 +65,12 @@ This is an environment prerequisite, not a code defect.
 2. **DEPLOY guard — CLOSED (`6ff97f0`):** `wrangler-deploy.guard.test.ts` (11 tests)
    pins the stale-artifact guard in `wrangler-deploy.mjs`, preventing the silent-
    stale-deploy defect from regressing. All 11/11 pass.
+3. **B1/B2 — CLOSED (`954c910`):** Shell sidebar long-identity contract. 2 tests
+   added (10 total in `Shell.test.tsx`) pinning `truncate` + `min-w-0` + `title`
+   on both identity blocks for an explicit long display name and a 254-char
+   RFC-limit email. **`Shell.tsx` was NOT changed** — a mutation check on a
+   temporary copy proved the existing implementation already correct.
+   Anti-loop rule applied: **do not revisit unless `Shell.tsx` changes.**
 
 Queue, in order:
 
@@ -73,7 +80,9 @@ Queue, in order:
    `qa-page-probe.mjs` committed `4036224`; probe 104 routes / 0 SERVER_FAULTS).
 4. **Analytics phantom columns** — ✅ CLOSED `a0c9ec6` (all 8 `analytics/crm`
    variants 200, incl. `groupBy=zipCode` and `view=outreach`).
-5. **G2** — *(NEXT)* intermittent `GET /` 500, cause unidentified.
+5. **B1/B2 Shell long-identity** — ✅ CLOSED `954c910`. Do not revisit (anti-loop
+   rule: only if `Shell.tsx` changes or the evidence is invalidated).
+6. **G2** — *(NEXT)* intermittent `GET /` 500, cause unidentified.
 6. **G1b** — Free-plan resource ceiling (Cloudflare 1102); owner decision.
 7. **Deployment** — none of this is deployed to production; last live Worker is
    `85de11a9`. Always `yarn cf:build` before `scripts/wrangler-deploy.mjs`.
@@ -125,6 +134,11 @@ confirm the guard still passes too.
 
 ## DO NOT REPEAT (learned the hard way)
 
+- **Do not re-open B1/B2 (Shell sidebar long-identity) or edit `Shell.tsx` for
+  it.** CLOSED at `954c910` with 10 tests, mutation-proven (stripping
+  `truncate`/`min-w-0`/`title` in a temp copy fails both new tests; real impl
+  10/10). `Shell.tsx` was already correct. Only revisit if `Shell.tsx` itself
+  changes or the evidence is invalidated — **not** to manufacture a diff.
 - **Do not re-audit `COMPLETE` / `LIVE VERIFIED` matrix rows.** That is the
   model-switch loop this file exists to prevent. Check the matrix first.
 - **Do not declare a feature absent from one grep or one directory.** Ten

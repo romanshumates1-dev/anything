@@ -5,9 +5,11 @@ tree at `ff3b262`. Supersedes the earlier root-level copy, which contained
 internal contradictions (it asserted both "all 200 routes pass" and "15/24 routes
 failed" in the same document).
 
-**Last updated 2026-10-07 at `a0c9ec6`** — analytics schema-truth fix and QA
-probe evidence recorded; score unchanged at 8.5/10 (no requirement-status
-change that moves it).
+**Last updated 2026-10-08 at `954c910`** — B1/B2 (Shell sidebar long-identity)
+re-verified with 2 added contract tests (10 total), mutation-proven (strip
+`truncate`/`min-w-0`/`title` in a temp copy → the 2 new tests FAIL; real impl →
+10/10 pass). Earlier analytics schema-truth fix (`a0c9ec6`) still stands; score
+unchanged at 8.5/10 (no requirement-status change that moves it).
 
 Requirements source: `.github/agents/roman.agent.md` (sets A–AB plus the
 logged-out, marketing, SEO, testing and scoring sections).
@@ -92,8 +94,8 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| B1 | Long email must not break layout | `components/Shell.tsx` | UNIT TESTED | commit `456c121`; `Shell.test.tsx` 8 tests | not re-verified in browser |
-| B2 | Truncation + full value accessible | `Shell.tsx` | IMPLEMENTED | contract test | not browser-verified |
+| B1 | Long email must not break layout | `components/Shell.tsx` | UNIT TESTED | commit `954c910`; `Shell.test.tsx` 10 tests; mutation-verified (strip `truncate`/`min-w-0`/`title` in a temp copy → 2 new tests FAIL; real impl → 10/10 pass) | not re-verified in browser |
+| B2 | Truncation + full value accessible | `Shell.tsx` | IMPLEMENTED | contract test pins DOM `truncate` + `min-w-0` container + `title` in BOTH identity blocks; Set B short-value case included | not browser-verified |
 
 ## SET C — APOLLO LEAD SOURCE
 
