@@ -1,6 +1,6 @@
 # AI-HANDOFF — read this first
 
-**Last updated:** 2026-10-08 (session following commit `cb79d24`)
+**Last updated:** 2026-10-08 (session following commit `48bdaf3`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
@@ -11,14 +11,14 @@
 
 ## CURRENT HEAD
 
-`cb79d24` — on `feat/cloudflare-workers`. None of this is deployed to
+`48bdaf3` — on `feat/cloudflare-workers`. None of this is deployed to
 production; the last live Worker is still `85de11a9` from `a576f2f`. The
 `dealswift-loadtest` worker DOES serve the analytics fix (probe 2026-10-07:
 104 routes / 0 server faults).
 
 | Commit | What | Evidence |
 | --- | --- | --- |
-| `cb79d24` | **H1 test-only fix — `next/link` mock leaked `prefetch` onto `<a>`** — 1 test added to `apps/web/src/components/Shell.test.tsx` (11 total in file), which now **destructures `prefetch` out** of its `next/link` mock. **`Shell.tsx` deliberately NOT modified** — the leak is in the TEST mock, not production: real `next/link` consumes `prefetch` and never forwards it to the DOM. Defect was an AVOIDABLE console error (`Received \`false\` for a non-boolean attribute \`prefetch\``), i.e. H1 "no avoidable console errors" | real impl **11/11 pass** (`cd apps/web && npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.h1mut.test.tsx` with the `prefetch` destructure reverted to the leaking `...rest` → **test FAILS**, diff shows React's verbatim non-boolean-attribute warning; temp file deleted after. Behavioural assertion (captures real `console.error` calls) **plus** a loud `anchors > 0` guard so an empty render cannot trivially pass; regression suite `src/components` **9 files / 59 tests pass** |
+| `48bdaf3` | **H1 test-only fix — `next/link` mock leaked `prefetch` onto `<a>`** — 1 test added to `apps/web/src/components/Shell.test.tsx` (11 total in file), which now **destructures `prefetch` out** of its `next/link` mock. **`Shell.tsx` deliberately NOT modified** — the leak is in the TEST mock, not production: real `next/link` consumes `prefetch` and never forwards it to the DOM. Defect was an AVOIDABLE console error (`Received \`false\` for a non-boolean attribute \`prefetch\``), i.e. H1 "no avoidable console errors" | real impl **11/11 pass** (`cd apps/web && npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.h1mut.test.tsx` with the `prefetch` destructure reverted to the leaking `...rest` → **test FAILS**, diff shows React's verbatim non-boolean-attribute warning; temp file deleted after. Behavioural assertion (captures real `console.error` calls) **plus** a loud `anchors > 0` guard so an empty render cannot trivially pass; regression suite `src/components` **9 files / 59 tests pass** |
 | `954c910` | **B1/B2 CLOSED — Shell sidebar long-identity contract** — 2 tests added to `apps/web/src/components/Shell.test.tsx` (10 total in file). Pins `truncate` + `min-w-0` + `title` on BOTH identity blocks for an explicit 120-char display name and a 254-char RFC-limit email. **`Shell.tsx` deliberately NOT modified** — no defect was demonstrated | real impl **10/10 pass** (`npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.mutcheck.tmp.tsx` with all 12 `truncate`/`min-w-0`/`title=` sites stripped → **both new tests FAIL** (`expected ... to contain 'truncate'`); temp files deleted after. Behavioural assertions on rendered DOM, not source text |
 | `a0c9ec6` | **CRM analytics phantom columns** — see below | guards 8/8; oxlint 0/0; tsc clean; utils+pglite 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS** |
 | `4036224` | `qa-accept.mjs` + `qa-page-probe.mjs` — legal-acceptance setup + authenticated page-route HTTP baseline | probe: 104 routes, 0 server faults (2026-10-07) |
@@ -66,7 +66,7 @@ This is an environment prerequisite, not a code defect.
 2. **DEPLOY guard — CLOSED (`6ff97f0`):** `wrangler-deploy.guard.test.ts` (11 tests)
    pins the stale-artifact guard in `wrangler-deploy.mjs`, preventing the silent-
    stale-deploy defect from regressing. All 11/11 pass.
-4. **H1 — avoidable console error in the test suite (CLOSED `cb79d24`).** The
+4. **H1 — avoidable console error in the test suite (CLOSED `48bdaf3`).** The
    `next/link` mock in `Shell.test.tsx` spread `...rest` onto a raw `<a>`, so
    React logged `Received \`false\` for a non-boolean attribute \`prefetch\`` on
    every render. The mock now destructures `prefetch` out and drops it (same
@@ -150,7 +150,7 @@ confirm the guard still passes too.
   `truncate`/`min-w-0`/`title` in a temp copy fails both new tests; real impl
   10/10). `Shell.tsx` was already correct. Only revisit if `Shell.tsx` itself
   changes or the evidence is invalidated — **not** to manufacture a diff.
-- **Do not "fix" the `prefetch` warning in `Shell.tsx`.** CLOSED at `cb79d24`:
+- **Do not "fix" the `prefetch` warning in `Shell.tsx`.** CLOSED at `48bdaf3`:
   the leak was in the TEST's `next/link` mock spreading `...rest` onto a raw
   `<a>`, not in production. Real `next/link` consumes `prefetch` and never
   renders it to the DOM. The mock now destructures `prefetch` out; a guard test
@@ -451,7 +451,7 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 - Do **not** rebuild the referral-link fix — landed in `2ea6db3`.
 - Do **not** re-audit billing/tax/withdrawals absent a dependency change.
 - Do **not** edit `Shell.tsx` to silence the `prefetch` console warning — the
-  leak was in the test's `next/link` mock, fixed at `cb79d24`. Production
+  leak was in the test's `next/link` mock, fixed at `48bdaf3`. Production
   `next/link` consumes `prefetch`; nothing to change there.
 
 ## REQUIRED FILES TO READ

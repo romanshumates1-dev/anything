@@ -5,7 +5,7 @@ tree at `ff3b262`. Supersedes the earlier root-level copy, which contained
 internal contradictions (it asserted both "all 200 routes pass" and "15/24 routes
 failed" in the same document).
 
-**Last updated 2026-10-08 at `cb79d24`** — H1: an avoidable console error in
+**Last updated 2026-10-08 at `48bdaf3`** — H1: an avoidable console error in
 the test suite was removed. `Shell.test.tsx`'s `next/link` mock spread
 `...rest` onto a raw `<a>`, so React logged `Received \`false\` for a
 non-boolean attribute \`prefetch\`` on every render. The mock now destructures
@@ -169,7 +169,7 @@ UI are all already implemented and tested. Inject via
 
 | ID | Requirement | Implementation | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| H1 | No avoidable console errors | **PARTIAL** | Browser sweep 2026-10-04: **no error boundaries and no uncaught exceptions** on `/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`. Remaining console noise is a Cloudflare RUM beacon aborted on navigation (`/cdn-cgi/rum?`) plus the 503/1102 burst. Not yet clean under sustained load. **Test-suite console error CLOSED 2026-10-08 (`cb79d24`)**: `Shell.test.tsx`'s `next/link` mock no longer leaks `prefetch` onto a raw `<a>` (React "non-boolean attribute" warning); guard test added, mutation-proven. `Shell.tsx` untouched — real `next/link` consumes `prefetch` |
+| H1 | No avoidable console errors | **PARTIAL** | Browser sweep 2026-10-04: **no error boundaries and no uncaught exceptions** on `/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`. Remaining console noise is a Cloudflare RUM beacon aborted on navigation (`/cdn-cgi/rum?`) plus the 503/1102 burst. Not yet clean under sustained load. **Test-suite console error CLOSED 2026-10-08 (`48bdaf3`)**: `Shell.test.tsx`'s `next/link` mock no longer leaks `prefetch` onto a raw `<a>` (React "non-boolean attribute" warning); guard test added, mutation-proven. `Shell.tsx` untouched — real `next/link` consumes `prefetch` |
 | H2 | Dashboard shows real data, never invented | commits `503845f`, `753e1b9` | UNIT TESTED | `ProfitChart` etc. now render real failure instead of hardcoded sample numbers |
 
 ## SET I — BILLING / SUBSCRIPTIONS
