@@ -260,6 +260,64 @@ describe('Shell sidebar identity with long unbroken strings (requirement #2)', (
       expect(line.className).toContain('truncate');
     }
   });
+
+  it('explicit long display name keeps the truncate + min-w-0 + title contract', async () => {
+    // Set B lists "long username" separately from "long email": the name line
+    // must not rely on the email-fallback path to be protected. Render with
+    // an explicit 120-char name (with spaces, so it is a realistic display
+    // name rather than a repeat of the unbroken-email case).
+    const LONG_NAME = ('Jonathan Alexander Montgomery '.repeat(4)).trim();
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_longname', email: 'jm@example.com', name: LONG_NAME, role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+    vi.resetModules();
+
+    const { default: FreshShell } = await import('./Shell');
+    render(<FreshShell>child</FreshShell>);
+
+    const nameLines = screen.getAllByText(LONG_NAME);
+    expect(nameLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of nameLines) {
+      expect(line.className).toContain('truncate');
+      expect(line.getAttribute('title')).toBe(LONG_NAME);
+      expect(line.closest('div.min-w-0')).not.toBeNull();
+    }
+  });
+
+  it('extremely long email (Set B test list) keeps the truncate + min-w-0 + title contract', async () => {
+    // Set B lists "extremely long email" as its own case beyond "long email":
+    // a 254-char address at the RFC limit, unbroken, must still engage
+    // truncation without breaking the flex layout.
+    const EXTREME_EMAIL = `${'e'.repeat(64)}@${'f'.repeat(63)}.${'g'.repeat(63)}.${'h'.repeat(57)}com`;
+    expect(EXTREME_EMAIL.length).toBeLessThanOrEqual(254);
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_extreme', email: EXTREME_EMAIL, role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+    vi.resetModules();
+
+    const { default: FreshShell } = await import('./Shell');
+    render(<FreshShell>child</FreshShell>);
+
+    const emailLines = screen.getAllByText(EXTREME_EMAIL);
+    expect(emailLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of emailLines) {
+      expect(line.className).toContain('truncate');
+      expect(line.getAttribute('title')).toBe(EXTREME_EMAIL);
+      expect(line.closest('div.min-w-0')).not.toBeNull();
+    }
+  });
 });
 
 /**
