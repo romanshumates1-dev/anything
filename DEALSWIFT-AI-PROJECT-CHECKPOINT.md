@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-07 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `a0c9ec6` — analytics schema-truth fix (phantom `lead_id`/`opened_at`/`zip_code` + `schemaColumnTruth.guard.test`), on top of QA probes (`4036224`), migration-runner fixes (`8681150`), rewards page (`2a6bc1a`), Y1/U1 + X1 verified (`a5fc054`, `68a67b4`), client-IP work (`dac5d6e`, `d5d6094`). **None deployed to production** (last live Worker `85de11a9`); the `dealswift-loadtest` worker serves the analytics fix. |
+| HEAD | `cb79d24` — H1 test-only fix: `next/link` mock in `Shell.test.tsx` destructures `prefetch` out so it no longer leaks onto a raw `<a>` (`Shell.tsx` untouched), on top of B1/B2 (`954c910`), M1 (`d0a9921`), DEPLOY guard (`6ff97f0`), analytics schema-truth fix (`a0c9ec6`), QA probes (`4036224`), migration-runner fixes (`8681150`), rewards page (`2a6bc1a`), Y1/U1 + X1 verified (`a5fc054`, `68a67b4`), client-IP work (`dac5d6e`, `d5d6094`). **None deployed to production** (last live Worker `85de11a9`); the `dealswift-loadtest` worker serves the analytics fix. |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -168,7 +168,7 @@ Prior investigations remain CLOSED:
    revalidation, onboarding PATCH on mount). **The instrument was wrong, not the
    product.** Endpoints behind it measured 83–405ms.
 
-**NEXT ACTION (exactly one): G2 is BLOCKED-EXTERNAL — no Cloudflare auth available locally. B1/B2 CLOSED (`954c910`): Shell.tsx long-identity contract re-verified with 10 tests, mutation-proven (temp copy with `truncate`/`min-w-0`/`title` stripped → 2 new tests FAIL; real impl → 10/10 pass); production code unchanged (Shell.tsx correct as-is). Anti-loop: do not revisit B1/B2 unless its code changes or the evidence is invalidated. Next genuinely unfinished item after B1/B2 is G1b (Free-plan resource ceiling — owner decision) — see AI-HANDOFF queue.
+**NEXT ACTION (exactly one): G2 is BLOCKED-EXTERNAL — no Cloudflare auth available locally. H1 CLOSED (`cb79d24`): the `next/link` mock in `apps/web/src/components/Shell.test.tsx` spread `...rest` onto a raw `<a>`, so React logged `Received \`false\` for a non-boolean attribute \`prefetch\`` on every render — an avoidable console error. The mock now destructures `prefetch` out and drops it, and a new test (`Shell renders without leaking non-boolean attributes (H1)`) captures real `console.error` output and asserts no non-boolean-attribute warning, with an `anchors > 0` guard so an empty render cannot pass vacuously. **Production code unchanged — `Shell.tsx` was NOT modified**; real `next/link` consumes `prefetch` and never renders it to the DOM, so the leak was test-only. Mutation-proven: a temp copy (`Shell.h1mut.test.tsx`) with the destructure reverted to the leaking `...rest` makes the new test FAIL with React's verbatim warning; real impl → 11/11 pass. Regression: `src/components` 9 files / 59 tests pass. Anti-loop: do not edit `Shell.tsx` for this, and do not revisit unless that mock regresses. B1/B2 remains CLOSED (`954c910`, `Shell.tsx` correct as-is, 10 tests mutation-proven). Next genuinely unfinished item after H1 is G1b (Free-plan resource ceiling — owner decision) — see AI-HANDOFF queue.
 
 The full gate is green at `52ad8e5`, so neither is a regression; both are
 long-standing and both still block a 9. They are also the only items left that
@@ -528,6 +528,10 @@ None of these are deployed to production; last live production Worker remains
     failure it causes is documented in `DEPLOYMENT-ARCHITECTURE.md`.
 11. **Y1 / U1 (enabled-phase exclusion) — VERIFIED `a5fc054`.** Do not re-audit.
     The campaign builder already filters disabled phases; the test now pins it.
+12. **H1 `prefetch` console warning — CLOSED `cb79d24`, and do NOT edit
+    `Shell.tsx` for it.** The leak was the test's own `next/link` mock
+    spreading `...rest` onto a raw `<a>`; real `next/link` consumes `prefetch`.
+    The mock destructures it out and a guard test fails if it returns.
 12. **X1 (UI must not claim what the backend denies) — VERIFIED `68a67b4`.**
     `entitlements.ts` now has a test file proving fail-closed. Do not rebuild
     the gate; it is correct.

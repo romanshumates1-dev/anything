@@ -5,11 +5,20 @@ tree at `ff3b262`. Supersedes the earlier root-level copy, which contained
 internal contradictions (it asserted both "all 200 routes pass" and "15/24 routes
 failed" in the same document).
 
-**Last updated 2026-10-08 at `954c910`** — B1/B2 (Shell sidebar long-identity)
-re-verified with 2 added contract tests (10 total), mutation-proven (strip
-`truncate`/`min-w-0`/`title` in a temp copy → the 2 new tests FAIL; real impl →
-10/10 pass). Earlier analytics schema-truth fix (`a0c9ec6`) still stands; score
-unchanged at 8.5/10 (no requirement-status change that moves it).
+**Last updated 2026-10-08 at `cb79d24`** — H1: an avoidable console error in
+the test suite was removed. `Shell.test.tsx`'s `next/link` mock spread
+`...rest` onto a raw `<a>`, so React logged `Received \`false\` for a
+non-boolean attribute \`prefetch\`` on every render. The mock now destructures
+`prefetch` out (same convention as `dashboard-summary-fanout.test.tsx`) and a
+new test asserts the render emits no non-boolean-attribute warning, with an
+`anchors > 0` guard so an empty render cannot pass vacuously. **Production code
+unchanged — `Shell.tsx` was NOT modified**; real `next/link` consumes
+`prefetch`. Mutation-proven: a temp copy with the leaking `...rest` restored →
+new test FAILs; real impl → 11/11 pass; `src/components` 9 files / 59 tests
+pass. H1's browser-side status is unchanged (still PARTIAL pending sustained
+load) — this closes the test-suite console error only. Earlier B1/B2 (`954c910`)
+and the analytics schema-truth fix (`a0c9ec6`) still stand; score unchanged at
+8.5/10 (no requirement-status change that moves it).
 
 Requirements source: `.github/agents/roman.agent.md` (sets A–AB plus the
 logged-out, marketing, SEO, testing and scoring sections).
@@ -160,7 +169,7 @@ UI are all already implemented and tested. Inject via
 
 | ID | Requirement | Implementation | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| H1 | No avoidable console errors | **PARTIAL** | Browser sweep 2026-10-04: **no error boundaries and no uncaught exceptions** on `/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`. Remaining console noise is a Cloudflare RUM beacon aborted on navigation (`/cdn-cgi/rum?`) plus the 503/1102 burst. Not yet clean under sustained load |
+| H1 | No avoidable console errors | **PARTIAL** | Browser sweep 2026-10-04: **no error boundaries and no uncaught exceptions** on `/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`. Remaining console noise is a Cloudflare RUM beacon aborted on navigation (`/cdn-cgi/rum?`) plus the 503/1102 burst. Not yet clean under sustained load. **Test-suite console error CLOSED 2026-10-08 (`cb79d24`)**: `Shell.test.tsx`'s `next/link` mock no longer leaks `prefetch` onto a raw `<a>` (React "non-boolean attribute" warning); guard test added, mutation-proven. `Shell.tsx` untouched — real `next/link` consumes `prefetch` |
 | H2 | Dashboard shows real data, never invented | commits `503845f`, `753e1b9` | UNIT TESTED | `ProfitChart` etc. now render real failure instead of hardcoded sample numbers |
 
 ## SET I — BILLING / SUBSCRIPTIONS

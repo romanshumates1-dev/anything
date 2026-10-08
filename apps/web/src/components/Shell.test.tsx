@@ -104,11 +104,89 @@ describe('Shell server rendering must not withhold page content (C4)', () => {
   });
 });
 
+/**
+ * H1 regression guard: the `next/link` mock below must not leak the
+ * `prefetch={false}` prop onto a plain <a>.
+ *
+ * Every sidebar link in <Shell> sets prefetch={false} (that is the F1 CPU fix).
+ * This mock forwards `...rest` onto a real DOM anchor, so React receives a
+ * non-boolean attribute and logs, verbatim:
+ *
+ *   Received `false` for a non-boolean attribute `prefetch`.
+ *   If you want to write it to the DOM, pass a string instead: prefetch="false"
+ *
+ * That is an AVOIDABLE console error in the test suite - and H1 is "no avoidable
+ * console errors". The sibling mock in dashboard-summary-fanout.test.tsx shows
+ * the convention: destructure the props an anchor cannot take and drop them.
+ *
+ * <Shell> itself is NOT at fault: next/link consumes `prefetch` and never
+ * forwards it to the DOM. This pins the mock so the noise cannot return.
+ */
+describe('Shell renders without leaking non-boolean attributes (H1)', () => {
+  beforeEach(() => {
+    // The C4 block above ends with vi.doUnmock('@/lib/auth-client'), which
+    // leaves that module unmocked for every LATER dynamic import. A dynamic
+    // import of ./Shell is therefore the one path that does NOT inherit the
+    // file-level auth mock (the static top-of-file import does). Re-arm an
+    // authenticated session here so <Shell> actually renders its sidebar — and
+    // therefore its prefetch={false} links — for this test.
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_h1', email: 'a@b.co', name: 'Al', role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.doUnmock('@/lib/auth-client');
+  });
+
+  it('logs no React non-boolean-attribute warning while rendering the sidebar', async () => {
+    // Reset the module registry so this test's dynamic import re-evaluates
+    // ./Shell and reads the CURRENT next/link mock rather than the copy cached
+    // by whichever describe block first rendered it.
+    vi.resetModules();
+
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+
+    const { default: FreshShell } = await import('./Shell');
+    const { container } = render(<FreshShell>child</FreshShell>);
+
+    // Fail loudly if nothing rendered at all — an empty tree would trivially
+    // satisfy the assertion below and prove nothing. Every sidebar link goes
+    // through the next/link mock and becomes a real anchor, so a sidebar-less
+    // render must never pass as "no warning".
+    expect(container.querySelectorAll('a').length).toBeGreaterThan(0);
+
+    const leaked = errors.filter((args) =>
+      args.some((a) => typeof a === 'string' && a.includes('non-boolean attribute')),
+    );
+    expect(leaked.map((a) => String(a[0]))).toEqual([]);
+    spy.mockRestore();
+  });
+});
+
 const LONG_EMAIL = `${'a'.repeat(300)}@example.com`;
 const LONG_NAME = 'n'.repeat(300);
 
+// `prefetch` MUST be destructured out and dropped, never spread onto a raw
+// anchor: React rejects it as a non-boolean attribute and logs
+// "Received `false` for a non-boolean attribute `prefetch`" — an avoidable
+// console error (H1: no avoidable console errors). Same convention as
+// dashboard-summary-fanout.test.tsx. <Shell> itself is not at fault; real
+// next/link consumes `prefetch` and never forwards it to the DOM.
 vi.mock('next/link', () => ({
-  default: ({ href, children, ...rest }: any) => (
+  __esModule: true,
+  default: ({ href, children, prefetch: _prefetch, ...rest }: any) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
     </a>
