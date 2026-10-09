@@ -1,6 +1,29 @@
 # AI-HANDOFF Ã¢â‚¬â€ read this first
 
-**Last updated:** 2026-10-09 (session following commit `129a77c`)
+**Last updated:** 2026-10-09 (release-validation: `493bb2a` built, gated, deployed to preview `fa88d160`)
+
+## RELEASE-VALIDATION MILESTONE — `493bb2a` (2026-10-09)
+
+**Chain:** `493bb2a` → fresh `cf:gate` → 37/37 artifact checks → typecheck exit 0 → lint 0/0 → SEO guards 28/28 → deployed preview version `fa88d160` → browser-verified on workers.dev. **Apex still serves the old Worker** (no apex route configured; cutover is an owner decision).
+
+| Gate stage | Evidence | Status |
+| --- | --- | --- |
+| `cf:build` (legal:generate + OpenNext + scrub + patch) | `.gate2.log` L2–L497: "OpenNext build complete", 320/320 pages, worker saved | PASS |
+| `cf:size` | `.gate2.log` L505: 6.78MB gzip = 67.8% of 10MB, 3.22MB headroom | PASS |
+| secrets scan (3335 files) | `.gate2.log` L562: no secret values or shaped literals | PASS |
+| `verify:release` (37 artifact checks) | exit 0 (`.art2.exit`), 37/37 | PASS |
+| typecheck `tsc -p tsconfig.typecheck.json` | exit 0 (`.st-tc.exit`), empty log | PASS |
+| oxlint on touched files | 0 warnings, 0 errors | PASS |
+| SEO/static guards | 28/28 (seo-surface 10, static-assets 9, seo-ratchet 9) | PASS |
+| sitemap (independent XML parse of build output) | 19 URLs, 19 unique, 1 homepage, `/cash-offer` present, 0 non-absolute | PASS |
+| PNG/ICO (independent inflate+CRC decode of build output) | favicon 32×32, og-image 1200×630, apple-touch 180×180, ICO 3 entries | PASS |
+| preview deploy | version `fa88d160` on `dealswift-app.romanshumates1.workers.dev` | PASS |
+| preview browser verification | sitemap XML live; favicon.png 200 image/png 377B; favicon.ico 200 ICO 1162B; og-image.png 200 PNG 14418B; `/legal/terms` no template snippet | PASS |
+| production apex | serves OLD worker (expected — deploy targets workers.dev only) | NOT DEPLOYED |
+
+**Trap documented:** `legal:generate` rewrites `legal-docs.generated.ts` with byte-identical content on every build, tripping the deploy wrapper's mtime freshness guard. Fix used: restored the file's mtime (hash `4af599b3` unchanged); guard untouched. Do NOT "fix" by weakening the guard or adding `--allow-stale` to the runbook.
+
+**Next:** cutover to apex is an OWNER DECISION (wrangler.jsonc documents it: adding the apex route replaces DNS serving WordPress). Until then, continue matrix OPEN WORK: G2 (homepage 500, BLOCKED-EXTERNAL — now UNBLOCKED for tail diagnostics since auth works), DEPLOY cutover (owner decision), G1b (owner decision).
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
