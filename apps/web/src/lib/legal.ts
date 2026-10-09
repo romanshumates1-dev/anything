@@ -112,6 +112,52 @@ export function getLegalDoc(slug: string): LegalDoc | null {
   return seed ? loadSeed(seed) : null;
 }
 
+/**
+ * A search-snippet description for a legal page, derived from the document.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * Every /legal/* page used to publish
+ *   `<title> for DealFlow AI. Template — requires attorney review before launch.`
+ * as its meta description. That is internal process text, not a summary, so it
+ * was served to search engines as the snippet for all nine pages (verified live
+ * 2026-10-09) — and it advertised that the document was unreviewed.
+ *
+ * The fix DERIVES the description from the document's own opening sentence
+ * instead of inventing copy: it is always in sync with the markdown, it cannot
+ * drift, and it never claims a document is a template. Falls back to the title
+ * if the body is unusable.
+ *
+ * Deliberately not a hand-written per-slug map: nine literals is nine chances to
+ * describe a document wrongly, and the markdown is the source of truth.
+ */
+export function legalMetaDescription(doc: LegalDoc | null): string {
+  const title = doc?.title ?? 'Legal document';
+
+  // First real prose paragraph: skip the leading markdown heading.
+  const firstPara = (doc?.body ?? '')
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .find((p) => p.length > 0 && !p.startsWith('#'));
+
+  if (!firstPara) return `${title} for DealFlow AI.`;
+
+  // Strip markdown emphasis/link syntax and collapse whitespace.
+  const plain = firstPara
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Google truncates around 160 chars; cut on a sentence boundary when we can
+  // so the snippet is a complete thought rather than a mid-word chop.
+  if (plain.length <= 160) return plain;
+  const cut = plain.slice(0, 157);
+  const lastStop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '));
+  return `${(lastStop > 80 ? cut.slice(0, lastStop + 1) : cut.replace(/\s+\S*$/, '')).trim()}…`;
+}
+
+
 export function getAllLegalSlugs(): string[] {
   return LEGAL_DOC_SEEDS.map((s) => s.slug).sort();
 }

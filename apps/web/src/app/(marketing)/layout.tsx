@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "../global.css";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
-import { siteOrigin } from "@/lib/seo";
+import { siteOrigin, SOCIAL_IMAGE_PATH } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: {
@@ -27,6 +27,11 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+    // `summary_large_image` promises a large image. Without this the card
+    // declared a format it could not fill: scrapers found no image at all
+    // (og:image / twitter:image both NOT FOUND live 2026-10-09). The same
+    // absolute path canonicalFor uses, so the two can never disagree.
+    images: [`${siteOrigin()}${SOCIAL_IMAGE_PATH}`],
     title: "DealFlow AI — Real Estate Lead Intelligence",
     description:
       "AI-powered lead engagement, approval workflows, and compliance for real estate wholesalers and brokers.",

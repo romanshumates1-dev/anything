@@ -34,6 +34,17 @@ export function siteOrigin(): string {
 }
 
 /**
+ * The single social card, root-relative so it is valid under public/.
+ *
+ * 1200x630 - the Open Graph / Twitter summary_large_image ratio. Kept as a
+ * constant because the same path is needed by `canonicalFor`, the marketing
+ * layout's twitter block and the favicon/asset guard test, and a third
+ * spelling of it is exactly how the icon rot went unnoticed.
+ */
+export const SOCIAL_IMAGE_PATH = '/og-image.png';
+
+
+/**
  * Self-referencing canonical for a public path.
  *
  * The query string and fragment are deliberately excluded: they do not identify
@@ -44,8 +55,22 @@ export function canonicalFor(path: string) {
   // The root keeps its trailing slash: `https://site/` is the conventional form
   // and avoids emitting two spellings of the homepage across pages.
   const clean = path === '/' ? '/' : `/${path.replace(/^\/+|\/+$/g, '')}`;
+  const url = `${siteOrigin()}${clean}`;
   return {
-    alternates: { canonical: `${siteOrigin()}${clean}` },
-    openGraph: { url: `${siteOrigin()}${clean}` },
+    alternates: { canonical: url },
+    openGraph: {
+      url,
+      // The social image lives HERE, in the one helper every marketing page
+      // spreads, rather than on each page. Next.js REPLACES a parent's
+      // `openGraph` wholesale with the child's when the child declares one -
+      // it does not deep-merge - so a page-level `openGraph` silently dropped
+      // the layout's og:siteName and og:locale, and nothing supplied an image.
+      // The result shipped as `og:image: NOT FOUND` on every marketing page
+      // while `twitter:card` promised a large image (verified live 2026-10-09).
+      //
+      // Absolute, because scrapers do not resolve relative og:image URLs.
+      images: [`${siteOrigin()}${SOCIAL_IMAGE_PATH}`],
+    },
   } as const;
 }
+

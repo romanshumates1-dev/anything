@@ -23,6 +23,10 @@ export const metadata: Metadata = {
 	description: "AI-powered platform for real estate wholesaling. Automate outreach, manage leads, and close more deals.",
 	icons: {
 		icon: "/favicon.png",
+		// iOS home-screen bookmarks ("Add to Home Screen"). Without a declared
+		// touch icon iOS falls back to a screenshot of the page, so the
+		// bookmark renders as a low-resolution thumbnail.
+		apple: "/apple-touch-icon.png",
 	},
 	// Without an absolute base, Next.js emits RELATIVE canonical and OpenGraph
 	// URLs, which crawlers and social scrapers cannot resolve. Falls back to the

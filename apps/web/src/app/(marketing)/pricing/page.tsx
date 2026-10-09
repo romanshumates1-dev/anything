@@ -17,7 +17,11 @@ import { canonicalFor } from '@/lib/seo';
 
 export const metadata: Metadata = {
 	...canonicalFor('/pricing'),
-  title: "Pricing - DealFlow AI",
+  // Brand-free on purpose: the (marketing) layout applies the template
+  // "%s — DealFlow AI", so the brand used to be appended to a title that
+  // already contained it, shipping "Pricing - DealFlow AI — DealFlow AI" as
+  // both <title> and og:title in production.
+  title: "Pricing",
   description:
     "AI-powered real estate deal-finding automation. Start free, scale as you grow. Compare to PropStream, REsimpli, BatchLeads.",
 };
