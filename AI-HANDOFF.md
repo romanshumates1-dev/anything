@@ -1,50 +1,50 @@
-# AI-HANDOFF — read this first
+# AI-HANDOFF Ã¢â‚¬â€ read this first
 
-**Last updated:** 2026-10-08 (session following commit `48bdaf3`)
+**Last updated:** 2026-10-09 (session following commit `129a77c`)
 **Purpose:** a new model should understand the project state from this file in under a minute, without reading history or re-auditing.
 
 ---
 
-## ⚠️ UNCOMMITTED WORK IN THE TREE — SEO-SURFACE + STATIC-ASSET REPAIR (2026-10-09)
+## Ã¢Å¡Â Ã¯Â¸Â UNCOMMITTED WORK IN THE TREE Ã¢â‚¬â€ SEO-SURFACE + STATIC-ASSET REPAIR (2026-10-09)
 
 **Read this before touching anything SEO, metadata, or `public/` image related.**
 
 A live production audit of `dealswiftautomation.com` (2026-10-09) found eight
 defects that every existing gate passed. Two guard tests were written for them
-and are **RED→GREEN mutation-proven**, but the fixes are **NOT YET COMMITTED**
-(`git status` will show them). Finish by committing.
+and are **REDÃ¢â€ â€™GREEN mutation-proven**, but the fixes are **NOT YET COMMITTED**
+(`git status` no longer shows them). **Committed as `129a77c`.**
 
 | # | Defect (all verified live) | Fix | Test |
 | --- | --- | --- | --- |
-| 1 | `sitemap.ts` listed the homepage **twice** (`{url: BASE_URL}` and ``{url: `${BASE_URL}`}`` — same string). A repeated `<loc>` makes the sitemap malformed; GSC rejects the whole file | rewritten to derive the origin from `siteOrigin()` and build each entry from a PATH, so no URL is spelled twice | `seo-surface.guard.test.ts` → "emits every URL exactly once" |
-| 2 | `/cash-offer` is indexable (has a canonical, inside `(marketing)`) but was **absent from the sitemap** | added at priority 0.9 | same file → "lists the indexable cash-offer landing page" |
-| 3 | `/pricing` set `title: "Pricing - DealFlow AI"` under a `%s — DealFlow AI` template → production rendered **"Pricing - DealFlow AI — DealFlow AI"** as both `<title>` and `og:title` | title is now brand-free | same file → "no marketing page title literal repeats the brand" |
-| 4 | **No `og:image` anywhere** while `twitter:card` is `summary_large_image` — a card promising an image it could not fill | `canonicalFor` now attaches an absolute `openGraph.images` (it is the ONE choke point every marketing page spreads; page-level `openGraph` **replaces** rather than deep-merges the layout's) + `twitter.images` on the marketing layout + a real generated `public/og-image.png` | same file → "canonicalFor attaches an og:image that exists on disk" |
-| 5 | All nine `/legal/*` pages published **"… Template — requires attorney review before launch."** as their meta description — internal process text served as the search snippet | new `legalMetaDescription(doc)` in `lib/legal.ts` **derives** the snippet from the document's own opening paragraph, so it cannot drift from the markdown and never calls a doc a template | same file → "no marketing metadata ships internal placeholder text" |
-| 6 | `/faq` rendered 15 Q&As with **no FAQPage JSON-LD**, so none of it was eligible for rich results (while `/reviews` already ships AggregateRating) | content extracted to `src/lib/faq-content.ts` (single source), schema in `src/lib/faq-schema.ts`, emitted as a `<script type="application/ld+json">` | same file → "the FAQ page renders an FAQPage JSON-LD script" |
-| 7 | `public/favicon.png` **was not a PNG**. Magic bytes `ef bf bd 50 4e 47` — a UTF-8 replacement char where `0x89` belongs; 771 mangled sequences; 3477 bytes. Committed broken since the initial commit and served live. `favicon.ico` was a **byte-for-byte copy of it**, so legacy `/favicon.ico` got garbage too. **Irrecoverable — the original bytes are gone** | regenerated from code by `apps/web/scripts/generate-brand-assets.mjs` (dependency-free PNG+ICO encoder; do NOT introduce `sharp` as a dependency — it is only transitive) | `static-assets.guard.test.ts` → "passes a full structural walk (signature, per-chunk CRC, IDAT inflate)" |
-| 8 | (consequential) no Apple touch icon | generated 180×180 `apple-touch-icon.png`, declared via `icons.apple` in the root layout | covered by the `public/` PNG sweep |
+| 1 | `sitemap.ts` listed the homepage **twice** (`{url: BASE_URL}` and ``{url: `${BASE_URL}`}`` Ã¢â‚¬â€ same string). A repeated `<loc>` makes the sitemap malformed; GSC rejects the whole file | rewritten to derive the origin from `siteOrigin()` and build each entry from a PATH, so no URL is spelled twice | `seo-surface.guard.test.ts` Ã¢â€ â€™ "emits every URL exactly once" |
+| 2 | `/cash-offer` is indexable (has a canonical, inside `(marketing)`) but was **absent from the sitemap** | added at priority 0.9 | same file Ã¢â€ â€™ "lists the indexable cash-offer landing page" |
+| 3 | `/pricing` set `title: "Pricing - DealFlow AI"` under a `%s Ã¢â‚¬â€ DealFlow AI` template Ã¢â€ â€™ production rendered **"Pricing - DealFlow AI Ã¢â‚¬â€ DealFlow AI"** as both `<title>` and `og:title` | title is now brand-free | same file Ã¢â€ â€™ "no marketing page title literal repeats the brand" |
+| 4 | **No `og:image` anywhere** while `twitter:card` is `summary_large_image` Ã¢â‚¬â€ a card promising an image it could not fill | `canonicalFor` now attaches an absolute `openGraph.images` (it is the ONE choke point every marketing page spreads; page-level `openGraph` **replaces** rather than deep-merges the layout's) + `twitter.images` on the marketing layout + a real generated `public/og-image.png` | same file Ã¢â€ â€™ "canonicalFor attaches an og:image that exists on disk" |
+| 5 | All nine `/legal/*` pages published **"Ã¢â‚¬Â¦ Template Ã¢â‚¬â€ requires attorney review before launch."** as their meta description Ã¢â‚¬â€ internal process text served as the search snippet | new `legalMetaDescription(doc)` in `lib/legal.ts` **derives** the snippet from the document's own opening paragraph, so it cannot drift from the markdown and never calls a doc a template | same file Ã¢â€ â€™ "no marketing metadata ships internal placeholder text" |
+| 6 | `/faq` rendered 15 Q&As with **no FAQPage JSON-LD**, so none of it was eligible for rich results (while `/reviews` already ships AggregateRating) | content extracted to `src/lib/faq-content.ts` (single source), schema in `src/lib/faq-schema.ts`, emitted as a `<script type="application/ld+json">` | same file Ã¢â€ â€™ "the FAQ page renders an FAQPage JSON-LD script" |
+| 7 | `public/favicon.png` **was not a PNG**. Magic bytes `ef bf bd 50 4e 47` Ã¢â‚¬â€ a UTF-8 replacement char where `0x89` belongs; 771 mangled sequences; 3477 bytes. Committed broken since the initial commit and served live. `favicon.ico` was a **byte-for-byte copy of it**, so legacy `/favicon.ico` got garbage too. **Irrecoverable Ã¢â‚¬â€ the original bytes are gone** | regenerated from code by `apps/web/scripts/generate-brand-assets.mjs` (dependency-free PNG+ICO encoder; do NOT introduce `sharp` as a dependency Ã¢â‚¬â€ it is only transitive) | `static-assets.guard.test.ts` Ã¢â€ â€™ "passes a full structural walk (signature, per-chunk CRC, IDAT inflate)" |
+| 8 | (consequential) no Apple touch icon | generated 180Ãƒâ€”180 `apple-touch-icon.png`, declared via `icons.apple` in the root layout | covered by the `public/` PNG sweep |
 
 **Evidence:** `seo-surface.guard.test.ts` 10/10, `static-assets.guard.test.ts`
 9/9, plus new `src/app/(marketing)/faq/faq-jsonld.render.test.tsx` (5/5) which
 **mounts the real page with `renderToStaticMarkup`** and proves the ld+json
 reaches the DOM (4481 chars, all 15 questions, no raw `<` survives). Sibling
 guards `seo-ratchet`, `static-metadata.guard`, `blank-page-guard`,
-`operational-disclosure-guard` and `src/lib/legal.test.ts` — **38/38 pass**.
+`operational-disclosure-guard` and `src/lib/legal.test.ts` Ã¢â‚¬â€ **38/38 pass**.
 `tsc --noEmit` reports **zero errors in every file touched** (the ~250 repo-wide
 errors are pre-existing: the untouched HEAD copy of
 `tenant-isolation-2026-09-26.test.ts` alone already yields 16).
 
 **Mutation-proven (each reverted fix makes its gate FAIL):** duplicate sitemap
-URL + dropped `/cash-offer` → both sitemap tests fail with exact messages;
-brand re-doubled on `/pricing` → title test fails naming the rendered string;
-`openGraph.images` removed → og:image test fails; `</` escape removed from
-`jsonLdForEmbed` → `raw "<" survives in the embedded JSON-LD`.
+URL + dropped `/cash-offer` Ã¢â€ â€™ both sitemap tests fail with exact messages;
+brand re-doubled on `/pricing` Ã¢â€ â€™ title test fails naming the rendered string;
+`openGraph.images` removed Ã¢â€ â€™ og:image test fails; `</` escape removed from
+`jsonLdForEmbed` Ã¢â€ â€™ `raw "<" survives in the embedded JSON-LD`.
 
-### TWO TRAPS THIS WORK HIT — do not repeat
+### TWO TRAPS THIS WORK HIT Ã¢â‚¬â€ do not repeat
 
 1. **The CRC-32 table builder in the generator originally read
-   `c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 8`** — `>>> 8` instead of `>>> 1`
+   `c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 8`** Ã¢â‚¬â€ `>>> 8` instead of `>>> 1`
    in the else-branch. It produced files with a valid signature and valid IHDR
    dimensions that failed every chunk CRC, i.e. exactly the class this guard
    exists to catch, generated by the guard's own tooling. **The guard was right
@@ -53,19 +53,19 @@ brand re-doubled on `/pricing` → title test fails naming the rendered string;
 2. **The first version of the JSON-LD escape test grepped `faq/page.tsx` for an
    inline `JSON.stringify(...).replace(/</`.** That assertion forced the escape
    to be duplicated into the page, away from the helper that builds the payload
-   — a test that could pass while the embedded string was still built unsafely.
+   Ã¢â‚¬â€ a test that could pass while the embedded string was still built unsafely.
    It is now behavioural: it calls `jsonLdForEmbed` with a real
    `</script><img onerror>` break-out attempt and asserts no `<` survives, then
    separately asserts the page actually *uses* the helper.
 
 ### NOT DONE / DELIBERATE SCOPE LIMITS
 
-- **Mojibake in `faq-content.ts`** (`â€"` where an em dash belongs, inherited
+- **Mojibake in `faq-content.ts`** (`ÃƒÂ¢Ã¢â€šÂ¬"` where an em dash belongs, inherited
   verbatim from the original page). Left as-is: pre-existing rendering noise
   across the marketing tree, not one of the eight audited defects.
   `scripts/audit-marketing-text.mjs` (untracked) lists the affected files.
 - The OG card is drawn with the monogram + geometric rules, **not** the
-  wordmark, because setting real type would mean embedding a font. The 1200×630
+  wordmark, because setting real type would mean embedding a font. The 1200Ãƒâ€”630
   dimensions are pinned by the guard; swapping in a font-rendered card is safe.
 - **Nothing here is deployed.** `og-image.png`/`apple-touch-icon.png` are new
   files under `public/`, so confirm `cf:build` picks them up and that `_headers`
@@ -79,27 +79,27 @@ brand re-doubled on `/pricing` → title test fails naming the rendered string;
 
 ## CURRENT HEAD
 
-`2b33606` — on `feat/cloudflare-workers`. None of this is deployed to
+`2b33606` Ã¢â‚¬â€ on `feat/cloudflare-workers`. None of this is deployed to
 production; the last live Worker is still `85de11a9` from `a576f2f`. The
 `dealswift-loadtest` worker DOES serve the analytics fix (probe 2026-10-07:
 104 routes / 0 server faults).
 
 | Commit | What | Evidence |
 | --- | --- | --- |
-| `2b33606` | **H1 LOCAL HALF CLOSED — authenticated console sweep** — new `apps/web/e2e/authenticated-console.spec.ts` (7 tests). Verifies once (not repeatedly) that existing infra supports an authenticated browser sweep with zero owner input, then runs it. Anti-vacuity guard probes `/api/auth/get-session` and hard-fails if the session is absent; 6 authenticated routes (`/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`, `/achievements`, `/inbox`) each assert HTTP 200 + real visible h1/main content + no error boundary + no uncaught `pageerror` + no failed same-origin request + no fabricated mock data (H2/fa43bd0 guard) | `yarn test:e2e -- authenticated-console.spec.ts` from `apps/web`: **9 passed / 1 skipped** (this spec 7/7 pass, every route status=200 content=true boundary=false leak=0 console=0 pageErr=0 failedReq=0; plus committed marketing 2/2). Negative/mutation case: temp copy with a synthetic `pageerror` pushed into `wire()` → pageErr=1 and **all 6 route tests FAIL**; real copy in the same run pageErr=0 → all 6 pass; temp copy deleted after. Gate genuinely fires. **Scope: LOCAL half only** — the PRODUCTION sustained-load noises (CF RUM beacon `/cdn-cgi/rum`, 503/1102 CPU ceiling) are production-only and remain BLOCKED-EXTERNAL behind DEPLOY; NOT claimed clean. Runner caveat: must use `yarn test:e2e` (workspace-resolved `@playwright/test`); `npx playwright` throws the dual-instance `_currentSuite` error even on the committed `marketing.spec.ts` (pre-existing monorepo quirk, not a spec defect). Production code untouched |
+| `2b33606` | **H1 LOCAL HALF CLOSED Ã¢â‚¬â€ authenticated console sweep** Ã¢â‚¬â€ new `apps/web/e2e/authenticated-console.spec.ts` (7 tests). Verifies once (not repeatedly) that existing infra supports an authenticated browser sweep with zero owner input, then runs it. Anti-vacuity guard probes `/api/auth/get-session` and hard-fails if the session is absent; 6 authenticated routes (`/dashboard`, `/campaigns`, `/lead-finder`, `/settings/billing`, `/achievements`, `/inbox`) each assert HTTP 200 + real visible h1/main content + no error boundary + no uncaught `pageerror` + no failed same-origin request + no fabricated mock data (H2/fa43bd0 guard) | `yarn test:e2e -- authenticated-console.spec.ts` from `apps/web`: **9 passed / 1 skipped** (this spec 7/7 pass, every route status=200 content=true boundary=false leak=0 console=0 pageErr=0 failedReq=0; plus committed marketing 2/2). Negative/mutation case: temp copy with a synthetic `pageerror` pushed into `wire()` Ã¢â€ â€™ pageErr=1 and **all 6 route tests FAIL**; real copy in the same run pageErr=0 Ã¢â€ â€™ all 6 pass; temp copy deleted after. Gate genuinely fires. **Scope: LOCAL half only** Ã¢â‚¬â€ the PRODUCTION sustained-load noises (CF RUM beacon `/cdn-cgi/rum`, 503/1102 CPU ceiling) are production-only and remain BLOCKED-EXTERNAL behind DEPLOY; NOT claimed clean. Runner caveat: must use `yarn test:e2e` (workspace-resolved `@playwright/test`); `npx playwright` throws the dual-instance `_currentSuite` error even on the committed `marketing.spec.ts` (pre-existing monorepo quirk, not a spec defect). Production code untouched |
 
 | Commit | What | Evidence |
 | --- | --- | --- |
-| `48bdaf3` | **H1 test-only fix — `next/link` mock leaked `prefetch` onto `<a>`** — 1 test added to `apps/web/src/components/Shell.test.tsx` (11 total in file), which now **destructures `prefetch` out** of its `next/link` mock. **`Shell.tsx` deliberately NOT modified** — the leak is in the TEST mock, not production: real `next/link` consumes `prefetch` and never forwards it to the DOM. Defect was an AVOIDABLE console error (`Received \`false\` for a non-boolean attribute \`prefetch\``), i.e. H1 "no avoidable console errors" | real impl **11/11 pass** (`cd apps/web && npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.h1mut.test.tsx` with the `prefetch` destructure reverted to the leaking `...rest` → **test FAILS**, diff shows React's verbatim non-boolean-attribute warning; temp file deleted after. Behavioural assertion (captures real `console.error` calls) **plus** a loud `anchors > 0` guard so an empty render cannot trivially pass; regression suite `src/components` **9 files / 59 tests pass** |
-| `954c910` | **B1/B2 CLOSED — Shell sidebar long-identity contract** — 2 tests added to `apps/web/src/components/Shell.test.tsx` (10 total in file). Pins `truncate` + `min-w-0` + `title` on BOTH identity blocks for an explicit 120-char display name and a 254-char RFC-limit email. **`Shell.tsx` deliberately NOT modified** — no defect was demonstrated | real impl **10/10 pass** (`npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.mutcheck.tmp.tsx` with all 12 `truncate`/`min-w-0`/`title=` sites stripped → **both new tests FAIL** (`expected ... to contain 'truncate'`); temp files deleted after. Behavioural assertions on rendered DOM, not source text |
-| `a0c9ec6` | **CRM analytics phantom columns** — see below | guards 8/8; oxlint 0/0; tsc clean; utils+pglite 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS** |
-| `4036224` | `qa-accept.mjs` + `qa-page-probe.mjs` — legal-acceptance setup + authenticated page-route HTTP baseline | probe: 104 routes, 0 server faults (2026-10-07) |
+| `48bdaf3` | **H1 test-only fix Ã¢â‚¬â€ `next/link` mock leaked `prefetch` onto `<a>`** Ã¢â‚¬â€ 1 test added to `apps/web/src/components/Shell.test.tsx` (11 total in file), which now **destructures `prefetch` out** of its `next/link` mock. **`Shell.tsx` deliberately NOT modified** Ã¢â‚¬â€ the leak is in the TEST mock, not production: real `next/link` consumes `prefetch` and never forwards it to the DOM. Defect was an AVOIDABLE console error (`Received \`false\` for a non-boolean attribute \`prefetch\``), i.e. H1 "no avoidable console errors" | real impl **11/11 pass** (`cd apps/web && npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.h1mut.test.tsx` with the `prefetch` destructure reverted to the leaking `...rest` Ã¢â€ â€™ **test FAILS**, diff shows React's verbatim non-boolean-attribute warning; temp file deleted after. Behavioural assertion (captures real `console.error` calls) **plus** a loud `anchors > 0` guard so an empty render cannot trivially pass; regression suite `src/components` **9 files / 59 tests pass** |
+| `954c910` | **B1/B2 CLOSED Ã¢â‚¬â€ Shell sidebar long-identity contract** Ã¢â‚¬â€ 2 tests added to `apps/web/src/components/Shell.test.tsx` (10 total in file). Pins `truncate` + `min-w-0` + `title` on BOTH identity blocks for an explicit 120-char display name and a 254-char RFC-limit email. **`Shell.tsx` deliberately NOT modified** Ã¢â‚¬â€ no defect was demonstrated | real impl **10/10 pass** (`npx vitest run --config src/app/api/vitest.config.ts src/components/Shell.test.tsx --reporter=verbose`); negative case: temp copy `Shell.mutcheck.tmp.tsx` with all 12 `truncate`/`min-w-0`/`title=` sites stripped Ã¢â€ â€™ **both new tests FAIL** (`expected ... to contain 'truncate'`); temp files deleted after. Behavioural assertions on rendered DOM, not source text |
+| `a0c9ec6` | **CRM analytics phantom columns** Ã¢â‚¬â€ see below | guards 8/8; oxlint 0/0; tsc clean; utils+pglite 1146 pass / 0 fail; **probe 104 routes / 0 SERVER_FAULTS** |
+| `4036224` | `qa-accept.mjs` + `qa-page-probe.mjs` Ã¢â‚¬â€ legal-acceptance setup + authenticated page-route HTTP baseline | probe: 104 routes, 0 server faults (2026-10-07) |
 | `8681150` | **run-migrations silently skipped commented statements** (deployed live 500). Comment-gated statements never ran: **388 of 773** statements applied corpus-wide, **1 of 13** CREATE TABLEs in 099, then "All migrations complete!" + exit 0. Also fixed a semicolon-then-trailing-comment merge in 082 and 3 swallowed `.catch` sites in `rewards/page.tsx` | 9 new guard tests; 3133 pass / 26 skip / 0 fail; gate PASS |
-| `7e63233` | docs(matrix): V3 complete incl. rewards page | — |
-| `2a6bc1a` | **V3-UI** rewards page + gamification sidebar gating | — |
-| `a857b31` | docs(state): Y1/U1 and X1 verified at `68a67b4` | — |
-| `68a67b4` | **X1 VERIFIED** — `entitlements.ts` fails closed on every degraded input | 16 tests |
-| `a5fc054` | **Y1/U1 VERIFIED** — disabled stages never reported active | 15 + 28 tests |
+| `7e63233` | docs(matrix): V3 complete incl. rewards page | Ã¢â‚¬â€ |
+| `2a6bc1a` | **V3-UI** rewards page + gamification sidebar gating | Ã¢â‚¬â€ |
+| `a857b31` | docs(state): Y1/U1 and X1 verified at `68a67b4` | Ã¢â‚¬â€ |
+| `68a67b4` | **X1 VERIFIED** Ã¢â‚¬â€ `entitlements.ts` fails closed on every degraded input | 16 tests |
+| `a5fc054` | **Y1/U1 VERIFIED** Ã¢â‚¬â€ disabled stages never reported active | 15 + 28 tests |
 | `ed683e5` | **V3** reward layer: migration 099 + economy + exactly-once claims | 58 tests |
 | `141e063` | `/api/rewards` behind session + ON/OFF gates | 13 tests |
 | `d5d6094` | `x-real-ip` caveat closed | 4 tests |
@@ -113,16 +113,16 @@ Gates at `8681150`: typecheck `TC_EXIT=0`, oxlint 0/0, **3133 passed / 26 skippe
 0 failed** (290 files), MIGRATION_GATE PASS (99 fresh-install + 101 idempotent
 re-run, 17/17 tables).
 
-⚠️ Keep this value current on every state commit — it has been stale before, and
+Ã¢Å¡Â Ã¯Â¸Â Keep this value current on every state commit Ã¢â‚¬â€ it has been stale before, and
 a checkpoint whose HEAD does not match the repository is exactly how a new model
 re-audits from scratch. Verify with `git log --oneline -3`.
 
 ## NEXT ACTION
 
-**G2 — BLOCKED-EXTERNAL (2026-10-07).** Diagnostics are live
+**G2 Ã¢â‚¬â€ BLOCKED-EXTERNAL (2026-10-07).** Diagnostics are live
 (`a576f2f`, Worker `85de11a9`); on the next occurrence run
 `wrangler tail --format pretty` and grep `[worker:unhandled]`. 40/40 no-repro
-so far — act only on new evidence.
+so far Ã¢â‚¬â€ act only on new evidence.
 
 **BLOCKER**: No Cloudflare authentication credentials (CF_API_TOKEN/CF_ACCOUNT_ID)
 present locally; `npx wrangler whoami` times out with no stored auth config.
@@ -130,74 +130,74 @@ The controlled concurrency diagnostic against `dealswift-loadtest` cannot execut
 This is an environment prerequisite, not a code defect.
 
 **Local work completed while G2 is blocked:**
-1. **M1 — CLOSED (`d0a9921`):** `taxWithholdingStore.pglite.test.ts` (18 tests)
+1. **M1 Ã¢â‚¬â€ CLOSED (`d0a9921`):** `taxWithholdingStore.pglite.test.ts` (18 tests)
    verifies the tax withholding store against real Postgres (PGlite). Migration 090
    applied; settings upsert + CHECK constraint, `recordWithholding` idempotency,
    `getWithheldBalance` tenant-scoped aggregate, `listLedger` date-range scoping,
    cross-tenant isolation, money conservation. All 18/18 pass.
-2. **DEPLOY guard — CLOSED (`6ff97f0`):** `wrangler-deploy.guard.test.ts` (11 tests)
+2. **DEPLOY guard Ã¢â‚¬â€ CLOSED (`6ff97f0`):** `wrangler-deploy.guard.test.ts` (11 tests)
    pins the stale-artifact guard in `wrangler-deploy.mjs`, preventing the silent-
    stale-deploy defect from regressing. All 11/11 pass.
-4. **H1 — avoidable console error in the test suite (CLOSED `48bdaf3`).** The
+4. **H1 Ã¢â‚¬â€ avoidable console error in the test suite (CLOSED `48bdaf3`).** The
    `next/link` mock in `Shell.test.tsx` spread `...rest` onto a raw `<a>`, so
    React logged `Received \`false\` for a non-boolean attribute \`prefetch\`` on
    every render. The mock now destructures `prefetch` out and drops it (same
    convention as `dashboard-summary-fanout.test.tsx`), and a new test asserts
    the render emits no non-boolean-attribute warning. **`Shell.tsx` was NOT
-   changed** — real `next/link` consumes `prefetch`; the leak was test-only.
+   changed** Ã¢â‚¬â€ real `next/link` consumes `prefetch`; the leak was test-only.
    Mutation-proven: reverting the destructure in a temp copy makes the new test
    FAIL. 11/11 in the file, `src/components` 9 files / 59 tests pass.
    **Do not revisit unless that mock regresses.**
-5. **B1/B2 — CLOSED (`954c910`):** Shell sidebar long-identity contract. 2 tests
+5. **B1/B2 Ã¢â‚¬â€ CLOSED (`954c910`):** Shell sidebar long-identity contract. 2 tests
    added (10 total in `Shell.test.tsx`) pinning `truncate` + `min-w-0` + `title`
    on both identity blocks for an explicit long display name and a 254-char
-   RFC-limit email. **`Shell.tsx` was NOT changed** — a mutation check on a
+   RFC-limit email. **`Shell.tsx` was NOT changed** Ã¢â‚¬â€ a mutation check on a
    temporary copy proved the existing implementation already correct.
    Anti-loop rule applied: **do not revisit unless `Shell.tsx` changes.**
 
 Queue, in order:
 
-1. **X1 / Y1 / U1** — ✅ CLOSED `a5fc054`, `68a67b4`. Do not redo.
-2. **V3-UI** — ✅ CLOSED `2a6bc1a`. Do not rebuild.
-3. **QA-ACCEPT** — ✅ CLOSED (legal acceptance recorded; `qa-accept.mjs` +
+1. **X1 / Y1 / U1** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED `a5fc054`, `68a67b4`. Do not redo.
+2. **V3-UI** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED `2a6bc1a`. Do not rebuild.
+3. **QA-ACCEPT** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED (legal acceptance recorded; `qa-accept.mjs` +
    `qa-page-probe.mjs` committed `4036224`; probe 104 routes / 0 SERVER_FAULTS).
-4. **Analytics phantom columns** — ✅ CLOSED `a0c9ec6` (all 8 `analytics/crm`
+4. **Analytics phantom columns** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED `a0c9ec6` (all 8 `analytics/crm`
    variants 200, incl. `groupBy=zipCode` and `view=outreach`).
-5. **B1/B2 Shell long-identity** — ✅ CLOSED `954c910`. Do not revisit (anti-loop
+5. **B1/B2 Shell long-identity** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED `954c910`. Do not revisit (anti-loop
    rule: only if `Shell.tsx` changes or the evidence is invalidated).
-6. **G2** — *(NEXT)* intermittent `GET /` 500, cause unidentified.
-6. **G1b** — Free-plan resource ceiling (Cloudflare 1102); owner decision.
-7. **Deployment** — none of this is deployed to production; last live Worker is
+6. **G2** Ã¢â‚¬â€ *(NEXT)* intermittent `GET /` 500, cause unidentified.
+6. **G1b** Ã¢â‚¬â€ Free-plan resource ceiling (Cloudflare 1102); owner decision.
+7. **Deployment** Ã¢â‚¬â€ none of this is deployed to production; last live Worker is
    `85de11a9`. Always `yarn cf:build` before `scripts/wrangler-deploy.mjs`.
 8. `BLOCKED-EXTERNAL`: Stripe live keys/webhook secret, Apollo keys, Bedrock,
    Google OAuth, Workers paid plan.
 
 Open findings that must not be confused with completed work:
 
-1. **Intermittent `GET /` 500** — diagnostics live (`a576f2f`, Worker `85de11a9`);
+1. **Intermittent `GET /` 500** Ã¢â‚¬â€ diagnostics live (`a576f2f`, Worker `85de11a9`);
    **root cause unresolved**. Next occurrence: `wrangler tail --format pretty`,
    grep `[worker:unhandled]`.
-2. **503 under sustained load** — **zero 5xx across 108 concurrent requests** on
+2. **503 under sustained load** Ã¢â‚¬â€ **zero 5xx across 108 concurrent requests** on
    the isolated worker, but probe5/probe6 (2026-10-06) hit alternating 200/503
    under sustained sequential probing with `wrangler tail` confirming **CPU
-   limit hit (Free plan)** — sustained traffic trips the ceiling too, not just
+   limit hit (Free plan)** Ã¢â‚¬â€ sustained traffic trips the ceiling too, not just
    bursts. Homepage warm median 124ms; cost is isolate cold start. Owner
    decision (G1b).
-3. **Sign-in rate-limit "race" — WITHDRAWN, FALSE POSITIVE** (`d2eb0fe`). Limiter
+3. **Sign-in rate-limit "race" Ã¢â‚¬â€ WITHDRAWN, FALSE POSITIVE** (`d2eb0fe`). Limiter
    HOLDS (3,3,3,3,1 admitted vs limit 3, 64 concurrent requests). The old
    "admitted=4" was a fixed-window boundary artifact. **Do not rewrite it.**
 
-### ISOLATED ENVIRONMENT EXISTS — use it, do not recreate
+### ISOLATED ENVIRONMENT EXISTS Ã¢â‚¬â€ use it, do not recreate
 
-`apps/web/wrangler.loadtest.jsonc` → Worker **`dealswift-loadtest`**, 32 secrets
-provisioned, **disjoint from the apex**. ⚠️ `dealswiftautomation.com` and
-`dealswift-app.romanshumates1.workers.dev` are **THE SAME WORKER** — "workers.dev"
+`apps/web/wrangler.loadtest.jsonc` Ã¢â€ â€™ Worker **`dealswift-loadtest`**, 32 secrets
+provisioned, **disjoint from the apex**. Ã¢Å¡Â Ã¯Â¸Â `dealswiftautomation.com` and
+`dealswift-app.romanshumates1.workers.dev` are **THE SAME WORKER** Ã¢â‚¬â€ "workers.dev"
 is **not** isolation. Probe scripts refuse to run unless `BASE` contains
 `loadtest`. **All concurrency/load work belongs here.**
 
 Never load-test the live apex; a previous session caused a real ~90s outage.
 
-## THE `run-migrations.mjs` TRAP — read before touching migrations
+## THE `run-migrations.mjs` TRAP Ã¢â‚¬â€ read before touching migrations
 
 `db/migrations/` is applied by **three different runners** and they are not
 interchangeable:
@@ -209,7 +209,7 @@ interchangeable:
 | `scripts/run-migrations.mjs` | its own copy | single-file apply |
 
 `run-migrations.mjs` drifted from the vetted splitter and lost statements
-silently. **MIGRATION_GATE PASS does not imply `run-migrations.mjs` is correct** —
+silently. **MIGRATION_GATE PASS does not imply `run-migrations.mjs` is correct** Ã¢â‚¬â€
 they are different code paths. That is now pinned by
 `scripts/run-migrations.guard.test.ts`, which asserts the two agree statement
 for statement across all 99 files. If you add a migration and the gate passes,
@@ -221,7 +221,7 @@ confirm the guard still passes too.
   it.** CLOSED at `954c910` with 10 tests, mutation-proven (stripping
   `truncate`/`min-w-0`/`title` in a temp copy fails both new tests; real impl
   10/10). `Shell.tsx` was already correct. Only revisit if `Shell.tsx` itself
-  changes or the evidence is invalidated — **not** to manufacture a diff.
+  changes or the evidence is invalidated Ã¢â‚¬â€ **not** to manufacture a diff.
 - **Do not "fix" the `prefetch` warning in `Shell.tsx`.** CLOSED at `48bdaf3`:
   the leak was in the TEST's `next/link` mock spreading `...rest` onto a raw
   `<a>`, not in production. Real `next/link` consumes `prefetch` and never
@@ -257,38 +257,38 @@ The ceiling is set by three *unmeasured* items, none of them code-fixable here:
 - 503s under sustained load (Free plan, not configurable)
 - intermittent homepage 500, cause unidentified
 
-`PRODUCTION_ENGINEERING_AUDIT.md` says 6/10. **It is stale** — dated 2026-10-03
+`PRODUCTION_ENGINEERING_AUDIT.md` says 6/10. **It is stale** Ã¢â‚¬â€ dated 2026-10-03
 against `c87d510`, and superseded by the matrix. Do not act on it.
 
-## WITHDRAWN DEFECT — `/dashboard` "45s timeout" NEVER EXISTED (`f0074e2`)
+## WITHDRAWN DEFECT Ã¢â‚¬â€ `/dashboard` "45s timeout" NEVER EXISTED (`f0074e2`)
 
 Measured on Worker `8b0da56b`, authenticated, real browser: HTTP **200**, DOM
 ready **219ms**, content visible **548ms**, heading `Welcome back, QA Audit Bot`.
 The harness awaited `waitUntil: 'networkidle'`, which never settles on an
 authenticated page (shell RSC prefetch, React Query revalidation, onboarding
 PATCH on mount). **The instrument was wrong, not the product.** Endpoints behind
-it measured 83–405ms. Do not "fix" dashboard performance — there is no evidence
+it measured 83Ã¢â‚¬â€œ405ms. Do not "fix" dashboard performance Ã¢â‚¬â€ there is no evidence
 of a defect.
 
 ## LIVE-VERIFIED (authenticated, Worker `8b0da56b`)
 
-`routes=6 clean=6 noisy=0` — the first genuinely clean authenticated run in this
+`routes=6 clean=6 noisy=0` Ã¢â‚¬â€ the first genuinely clean authenticated run in this
 project (`f0074e2`). Single sequential browser run; no load testing, per the
 production safety rule.
 
 | Route | Status | DOM ready | Mock data | Console | Page errors | Boundary |
 | --- | --- | --- | --- | --- | --- | --- |
 | `/dashboard` | 200 | 268ms | none | 0 | 0 | none |
-| `/campaigns` | 200 | 248ms | — | 0 | 0 | none |
-| `/lead-finder` | 200 | 298ms | — | 0 | 0 | none |
-| `/settings/billing` | 200 | 432ms | — | 0 | 0 | none |
+| `/campaigns` | 200 | 248ms | Ã¢â‚¬â€ | 0 | 0 | none |
+| `/lead-finder` | 200 | 298ms | Ã¢â‚¬â€ | 0 | 0 | none |
+| `/settings/billing` | 200 | 432ms | Ã¢â‚¬â€ | 0 | 0 | none |
 | `/achievements` | 200 | 206ms | **none** | 0 | 0 | none |
 | `/inbox` | 200 | 258ms | **none** | 0 | 0 | none |
 
 `ERR_ABORTED` counts are **benign** and tracked separately: measured 19 API
 requests initiated / 5 aborted on `/dashboard`, **0 failures across 10s idle**,
 every aborted endpoint returning 200 on a direct call, and
-`/api/user/preferences` requested **twice** — the strict-mode double-mount
+`/api/user/preferences` requested **twice** Ã¢â‚¬â€ the strict-mode double-mount
 signature. Real failures still count.
 
 ---
@@ -299,15 +299,15 @@ signature. Real failures still count.
 | --- | --- | --- |
 | `cab6955` | Restored canonical `src/instrumentation.ts`; added sync contract guard for the required OpenNext Worker stub | **6/6 targeted tests; lint 0/0; `cf:build` passed; final handler asserted patched. Not deployed.** |
 | `52ad8e5` | Aborted static chunks classified benign (asset confirmed served 200/28KB) | **FULL GATE: 3006 tests passed, 0 failed; build OK; browser clean=6 noisy=0** |
-| `f0074e2` | `/dashboard` "45s timeout" — **harness bug, defect disproven**; `networkidle`→`domcontentloaded`; benign aborts separated | 6/6 routes 200, DOM ready 153–503ms |
+| `f0074e2` | `/dashboard` "45s timeout" Ã¢â‚¬â€ **harness bug, defect disproven**; `networkidle`Ã¢â€ â€™`domcontentloaded`; benign aborts separated | 6/6 routes 200, DOM ready 153Ã¢â‚¬â€œ503ms |
 | `0437912` | QA harness: creds no longer mangled by `cmd`; FATAL when logged out; mock-leak assertion added | **Live on Worker `8b0da56b`**: `/achievements` + `/inbox` 200, mockLeak=0, 0 console/page errors |
 | `fa43bd0` | `/achievements` + `/inbox` now render REAL data (were hardcoded mock rows); thread selects `body`; dead controls removed | 44/44 related suites; 9/9 endpoints.contract; typecheck + oxlint clean; live-verified above |
-| `6b30d2c` | Achievement points awarded exactly once (was repeatable by any caller); POST now gamification-gated; progress validated | **RED 8 failed/3 passed → GREEN 11/11**; 44/44 across achievements/conversations/leaderboard/gamification |
+| `6b30d2c` | Achievement points awarded exactly once (was repeatable by any caller); POST now gamification-gated; progress validated | **RED 8 failed/3 passed Ã¢â€ â€™ GREEN 11/11**; 44/44 across achievements/conversations/leaderboard/gamification |
 | `ff3b262` | Tenant-isolation guard given an I/O timeout budget (fixed the suite's only failure) | 2 passed in 339ms; 27 passed across sibling guards |
 | `2ea6db3` | Referral share links pointed at the real signup route (`/signup` 404'd in production) | 14 passed; live 404 reproduced pre-fix |
 | `27cae46` | Single source for `/api/user/preferences` reads | pre-existing |
 
-## ⚠️ FABRICATED-DATA CLASS — read before trusting any "LIVE VERIFIED" UI row
+## Ã¢Å¡Â Ã¯Â¸Â FABRICATED-DATA CLASS Ã¢â‚¬â€ read before trusting any "LIVE VERIFIED" UI row
 
 Ten false negatives were found earlier (code missing that was assumed absent).
 This class is the **opposite** and had never been searched for: pages that
@@ -318,13 +318,13 @@ verified.
 | Where | What it showed | Now |
 | --- | --- | --- |
 | `/achievements` | Hardcoded 20 rows after a fake `setTimeout(500)`; never called the API. Fake points, fake 2024 dates, invented "$500,000 Platinum Club" tier | Real `fetch` + server aggregates (`fa43bd0`) |
-| `/inbox` | `return data.length > 0 ? data : mockConversations;` — **an empty inbox rendered four strangers' rows**, and an outage was indistinguishable from success | Real fetch; error ≠ empty (`fa43bd0`) |
+| `/inbox` | `return data.length > 0 ? data : mockConversations;` Ã¢â‚¬â€ **an empty inbox rendered four strangers' rows**, and an outage was indistinguishable from success | Real fetch; error Ã¢â€°Â  empty (`fa43bd0`) |
 | Contact panel | Hardcoded Stage "Interested", Score 85, "123 Main St, Miami FL" | Real fields (`fa43bd0`) |
-| Achievement POST | Credited points whenever the **request** said `unlock` — repeatable | Award on real transition only (`6b30d2c`) |
+| Achievement POST | Credited points whenever the **request** said `unlock` Ã¢â‚¬â€ repeatable | Award on real transition only (`6b30d2c`) |
 
 **When verifying a UI requirement, confirm the page actually CALLS its endpoint.**
 A 200 plus a passing API test proves nothing if the component never issues the
-request. `/leaderboard` was already correct and says so in a comment — that is
+request. `/leaderboard` was already correct and says so in a comment Ã¢â‚¬â€ that is
 the pattern to expect.
 
 ## VERIFIED FACTS
@@ -332,7 +332,7 @@ the pattern to expect.
 Reusable. Do not re-verify unless the relevant code, deployment or environment changes.
 
 - **`/signup?ref=` is FIXED IN PRODUCTION.** It returned 404; it now returns
-  **307 → `/account/signup`**, with `?ref=CODE` and `&plan=pro` both preserved,
+  **307 Ã¢â€ â€™ `/account/signup`**, with `?ref=CODE` and `&plan=pro` both preserved,
   landing on a 200 whose HTML contains the ref. Verified live 2026-10-04.
 - **Referral banner renders on the live homepage** (3/3 requests 200) and
   `/referrals` returns 200. LIVE VERIFIED.
@@ -342,27 +342,27 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   "15/24 routes 503 / /dashboard 12.4s" no longer reproduces. Live 2026-10-04:
   sign-in 200; `/api/dashboard/summary` 200 in 964ms **10/10 consecutive**;
   `/api/usage` 504ms; `/api/credits` 365ms; `/api/system/health` 180ms.
-- ✅ **Authenticated PAGE routes ARE verified.** Legal acceptance was recorded
+- Ã¢Å“â€¦ **Authenticated PAGE routes ARE verified.** Legal acceptance was recorded
   for the QA account; `scripts/qa-page-probe.mjs` (committed `4036224`) reports
   **104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** against
   `dealswift-loadtest` (2026-10-07). The old "every route 307s to
-  `/legal/accept`" note is historical — do not re-open it.
-- ✅ **CRM analytics schema-truth fix (`a0c9ec6`).** `contracts.lead_id`,
+  `/legal/accept`" note is historical Ã¢â‚¬â€ do not re-open it.
+- Ã¢Å“â€¦ **CRM analytics schema-truth fix (`a0c9ec6`).** `contracts.lead_id`,
   `message_events.opened_at` and `leads.zip_code` were phantom columns that
   500'd the outreach and regional-zip views. Joins now use
   `seller_lead_id = l.id::text`, opens report honestly 0, regional uses
   `leads.zip`. Pinned by `schemaColumnTruth.guard.test.ts` (static tree scan +
   regression samples). All 8 `analytics/crm` variants 200 on the deployed
   loadtest worker.
-- ⚠️ **`/contacts` is a 404 because that route genuinely does not exist** — only
+- Ã¢Å¡Â Ã¯Â¸Â **`/contacts` is a 404 because that route genuinely does not exist** Ã¢â‚¬â€ only
   the public `/(marketing)/contact` is registered. The CRM contacts requirement
   is **CLOSED** via `/crm` (matrix false negative #8). Not a broken link; do not
   create a duplicate page.
-- ⚠️ **`scripts/wrangler-deploy.mjs` does NOT rebuild.** It deploys whatever is
+- Ã¢Å¡Â Ã¯Â¸Â **`scripts/wrangler-deploy.mjs` does NOT rebuild.** It deploys whatever is
   already in `.open-next`. Running it after a code change ships stale artifacts
   *and reports success*. Always `yarn cf:build` first. This cost a full deploy
   cycle on 2026-10-04.
-- ⚠️ **`scripts/deployed-browser-qa.mjs` HANGS** — and the cause is now understood.
+- Ã¢Å¡Â Ã¯Â¸Â **`scripts/deployed-browser-qa.mjs` HANGS** Ã¢â‚¬â€ and the cause is now understood.
   It sweeps ~24 routes across two viewports with **no delay between routes**,
   each allowing `domcontentloaded` 45s + `load` 20s + `networkidle` 12s. That is
   exactly the burst pattern that trips the shared CPU ceiling, so the script was
@@ -370,27 +370,27 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
   on a bug. **Do not re-run it against production as written.** Use
   `scripts/authenticated-console-check.mjs` (hard per-route timeout, fewer
   routes), and add cooldowns between navigations if you extend it.
-- ⚠️ **THE BINDING CONSTRAINT: burst load breaches the Free-plan CPU ceiling.**
+- Ã¢Å¡Â Ã¯Â¸Â **THE BINDING CONSTRAINT: burst load breaches the Free-plan CPU ceiling.**
   **Confirmed production incident:** three consecutive `GET /` returned
   **503 / Cloudflare 1102**, plus 503 on all four routes in a browser sweep;
   recovered to 200 after ~90s cooldown. Single requests are healthy (pages
-  193–315ms; dashboard summary 10/10 clean).
+  193Ã¢â‚¬â€œ315ms; dashboard summary 10/10 clean).
   `limits.cpu_ms` is **rejected on the Free plan**, so this cannot be configured;
   it can only be bought or avoided. **Owner decision.**
-- 🚨 **DO NOT load-test production. MANDATORY STANDING RULE.**
+- Ã°Å¸Å¡Â¨ **DO NOT load-test production. MANDATORY STANDING RULE.**
   **On 2026-10-04 this session caused a real incident**: a browser sweep tripped
   the CPU ceiling and `GET /` returned **503 / Cloudflare 1102** to real visitors
   for ~90s. Never run burst/concurrency/load/CPU-exhaustion tests against the
   live apex. Use local, preview, staging, workers.dev test deploys, mocks or
   PGlite. Keep live testing to a handful of requests with cooldowns.
-  Full rule: `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` → PRODUCTION SAFETY RULE.
-  **If you see 503s, stop polling and wait 60–90s** — polling keeps the ceiling
+  Full rule: `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` Ã¢â€ â€™ PRODUCTION SAFETY RULE.
+  **If you see 503s, stop polling and wait 60Ã¢â‚¬â€œ90s** Ã¢â‚¬â€ polling keeps the ceiling
   saturated. `/api/system/health` returning 200 while `/` still 503s is the early
   signal that it has cleared.
 - **AI credit caps are enforced ATOMICALLY in Postgres** and verified on a real
   engine (PGlite): *"never oversells the cap under CONCURRENT consumption"*, plus
   daily/weekly/monthly denial, period boundaries, tenant isolation, and release
-  never going negative — 10/10 pass, 2026-10-04. **Do not rebuild this.**
+  never going negative Ã¢â‚¬â€ 10/10 pass, 2026-10-04. **Do not rebuild this.**
 - **Purchased credits are correctly excluded** from the included-credit caps
   (`aiCreditLimits.ts:181-183`, `aiCreditGate.ts:103-108`).
 - Sign-in CPU: 200 in 490ms; throttle refuses in 75ms pre-hash. Deployed at
@@ -400,7 +400,7 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## OPEN BLOCKERS
 
-**External — cannot be resolved in code:**
+**External Ã¢â‚¬â€ cannot be resolved in code:**
 
 | Blocker | Blocks |
 | --- | --- |
@@ -410,7 +410,7 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 | Google OAuth credentials absent | live Google sign-in |
 | Workers plan decision (owner) | full CPU headroom |
 
-**Internal — unresolved production defects:**
+**Internal Ã¢â‚¬â€ unresolved production defects:**
 
 1. **Intermittent `GET /` 500.** Cause UNIDENTIFIED. `TypeError:
    components.ComponentMod.handler is not a function`. Did not reproduce in
@@ -425,43 +425,43 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## CRITICAL WARNINGS
 
-- ⚠️ **THE INHERITED MATRIX WAS WRONG TEN TIMES.** Every "ABSENT" claim was
+- Ã¢Å¡Â Ã¯Â¸Â **THE INHERITED MATRIX WAS WRONG TEN TIMES.** Every "ABSENT" claim was
   re-verified individually and ten were false negatives: AI credit caps, earnings
   date filters, AI calling, voice selection, trial demo data, referral banner,
   **CRM contacts page**, **gamification XP**, and two others.
-  **Before rebuilding anything marked ABSENT, search by CONCEPT — file contents,
-  DB columns, exports, the 86-page/370-route build manifest — not by directory
+  **Before rebuilding anything marked ABSENT, search by CONCEPT Ã¢â‚¬â€ file contents,
+  DB columns, exports, the 86-page/370-route build manifest Ã¢â‚¬â€ not by directory
   name.** `api/crm`, `api/contacts`, `api/v1/contacts` and `app/crm` all exist
   under names you would never guess. Directory search alone has produced a false
   negative every single time it was trusted.
-- ⚠️ **NEVER PASS QA CREDENTIALS VIA `cmd /c set VAR=value`.** cmd re-parses that
+- Ã¢Å¡Â Ã¯Â¸Â **NEVER PASS QA CREDENTIALS VIA `cmd /c set VAR=value`.** cmd re-parses that
   line, so Node received values that were not the ones in the file. This produced
   a browser `401 Invalid email or password` **while a direct API call with the same
-  credentials returned 200** — indistinguishable from a dead production login.
+  credentials returned 200** Ã¢â‚¬â€ indistinguishable from a dead production login.
   Fixed in `0437912`: `authenticated-console-check.mjs` now reads
-  `$TEMP\qa-cred.json` inside Node. **Production sign-in is healthy** — verified
+  `$TEMP\qa-cred.json` inside Node. **Production sign-in is healthy** Ã¢â‚¬â€ verified
   200, `hasSession: true`, redirect to `/dashboard`. Do not re-diagnose it.
-- ⚠️ **A CLEAN BROWSER SWEEP MEANS NOTHING IF THE SESSION WAS NOT REAL.** The same
-  script used to continue after sign-in failed, verifying every route logged out —
+- Ã¢Å¡Â Ã¯Â¸Â **A CLEAN BROWSER SWEEP MEANS NOTHING IF THE SESSION WAS NOT REAL.** The same
+  script used to continue after sign-in failed, verifying every route logged out Ã¢â‚¬â€
   and unauthenticated pages render clean, so it reported tidy results. It now
   prints `SESSION_PROBE` and a FATAL when `hasSession !== true`. Always read that
   line before trusting any route result from it.
-- ⚠️ **THE MATRIX HAS PRODUCED TEN FALSE NEGATIVES *AND* FALSE POSITIVES.**
+- Ã¢Å¡Â Ã¯Â¸Â **THE MATRIX HAS PRODUCED TEN FALSE NEGATIVES *AND* FALSE POSITIVES.**
   False negatives (assumed absent, actually present) are recorded above.
-  False positives — **code that exists, returns 200, and shows invented data** —
+  False positives Ã¢â‚¬â€ **code that exists, returns 200, and shows invented data** Ã¢â‚¬â€
   were never searched for until 2026-10-04 and are just as dangerous: they
   certify a requirement as verified when the verification proves nothing.
   `/achievements` and `/inbox` both passed "live 200" while rendering hardcoded
   rows. **Before believing any UI evidence, confirm the component actually CALLS
   its endpoint.** A passing API test does not help if the page never issues the
   request.
-- ⚠️ **CHECK YOUR OWN SEARCH FLAGS BEFORE BELIEVING A ZERO.** This cycle I used a
+- Ã¢Å¡Â Ã¯Â¸Â **CHECK YOUR OWN SEARCH FLAGS BEFORE BELIEVING A ZERO.** This cycle I used a
   non-recursive `Get-ChildItem -File` on `apps/web/db/`, which silently skipped
   `db/migrations/`, and nearly recorded an 11th false negative claiming the
-  achievements tables did not exist. They do — in migration 068. Use
+  achievements tables did not exist. They do Ã¢â‚¬â€ in migration 068. Use
   `git ls-files` to enumerate files reliably before concluding anything is absent.
   The pre-existing `.tmp-*.log` files and `.tmp-qa-creds.env` are untracked
-  scratch. **`.tmp-qa-creds.env` may contain credentials — never commit it and
+  scratch. **`.tmp-qa-creds.env` may contain credentials Ã¢â‚¬â€ never commit it and
   never print its contents.**
 - `git status` shows `docs/superpowers/PRODUCTION_ENGINEERING_AUDIT.md` as
   untracked; it is a *historical, partly incorrect* report. Treat as context, not
@@ -469,11 +469,11 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 
 ## DO NOT REPEAT
 
-- Do **not** re-implement/rework AI credit weekly/daily caps — they exist and are tested.
+- Do **not** re-implement/rework AI credit weekly/daily caps Ã¢â‚¬â€ they exist and are tested.
 - Do **not** "fix" the sign-in rate limiter. The "RACY: limit bypassed" verdict was
   a **false positive** from a fixed-window boundary artifact in the measuring
   script. Mid-window retest on the isolated worker: admitted 3,3,3,3,1 against a
-  limit of 3 over 64 concurrent requests — it **holds** (`d2eb0fe`). Acting on
+  limit of 3 over 64 concurrent requests Ã¢â‚¬â€ it **holds** (`d2eb0fe`). Acting on
   the old claim would have meant rewriting a working security control.
 - Do **not** treat `dealswift-app.romanshumates1.workers.dev` as an isolated
   environment. It is **THE SAME WORKER** as the apex (no `routes` entry in
@@ -485,49 +485,49 @@ Reusable. Do not re-verify unless the relevant code, deployment or environment c
 - Do **not** re-add "the homepage 500 has no telemetry" as an open finding. The
   worker `fetch` wrapper logs unhandled throws as `[worker:unhandled]` with
   `suspected_resource_kill` (`a576f2f`). The 500 itself is **still unfixed and
-  unreproduced** — only its observability changed. Do not read that as a fix.
+  unreproduced** Ã¢â‚¬â€ only its observability changed. Do not read that as a fix.
 - Do **not** "fix" `/dashboard` performance. **The 45s timeout defect never
-  existed** — it was the QA harness waiting on `networkidle` (`f0074e2`). Real
+  existed** Ã¢â‚¬â€ it was the QA harness waiting on `networkidle` (`f0074e2`). Real
   measurement: HTTP 200, DOM ready 219ms, content visible 548ms. The harness now
   reports `domReady` per route, so genuine slowness would show as a number.
 - Do **not** treat `ERR_ABORTED` counts as failures. Measured: 19 API requests
   initiated / 5 aborted on `/dashboard`, **0 failures in 10s idle**, every aborted
-  endpoint returning 200 directly, and `/api/user/preferences` requested twice —
+  endpoint returning 200 directly, and `/api/user/preferences` requested twice Ã¢â‚¬â€
   the strict-mode double-mount signature. The harness separates `benignAborts`.
   Timeouts, 4xx/5xx and connection errors still count as failures.
 - Do **not** re-run the fabricated-data sweep. All 76 authenticated `page.tsx`
   files were checked on 2026-10-04 by **shape** (`|| mock`, `?? mock`,
-  `if (!res.ok) return mock…`, pages with no API call, hardcoded name/address
+  `if (!res.ok) return mockÃ¢â‚¬Â¦`, pages with no API call, hardcoded name/address
   literals) and **no further instances were found**. The 17 pages that make no
   API call were each inspected and are legitimate: marketing/legal (static),
   `campaigns/planner` (a calculator), `admin/users` (4-line re-export of a
   component that does fetch), `(dashboard)/automation`, `settings/accessibility`,
   and two access-state pages.
-- Do **not** treat the 19 `if (!res.ok) return []` sites as this same defect —
+- Do **not** treat the 19 `if (!res.ok) return []` sites as this same defect Ã¢â‚¬â€
   they return an empty state, not fabricated content. Known weaker error
   affordance, deliberately not bundled; do not "fix" them as a side effect.
-- Do **not** re-implement/rework the achievement points-award guard — fixed in `6b30d2c`
+- Do **not** re-implement/rework the achievement points-award guard Ã¢â‚¬â€ fixed in `6b30d2c`
   with 11 tests. The award now depends on a real unlocked transition, not on the request.
-- Do **not** re-wire `/achievements` or `/inbox` to their APIs — done in `fa43bd0`.
+- Do **not** re-wire `/achievements` or `/inbox` to their APIs Ã¢â‚¬â€ done in `fa43bd0`.
   Do not reintroduce a mock fallback there; that fallback was the defect.
-- Do **not** re-audit whether the achievements/leaderboard backends exist — they do,
+- Do **not** re-audit whether the achievements/leaderboard backends exist Ã¢â‚¬â€ they do,
   with schema in `db/migrations/068_user_profile_and_gamification.sql`. Note
   `apps/web/db/migrations/` is the real path: `apps/web/db/` also holds loose
   `.sql` files, and a non-recursive search of the parent **misses the migrations**.
-- Do **not** enable the inbox message composer without an explicit product decision —
+- Do **not** enable the inbox message composer without an explicit product decision Ã¢â‚¬â€
   it triggers real outbound SMS/email.
-- Do **not** re-implement/rework the sign-in pre-hash cost guard — deployed and measured.
-- Do **not** re-investigate the opennextjs chunk-loading cause of the homepage 500 — disproven.
+- Do **not** re-implement/rework the sign-in pre-hash cost guard Ã¢â‚¬â€ deployed and measured.
+- Do **not** re-investigate the opennextjs chunk-loading cause of the homepage 500 Ã¢â‚¬â€ disproven.
 - Do **not** re-run the full 3013-test suite for an isolated change. It takes ~6
   minutes and `collect` is 268s. Use targeted runs.
-- Do **not** rebuild the referral-link fix — landed in `2ea6db3`.
+- Do **not** rebuild the referral-link fix Ã¢â‚¬â€ landed in `2ea6db3`.
 - Do **not** re-audit billing/tax/withdrawals absent a dependency change.
-- Do **not** edit `Shell.tsx` to silence the `prefetch` console warning — the
+- Do **not** edit `Shell.tsx` to silence the `prefetch` console warning Ã¢â‚¬â€ the
   leak was in the test's `next/link` mock, fixed at `48bdaf3`. Production
   `next/link` consumes `prefetch`; nothing to change there.
 
 ## REQUIRED FILES TO READ
 
-1. `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` — full state
-2. `UNIFIED-REQUIREMENTS-MATRIX.md` — per-requirement status + evidence
-3. `apps/web/src/app/api/utils/aiCreditDb.ts` — where NEXT ACTION begins
+1. `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` Ã¢â‚¬â€ full state
+2. `UNIFIED-REQUIREMENTS-MATRIX.md` Ã¢â‚¬â€ per-requirement status + evidence
+3. `apps/web/src/app/api/utils/aiCreditDb.ts` Ã¢â‚¬â€ where NEXT ACTION begins
