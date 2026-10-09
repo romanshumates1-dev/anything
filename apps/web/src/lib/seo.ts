@@ -18,6 +18,7 @@
  *     title: 'Pricing',
  *   };
  */
+import type { Metadata } from 'next';
 
 /**
  * Absolute site origin, matching the root layout's metadataBase fallback.
@@ -50,8 +51,14 @@ export const SOCIAL_IMAGE_PATH = '/og-image.png';
  * The query string and fragment are deliberately excluded: they do not identify
  * a different document, and including a tracking parameter would tell a crawler
  * the tagged URL is canonical.
+ *
+ * TYPING NOTE — do NOT add `as const` back. `OpenGraph.images` is typed
+ * `OGImage | OGImage[]`, a MUTABLE array, so a `readonly` tuple is rejected.
+ * It was `as const` from 2026-10-09 and produced 13 TS2322 errors across every
+ * page that spreads this helper; `next build` skips type validation so the
+ * build stayed green while `tsc -p tsconfig.typecheck.json` failed.
  */
-export function canonicalFor(path: string) {
+export function canonicalFor(path: string): Metadata {
   // The root keeps its trailing slash: `https://site/` is the conventional form
   // and avoids emitting two spellings of the homepage across pages.
   const clean = path === '/' ? '/' : `/${path.replace(/^\/+|\/+$/g, '')}`;
@@ -71,6 +78,6 @@ export function canonicalFor(path: string) {
       // Absolute, because scrapers do not resolve relative og:image URLs.
       images: [`${siteOrigin()}${SOCIAL_IMAGE_PATH}`],
     },
-  } as const;
+  };
 }
 
