@@ -162,7 +162,7 @@ UI are all already implemented and tested. Inject via
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | G1 | Authenticated routes render | `scripts/deployed-browser-qa.mjs`, `scripts/qa-page-probe.mjs` | **LIVE VERIFIED 2026-10-07** | `qa-page-probe.mjs`: **104 routes / 100 OK / 4 benign redirects / 0 SERVER_FAULTS** on `dealswift-loadtest`. The historical 15/24 503s RESOLVED 2026-10-04 (pages 193–315ms) | residual burst 1102 → G1b |
-| G2 | No intermittent homepage 500 | — | **NOT VERIFIED** | `ComponentMod.handler is not a function`; 40/40 no repro | cause UNIDENTIFIED |
+| G2 | No intermittent homepage 500 | `scripts/patch-opennext-handler-guard.mjs` + `.test.ts` | **DIAGNOSABLE 2026-10-09** (step 1) | Guarded call site shipped & wired into `cf:build`; 5 tests green; verified on real bundle. `[g2-handler-guard]` marker + `PageModuleLoadError` now replace the silent TypeError. **Root cause still unconfirmed** (memory hypothesis unmeasured); not reproduced (40/40). NOT resolved. |
 | G3 | Analytics views serve every parameter variant without 5xx | `crmAnalyticsEngine.ts`, `analytics/attribution/route.ts`, `schemaColumnTruth.guard.test.ts` | **DONE 2026-10-07** (`a0c9ec6`) | phantom `contracts.lead_id` / `message_events.opened_at` / `leads.zip_code` corrected at 7 sites; probe: all 8 `analytics/crm` variants 200 incl. `groupBy=zipCode` + `view=outreach`; static tree-scan guard + regression samples | — |
 
 ## SET H — CONSOLE / DATA HONESTY
@@ -533,6 +533,43 @@ wrangler tail --format pretty      # then watch for [worker:unhandled]
 If `suspected_resource_kill=true`, it is capacity, not code. If false, the logged
 `TypeError` names the failing call site directly.
 
+### ⚠️ HOMEPAGE 500 — MATRIX STEP 1 SHIPPED: guarded call site (`8813574`)
+
+Step 1 of the testable hypothesis above ("add a guarded call so a failed module
+load returns a diagnosable error instead of a `TypeError`") is now implemented as
+`scripts/patch-opennext-handler-guard.mjs`.
+
+**What it does.** The unguarded call site is in the OpenNext-**GENERATED** bundle
+`.open-next/server-functions/default/apps/web/handler.mjs`, not in `src/`, so it
+cannot be fixed in application code. The build-time script (same precedent as
+`patch-opennext-instrumentation.mjs`) replaces the byte-accurate
+
+```
+return await components.ComponentMod.handler(handlerReq,handlerRes,{waitUntil:this.getWaitUntil()}),null
+```
+
+with a `typeof components.ComponentMod.handler !== 'function'` guard that, before
+the call, logs a greppable `[g2-handler-guard]` line (url, routeModule, nextApp,
+rssMB) and throws a named `PageModuleLoadError`. The happy path is unchanged.
+
+**Wiring.** `cf:build` now runs it **after** `patch-opennext-instrumentation.mjs`
+(both target the same `handler.mjs`), so the guard ships in every build.
+
+**Verification (all against the REAL generated bundle):**
+- 5 regression tests green (`scripts/patch-opennext-handler-guard.test.ts`):
+  guards the real call site, marker + named error emitted, idempotent, no
+  over-match on a handler without the call site, fail-safe exit 0 when
+  `.open-next` is absent.
+- Ran the script on the shipped `handler.mjs`: guarded 1 call site (exit 0),
+  `node --check` valid, second run idempotent, coexists with the already-applied
+  instrumentation marker.
+
+**What this does NOT do.** It does not reproduce or fix the 500 and does not
+confirm memory. It converts an undiagnosable intermittent 500 into one that logs
+a greppable marker plus the diagnostics needed to attribute it. The root cause
+remains **unconfirmed**; step 2 (memory comparison) and step 3 (bundle-splitting
+mitigation) are still open. **Do not record the defect as resolved.**
+
 ### Instrumentation source/Worker-patch maintenance gap — RESOLVED (`cab6955`)
 
 The patch script had documented itself as mirroring `src/instrumentation.ts`, but
@@ -702,11 +739,18 @@ duplicated both.
 | --- | --- | --- |
 | Affiliate programme | `api/{affiliate,commission,partner}`, file contents for `affiliate\|commission`, git log --all --grep | **ABSENT**, and no branch/commit mentions it |
 | Flipper / Builder AI | `api/{flip,builder,renovat,project}`, `contracts/` for renovation terms, git log --all --grep | **ABSENT**, no branch/commit |
-| Gamification crates / spin wheel / battle pass / seasons / competitions | `api/*` for crate/spin/season/battle/competition/giveaway/reward | **ABSENT** |
+| Gamification crates / spin wheel / battle pass / seasons / competitions | ~~`api/*` for crate/spin/season/battle/competition/giveaway/reward~~ **RE-AUDITED 2026-10-09** — the directory-only search was the exact trap the "Standing method note" below warns about | **PRESENT — false negative #11.** `db/migrations/099_gamification_rewards.sql` creates **13 tables**: `gamification_seasons`, `user_season_progress`, `battle_pass_tiers`, `user_battle_pass_claims`, `user_spin_wallet`, `spin_wheel_spins`, `user_crate_inventory`, `user_crate_opens`, `competitions`, `use_codes`, `user_use_code_redemptions`, `giveaways`, `giveaway_entries`. Logic in `api/utils/gamificationRewards.ts` (`SPIN_PRIZES`, `SPIN_WEIGHTS`, `secureRoll`, `levelForXp`, `useCodeXp`, `clampUseCodeMultiplier`, `assertNoMonetaryPrize`) + `gamificationRewards.server.ts`; HTTP surface `api/rewards` (`spin` / `redeem` / `claim-tier` / `enter-giveaway`). **52 tests** (26 unit + 26 route) plus a **PGlite** run against real Postgres. This also contradicts this file's own SCORE section, which lists these as absent. |
 
-**Corrected tally: 10 false negatives, 3 genuinely absent (affiliate, Flipper,
-crates/spin/battle-pass), 1 false positive in the other direction (the referral
-banner really was missing — fixed in `2ea6db3`).**
+**Corrected tally: 11 false negatives, 2 genuinely absent (affiliate, Flipper),
+1 false positive in the other direction (the referral banner really was missing —
+fixed in `2ea6db3`).**
+
+> **2026-10-09 correction.** The gamification row above was a false negative
+> (#11) — see the re-audit cell. The two remaining "genuinely absent" items,
+> **affiliate programme** and **Flipper / Builder AI**, are absent — but
+> **neither appears anywhere in the master spec** `.github/agents/roman.agent.md`
+> (0 matches for `affiliate`, `Flipper`, or `Builder AI`). They are therefore
+> **not master scope** and must not be counted against it.
 
 ### Standing method note
 
@@ -719,7 +763,7 @@ search contents, DB columns and the build manifest before concluding ABSENT.
 | Affiliate programme | `api/affiliate*`, `app/affiliate` | **ABSENT** |
 | Flipper / Builder AI | `app/flipper`, `app/builder` | **ABSENT** |
 | AI phone calling | ~~`api/**/calling*`~~ | **WRONG NAME — lives under `api/gateway/` and `api/utils/`; see R1** |
-| Spin wheel / crates / battle pass / competitions | `api/gamification` | **ABSENT** (only achievements + leaderboard) |
+| ~~Spin wheel / crates / battle pass / competitions~~ | ~~`api/gamification`~~ **RE-AUDITED 2026-10-09** | **PRESENT** (false negative #11) — lives in `api/rewards` + `api/utils/gamificationRewards*` + migration 099, not `api/gamification` |
 | Earnings date-range filters | `api/payouts` | **WRONG PATH — implemented in `api/earnings`; see K1** |
 | Free-trial demo data | ~~`api/**/demo*`~~ | **WRONG LOCATION — lives in `lib/` + `api/utils/syntheticData.ts`; see E1** |
 | ~~AI weekly/daily credit ceilings~~ | ~~`api/credits`~~ | **WRONG PATH — implemented in `api/utils`, see correction** |
@@ -742,9 +786,9 @@ re-open them.
 | **Y1 / U1** | Metrics reflect only ENABLED phases | **DONE 2026-10-04** (`a5fc054`) | 15 + 28 tests |
 | **X1** | Entitlements fail closed | **DONE 2026-10-04** (`68a67b4`) | 16 tests |
 | **IP-ARCH** | `x-real-ip` caveat closed | **DONE 2026-10-04** (`d5d6094`) | Documented in `apps/web/DEPLOYMENT-ARCHITECTURE.md`, pinned by `clientIp.deployment-architecture.test.ts` |
-| G2 | Intermittent homepage 500 | **BLOCKED-EXTERNAL** (2026-10-07) | No CF_API_TOKEN/CF_ACCOUNT_ID locally; wrangler whoami times out. opennextjs chunk hypothesis DISPROVEN. Controlled concurrency diagnostic requires Cloudflare auth. |
+| G2 | Intermittent homepage 500 | **DIAGNOSABLE 2026-10-09** — step 1 shipped | `npx wrangler whoami` succeeds (OAuth token) — the "no CF auth" blocker is retired. opennextjs chunk hypothesis DISPROVEN. **Matrix step 1 now implemented:** `scripts/patch-opennext-handler-guard.mjs` wraps the real call site `return await components.ComponentMod.handler(...)` in the OpenNext-GENERATED `handler.mjs` with a `typeof` guard that logs a greppable `[g2-handler-guard]` marker (url, routeModule, nextApp, rssMB) and throws a named `PageModuleLoadError`. Wired into `cf:build` **after** `patch-opennext-instrumentation.mjs` (same file). 5 regression tests green; verified end-to-end on the real bundle (guarded, `node --check` valid, idempotent, coexists with instrumentation patch). **Still NOT a root-cause fix** — memory hypothesis unmeasured. |
 | G1b | Free-plan resource ceiling (Cloudflare 1102) | OPEN — owner decision | `limits.cpu_ms` is rejected on the Free plan. Buy capacity or do less work per invocation |
-| DEPLOY | Ship current HEAD (through `a0c9ec6`) | **NOT STARTED** (blocked: no CF auth) | Last live Worker is `85de11a9` from `a576f2f`. `scripts/wrangler-deploy.mjs` has stale-artifact guard (tested by `6ff97f0`). Run `yarn cf:build` first, then deploy. |
+| DEPLOY | Ship current HEAD | **workers.dev DEPLOYED** — apex cutover = **OWNER DECISION** | `wrangler whoami` **works** (2026-10-09), so "no CF auth" is retired. Worker `fa88d160` (from `493bb2a`) already serves `dealswift-app.romanshumates1.workers.dev`; HEAD `8813574` is a docs-only commit on top, so **the code is already live on workers.dev**. `wrangler.jsonc` declares **no `routes` entry** — adding one REPLACES the DNS serving WordPress, so the apex cutover is an owner decision, not an autonomous action. `cf:gate` re-verified PASS 2026-10-09 (320/320 pages, 6.78MB gzip, 3335 files secrets-clean). |
 | ~~N2-live~~ | ~~AI credit period keys vs real ledger~~ | **DONE 2026-10-04** | PGlite runs migration 088 on a real engine incl. concurrency |
 | ~~G1-RECRAWL~~ | ~~15/24 authenticated 503s~~ | **RESOLVED 2026-10-04** | `/dashboard` 315ms, `/campaigns` 273ms, `/lead-finder` 215ms, `/settings/billing` 193ms |
 | ~~E1~~ | ~~Free-trial demo data~~ | **DONE 2026-10-04** | False negative #5 — 10 tests |
@@ -854,9 +898,11 @@ The ceiling is unchanged and is **not** code-fixable:
   configurable on the Free plan.
 - **The intermittent homepage 500 remains unidentified.**
 
-Genuinely absent, and now *proven* absent by concept search rather than directory
-guess: **affiliate programme**, **Flipper/Builder AI**, and **crates / spin wheel
-/ battle pass / competitions**.
+Genuinely absent: **affiliate programme** and **Flipper / Builder AI** — and
+**neither is in the master spec** (0 matches in `.github/agents/roman.agent.md`),
+so neither is master scope. ~~crates / spin wheel / battle pass / competitions~~
+were listed here too; a 2026-10-09 re-audit proved they are **implemented**
+(migration 099, 13 tables, `api/rewards`, 52 tests + PGlite) — false negative #11.
 
 **10/10 remains unreachable here.** It needs the Stripe webhook round-trip, live
 Apollo and Bedrock credentials, and a paid Workers plan.
@@ -883,8 +929,10 @@ What still prevents a higher score — and this is the honest ceiling:
 - **The public site 503s under sustained load** (Cloudflare 1102). Not
   configurable on the Free plan; requires an owner decision.
 - **The intermittent homepage 500 remains unidentified** and unreproduced.
-- **Genuinely absent after re-verification:** CRM contacts page, affiliate
-  programme, Flipper/Builder AI, gamification crates/spin/battle-pass.
+- **Genuinely absent after re-verification:** affiliate programme, Flipper /
+  Builder AI (**neither is in the master spec — not master scope**).
+  ~~gamification crates/spin/battle-pass~~ **RECOVERED 2026-10-09**: implemented,
+  migration 099 + `api/rewards`, 52 tests + PGlite (false negative #11).
 
 **10/10 is not reachable in this environment.** It requires live Stripe, Apollo
 and Bedrock evidence plus a paid Workers plan. Claiming it would mean inventing

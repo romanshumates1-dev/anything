@@ -13,7 +13,7 @@
 		"preflight": "node --env-file=.env scripts/preflight.mjs",
 		"check:secrets-in-bundle": "node --env-file=.env scripts/check-secrets-in-bundle.mjs",
 		"legal:generate": "node scripts/generate-legal-docs.mjs",
-		"cf:build": "npm run legal:generate && opennextjs-cloudflare build && node scripts/scrub-opennext-env.mjs && node scripts/patch-opennext-instrumentation.mjs",
+		"cf:build": "npm run legal:generate && opennextjs-cloudflare build && node scripts/scrub-opennext-env.mjs && node scripts/patch-opennext-instrumentation.mjs && node scripts/patch-opennext-handler-guard.mjs",
 		"cf:preview": "yarn cf:build && opennextjs-cloudflare preview",
 		"cf:deploy": "yarn cf:gate && node scripts/wrangler-deploy.mjs",
 		"cf:dry-run": "yarn cf:gate",

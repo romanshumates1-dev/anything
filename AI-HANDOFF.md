@@ -1,10 +1,20 @@
 # AI-HANDOFF Ã¢â‚¬â€ read this first
 
-**Last updated:** 2026-10-09 (release-validation: `493bb2a` built, gated, deployed to preview `fa88d160`)
+**Last updated:** 2026-10-09 (G2 step-1 shipped at `8813574`: guarded homepage handler call site + build wiring + 5 tests)
 
-## RELEASE-VALIDATION MILESTONE — `493bb2a` (2026-10-09)
+## G2 MILESTONE — `8813574` (2026-10-09): homepage 500 now DIAGNOSABLE (step 1)
 
-**Chain:** `493bb2a` → fresh `cf:gate` → 37/37 artifact checks → typecheck exit 0 → lint 0/0 → SEO guards 28/28 → deployed preview version `fa88d160` → browser-verified on workers.dev. **Apex still serves the old Worker** (no apex route configured; cutover is an owner decision).
+**What shipped:** `scripts/patch-opennext-handler-guard.mjs` — a build-time patch that wraps the OpenNext-GENERATED call site `return await components.ComponentMod.handler(...)` in `.open-next/server-functions/default/apps/web/handler.mjs` with a `typeof` guard. On a failed page-module load it now logs a greppable `[g2-handler-guard]` marker (url, routeModule, nextApp, rssMB) and throws a named `PageModuleLoadError` instead of a silent `TypeError`.
+
+**Wiring:** `cf:build` now runs it **after** `patch-opennext-instrumentation.mjs` (same target file), so the guard ships in every build. This was the critical gap — the patch + test existed but were NOT wired into the build, so the fix would never have reached production.
+
+**Verification (all against the REAL generated bundle, not a fixture):**
+- 5 regression tests green (`scripts/patch-opennext-handler-guard.test.ts`): real call site guarded, marker + named error, idempotent, no over-match, fail-safe exit 0 when `.open-next` absent.
+- Ran the script on the shipped `handler.mjs`: guarded 1 call site (exit 0), `node --check` valid, second run idempotent, coexists with the already-applied instrumentation marker.
+
+**Honest status:** This is matrix step 1 (diagnosability) ONLY. It does **not** reproduce or fix the 500 and does **not** confirm memory. Root cause remains unconfirmed; steps 2 (memory comparison) and 3 (bundle-splitting) are still open. **Do not record G2 as resolved.**
+
+
 
 | Gate stage | Evidence | Status |
 | --- | --- | --- |
