@@ -1,8 +1,8 @@
 # AI-HANDOFF Ã¢â‚¬â€ read this first
 
-**Last updated:** 2026-10-09 (G2 step-1 shipped at `8813574`: guarded homepage handler call site + build wiring + 5 tests)
+**Last updated:** 2026-10-09 (two milestones at `c621c8a`/`72d1020`: G2 step-1 guarded handler + Q1 execution-half verification)
 
-## G2 MILESTONE — `8813574` (2026-10-09): homepage 500 now DIAGNOSABLE (step 1)
+## G2 MILESTONE — `72d1020` (2026-10-09): homepage 500 now DIAGNOSABLE (step 1)
 
 **What shipped:** `scripts/patch-opennext-handler-guard.mjs` — a build-time patch that wraps the OpenNext-GENERATED call site `return await components.ComponentMod.handler(...)` in `.open-next/server-functions/default/apps/web/handler.mjs` with a `typeof` guard. On a failed page-module load it now logs a greppable `[g2-handler-guard]` marker (url, routeModule, nextApp, rssMB) and throws a named `PageModuleLoadError` instead of a silent `TypeError`.
 
@@ -13,6 +13,15 @@
 - Ran the script on the shipped `handler.mjs`: guarded 1 call site (exit 0), `node --check` valid, second run idempotent, coexists with the already-applied instrumentation marker.
 
 **Honest status:** This is matrix step 1 (diagnosability) ONLY. It does **not** reproduce or fix the 500 and does **not** confirm memory. Root cause remains unconfirmed; steps 2 (memory comparison) and 3 (bundle-splitting) are still open. **Do not record G2 as resolved.**
+
+## Q1 MILESTONE — `c621c8a` (2026-10-09): disabled workflow phases verified not to execute
+
+**What shipped:** `src/app/api/utils/__tests__/campaignPhases.execution.test.ts` — 6 tests closing the matrix's "Q1 enabled/disabled execution NOT VERIFIED" gap. The reporting half (`campaignPhases.enabled.test.ts`) and validation half (`SEQUENCE_CHANNEL_DISABLED`/`SEQUENCE_NONE_ENABLED`) were already pinned; the **execution** half was not. `toEngineSettings()` is the builder→engine hand-off (sole caller `campaigns/route.ts`); its `maxTouches` and `touchDelays[]` now have a regression test proving disabled phases are filtered out, so a campaign with calling OFF will not dial.
+
+**Verification:** 6/6 green; mutation-proven (dropping either `.filter(p=>p.enabled)` in `campaignBuilder.ts` turns 6/6 red, restoring turns 6/6 green); sibling suite green at 49/49 across `campaignBuilder` + `campaignPhases.enabled` + the new file. Full-project `tsc` shows 0 errors in touched files (244 repo-wide are the documented pre-existing baseline).
+
+**Honest status:** This is a TEST-only milestone — no production code changed, because the existing filter was already correct. It converts an unverified claim into a pinned one. Q1 is now fully verified on all three axes (report / validate / execute).
+
 
 
 
