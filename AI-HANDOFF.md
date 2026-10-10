@@ -22,9 +22,9 @@
 
 **Honest status:** This is a TEST-only milestone — no production code changed, because the existing filter was already correct. It converts an unverified claim into a pinned one. Q1 is now fully verified on all three axes (report / validate / execute).
 
-## SECURITY-TEST MILESTONES — `54a9d6b`…`b26be91` (2026-10-09): 8 untested security-critical handlers now pinned
+## SECURITY-TEST MILESTONES — `54a9d6b`…`1fd5a0d` (2026-10-09): 10 untested security-critical handlers now pinned
 
-Found by sweeping for `route.ts` handlers with no sibling test, filtering to money / admin / auth / tenant-scoped surfaces. All eight handlers were already correct — these are test-only milestones that convert untested money/identity paths into pinned ones. Every suite is mutation-proven (re-introducing the real-world regression turns it red; restoring turns it green).
+Found by sweeping for `route.ts` handlers with no sibling test, filtering to money / admin / auth / tenant-scoped surfaces. All ten handlers were already correct — these are test-only milestones that convert untested money/identity paths into pinned ones. Every suite is mutation-proven (re-introducing the real-world regression turns it red; restoring turns it green).
 
 | Handler | Risk if it regressed | Tests | Commit | Mutation proof |
 | --- | --- | --- | --- | --- |
@@ -35,8 +35,10 @@ Found by sweeping for `route.ts` handlers with no sibling test, filtering to mon
 | `api/auth/reset-password` POST | expired/reused token accepted, hijacked session survives reset | 8 | `eceef80` | accept-expired → red; drop session DELETE → red |
 | `api/payments/stripe` POST/GET | **SERVER-AUTHORITATIVE MONEY**: tampered client charges wrong amount | 12 | `1ccafc7` | disabling `contractFeeCents !== amountCents` gate → red |
 | `api/admin/subscriptions` GET/PATCH | any user promotes own org / revokes entitlements | 7 | `b26be91` | neutralising `!admin.ok` gate (both verbs) → 2 red |
+| `api/tax/settings` GET/PUT | **cross-tenant rate edit** (body `organization_id` honored), mass-assignment, clamped-not-rejected rate | 10 | `d424ef3` | honoring body `organization_id` → red |
+| `api/admin/exports/finance` GET | cross-tenant payments-ledger CSV exfiltration (owner emails, Stripe intent ids) | 7 | `1fd5a0d` | neutralising `!admin.ok` gate → red |
 
-Combined run: **61/61 green** across all eight files, no cross-test interference.
+Combined run: **78/78 green** across all ten files, no cross-test interference.
 
 **What is NOT done by this:** it adds no new product behaviour and proves nothing about live Stripe/Apollo/Bedrock/inbox delivery, the apex cutover, or G2 root cause. Those remain external-blocked or owner-decision, unchanged.
 
