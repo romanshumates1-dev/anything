@@ -189,6 +189,7 @@ credit packs read **from the DB row, never from the amount**.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | I1 | Subscription state machine, tiers, upgrade/downgrade/cancel | `api/billing/subscribe/route.ts` | UNIT TESTED | `subscribe.test.ts`; fail-closed 503 without Stripe | live lifecycle needs test key |
+| I1b | Refund request (money-returning) | `api/billing/refund/route.ts` | **ROUTE TESTED 2026-10-09** (`1d4dc96`) | `route.test.ts` 11 tests: 401/403 gating, refuses 400 when policy says ineligible or already-refunded, requires confirmation when credits used, Stripe.refund called with the eligible amount, refund-request INSERT org-bound, no Stripe call without a payment intent, Stripe throw → 500 (no silent success). Mutation-proven (eligibility-gate bypass → 2 red) | live Stripe round-trip |
 | I2 | Webhook signature + idempotency | `api/payments/webhook/route.ts` | UNIT TESTED | `webhook.test.ts`: 403 invalid signature, replay dedupe, no double-grant | live provider |
 | I3 | Purchased credits separate from plan credits | `api/credits/purchase/route.ts` | UNIT TESTED | packs granted from DB row, never from amount | — |
 | I4 | Dunning + reactivation | `webhook/route.ts` | UNIT TESTED | `invoice.payment_failed`→past_due; `invoice.paid` reactivates | live provider |
@@ -263,7 +264,7 @@ and are now recorded as implemented and tested.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| P1 | Campaign UX redesign | `app/campaigns` | IMPLEMENTED | routes exist | not browser-verified |
+| P1 | Campaign UX redesign | `app/campaigns` | IMPLEMENTED | routes exist; list handler `api/outreach/campaigns` GET now auth + tenant-isolation tested (`54a9d6b`, 5 tests, mutation-proven) | not browser-verified (live) |
 | Q1 | Workflow phase toggles (phone/SMS/email) | `api/campaigns/{automation,config}`, `api/utils/campaignBuilder.ts` | **IMPLEMENTED — reporting + validation + execution VERIFIED 2026-10-09** | Reporting (`campaignPhases.enabled.test.ts`) and validation (`SEQUENCE_CHANNEL_DISABLED`/`SEQUENCE_NONE_ENABLED`) already pinned. **Execution half now verified** by `campaignPhases.execution.test.ts`: `toEngineSettings()` — the builder→engine hand-off, sole caller `campaigns/route.ts` — filters disabled phases out of both `maxTouches` and `touchDelays[]`, so a campaign with calling OFF will not dial. 6 tests, mutation-proven (dropping either `.filter(p=>p.enabled)` turns 6/6 red). |
 | R1 | AI phone calling | `api/gateway/voice-gateway.ts`, `api/utils/twilio-adapter.ts`, `api/utils/callSchedulingEngine.ts`, `api/campaigns/[id]/voice/` | **UNIT TESTED** | 33 tests across voice-gateway, twilio-adapter, voiceSelection, voiceRoute — false negative #3 | live calls need provider credential |
 | S1 | AI templates | `app/templates`, `components/templates` | IMPLEMENTED | routes + components exist | — |
