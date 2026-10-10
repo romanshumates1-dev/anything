@@ -264,7 +264,7 @@ and are now recorded as implemented and tested.
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
 | P1 | Campaign UX redesign | `app/campaigns` | IMPLEMENTED | routes exist | not browser-verified |
-| Q1 | Workflow phase toggles (phone/SMS/email) | `api/campaigns/{automation,config}` | IMPLEMENTED | code present | **enabled/disabled execution NOT VERIFIED** |
+| Q1 | Workflow phase toggles (phone/SMS/email) | `api/campaigns/{automation,config}`, `api/utils/campaignBuilder.ts` | **IMPLEMENTED — reporting + validation + execution VERIFIED 2026-10-09** | Reporting (`campaignPhases.enabled.test.ts`) and validation (`SEQUENCE_CHANNEL_DISABLED`/`SEQUENCE_NONE_ENABLED`) already pinned. **Execution half now verified** by `campaignPhases.execution.test.ts`: `toEngineSettings()` — the builder→engine hand-off, sole caller `campaigns/route.ts` — filters disabled phases out of both `maxTouches` and `touchDelays[]`, so a campaign with calling OFF will not dial. 6 tests, mutation-proven (dropping either `.filter(p=>p.enabled)` turns 6/6 red). |
 | R1 | AI phone calling | `api/gateway/voice-gateway.ts`, `api/utils/twilio-adapter.ts`, `api/utils/callSchedulingEngine.ts`, `api/campaigns/[id]/voice/` | **UNIT TESTED** | 33 tests across voice-gateway, twilio-adapter, voiceSelection, voiceRoute — false negative #3 | live calls need provider credential |
 | S1 | AI templates | `app/templates`, `components/templates` | IMPLEMENTED | routes + components exist | — |
 | T1 | Voice selection / AUTO recommendation | `api/utils/voiceSelection.ts` | **UNIT TESTED** | `voiceSelection.test.ts` — false negative #4 | live provider credential |
