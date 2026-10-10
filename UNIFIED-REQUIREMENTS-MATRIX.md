@@ -308,7 +308,7 @@ and are now recorded as implemented and tested.
 | --- | --- | --- | --- | --- | --- |
 | L-1 | Google sign-in | `socialProviders` in `auth.ts` | IMPLEMENTED | config present | OAuth credentials → BLOCKED-EXTERNAL |
 | L-2 | Worker resource error resolved | pre-hash cost guard | INTEGRATION TESTED | root-caused and bounded | Free-plan ceiling remains |
-| L-3 | Password reset/change email | `account/forgot-password`, `api/auth/forgot-password` | IMPLEMENTED | rate-limited, fail-closed | real inbox delivery NOT VERIFIED |
+| L-3 | Password reset/change email | `account/forgot-password`, `api/auth/forgot-password`, `api/auth/reset-password` | **ROUTE TESTED 2026-10-09** (`54fbd8f`, `eceef80`) | Both halves of the account-takeover surface now pinned. forgot-password (6 tests): enumeration-safe `{ ok:true }` for unknown/rate-limited, token stored as sha256 hash, never leaked. reset-password (8 tests): rejects unknown/used/expired tokens before any write, 429 brute-force guard, session DELETE evicts hijacked sessions. Both mutation-proven | real inbox delivery still NOT VERIFIED (external) |
 
 ## MARKETING, LEGAL, SEO
 
