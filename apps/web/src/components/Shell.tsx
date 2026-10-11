@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -8,9 +8,10 @@ import { useSession, signOut } from "@/lib/auth-client";
 import { useUserPreferences } from "@/lib/userPreferences";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus } from "lucide-react";
+import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus, Package } from "lucide-react";
 import DemoModeBanner from "@/components/DemoModeBanner";
 import { isGamificationEnabled } from "@/app/api/utils/gamification";
+import { themeVarStyle } from "@/app/api/utils/cosmeticTheme";
 import { resolveFeatureChoice, type FeatureChoiceId } from "@/app/api/utils/featureChoices";
 import SupportChat from "@/components/SupportChat";
 import { FeedbackButton } from "@/components/feedback";
@@ -79,6 +80,7 @@ const navItems = [
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy, requiresGamification: true },
   { href: '/achievements', label: 'Achievements', icon: Award, requiresGamification: true },
   { href: '/rewards', label: 'Rewards', icon: Sparkles, requiresGamification: true },
+  { href: '/crates', label: 'Crates', icon: Package, requiresGamification: true },
   { href: '/feedback', label: 'Feedback', icon: MessageSquarePlus },
   { type: 'separator' as const },
   { href: '/system-health', label: 'System Health', icon: Activity },
@@ -200,6 +202,34 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     enabled: !!session && !preAccessPage,
   });
 
+  // Equipped cosmetic theme (dashboard skin / sidebar theme). Shares the
+  // `["crates"]` cache with the /crates page, and is gated on gamification so a
+  // user with the feature off issues no extra request. A 404/error yields null
+  // and the theme simply stays at its defaults.
+  const { data: crateData } = useQuery({
+    queryKey: ["crates"],
+    queryFn: async () => {
+      const res = await fetch("/api/crates");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60_000,
+    enabled: !!session && !preAccessPage && gamificationEnabled,
+  });
+
+  // Resolve the first equipped theme cosmetic to concrete CSS variables via the
+  // pure cosmeticTheme mapping. Only accent vars are overridden and they cascade
+  // from the root container below to every child — so an equipped skin is
+  // genuinely visible app-wide, not a decorative control.
+  const equippedThemeStyle = useMemo(() => {
+    const equipped = (crateData as { equipped?: { cosmeticKey: string }[] } | null)?.equipped;
+    for (const item of equipped ?? []) {
+      const style = themeVarStyle(item.cosmeticKey);
+      if (Object.keys(style).length > 0) return style;
+    }
+    return {};
+  }, [crateData]);
+
   // SSR / FIRST-PAINT BEHAVIOUR (C4 fix) - read this before "simplifying".
   //
   // `useSession()` is a CLIENT hook. During server rendering no session fetch
@@ -231,7 +261,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen flex bg-[var(--bg-primary)]">
+    <div className="min-h-screen flex bg-[var(--bg-primary)]" style={equippedThemeStyle}>
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 bg-[var(--bg-secondary)] border-r border-[var(--border-subtle)] flex flex-col">
         {/* Logo */}
@@ -454,6 +484,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   >
                     <Sparkles className="h-4 w-4" />
                     <span>Rewards</span>
+                  </Link>
+                  <Link
+                    href="/crates"
+                    prefetch={false}
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                  >
+                    <Package className="h-4 w-4" />
+                    <span>Crates</span>
                   </Link>
                 </>
               )}

@@ -6,6 +6,35 @@ project state. A new model inherits state from here and from
 
 ---
 
+## SESSION UPDATE — 2026-10-11 (EXP-GAME-01 gamification completion)
+
+**Branch `feat/cloudflare-workers`, work UNCOMMITTED (preserve).** Typecheck = **0 errors**. Gamification test set = **58 passed / 0 failed** (9 files). All work TDD RED→GREEN.
+
+### Delivered this session
+- **Crate backend fix** — `crates.server.ts` imported `secureRoll` from `crates.ts` (never exported → runtime crash, masked by the route test's full mock). Moved to server-only `node:crypto.randomInt(0,10000)`.
+- **Crate API + pure module** — `api/utils/crates.ts` (13 tests), `api/crates/route.ts` (13).
+- **Crate shop UI `/crates`** — `app/crates/page.tsx` + test (3); nav link in `Shell.tsx` (sidebar + user menu, `requiresGamification`).
+- **Page tests** for `/rewards`, `/achievements`, `/leaderboard` (3 each, NEW) — server-authoritative rendering, 404→"turned off", no fabrication, redeem POST+refetch.
+- **Dashboard skins now genuinely applied (GAP CLOSED)** — equipped theme was decorative. New pure `api/utils/cosmeticTheme.ts` (6 tests) maps theme cosmetics→CSS vars; `Shell.tsx` applies them app-wide; `Shell.theme.test.tsx` (1) asserts root container gets `--accent-blue:#7c3aed` for equipped nebula skin.
+
+### Gamification gap matrix (vs `roman.agent.md` 1271–1281)
+| Capability | State |
+| --- | --- |
+| account XP / levels | IMPLEMENTED+TESTED (`/rewards`) |
+| battle-pass / game-pass | IMPLEMENTED+TESTED (`/rewards`) |
+| weekly spin wheel | IMPLEMENTED+TESTED (`/rewards`) |
+| redeemable 1x–10x use codes | IMPLEMENTED+TESTED (`/rewards`) |
+| monthly giveaways | IMPLEMENTED+TESTED (`/rewards`) |
+| dashboard skins | IMPLEMENTED+TESTED (genuinely applied this session) |
+| crates / rewards | IMPLEMENTED+TESTED (backend+API+UI this session) |
+| **seasonal progression** | **PARTIAL — table `gamification_seasons` exists (migration 099); NO API route, NO UI.** |
+| **competitions** | **PARTIAL — table `competitions` exists (migration 099); NO API route, NO UI.** |
+
+### Next (documented, not yet built)
+Seasons + competitions have schema but no surface. Both are "support architecture" items in `roman.agent.md` (1273/1279); full UI is a larger unit — record as known gaps, do not invent scope beyond the spec. No 3D/WebGL/Missions page is required by the source spec (earlier framing was incorrect; no 3D lib is installed and the Worker size gate forbids adding one).
+
+---
+
 ## PROJECT STATE
 
 | Field | Value |
