@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { requireSession } from '@/app/api/utils/auth';
 import sql from '@/app/api/utils/sql';
 import {
+  FEATURE_CHOICES_PREF_KEY,
+  normalizeFeatureChoices,
+} from '@/app/api/utils/featureChoices';
+import {
   GAMIFICATION_PREF_KEY,
   normalizeGamificationPreference,
 } from '@/app/api/utils/gamification';
@@ -26,7 +30,10 @@ import {
 // The values are validated in the settings component AND sanitised here: only
 // the known enum members are honoured, so a hand-rolled PATCH cannot inject an
 // arbitrary class name or stylesheet reference into the rendered page.
-const ALLOWED_KEYS = [
+/** Allowed preference keys to prevent arbitrary data storage
+ * (exported so the allowlist itself is test-pinned — a silently-added key
+ * is a mass-assignment surface on a jsonb column every client can write). */
+export const ALLOWED_KEYS = [
   'onboarding_completed',
   'onboarding_checklist',
   'tutorial_progress',
@@ -39,6 +46,10 @@ const ALLOWED_KEYS = [
   // `utils/gamification.ts`; absent means ON, so existing accounts are
   // unaffected.
   GAMIFICATION_PREF_KEY,
+  // Set AB: onboarding feature choices. The VALUE is sanitised to a
+  // complete seven-key boolean record before it is stored (see PATCH/PUT),
+  // so this key can never park arbitrary data in the preferences blob.
+  FEATURE_CHOICES_PREF_KEY,
 ];
 
 /**
@@ -155,6 +166,15 @@ export async function PATCH(request: Request) {
         updates[key] = normalizeGamificationPreference(body[key]);
         continue;
       }
+      // Set AB: same boundary treatment. A verbatim store would accept
+      // `"sms": "false"`, which later reads as "unrecognised -> default ON",
+      // silently resurrecting a feature the user declined. The normaliser
+      // returns a complete seven-key boolean record, so unknown keys are
+      // dropped and every consumer sees all seven.
+      if (key === FEATURE_CHOICES_PREF_KEY) {
+        updates[key] = normalizeFeatureChoices(body[key]);
+        continue;
+      }
       updates[key] = body[key];
     }
 
@@ -206,6 +226,11 @@ export async function PUT(request: Request) {
       }
       if (key === GAMIFICATION_PREF_KEY) {
         preferences[key] = normalizeGamificationPreference(body[key]);
+        continue;
+      }
+      // Set AB — PUT gets the identical treatment as PATCH (see above).
+      if (key === FEATURE_CHOICES_PREF_KEY) {
+        preferences[key] = normalizeFeatureChoices(body[key]);
         continue;
       }
       preferences[key] = body[key];

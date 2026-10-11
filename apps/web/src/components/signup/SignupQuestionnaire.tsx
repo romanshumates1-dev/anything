@@ -12,7 +12,14 @@ import {
   Check,
   X,
   Loader2,
+  Zap,
 } from "lucide-react";
+import {
+  DEFAULT_FEATURE_CHOICES,
+  buildFeaturePreferencePayload,
+  type FeatureChoiceId,
+  type FeatureChoices,
+} from "@/app/api/utils/featureChoices";
 
 // Types for questionnaire data
 export interface QuestionnaireData {
@@ -97,6 +104,19 @@ const BUDGET_OPTIONS = [
   { value: "50-200", label: "$50-200/mo", desc: "Investing in growth" },
   { value: "200-500", label: "$200-500/mo", desc: "Serious about scaling" },
   { value: "500+", label: "$500+/mo", desc: "Enterprise level" },
+];
+
+// SET AB — the seven optional features the master spec lists, verbatim.
+// Ids come from the shared codec so UI and server cannot drift; the labels
+// and descriptions here are UI copy only.
+const FEATURE_OPTIONS: { id: FeatureChoiceId; label: string; desc: string }[] = [
+  { id: "gamification", label: "Gamification", desc: "XP, achievements, rewards and leaderboards" },
+  { id: "phone_calling", label: "Phone Calling", desc: "AI-assisted calling campaigns" },
+  { id: "sms", label: "SMS", desc: "Text-message outreach to sellers" },
+  { id: "email", label: "Email", desc: "Email outreach campaigns" },
+  { id: "advanced_analytics", label: "Advanced Analytics", desc: "Deep CRM and campaign reporting" },
+  { id: "ai_automation", label: "AI Automation", desc: "AI research, templating and negotiation" },
+  { id: "demo_data", label: "Demo Data", desc: "Sample leads and campaigns to explore" },
 ];
 
 // Progress indicator component
@@ -199,7 +219,19 @@ export function SignupQuestionnaire({
     goals: "",
   });
 
-  const totalSteps = 3;
+  // SET AB: optional-feature choices. Defaults are ON so a user who never
+  // answers keeps exactly the behaviour every account has always had; the
+  // step ASKS instead of assuming.
+  const [features, setFeatures] = useState<FeatureChoices>({
+    ...DEFAULT_FEATURE_CHOICES,
+  });
+
+  const toggleFeature = useCallback((id: FeatureChoiceId) => {
+    setFeatures((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  // 3 profile steps + the SET AB feature-choices step.
+  const totalSteps = 4;
 
   const updateData = useCallback(<K extends keyof QuestionnaireData>(
     key: K,
@@ -234,6 +266,26 @@ export function SignupQuestionnaire({
         throw new Error("Failed to save questionnaire");
       }
 
+      // SET AB — "respect those choices": completion persists them to the
+      // same user.preferences blob the rest of the app reads. SKIP persists
+      // NOTHING, because skipping is not consent to seven ON choices.
+      // A preferences failure must not block entry: these are preferences,
+      // not the account.
+      if (!isSkipped) {
+        try {
+          const prefResponse = await fetch("/api/user/preferences", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(buildFeaturePreferencePayload(features)),
+          });
+          if (!prefResponse.ok) {
+            throw new Error("Failed to save feature preferences");
+          }
+        } catch (prefError) {
+          console.error("Feature preferences error:", prefError);
+        }
+      }
+
       if (isSkipped && onSkip) {
         onSkip();
       } else if (onComplete) {
@@ -266,8 +318,8 @@ export function SignupQuestionnaire({
     handleSubmit(true);
   };
 
-  // Screen icons
-  const screenIcons = [Users, Target, Rocket];
+  // Screen icons (last entry = SET AB feature-choices step)
+  const screenIcons = [Users, Target, Rocket, Zap];
   const ScreenIcon = screenIcons[step];
 
   return (
@@ -323,11 +375,13 @@ export function SignupQuestionnaire({
                     {step === 0 && "Tell us about your experience"}
                     {step === 1 && "Your current situation"}
                     {step === 2 && "Help us personalize your experience"}
+                    {step === 3 && "Choose your optional features"}
                   </h2>
                   <p className="text-slate-400 text-sm">
                     {step === 0 && "So we can customize your onboarding"}
                     {step === 1 && "What tools do you use and what challenges do you face?"}
                     {step === 2 && "Optional - help us serve you better"}
+                    {step === 3 && "Everything is on by default - switch off what you won't use"}
                   </p>
                 </div>
               </div>
@@ -510,6 +564,55 @@ export function SignupQuestionnaire({
                     />
                     <p className="text-xs text-slate-500 mt-1 text-right">
                       {data.goals.length}/1000
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: SET AB — optional feature choices */}
+              {step === 3 && (
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-3">
+                      Which optional features would you like enabled?
+                    </label>
+                    <div className="space-y-2">
+                      {FEATURE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="switch"
+                          aria-checked={features[opt.id]}
+                          aria-label={opt.label}
+                          onClick={() => toggleFeature(opt.id)}
+                          className={`w-full flex items-center justify-between gap-4 p-4 rounded-xl border transition-all duration-200 text-left ${
+                            features[opt.id]
+                              ? "border-[#3B82F6] bg-[#3B82F6]/10"
+                              : "border-white/10 bg-white/5 hover:border-white/20"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium text-white">{opt.label}</div>
+                            <div className="text-sm text-slate-400">{opt.desc}</div>
+                          </div>
+                          <div
+                            className={`relative shrink-0 w-10 h-6 rounded-full transition-colors ${
+                              features[opt.id] ? "bg-[#3B82F6]" : "bg-white/10"
+                            }`}
+                          >
+                            <div
+                              className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
+                                features[opt.id] ? "left-5" : "left-1"
+                              }`}
+                            />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-3">
+                      Switching a feature off only hides it - it never deletes progress
+                      or data you already have. You can restart this tour anytime from
+                      Settings.
                     </p>
                   </div>
                 </div>
