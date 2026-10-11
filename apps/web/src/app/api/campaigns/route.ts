@@ -12,6 +12,7 @@ import {
   mergeWithDefaults,
   toEngineSettings,
 } from '@/app/api/utils/campaignBuilder';
+import { isFeatureEnabledForUser } from '@/app/api/utils/featureChoices.server';
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -59,6 +60,26 @@ export async function POST(request: Request) {
           limit: limitCheck.limit,
           isFreeTier: limitCheck.isFreeTier,
         }, { status: 402 });
+      }
+
+      // SET AB: check if requested channels are allowed by user feature choices
+      if (config.channels?.phone && !(await isFeatureEnabledForUser(session.user.id, 'phone_calling'))) {
+        return Response.json({
+          error: 'feature_disabled',
+          message: 'Phone calling is disabled in your feature preferences',
+        }, { status: 400 });
+      }
+      if (config.channels?.sms && !(await isFeatureEnabledForUser(session.user.id, 'sms'))) {
+        return Response.json({
+          error: 'feature_disabled',
+          message: 'SMS outreach is disabled in your feature preferences',
+        }, { status: 400 });
+      }
+      if (config.channels?.email && !(await isFeatureEnabledForUser(session.user.id, 'email'))) {
+        return Response.json({
+          error: 'feature_disabled',
+          message: 'Email outreach is disabled in your feature preferences',
+        }, { status: 400 });
       }
 
       // Estimate campaign cost

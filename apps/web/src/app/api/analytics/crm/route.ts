@@ -21,6 +21,7 @@ import {
   type DateRange,
 } from '@/app/api/utils/crmAnalyticsEngine';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
+import { requireFeatureEnabled } from "@/app/api/utils/featureChoices.server";
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const featureGate = await requireFeatureEnabled(session.user.id, 'advanced_analytics');
+    if (featureGate) return featureGate;
 
     const organization = await getOrganization();
     if (!organization) {

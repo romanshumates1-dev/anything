@@ -445,3 +445,72 @@ describe('Shell sidebar identity with a very short username (Set B test list)', 
     }
   });
 });
+
+describe('Shell nav feature choices gating (SET AB)', () => {
+  afterEach(() => {
+    cleanup();
+    vi.doUnmock('@/lib/auth-client');
+    vi.doUnmock('@/lib/userPreferences');
+  });
+
+  it('hides CRM Analytics when advanced_analytics is explicitly turned off', async () => {
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_pref', email: 'test@example.com', name: 'Tester', role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+    vi.doMock('@/lib/userPreferences', () => ({
+      useUserPreferences: () => ({
+        data: {
+          preferences: {
+            feature_choices: {
+              advanced_analytics: false,
+            },
+          },
+        },
+      }),
+    }));
+    vi.resetModules();
+
+    const { default: FreshShell } = await import('./Shell');
+    render(<FreshShell>child</FreshShell>);
+
+    expect(screen.queryByText('CRM Analytics')).toBeNull();
+    expect(screen.getByText('Analytics')).not.toBeNull();
+  });
+
+  it('shows CRM Analytics when advanced_analytics is turned on', async () => {
+    vi.doMock('@/lib/auth-client', () => ({
+      useSession: () => ({
+        data: {
+          user: { id: 'u_pref', email: 'test@example.com', name: 'Tester', role: undefined },
+        },
+        isPending: false,
+      }),
+      signOut: vi.fn(),
+    }));
+    vi.doMock('@/lib/userPreferences', () => ({
+      useUserPreferences: () => ({
+        data: {
+          preferences: {
+            feature_choices: {
+              advanced_analytics: true,
+            },
+          },
+        },
+      }),
+    }));
+    vi.resetModules();
+
+    const { default: FreshShell } = await import('./Shell');
+    render(<FreshShell>child</FreshShell>);
+
+    expect(screen.getByText('CRM Analytics')).not.toBeNull();
+    expect(screen.getByText('Analytics')).not.toBeNull();
+  });
+});
+

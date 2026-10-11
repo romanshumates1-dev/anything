@@ -10,6 +10,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization } from '@/lib/organization-context';
 import { seedFreeTierData, needsSeeding } from '@/app/api/services/freeTierSeeder';
+import { isFeatureEnabledForUser } from '@/app/api/utils/featureChoices.server';
 import { getSubscription } from '@/app/api/services/tierLimits';
 
 export async function POST() {
@@ -30,6 +31,14 @@ export async function POST() {
       return Response.json({
         success: false,
         message: 'Sample data seeding is only available for free tier accounts',
+      });
+    }
+
+    const demoAllowed = await isFeatureEnabledForUser(session.user.id, 'demo_data');
+    if (!demoAllowed) {
+      return Response.json({
+        success: false,
+        message: 'Demo data seeding is disabled in your feature preferences',
       });
     }
 

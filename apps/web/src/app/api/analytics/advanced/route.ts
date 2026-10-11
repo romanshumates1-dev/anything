@@ -15,6 +15,7 @@ import { NextRequest } from 'next/server';
 import { logFallback } from '@/app/api/utils/queryFallback';
 import { neon } from '@neondatabase/serverless';
 import { requireSession } from '@/app/api/utils/authz';
+import { requireFeatureEnabled } from '@/app/api/utils/featureChoices.server';
 import { getOrganization } from '@/lib/organization-context';
 import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { safeErrorResponse } from '@/app/api/utils/safeError';
@@ -222,6 +223,9 @@ const LEAD_SOURCE_PRIORS: Record<string, { alpha: number; beta: number; descript
 export async function GET(req: NextRequest) {
   const session = await requireSession();
   if (!session.ok) return session.response;
+
+  const featureGate = await requireFeatureEnabled(session.userId, 'advanced_analytics');
+  if (featureGate) return featureGate;
 
   // TENANT ISOLATION (security fix): this endpoint previously required only a
   // session and scoped NOTHING, so any authenticated user of any tenant could read

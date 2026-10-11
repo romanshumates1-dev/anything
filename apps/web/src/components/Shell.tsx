@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, LayoutDashboard, Megaphone, Search, Users, MessageSquare, FileText, CheckCircle, BarChart3, Calendar, Activity, Settings, ChevronDown, UserCog, TrendingUp, Filter, Wallet, Shield, LogOut, CreditCard, Trophy, Award, Sparkles, Zap, User, MessageSquarePlus } from "lucide-react";
 import DemoModeBanner from "@/components/DemoModeBanner";
 import { isGamificationEnabled } from "@/app/api/utils/gamification";
+import { resolveFeatureChoice, type FeatureChoiceId } from "@/app/api/utils/featureChoices";
 import SupportChat from "@/components/SupportChat";
 import { FeedbackButton } from "@/components/feedback";
 import { UsageMeterSidebar, FreePlanBadge, CreditBalanceInline } from "@/components/billing";
@@ -66,7 +67,7 @@ const navItems = [
   { href: '/approvals', label: 'Approvals', icon: CheckCircle, badge: 'approvals' },
   { type: 'separator' as const },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/analytics/advanced', label: 'CRM Analytics', icon: TrendingUp },
+  { href: '/analytics/advanced', label: 'CRM Analytics', icon: TrendingUp, requiresFeature: 'advanced_analytics' as FeatureChoiceId },
   { href: '/funnel', label: 'Funnel', icon: Filter },
   { href: '/campaigns/planner', label: 'Planner', icon: Calendar },
   { type: 'separator' as const },
@@ -278,6 +279,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               'requiresGamification' in item &&
               item.requiresGamification &&
               !gamificationEnabled
+            ) {
+              return null;
+            }
+            if (
+              'requiresFeature' in item &&
+              item.requiresFeature &&
+              !resolveFeatureChoice(preferencesData?.preferences, item.requiresFeature)
             ) {
               return null;
             }

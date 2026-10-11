@@ -19,6 +19,7 @@ import { getOrganization } from '@/lib/organization-context';
 import { checkRateLimit } from '@/app/api/services/rateLimiter';
 import { buildWhere } from '@/app/api/utils/sqlFragments';
 import { safeErrorResponse } from "@/app/api/utils/safeError";
+import { requireFeatureEnabled } from '@/app/api/utils/featureChoices.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,9 @@ export async function GET(req: NextRequest) {
   if (!session) {
     return Response.json({ error: 'Authentication required' }, { status: 401 });
   }
+
+  const featureGate = await requireFeatureEnabled(session.userId, 'ai_automation');
+  if (featureGate) return featureGate;
 
   const organization = await getOrganization();
   if (!organization) {

@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth';
 import { headers } from 'next/headers';
 import { getOrganization, getUserOrganizations } from '@/lib/organization-context';
 import { seedFreeTierData } from '@/app/api/services/freeTierSeeder';
+import { isFeatureEnabledForUser } from '@/app/api/utils/featureChoices.server';
 
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -77,9 +78,12 @@ export async function POST(request: Request) {
         )
       `;
 
-      // Seed sample data for free tier accounts
+      // Seed sample data for free tier accounts if feature choice permits
       try {
-        await seedFreeTierData(orgId, session.user.id);
+        const demoAllowed = await isFeatureEnabledForUser(session.user.id, 'demo_data');
+        if (demoAllowed) {
+          await seedFreeTierData(orgId, session.user.id);
+        }
       } catch (seedError) {
         // Log but don't fail the org creation
         console.warn('[Organizations] Failed to seed free tier data:', seedError);
