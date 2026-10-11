@@ -106,6 +106,17 @@ purchased-credit nuance and the concurrency/atomicity requirement.
 | B1 | Long email must not break layout | `components/Shell.tsx` | UNIT TESTED | commit `954c910`; `Shell.test.tsx` 10 tests; mutation-verified (strip `truncate`/`min-w-0`/`title` in a temp copy → 2 new tests FAIL; real impl → 10/10 pass) | not re-verified in browser |
 | B2 | Truncation + full value accessible | `Shell.tsx` | IMPLEMENTED | contract test pins DOM `truncate` + `min-w-0` container + `title` in BOTH identity blocks; Set B short-value case included | not browser-verified |
 
+## SET AB - ONBOARDING FEATURE CHOICES
+
+Slice 1 (write path) landed at da2b6c9 (2026-10-11): the signup questionnaire now ASKS which optional features the user wants (gamification, phone calling, SMS, email, advanced analytics, AI automation, demo data) instead of force-enabling everything silently. Shared codec api/utils/featureChoices.ts is the single read/write contract; PATCH/PUT /api/user/preferences sanitises the value; the gamification choice mirrors into gamification_enabled so the existing Shell + server gates enforce it.
+
+| ID | Requirement | Implementation | Status | Evidence | Blocker |
+| --- | --- | --- | --- | --- | --- |
+| AB1 | Questionnaire asks the seven master-spec feature choices, all default ON | components/signup/SignupQuestionnaire.tsx step 3 | UNIT TESTED | SignupQuestionnaire.test.tsx 4 tests (renders all seven ON; toggle OFF arrives as false; SKIP writes nothing) | - |
+| AB2 | Shared read/write codec with strict booleans, defaults, allowlist | api/utils/featureChoices.ts | UNIT TESTED | featureChoices.test.ts 15 tests; gamification default agrees with gamification.ts by test | - |
+| AB3 | Preferences route sanitises feature_choices on PATCH+PUT | api/user/preferences/route.ts | UNIT TESTED | featureChoices.route.test.ts 6 tests (strict booleans, fills defaults, drops unknown keys, 401 before storage) | - |
+| AB4 | Gamification choice actually enforced (mirror key) | buildFeaturePreferencePayload to gamification_enabled | UNIT TESTED | Shell nav gating + requireGamificationEnabled server gates; regression 49/49 | - |
+| AB5 | phone_calling/sms/email/advanced_analytics/ai_automation/demo_data enforced | - | NOT STARTED | resolveFeatureChoice has zero production callers; choices persist but gate nothing | next slice: nav/API/seeding wiring |
 ## SET C — APOLLO LEAD SOURCE
 
 Complete provider-independent implementation at `api/lead-finder/apollo/`
