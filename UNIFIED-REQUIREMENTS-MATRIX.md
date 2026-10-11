@@ -116,7 +116,7 @@ Slice 1 (write path) landed at da2b6c9 (2026-10-11): the signup questionnaire no
 | AB2 | Shared read/write codec with strict booleans, defaults, allowlist | api/utils/featureChoices.ts | UNIT TESTED | featureChoices.test.ts 15 tests; gamification default agrees with gamification.ts by test | - |
 | AB3 | Preferences route sanitises feature_choices on PATCH+PUT | api/user/preferences/route.ts | UNIT TESTED | featureChoices.route.test.ts 6 tests (strict booleans, fills defaults, drops unknown keys, 401 before storage) | - |
 | AB4 | Gamification choice actually enforced (mirror key) | buildFeaturePreferencePayload to gamification_enabled | UNIT TESTED | Shell nav gating + requireGamificationEnabled server gates; regression 49/49 | - |
-| AB5 | phone_calling/sms/email/advanced_analytics/ai_automation/demo_data enforced | - | NOT STARTED | resolveFeatureChoice has zero production callers; choices persist but gate nothing | next slice: nav/API/seeding wiring |
+| AB5 | phone_calling/sms/email/advanced_analytics/ai_automation/demo_data enforced | featureChoices.server.ts, Shell.tsx, analytics/advanced, analytics/crm, ai-recommendations, campaigns, organizations, free-tier/seed | UNIT TESTED | `2b9cab9`: featureChoices.enforcement.test.ts 10 tests + Shell.test.tsx 2 nav-gating tests (56/56 combined); resolveFeatureChoice now has 8 production callers (Shell nav, analytics/advanced, analytics/crm, ai-recommendations, campaigns channels, organizations seeding, free-tier/seed, isFeatureEnabledForUser DB gate) | - |
 ## SET C — APOLLO LEAD SOURCE
 
 Complete provider-independent implementation at `api/lead-finder/apollo/`

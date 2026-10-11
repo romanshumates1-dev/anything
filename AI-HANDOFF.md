@@ -1,6 +1,20 @@
 # AI-HANDOFF Ã¢â‚¬â€ read this first
 
-**Last updated:** 2026-10-09 (two milestones at `c621c8a`/`72d1020`: G2 step-1 guarded handler + Q1 execution-half verification)
+**Last updated:** 2026-10-11 (AB5 enforcement at `2b9cab9`)
+
+## AB5 MILESTONE — `2b9cab9` (2026-10-11): feature choices enforced at nav/API/seeding
+
+**What shipped:** SET AB slice 2 — server-side gate module `featureChoices.server.ts` with `isFeatureEnabledForUser()` (DB-backed, fails OPEN) and `requireFeatureEnabled()` (returns null or 404 Response). Eight production callers now respect user onboarding choices:
+
+- **Shell.tsx**: `requiresFeature` property on nav items; CRM Analytics hidden when `advanced_analytics` declined
+- **analytics/advanced** + **analytics/crm**: gated on `advanced_analytics`
+- **analytics/ai-recommendations**: gated on `ai_automation`
+- **campaigns**: channel validation — `phone_calling`, `sms`, `email` each checked before campaign creation
+- **organizations** + **free-tier/seed**: gated on `demo_data` before seeding
+
+**Verification:** 56/56 tests pass — `featureChoices.enforcement.test.ts` (10), `Shell.test.tsx` nav-gating (2/13), `featureChoices.server.test.ts` (8), codec (15), route (6), questionnaire (4). `tsc` 0 errors, `oxlint` 0 warnings.
+
+**Honest status:** All AB1–AB5 are now UNIT TESTED. The full SET AB write-path + enforcement pipeline is code-complete. Not deployed (last live Worker `85de11a9`). Not browser-verified on the live site.
 
 ## G2 MILESTONE — `72d1020` (2026-10-09): homepage 500 now DIAGNOSABLE (step 1)
 
@@ -231,9 +245,11 @@ Queue, in order:
    variants 200, incl. `groupBy=zipCode` and `view=outreach`).
 5. **B1/B2 Shell long-identity** Ã¢â‚¬â€ Ã¢Å“â€¦ CLOSED `954c910`. Do not revisit (anti-loop
    rule: only if `Shell.tsx` changes or the evidence is invalidated).
-6. **G2** Ã¢â‚¬â€ *(NEXT)* intermittent `GET /` 500, cause unidentified.
-6. **G1b** Ã¢â‚¬â€ Free-plan resource ceiling (Cloudflare 1102); owner decision.
-7. **Deployment** Ã¢â‚¬â€ none of this is deployed to production; last live Worker is
+6. **AB5 — SET AB enforcement** — ✓ CLOSED 2b9cab9. All feature choices now
+   gated at nav/API/seeding. Do not redo.
+7. **G2** Ã¢â‚¬â€ *(NEXT)* intermittent `GET /` 500, cause unidentified.
+8. **G1b** Ã¢â‚¬â€ Free-plan resource ceiling (Cloudflare 1102); owner decision.
+9. **Deployment** Ã¢â‚¬â€ none of this is deployed to production; last live Worker is
    `85de11a9`. Always `yarn cf:build` before `scripts/wrangler-deploy.mjs`.
 8. `BLOCKED-EXTERNAL`: Stripe live keys/webhook secret, Apollo keys, Bedrock,
    Google OAuth, Workers paid plan.

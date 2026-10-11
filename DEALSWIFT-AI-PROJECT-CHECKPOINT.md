@@ -13,7 +13,7 @@ project state. A new model inherits state from here and from
 | Date | 2026-10-07 |
 | Repository | `d:\anything` |
 | Branch | `feat/cloudflare-workers` |
-| HEAD | `48bdaf3` — H1 test-only fix: `next/link` mock in `Shell.test.tsx` destructures `prefetch` out so it no longer leaks onto a raw `<a>` (`Shell.tsx` untouched), on top of B1/B2 (`954c910`), M1 (`d0a9921`), DEPLOY guard (`6ff97f0`), analytics schema-truth fix (`a0c9ec6`), QA probes (`4036224`), migration-runner fixes (`8681150`), rewards page (`2a6bc1a`), Y1/U1 + X1 verified (`a5fc054`, `68a67b4`), client-IP work (`dac5d6e`, `d5d6094`). **None deployed to production** (last live Worker `85de11a9`); the `dealswift-loadtest` worker serves the analytics fix. |
+| HEAD | `2b9cab9` — SET AB slice 2 (AB5 enforcement): feature choices gated at nav/API/seeding level. Server gate `featureChoices.server.ts`, Shell nav filtering, 6 API routes wired. On top of SET AB slice 1 (`da2b6c9`), matrix doc (`91784ee`), security-test milestone (`d5d9af4`…`54a9d6b`), G2 handler guard (`72d1020`), Q1 execution verification (`c621c8a`), SEO/static repair (`129a77c`), H1 (`48bdaf3`), B1/B2 (`954c910`), M1 (`d0a9921`), DEPLOY guard (`6ff97f0`), analytics fix (`a0c9ec6`), QA probes (`4036224`), migration-runner (`8681150`), rewards (`2a6bc1a`), Y1/U1/X1 (`a5fc054`,`68a67b4`), client-IP (`dac5d6e`,`d5d6094`). **None deployed to production** (last live Worker `85de11a9`). |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -127,7 +127,18 @@ Closed this session (2026-10-07):
    **104 routes / 100 OK / 0 SERVER_FAULTS**, all 8 `analytics/crm` variants 200
    including `groupBy=zipCode`.
 
-Closed this session:
+Closed this session (2026-10-11):
+
+1. **AB5 — SET AB slice 2 enforcement — DONE (`2b9cab9`).** Feature choices now
+   gated at nav, API, and seeding level. Server gate `featureChoices.server.ts`
+   (`isFeatureEnabledForUser`, `requireFeatureEnabled`). Shell nav hides CRM
+   Analytics when `advanced_analytics` declined. API routes gate: analytics/advanced,
+   analytics/crm, ai-recommendations (ai_automation), campaigns (phone/sms/email
+   channels), organizations + free-tier/seed (demo_data). 56/56 tests pass
+   (enforcement 10, Shell nav-gating 2, server gate 8, codec 15, route 6,
+   questionnaire 4). tsc 0 errors, oxlint 0 warnings.
+
+Closed prior session:
 
 1. **Y1 / U1 — VERIFIED (`a5fc054`, `eced6d4`).** Both were code-present but
    unproven. The campaign builder is the only place workflow stages are defined
