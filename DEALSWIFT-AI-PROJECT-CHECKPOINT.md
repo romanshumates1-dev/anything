@@ -8,7 +8,7 @@ project state. A new model inherits state from here and from
 
 ## SESSION UPDATE — 2026-10-11 (EXP-GAME-01 gamification completion)
 
-**Branch `feat/cloudflare-workers`, work UNCOMMITTED (preserve).** Typecheck = **0 errors**. Gamification test set = **58 passed / 0 failed** (9 files). All work TDD RED→GREEN.
+**Branch `feat/gamification-rewards`.** Typecheck = **0 errors**. Full regression suite = **3460 passed / 0 failed** (325 files, 26 PGlite-skipped). All work TDD RED→GREEN.
 
 ### Delivered this session
 - **Crate backend fix** — `crates.server.ts` imported `secureRoll` from `crates.ts` (never exported → runtime crash, masked by the route test's full mock). Moved to server-only `node:crypto.randomInt(0,10000)`.
@@ -16,22 +16,26 @@ project state. A new model inherits state from here and from
 - **Crate shop UI `/crates`** — `app/crates/page.tsx` + test (3); nav link in `Shell.tsx` (sidebar + user menu, `requiresGamification`).
 - **Page tests** for `/rewards`, `/achievements`, `/leaderboard` (3 each, NEW) — server-authoritative rendering, 404→"turned off", no fabrication, redeem POST+refetch.
 - **Dashboard skins now genuinely applied (GAP CLOSED)** — equipped theme was decorative. New pure `api/utils/cosmeticTheme.ts` (6 tests) maps theme cosmetics→CSS vars; `Shell.tsx` applies them app-wide; `Shell.theme.test.tsx` (1) asserts root container gets `--accent-blue:#7c3aed` for equipped nebula skin.
+- **Seasonal progression + competitions (GAP CLOSED)** — `gamification_seasons` and `competitions` tables existed (migration 099) but had no API surface or UI. This session adds:
+  - GET `/api/seasons` — live season, caller's XP/rank, battle-pass state, **org-scoped standings** (display names only, tenant-isolated via `organization_members` join, banned users excluded), and active competitions. Returns 404 when gamification is OFF.
+  - `seasonStandingsForOrg()` in `seasonalProgress.server.ts` — joins `organization_members`, filters banned users, uses pure `standingsWithRanks` for tie-safe ranking.
+  - `SeasonStandings.tsx` client panel — server-authoritative by design: every number (XP, rank, countdown, standings) comes from the API payload; never fabricated. Honest empty state when no season is live; "turned off" on 404.
+  - Migration `100_season_xp_events.sql` — idempotency ledger (`UNIQUE(user_id, season_id, reason)`) so concurrent/replay XP credits are `INSERT...ON CONFLICT DO UPDATE`-atomic, never double-awarded.
+  - **Full regression**: 3460 passed / 0 failed (325 files, 26 PGlite-skipped).
+- **Migration guard test fix** — `scripts/run-migrations.guard.test.ts` counts updated (773→776, 388→389) to match the `stripTrailingComment` fix that correctly handles migration 082's `; -- $5k` trailing comment. Both counts derived from running the fixed splitter against the real corpus; the guard still proves the original bug dropped 389/776 statements.
 
-### Gamification gap matrix (vs `roman.agent.md` 1271–1281)
+### Gamification gap matrix (vs `roman.agent.md` 1254–1298)
 | Capability | State |
 | --- | --- |
 | account XP / levels | IMPLEMENTED+TESTED (`/rewards`) |
-| battle-pass / game-pass | IMPLEMENTED+TESTED (`/rewards`) |
+| battle-pass / game-pass | IMPLEMENTED+TESTED (`/rewards` + `/seasons`) |
 | weekly spin wheel | IMPLEMENTED+TESTED (`/rewards`) |
 | redeemable 1x–10x use codes | IMPLEMENTED+TESTED (`/rewards`) |
 | monthly giveaways | IMPLEMENTED+TESTED (`/rewards`) |
-| dashboard skins | IMPLEMENTED+TESTED (genuinely applied this session) |
-| crates / rewards | IMPLEMENTED+TESTED (backend+API+UI this session) |
-| **seasonal progression** | **PARTIAL — table `gamification_seasons` exists (migration 099); NO API route, NO UI.** |
-| **competitions** | **PARTIAL — table `competitions` exists (migration 099); NO API route, NO UI.** |
-
-### Next (documented, not yet built)
-Seasons + competitions have schema but no surface. Both are "support architecture" items in `roman.agent.md` (1273/1279); full UI is a larger unit — record as known gaps, do not invent scope beyond the spec. No 3D/WebGL/Missions page is required by the source spec (earlier framing was incorrect; no 3D lib is installed and the Worker size gate forbids adding one).
+| dashboard skins | IMPLEMENTED+TESTED (genuinely applied) |
+| crates / rewards | IMPLEMENTED+TESTED (backend+API+UI) |
+| **seasonal progression** | **IMPLEMENTED+TESTED** (API `/api/seasons`, `SeasonStandings.tsx` panel on `/rewards`, `seasonStandingsForOrg` with tenant isolation, PGlite tests) |
+| **competitions** | **IMPLEMENTED+TESTED** (live competitions returned by `/api/seasons`, rendered in `SeasonStandings.tsx`, `activeCompetitions()` server function) |
 
 ---
 
@@ -41,8 +45,8 @@ Seasons + competitions have schema but no surface. Both are "support architectur
 | --- | --- |
 | Date | 2026-10-07 |
 | Repository | `d:\anything` |
-| Branch | `feat/cloudflare-workers` |
-| HEAD | `2b9cab9` — SET AB slice 2 (AB5 enforcement): feature choices gated at nav/API/seeding level. Server gate `featureChoices.server.ts`, Shell nav filtering, 6 API routes wired. On top of SET AB slice 1 (`da2b6c9`), matrix doc (`91784ee`), security-test milestone (`d5d9af4`…`54a9d6b`), G2 handler guard (`72d1020`), Q1 execution verification (`c621c8a`), SEO/static repair (`129a77c`), H1 (`48bdaf3`), B1/B2 (`954c910`), M1 (`d0a9921`), DEPLOY guard (`6ff97f0`), analytics fix (`a0c9ec6`), QA probes (`4036224`), migration-runner (`8681150`), rewards (`2a6bc1a`), Y1/U1/X1 (`a5fc054`,`68a67b4`), client-IP (`dac5d6e`,`d5d6094`). **None deployed to production** (last live Worker `85de11a9`). |
+| Branch | `feat/gamification-rewards` |
+| HEAD | `638c7c3` — season standings UI + API + tenant-isolated org standings (closes seasonal progression + competitions PARTIAL gap). On top of `22f950d` (crate shop UI, cosmetic themes, reward page tests), `4479ad0` (pure seasonal progression rules), `aa7864f` (season XP idempotency ledger migration 100), `2a6bc1a` (rewards page + gamification sidebar gating), and the SET AB slice (`2b9cab9`/`da2b6c9`). **None deployed to production** (last live Worker `85de11a9`). |
 | Deployment target | Cloudflare Workers via OpenNext (`wrangler`), `scripts/wrangler-deploy.mjs` |
 | Production domain | `https://dealswiftautomation.com` |
 | Last known deployed version | **Worker `85de11a9`** — deployed 2026-10-04 from `a576f2f`. Adds unhandled-throw telemetry. Full gate green: typecheck OK, lint 0/0, **3017 tests passed / 0 failed**, `cf:build` OK, authenticated browser **clean=6 noisy=0**. Live `/` and `/api/system/health` 200. |
@@ -532,6 +536,11 @@ fix (probe 2026-10-07: 104 routes / 0 faults).
 ## RECENT COMMITS
 
 ```
+71252d0  test(migrations): fix stale counts in run-migrations guard after stripTrailingComment
+638c7c3  feat(gamification): season standings UI + API + tenant-isolated org standings
+aa7864f  feat(gamification): write season XP through an idempotency ledger (migration 100)
+4479ad0  feat(gamification): add pure seasonal progression rules
+22f950d  feat(gamification): crate shop UI, cosmetic themes, reward page tests
 a0c9ec6  fix(analytics): correct phantom columns in CRM engine      → guards 8/8; probe 104 routes / 0 faults
 4036224  test(qa): legal-acceptance setup + page-route probes       → probe 104 routes / 0 faults
 a19cbdc  docs(matrix): close RUNMIG/SQLFRAG/V3-UI, record the green-gate lesson
@@ -558,8 +567,7 @@ None of these are deployed to production; last live production Worker remains
 5. Full 3013-test suite for isolated changes — ~6 min, `collect` 268s. Target instead.
 6. Billing/tax/withdrawals/Apollo/migration re-audits absent a dependency change.
 7. Repository-wide archaeology — architecture is already mapped in the matrix.
-8. **V3 gamification reward layer** — now built and tested (`ed683e5`, `141e063`).
-   Do not re-verify its absence; do not rebuild it. Only the UI page is missing.
+8. **V3 gamification reward layer** — now built and tested (`ed683e5`, `141e063`, `22f950d`, `4479ad0`, `aa7864f`, `638c7c3`). Reward suite, seasons API, competition API, SeasonStandings UI panel, migration guard tests — all green. Full regression: 3460 passed / 0 failed. Do not rebuild.
 9. **`x-real-ip` deployment question** — answered with live evidence (`d5d6094`).
    Do not re-probe unless the deployment target changes.
 10. **`better-auth` IP-header self-correction** — the wrong `['cf-connecting-ip']`-only
