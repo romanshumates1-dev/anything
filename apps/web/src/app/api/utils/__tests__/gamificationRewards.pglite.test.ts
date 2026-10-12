@@ -51,6 +51,7 @@ const BOB = 'user_bob';
  * rather than a hand-written copy that could drift from it.
  */
 const MIGRATION_PATH = join(process.cwd(), 'db', 'migrations', '099_gamification_rewards.sql');
+const XP_EVENT_MIGRATION_PATH = join(process.cwd(), 'db', 'migrations', '101_user_xp_events.sql');
 
 beforeAll(async () => {
   db = new PGlite();
@@ -93,6 +94,9 @@ beforeAll(async () => {
 
   const migration = readFileSync(MIGRATION_PATH, 'utf8');
   await db.exec(migration);
+
+  const xpEventMigration = readFileSync(XP_EVENT_MIGRATION_PATH, 'utf8');
+  await db.exec(xpEventMigration);
 
   await db.exec(`
     INSERT INTO public.use_codes (code, multiplier, xp_reward, max_redemptions)
@@ -146,6 +150,27 @@ describe('Set V3 — reward claims are exactly-once', () => {
 
     await awardXp(ALICE, -999);
     expect(await currentXp(ALICE)).toBe(150);
+  });
+
+  it('deduplicates a replayed event key while still crediting distinct events', async () => {
+    const keyA = 'quest:daily-login';
+    const keyB = 'quest:weekly-checkin';
+
+    expect(await awardXp(ALICE, 100, keyA)).toBe(true);
+    expect(await awardXp(ALICE, 100, keyA)).toBe(false);
+
+    const concurrent = await Promise.all(
+      Array.from({ length: 12 }, () => awardXp(ALICE, 100, keyA).catch(() => false)),
+    );
+    expect(concurrent.filter(Boolean)).toHaveLength(0);
+
+    expect(await awardXp(ALICE, 25, keyB)).toBe(true);
+    expect(await currentXp(ALICE)).toBe(125);
+
+    const [eventRow] = (
+      await db.query(`SELECT count(*)::int AS n FROM public.user_xp_events WHERE user_id = $1`, [ALICE])
+    ).rows;
+    expect(eventRow.n).toBe(2);
   });
 
   describe('spin wheel', () => {

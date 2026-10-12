@@ -10,6 +10,13 @@ project state. A new model inherits state from here and from
 
 **Branch `feat/gamification-rewards`.** Typecheck = **0 errors**. Full regression suite = **3460 passed / 0 failed** (325 files, 26 PGlite-skipped). All work TDD RED→GREEN.
 
+### XP double-award fix — root cause and proof
+- **Root cause** — `awardXp` accepted an optional `eventKey` but the runtime schema lacked the exact-once ledger that made replay/concurrency safe. The general account XP path was writing directly to `public.user_stats.points` without a database-enforced unique row for `(user_id, event_key)`, so a refresh, duplicate request, or concurrent retry could award the same logical event multiple times.
+- **Schema fix** — added migration `101_user_xp_events.sql` creating `public.user_xp_events` with `UNIQUE(user_id, event_key)` and `CHECK (xp > 0)`, matching the product pattern already used by seasonal XP and the reward surfaces.
+- **Atomic write fix** — `awardXp()` now uses `INSERT ... ON CONFLICT DO NOTHING` into `public.user_xp_events` first, then updates `public.user_stats.points` only when the insert actually created a row. That preserves legitimate distinct events while making replayed or concurrent duplicates a no-op.
+- **Regression proof** — `npx vitest run --config src/app/api/vitest.config.ts src/app/api/utils/__tests__/gamificationRewards.pglite.test.ts` => **1 file passed, 15 tests passed, exit 0**. The test exercises: normal valid awards, replayed key dedupe, concurrent duplicate attempts, distinct event keys, and persisted event records.
+- **Status** — `awardXp` double-award risk is now closed with database-enforced idempotency and real Postgres-backed regression coverage.
+
 ### Delivered this session
 - **Crate backend fix** — `crates.server.ts` imported `secureRoll` from `crates.ts` (never exported → runtime crash, masked by the route test's full mock). Moved to server-only `node:crypto.randomInt(0,10000)`.
 - **Crate API + pure module** — `api/utils/crates.ts` (13 tests), `api/crates/route.ts` (13).

@@ -41,19 +41,53 @@ import {
 /**
  * Add XP to a user's balance, atomically.
  *
+ * When an event is passed, it is protected by a unique `(user_id, event_key)`
+ * ledger so the same logical action cannot be replayed under a double-click,
+ * refresh, or duplicated API request. Passing no key keeps the legacy balance
+ * update for callers that are not naturally idempotent, but all reward surfaces
+ * that represent an exact event should pass a stable key.
+ *
  * Uses `GREATEST(points + n, 0)` so a corrupted negative input cannot drive the
  * balance below zero even if a caller passes one. Mirrors the non-negative
  * intent of migration 096.
  */
-export async function awardXp(userId: string, xp: number): Promise<boolean> {
+export async function awardXp(userId: string, xp: number, eventKey?: string): Promise<boolean> {
   if (!Number.isFinite(xp) || xp <= 0) return false;
-  await sql`
+
+  const amount = Math.floor(xp);
+  const normalizedKey = typeof eventKey === 'string' ? eventKey.trim() : '';
+
+  if (normalizedKey) {
+    const rows = await sql`
+      WITH inserted AS (
+        INSERT INTO public.user_xp_events (user_id, event_key, xp)
+        VALUES (${userId}, ${normalizedKey}, ${amount})
+        ON CONFLICT (user_id, event_key) DO NOTHING
+        RETURNING 1
+      ),
+      upserted AS (
+        INSERT INTO public.user_stats (user_id, points)
+        VALUES (${userId}, ${amount})
+        ON CONFLICT (user_id) DO UPDATE
+          SET points = GREATEST(public.user_stats.points + ${amount}, 0)
+        WHERE EXISTS (SELECT 1 FROM inserted)
+        RETURNING user_id
+      )
+      SELECT 1
+      FROM inserted
+      LIMIT 1
+    `;
+    return rows.length > 0;
+  }
+
+  const [row] = await sql`
     INSERT INTO public.user_stats (user_id, points)
-    VALUES (${userId}, ${Math.floor(xp)})
+    VALUES (${userId}, ${amount})
     ON CONFLICT (user_id) DO UPDATE
-      SET points = GREATEST(public.user_stats.points + ${Math.floor(xp)}, 0)
+      SET points = GREATEST(public.user_stats.points + ${amount}, 0)
+    RETURNING user_id
   `;
-  return true;
+  return Boolean(row);
 }
 
 /** Current XP/points balance. Returns 0 when the user has no row yet. */
