@@ -262,10 +262,10 @@ describe('run-migrations comment stripping', () => {
       fixedApplied += splitStatements(ddl).map(gate).filter(Boolean).length;
     }
 
-    // 773 is the vetted splitter's count, so the runner now agrees with the
+    // 776 is the vetted splitter's count, so the runner now agrees with the
     // oracle statement-for-statement.
-    expect(fixedApplied).toBe(773);
-    expect(buggyApplied).toBe(388);
+    expect(fixedApplied).toBe(776);
+    expect(buggyApplied).toBe(389);
     // The fix must be load-bearing: it recovers a large number of statements.
     expect(fixedApplied - buggyApplied).toBeGreaterThan(300);
   });
