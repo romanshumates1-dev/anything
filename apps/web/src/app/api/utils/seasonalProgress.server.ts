@@ -277,6 +277,67 @@ export async function seasonStandings(
   }));
 }
 
+/** A season standing scoped to one organization: display name, never a raw user id. */
+export interface OrgStanding {
+  rank: number;
+  name: string;
+  xp: number;
+}
+
+/**
+ * Season standings for members of ONE organization, ranked by XP.
+ *
+ * TENANT ISOLATION: `seasonStandings` above is platform-wide and keyed by raw
+ * `user_id`. Returning it to a route would let any authenticated user see every
+ * other tenant's user ids and XP. This variant joins `organization_members` so a
+ * caller only ever sees people in their own org, and it returns display names
+ * (matching `/api/leaderboard`) rather than opaque ids.
+ *
+ * Ranks come from the pure `standingsWithRanks`, the same tie rule the platform
+ * board uses: tied users share a rank and the ranks a tie consumed are skipped.
+ * The whole org set is ranked BEFORE slicing, so pagination cannot shift a rank
+ * the way ranking a pre-limited page would.
+ *
+ * A user with no progress row is absent rather than shown a fabricated zero —
+ * "has not participated" and "participated with zero XP" stay different facts.
+ */
+export async function seasonStandingsForOrg(
+  seasonId: number,
+  organizationId: string,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<OrgStanding[]> {
+  const limit = Math.floor(opts.limit ?? 20);
+  const offset = Math.floor(opts.offset ?? 0);
+  if (!Number.isFinite(limit) || limit <= 0) return [];
+  if (!Number.isFinite(offset) || offset < 0) return [];
+  if (!organizationId) return [];
+
+  const rows = (await sql`
+    SELECT u.name, p.xp
+    FROM public.user_season_progress p
+    JOIN public."user" u ON u.id = p.user_id
+    JOIN public.organization_members om
+      ON om.user_id = p.user_id AND om.organization_id = ${organizationId}
+    WHERE p.season_id = ${seasonId}
+      AND u.banned IS NOT TRUE
+    ORDER BY p.xp DESC, p.user_id ASC
+  `) as any[];
+
+  const ranked = standingsWithRanks(
+    rows.map((r, i) => ({
+      userId: String(i),
+      name: String(r.name ?? 'Member'),
+      xp: toNumber(r.xp),
+    })),
+  );
+
+  return ranked.slice(offset, offset + limit).map((entry) => ({
+    rank: entry.rank,
+    name: entry.name,
+    xp: entry.xp,
+  }));
+}
+
 /**
  * Persist computed ranks onto `user_season_progress.rank`.
  *

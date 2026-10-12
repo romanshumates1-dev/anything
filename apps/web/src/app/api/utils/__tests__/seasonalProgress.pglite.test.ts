@@ -41,13 +41,44 @@ const seasonal = await import('@/app/api/utils/seasonalProgress.server');
 const ALICE = 'user_alice';
 const BOB = 'user_bob';
 const CAROL = 'user_carol';
+// A fourth user who belongs to a DIFFERENT organization, to prove org-scoped
+// standings never leak across tenants.
+const DAVE = 'user_dave';
+
+const ORG_A = 'org_alpha';
+const ORG_B = 'org_beta';
 
 const MIGRATION_PATH = join(process.cwd(), 'db', 'migrations', '099_gamification_rewards.sql');
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`
-    CREATE TABLE "user" (id text PRIMARY KEY, credits_balance integer NOT NULL DEFAULT 0);
-    INSERT INTO "user" (id) VALUES ('${ALICE}'), ('${BOB}'), ('${CAROL}');
+    CREATE TABLE "user" (
+      id text PRIMARY KEY,
+      credits_balance integer NOT NULL DEFAULT 0,
+      name text,
+      banned boolean NOT NULL DEFAULT false
+    );
+    INSERT INTO "user" (id, name) VALUES
+      ('${ALICE}', 'Ada Lovelace'),
+      ('${BOB}', 'Grace Hopper'),
+      ('${CAROL}', 'Alan Turing'),
+      ('${DAVE}', 'Dave Tenant');
+
+    -- Minimal org tables so seasonStandingsForOrg's join matches the real schema
+    -- (migration 023) without dragging in every column.
+    CREATE TABLE organizations (id text PRIMARY KEY, name text NOT NULL DEFAULT '');
+    INSERT INTO organizations (id, name) VALUES ('${ORG_A}', 'Alpha'), ('${ORG_B}', 'Beta');
+    CREATE TABLE organization_members (
+      user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+      organization_id text NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      UNIQUE(user_id, organization_id)
+    );
+    -- Alice + Bob + Carol are in org A; Dave is in org B (cross-tenant).
+    INSERT INTO organization_members (user_id, organization_id) VALUES
+      ('${ALICE}', '${ORG_A}'),
+      ('${BOB}', '${ORG_A}'),
+      ('${CAROL}', '${ORG_A}'),
+      ('${DAVE}', '${ORG_B}');
   `);
 
   // Migration 068 prerequisite that 099 references.
@@ -96,6 +127,10 @@ beforeEach(async () => {
     INSERT INTO public.user_stats (user_id, points)
     VALUES ('${ALICE}', 0), ('${BOB}', 0), ('${CAROL}', 0);
   `);
+  // Reset the banner flag: the "excludes banned members" test mutates
+  // user.banned, and TRUNCATE does not touch the user table. Without this,
+  // Bob stays banned into later tests and his rows silently disappear.
+  await sqlQuery`UPDATE public."user" SET banned = false`;
 });
 
 
@@ -307,6 +342,82 @@ describe('competitions', () => {
     await sqlQuery`UPDATE public.competitions SET is_active = false`;
     const live = await seasonal.activeCompetitions();
     expect(live).toEqual([]);
+  });
+});
+
+describe('seasonStandingsForOrg — tenant isolation', () => {
+  /** Credit a user season XP directly via the ledger. */
+  const credit = async (userId: string, xp: number) => {
+    const season = await seasonal.activeSeason();
+    await seasonal.creditSeasonXp(userId, season.id, xp, `org-standings-${userId}-${xp}`);
+    return season.id;
+  };
+
+  it('returns only the caller org members, never a user from another org', async () => {
+    const seasonId = await credit(ALICE, 300);
+    await credit(BOB, 200);
+    // Dave has MORE XP but is in org B, so he must never appear in org A's board.
+    await credit(DAVE, 999);
+
+    const board = await seasonal.seasonStandingsForOrg(seasonId, ORG_A);
+    const names = board.map((s) => s.name);
+    expect(names).toContain('Ada Lovelace');
+    expect(names).toContain('Grace Hopper');
+    expect(names).not.toContain('Dave Tenant'); // cross-tenant leak would show here
+    expect(board).toHaveLength(2); // only org A members with progress
+  });
+
+  it('returns display names, not raw user ids', async () => {
+    const seasonId = await credit(ALICE, 100);
+    const board = await seasonal.seasonStandingsForOrg(seasonId, ORG_A);
+    expect(board[0].name).toBe('Ada Lovelace');
+    // The shape is {rank,name,xp} — no userId field to leak an opaque id.
+    expect(Object.keys(board[0]).sort()).toEqual(['name', 'rank', 'xp']);
+  });
+
+  it('ranks by XP and shares rank across a tie, skipping consumed ranks', async () => {
+    const seasonId = await credit(ALICE, 500);
+    await credit(BOB, 500); // tie with Alice
+    await credit(CAROL, 100);
+
+    const board = await seasonal.seasonStandingsForOrg(seasonId, ORG_A);
+    // Alice and Bob tie at rank 1; Carol gets rank 3 (rank 2 was consumed).
+    expect(board.find((s) => s.name === 'Ada Lovelace')?.rank).toBe(1);
+    expect(board.find((s) => s.name === 'Grace Hopper')?.rank).toBe(1);
+    expect(board.find((s) => s.name === 'Alan Turing')?.rank).toBe(3);
+  });
+
+  it('excludes banned members from the board', async () => {
+    const seasonId = await credit(ALICE, 100);
+    await credit(BOB, 80);
+    await sqlQuery`UPDATE public."user" SET banned = true WHERE id = ${BOB}`;
+
+    const board = await seasonal.seasonStandingsForOrg(seasonId, ORG_A);
+    expect(board.map((s) => s.name)).toEqual(['Ada Lovelace']);
+  });
+
+  it('returns an empty board for a user with no progress (never a fabricated zero)', async () => {
+    const seasonId = await credit(ALICE, 100);
+    // Carol is in org A but has no progress row — she must be absent, not zero.
+    const board = await seasonal.seasonStandingsForOrg(seasonId, ORG_A);
+    expect(board.map((s) => s.name)).toEqual(['Ada Lovelace']);
+  });
+
+  it('paginates without shifting ranks (ranks computed before slicing)', async () => {
+    const seasonId = await credit(ALICE, 300);
+    await credit(BOB, 200);
+    await credit(CAROL, 100);
+
+    const page1 = await seasonal.seasonStandingsForOrg(seasonId, ORG_A, { limit: 2, offset: 0 });
+    const page2 = await seasonal.seasonStandingsForOrg(seasonId, ORG_A, { limit: 2, offset: 2 });
+    expect(page1.map((s) => s.rank)).toEqual([1, 2]);
+    // Carol is still rank 3 on page 2 — not reset to rank 1 by the slice.
+    expect(page2.map((s) => s.rank)).toEqual([3]);
+  });
+
+  it('rejects a non-positive limit rather than returning everything', async () => {
+    const seasonId = await credit(ALICE, 100);
+    expect(await seasonal.seasonStandingsForOrg(seasonId, ORG_A, { limit: 0 })).toEqual([]);
   });
 });
 

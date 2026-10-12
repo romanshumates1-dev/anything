@@ -30,6 +30,7 @@ import { MetricValue } from '@/components/ui/MetricValue';
 // Client-safe pure module: same file the server uses, so the cap shown here and
 // the cap enforced in SQL can never drift apart.
 import { MAX_SPINS_PER_WEEK, SPINS_PER_ACHIEVEMENT_POINT } from '@/app/api/utils/gamificationRewards';
+import { SeasonStandings } from '@/components/gamification/SeasonStandings';
 import {
   Loader2,
   Gift,
@@ -256,6 +257,10 @@ export default function RewardsPage() {
               </p>
             )}
           </GlassCard>
+
+          {/* Seasonal progression (season, standings, competitions). Read-only,
+              server-computed by /api/seasons; claims stay on /api/rewards. */}
+          <SeasonStandings />
 
           {/* Battle pass */}
           <GlassCard className="mb-6">
