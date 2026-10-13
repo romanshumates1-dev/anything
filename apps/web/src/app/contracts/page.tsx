@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useSession } from '@/lib/auth-client';
 import { redirect } from 'next/navigation';
@@ -10,6 +10,7 @@ import { Loader2, FileText, Shield, ShieldCheck, Clock, Calendar, DollarSign, Al
 import InspectionClockChip from '@/components/contracts/InspectionClockChip';
 import ContractTimeline from '@/components/contracts/ContractTimeline';
 import PaymentChip from '@/components/contracts/PaymentChip';
+import ContractPlainSummary from '@/components/contracts/ContractPlainSummary';
 import { ContractDisclaimer } from '@/components/compliance';
 
 const statusConfig: Record<string, { dot: 'success' | 'warning' | 'error' | 'info' | 'neutral'; bg: string; label: string }> = {
@@ -405,6 +406,11 @@ export default function ContractsPage() {
                         )}
                       </div>
                     )}
+                  </div>
+
+                  {/* Plain-language deal summary for non-technical readers */}
+                  <div className="mb-4">
+                    <ContractPlainSummary contract={contract} />
                   </div>
 
                   {/* Lifecycle Timeline */}
