@@ -36,6 +36,17 @@ import { join } from 'node:path';
 
 const APP_ROOT = process.cwd();
 const read = (rel: string) => readFileSync(join(APP_ROOT, rel), 'utf8');
+/**
+ * Read a file with block comments and whole-line `//` comments stripped, so
+ * origin checks scan LIVE references only. Source files legitimately spell the
+ * forbidden domain when documenting the historical defect (robots.ts explains
+ * that it once pointed at it) — that history must not trip the guard, while a
+ * reintroduced domain in code, JSX, or a string literal still fails.
+ */
+const readLive = (rel: string) =>
+  read(rel)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
 
 const SITEMAP = 'src/app/sitemap.ts';
 const ROBOTS = 'src/app/robots.ts';
@@ -102,7 +113,7 @@ describe('SEO surface guard (SEO-1)', () => {
 
   it('single origin of truth: no copy points at a domain we do not own', () => {
     for (const f of [SITEMAP, ROBOTS, SEO_LIB, MKT_LAYOUT]) {
-      expect(read(f).includes(FORBIDDEN_ORIGIN), `${f} references ${FORBIDDEN_ORIGIN}`).toBe(false);
+      expect(readLive(f).includes(FORBIDDEN_ORIGIN), `${f} references ${FORBIDDEN_ORIGIN}`).toBe(false);
     }
     expect(read(SEO_LIB)).toContain(APEX);
     expect(read(ROBOTS)).toContain(APEX);

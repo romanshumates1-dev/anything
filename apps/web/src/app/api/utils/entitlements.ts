@@ -17,7 +17,13 @@ import { logEvent } from './logger';
 /**
  * Subscription tiers in order of capability
  */
-export type SubscriptionTier = 'FREE' | 'STARTER' | 'PRO' | 'ENTERPRISE';
+export type SubscriptionTier =
+  | 'FREE'
+  | 'STARTER'
+  | 'PRO'
+  | 'BUSINESS'
+  | 'SCALE'
+  | 'ENTERPRISE';
 
 /**
  * Features that can be gated by tier
@@ -156,6 +162,67 @@ const DEFAULT_TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
     },
     creditMultiplier: 1.0, // Base price
   },
+  BUSINESS: {
+    tier: 'BUSINESS',
+    features: [
+      'campaigns',
+      'ai_negotiation',
+      'bulk_sms',
+      'bulk_email',
+      'contract_generation',
+      'lead_finder',
+      'advanced_analytics',
+      'api_access',
+      'team_members',
+      'priority_support',
+      'webhook_integrations',
+      'csv_export',
+      'crm_integrations',
+    ],
+    limits: {
+      campaigns_per_month: 50,
+      leads_per_month: 10000,
+      sms_per_day: 1000,
+      emails_per_day: 10000,
+      ai_requests_per_day: 1000,
+      team_members: 15,
+      active_campaigns: 50,
+      contacts: 50000,
+      api_calls_per_minute: 300,
+    },
+    creditMultiplier: 0.9, // 10% discount
+  },
+  SCALE: {
+    tier: 'SCALE',
+    features: [
+      'campaigns',
+      'ai_negotiation',
+      'bulk_sms',
+      'bulk_email',
+      'contract_generation',
+      'lead_finder',
+      'advanced_analytics',
+      'api_access',
+      'team_members',
+      'custom_branding',
+      'priority_support',
+      'webhook_integrations',
+      'csv_export',
+      'crm_integrations',
+    ],
+    limits: {
+      campaigns_per_month: -1, // Unlimited (067: campaigns -1, seats 50)
+      leads_per_month: -1,
+      sms_per_day: 3000,
+      emails_per_day: 50000,
+      ai_requests_per_day: 5000,
+      team_members: 50,
+      active_campaigns: -1,
+      contacts: -1,
+      api_calls_per_minute: 600,
+    },
+    creditMultiplier: 0.85, // 15% discount
+  },
   ENTERPRISE: {
     tier: 'ENTERPRISE',
     features: [
@@ -194,19 +261,39 @@ const DEFAULT_TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
  */
 export async function getOrganizationTier(organizationId: string): Promise<SubscriptionTier> {
   try {
+    // Authoritative tier source per migration 087:
+    // organization_subscriptions (state) -> subscription_plans (tier).
+    //
+    // The previous query was `LEFT JOIN subscriptions s ... s.status = 'ACTIVE'`
+    // — a table NO migration creates (`subscriptions` does not exist; 026
+    // created `organization_subscriptions`), with an uppercase status this
+    // schema never stores (026 CHECK: 'trial','active','past_due','canceled',
+    // 'expired'), and a `tier` column that does not exist on subscription rows
+    // (tier lives on subscription_plans). It therefore threw on EVERY call and
+    // the catch below silently demoted every org — including paying BUSINESS
+    // and SCALE customers — to FREE. This is the F3-family defect: hardcoded
+    // assumptions drifting from the live schema.
     const [result] = await sql`
       SELECT
-        COALESCE(s.tier, 'FREE') as tier
+        COALESCE(sp.tier, 'FREE') as tier
       FROM organizations o
-      LEFT JOIN subscriptions s ON s.organization_id = o.id AND s.status = 'ACTIVE'
+      LEFT JOIN organization_subscriptions os
+        ON os.organization_id = o.id AND os.status IN ('active', 'trial')
+      LEFT JOIN subscription_plans sp ON sp.id = os.plan_id
       WHERE o.id = ${organizationId}
+      ORDER BY os.created_at DESC
     `;
 
     if (!result) {
       return 'FREE';
     }
 
-    const tier = (result.tier || 'FREE').toUpperCase() as SubscriptionTier;
+    // Legacy alias: migration 066 retiered `plan_professional` to tier='pro',
+    // but the tier CHECK constraint still permits 'professional'. Normalise it
+    // to PRO rather than fail-closed-demotion to FREE — a casing/alias issue,
+    // not schema drift.
+    const raw = (result.tier || 'FREE').toUpperCase();
+    const tier = (raw === 'PROFESSIONAL' ? 'PRO' : raw) as SubscriptionTier;
     return tier in DEFAULT_TIER_CONFIGS ? tier : 'FREE';
   } catch (error) {
     console.error('[ENTITLEMENTS] Failed to get org tier:', error);
@@ -265,7 +352,7 @@ export async function checkEntitlement(
   }
 
   // Find minimum tier that has this feature
-  const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'ENTERPRISE'];
+  const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
   let upgradeRequired: SubscriptionTier | undefined;
 
   for (const checkTier of tierOrder) {
@@ -302,7 +389,7 @@ export async function checkEntitlements(
       results[feature] = { allowed: true, tier };
     } else {
       // Find minimum required tier
-      const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'ENTERPRISE'];
+      const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
       let upgradeRequired: SubscriptionTier | undefined;
 
       for (const checkTier of tierOrder) {
@@ -919,7 +1006,7 @@ export async function getUpgradeRecommendations(organizationId: string): Promise
 }> {
   const currentTier = await getOrganizationTier(organizationId);
   const currentLimits = await getTierLimits(currentTier);
-  const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'ENTERPRISE'];
+  const tierOrder: SubscriptionTier[] = ['FREE', 'STARTER', 'PRO', 'BUSINESS', 'SCALE', 'ENTERPRISE'];
   const currentIndex = tierOrder.indexOf(currentTier);
 
   const recommendations: Array<{

@@ -38,9 +38,11 @@ vi.mock('@/app/api/utils/logger', () => ({
 
 import {
   checkEntitlement,
+  checkEntitlements,
   enforceEntitlement,
   getOrganizationTier,
   getTierLimits,
+  getUpgradeRecommendations,
   FeatureNotAllowedError,
   type Feature,
 } from '@/app/api/utils/entitlements';
@@ -186,6 +188,113 @@ describe('X1 — the entitlement gate fails CLOSED', () => {
       const free = await getTierLimits('FREE');
       const enterprise = await getTierLimits('ENTERPRISE');
       expect(free.features.length).toBeLessThan(enterprise.features.length);
+    });
+  });
+
+  describe('BUSINESS and SCALE are honoured, not demoted to FREE', () => {
+    // F3-family defect (found 2026-10-13): DEFAULT_TIER_CONFIGS knew only
+    // FREE/STARTER/PRO/ENTERPRISE, so getOrganizationTier mapped the live paid
+    // tiers BUSINESS ($899/mo) and SCALE ($2,499/mo) to FREE — a paying org
+    // lost every paid feature. getTierLimits on those tiers likewise returned
+    // FREE. Both are fixed: the tiers resolve to their own configs.
+    it.each(['BUSINESS', 'SCALE'] as const)('getOrganizationTier honours %s', async (tier) => {
+      mockSql.mockResolvedValueOnce([{ tier }]);
+      expect(await getOrganizationTier('org-1')).toBe(tier);
+    });
+
+    it.each(['business', 'scale'] as const)('lowercase %s normalises (casing, not drift)', async (tier) => {
+      mockSql.mockResolvedValueOnce([{ tier }]);
+      expect(await getOrganizationTier('org-1')).toBe(tier.toUpperCase());
+    });
+
+    it('normalises the legacy professional alias to PRO (066), not FREE', async () => {
+      // Migration 066 retiered plan_professional -> tier='pro', but the tier
+      // CHECK still permits 'professional'. Aliasing to PRO keeps legacy rows
+      // at their real capability instead of fail-closed demotion to FREE.
+      mockSql.mockResolvedValueOnce([{ tier: 'professional' }]);
+      expect(await getOrganizationTier('org-1')).toBe('PRO');
+    });
+
+    it('reads tier via the authoritative tables (087), not the phantom `subscriptions` relation', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'business' }]);
+      await getOrganizationTier('org-1');
+      const [strings] = mockSql.mock.calls[0];
+      const query = Array.isArray(strings) ? strings.join('?') : String(strings);
+      expect(query).toContain('organization_subscriptions');
+      expect(query).toContain('subscription_plans');
+      // The pre-fix query joined `subscriptions` (no migration creates it) with
+      // status='ACTIVE' (026 stores lowercase) and selected s.tier (tier lives
+      // on subscription_plans) — it threw on EVERY call, and the catch silently
+      // demoted every org to FREE. Pin the fix so it cannot regress.
+      expect(query).not.toMatch(/JOIN\s+subscriptions\s/);
+      expect(query).not.toContain("'ACTIVE'");
+    });
+
+    it.each(['BUSINESS', 'SCALE'] as const)('getTierLimits(%s) returns its own config, not FREE', async (tier) => {
+      const limits = await getTierLimits(tier);
+      expect(limits.tier).toBe(tier);
+      expect(limits.features).toContain('ai_negotiation');
+    });
+
+    it('SCALE holds the full enterprise feature set', async () => {
+      const scale = await getTierLimits('SCALE');
+      const enterprise = await getTierLimits('ENTERPRISE');
+      expect(scale.features).toEqual(enterprise.features);
+    });
+
+    it('BUSINESS sits strictly between PRO and SCALE in capability', async () => {
+      const pro = await getTierLimits('PRO');
+      const business = await getTierLimits('BUSINESS');
+      const scale = await getTierLimits('SCALE');
+      expect(business.features.length).toBeGreaterThan(pro.features.length);
+      expect(scale.features.length).toBeGreaterThanOrEqual(business.features.length);
+      expect(business.limits.team_members).toBe(15);
+      expect(scale.limits.team_members).toBe(50);
+    });
+
+    it('a BUSINESS org can use a paid feature (not demoted)', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'BUSINESS' }]);
+      const result = await checkEntitlement('org-1', 'ai_negotiation');
+      expect(result.allowed).toBe(true);
+      expect(result.tier).toBe('BUSINESS');
+    });
+
+    it('a SCALE org can use a paid feature (not demoted)', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'SCALE' }]);
+      const result = await checkEntitlement('org-1', 'custom_branding');
+      expect(result.allowed).toBe(true);
+      expect(result.tier).toBe('SCALE');
+    });
+
+    it('a STARTER denial names BUSINESS for priority_support (first tier granting it)', async () => {
+      // priority_support first appears at BUSINESS (not PRO), so the minimum
+      // tier suggestion must be BUSINESS — proving tierOrder array #1
+      // (checkEntitlement) includes the new tiers.
+      mockSql.mockResolvedValueOnce([{ tier: 'STARTER' }]);
+      const result = await checkEntitlement('org-1', 'priority_support');
+      expect(result.allowed).toBe(false);
+      expect(result.upgradeRequired).toBe('BUSINESS');
+    });
+
+    it('bulk denial names BUSINESS for priority_support too (tierOrder array #2)', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'STARTER' }]);
+      const results = await checkEntitlements('org-1', ['priority_support']);
+      expect(results['priority_support'].allowed).toBe(false);
+      expect(results['priority_support'].upgradeRequired).toBe('BUSINESS');
+    });
+
+    it('upgrade recommendations walk PRO -> BUSINESS -> SCALE -> ENTERPRISE in order', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'PRO' }]);
+      const { currentTier, recommendations } = await getUpgradeRecommendations('org-1');
+      expect(currentTier).toBe('PRO');
+      const tiers = recommendations.map((r) => r.tier);
+      expect(tiers).toEqual(['BUSINESS', 'SCALE', 'ENTERPRISE']);
+    });
+
+    it('a SCALE org is only offered ENTERPRISE as an upgrade', async () => {
+      mockSql.mockResolvedValueOnce([{ tier: 'SCALE' }]);
+      const { recommendations } = await getUpgradeRecommendations('org-1');
+      expect(recommendations.map((r) => r.tier)).toEqual(['ENTERPRISE']);
     });
   });
 });

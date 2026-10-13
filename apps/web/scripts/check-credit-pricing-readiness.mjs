@@ -55,9 +55,17 @@ for (const tier of SEEDED_TIERS) {
   for (const action of ACTIONS) check(`080 seeds ${tier}/${action}`, have.has(`${tier}/${action}`));
 }
 for (const tier of UNPRICED_TIERS) {
-  check(`${tier} has no credit_costs rows (known gap)`, !tuples.some((t) => t.tier === tier), {
+  // `ok` = the tier IS priced. While a live tier has no credit_costs rows the
+  // check fails with block:true -> exit 2 (HOLD / BLOCKED-APPROVAL) and the
+  // per-action table above prints MISSING for every row — rates are never
+  // invented. Once the owner-approved migration seeds the rows, the block
+  // clears and the gate falls through to READY (exit 0).
+  const priced = tuples.some((t) => t.tier === tier);
+  check(`${tier} credit_costs rows`, priced, {
     block: true,
-    detail: 'owner must approve per-action rates; migration NOT applied',
+    detail: priced
+      ? 'priced from approved migration'
+      : 'KNOWN GAP — owner must approve per-action rates; migration NOT applied',
   });
 }
 
@@ -75,6 +83,14 @@ console.log('');
 
 // 2 — fail-closed code safeguards (credits.ts).
 const credits = read('src/app/api/utils/credits.ts');
+// Scan executable code, not prose: getAllCosts' docblock deliberately
+// DOCUMENTS the banned `OR tier = 'FREE'` fallback to explain why it was
+// removed (F3 history). Strip block comments and whole-line // comments so
+// that history cannot trip this guard; string literals and SQL in live code
+// are still scanned (a reintroduced fallback would be caught).
+const creditsCode = credits
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^[ \t]*\/\/.*$/gm, '');
 const tierLine = credits.split('\n').find((l) => l.includes('CREDIT_TIERS =')) || '';
 check(
   'CREDIT_TIERS mirrors exactly the 5 seeded tiers',
@@ -83,7 +99,7 @@ check(
     !tierLine.includes('PROFESSIONAL'),
   { detail: tierLine.trim().slice(0, 110) },
 );
-check("getAllCosts never unions a FREE fallback (no OR tier='FREE')", !credits.includes("OR tier = 'FREE'"));
+check("getAllCosts never unions a FREE fallback (no OR tier='FREE')", !creditsCode.includes("OR tier = 'FREE'"));
 check('getCreditCost rejects unknown tiers before SQL', credits.includes('refusing to price it at FREE'));
 check('getCreditCost throws on a missing paid-tier action row', credits.includes('no credit_costs row for'));
 check(
