@@ -248,21 +248,22 @@ export async function runGhostErrorSweep(autoFix: boolean = false): Promise<Swee
     });
   }
 
-  // 9. Messages with no lead/buyer reference
-  const orphanedMessages = await sql`
-    SELECT COUNT(*)::int as count FROM messages m
-    WHERE m.lead_id IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = m.lead_id)
-      AND NOT EXISTS (SELECT 1 FROM buyers b WHERE b.id = m.lead_id)
+  // 9. Conversations with no lead reference (defect class: phantom table)
+  // `messages` never existed in this schema — conversation records live in
+  // `ai_conversations`, whose `lead_id` column references `leads(id)`.
+  const orphanedConversations = await sql`
+    SELECT COUNT(*)::int as count FROM ai_conversations ac
+    WHERE ac.lead_id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.id = ac.lead_id)
   `.catch(() => [{ count: 0 }]);
 
-  if (orphanedMessages[0]?.count > 0) {
+  if (orphanedConversations[0]?.count > 0) {
     errors.push({
       category: 'orphan',
       severity: 'info',
-      entity: 'messages',
-      description: 'Messages referencing deleted leads/buyers',
-      count: orphanedMessages[0].count,
+      entity: 'ai_conversations',
+      description: 'Conversations referencing deleted leads',
+      count: orphanedConversations[0].count,
       autoFixable: false,
     });
   }

@@ -29,8 +29,20 @@
 //     appear — the column is `zip`. (Found the same day: the regional zip view
 //     500'd only for `?view=regional&groupBy=zipCode`, which the default probe
 //     never requests — parameter-dependent defects need parameterised probes.)
+//  4. Inside a sql template that reads `ai_conversations`, `message_type`
+//     must not appear — the column does not exist. (Defect #38: the dashboard
+//     quick-stats query filtered on `message_type = 'inbound'` and 500'd.
+//     The real columns are channel, history, status, last_message_at.)
+//  5. No sql template may reference the `messages` table — it never existed in
+//     this schema. (Defect #39: the admin stats endpoint queried `FROM messages`
+//     and `direction`, neither of which exists anywhere in db/migrations.
+//     Conversation activity is recorded in `ai_conversations`.)
+//  6. Inside a sql template that reads `leads`, `<alias>.deal_value` must not
+//     appear — the column does not exist. (Defect #44: the dashboard funnel
+//     averaged `leads.deal_value` for avg-deal-value; the real property value
+//     lives in `leads.metadata->>'propertyValue'`.)
 //
-// Both rules are static: they scan real source (tests excluded) so a broken
+// All rules are static: they scan real source (tests excluded) so a broken
 // query fails the build instead of a production 500.
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -89,6 +101,22 @@ function detect(rel: string, source: string): string[] {
       if (new RegExp(`\\b${alias}\\.zip_code\\b`).test(template)) {
         violations.push(`${rel}: leads table referenced as ${alias}.zip_code (real column: ${alias}.zip)`);
       }
+      // Rule 6: `leads.deal_value` never existed (defect #44). The real
+      // property value lives in `leads.metadata->>'propertyValue'`.
+      if (new RegExp(`\\b${alias}\\.deal_value\\b`).test(template)) {
+        violations.push(`${rel}: leads table referenced as ${alias}.deal_value (column does not exist; use metadata->>'propertyValue')`);
+      }
+    }
+    // Rule 4: `ai_conversations.message_type` never existed (defect #38).
+    // The real columns are channel, history, status, last_message_at.
+    const aiConvJoin = /(?:FROM|JOIN)\s+ai_conversations\s+([A-Za-z_]\w*)/i.exec(template);
+    if (aiConvJoin && /\bmessage_type\b/i.test(template)) {
+      violations.push(`${rel}: query over ai_conversations references message_type (column does not exist)`);
+    }
+    // Rule 5: the `messages` table has never existed in this schema (defect #39).
+    // Conversation activity is recorded in `ai_conversations`.
+    if (/\bFROM\s+messages\b/i.test(template) || /\bJOIN\s+messages\b/i.test(template)) {
+      violations.push(`${rel}: references the non-existent 'messages' table (use ai_conversations)`);
     }
   }
   return violations;
@@ -108,25 +136,46 @@ describe('schema truth - queries reference columns that exist', () => {
   it('never reads opened_at from message_events', () => {
     const hits = violations.filter((v) => v.includes('opened_at'));
     expect(hits).toEqual([]);
-  });
+    });
 
   it('never reads zip_code from leads', () => {
     const hits = violations.filter((v) => v.includes('zip_code'));
     expect(hits).toEqual([]);
   });
 
+  it('never reads message_type from ai_conversations', () => {
+    const hits = violations.filter((v) => v.includes('message_type'));
+    expect(hits).toEqual([]);
+  });
+
+  it('never references the non-existent messages table', () => {
+    const hits = violations.filter((v) => v.includes("non-existent 'messages' table"));
+    expect(hits).toEqual([]);
+  });
+
+  it('never reads deal_value from leads', () => {
+    const hits = violations.filter((v) => v.includes('deal_value'));
+    expect(hits).toEqual([]);
+  });
+
   it('flags the exact defects that shipped (regression samples)', () => {
     // The detector must still catch the production 500 shapes even though the
     // real files are now fixed — otherwise the tree scan above is vacuous.
-    const bad = detect('sample.ts', `
-      const a = sql\`SELECT * FROM leads l LEFT JOIN contracts c ON c.lead_id = l.id WHERE l.organization_id = \${o}\`;
-      const b = sql\`SELECT COUNT(*) FILTER (WHERE opened_at IS NOT NULL) FROM message_events WHERE channel = 'email'\`;
-      const c = sql\`SELECT l.zip_code as region FROM leads l WHERE l.zip_code IS NOT NULL\`;
+    const bad = detect('sample.ts', `\n
+      const a = sql\`SELECT * FROM leads l LEFT JOIN contracts c ON c.lead_id = l.id WHERE l.organization_id = \${o}\`;\n
+      const b = sql\`SELECT COUNT(*) FILTER (WHERE opened_at IS NOT NULL) FROM message_events WHERE channel = 'email'\`;\n
+      const c = sql\`SELECT l.zip_code as region FROM leads l WHERE l.zip_code IS NOT NULL\`;\n
+      const d = sql\`SELECT COUNT(*) FROM ai_conversations WHERE message_type = 'inbound'\`;\n
+      const e = sql\`SELECT COUNT(*) FROM messages WHERE direction = 'outbound'\`;\n
+      const f = sql\`SELECT AVG(l.deal_value) FROM leads l\`;\n
     `);
-    expect(bad).toHaveLength(3);
+    expect(bad).toHaveLength(6);
     expect(bad[0]).toContain('phantom column');
     expect(bad[1]).toContain('opened_at');
     expect(bad[2]).toContain('zip_code');
+    expect(bad[3]).toContain('message_type');
+    expect(bad[4]).toContain("non-existent 'messages' table");
+    expect(bad[5]).toContain('deal_value');
   });
 
   it('does not flag legitimate shapes that share the keywords', () => {
