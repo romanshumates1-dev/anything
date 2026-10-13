@@ -1,6 +1,6 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 /**
- * Proves the equipped cosmetic theme GENUINELY reaches the DOM — the fix for
+ * Proves the equipped cosmetic theme GENUINELY reaches the DOM â€” the fix for
  * the "decorative control" gap where equipping a dashboard skin / sidebar theme
  * flipped a badge but changed nothing on screen.
  *
@@ -65,7 +65,19 @@ describe('Shell applies the equipped cosmetic theme to the root container', () =
     vi.doUnmock('@/components/billing');
   });
 
-  it('sets the theme accent CSS variable on the root container', async () => {
+    it('sets the theme accent CSS variable on the root container', { testTimeout: 15_000, hookTimeout: 15_000 }, async () => {
+    // This jsdom test renders a `'use client'` Next.js component whose module graph
+    // (`next/link`, `@tanstack/react-query`, `lucide-react` icons, etc.) is large.
+    // In isolation the body runs in ~2ms, but vitest's default 5s `testTimeout`
+    // governs TOTAL wall-clock (setup + collect + environment + body), and under
+    // full-suite parallel contention the environment/collect/prepare overhead
+    // alone approaches ~4s â€” observed timing out at ~5.8s in Gate B while passing
+    // deterministically in isolation (5/5 runs, ~1.8s body). Per the project config
+    // philosophy (src/app/api/vitest.config.ts), the 5s budget is intended to catch
+    // a *hanging test body*, not irreducible environment-startup under CPU
+    // contention. Grant this one body enough headroom to stay bounded without
+    // masking a real hang: the body still completes in milliseconds, so a genuine
+    // hang here still fails fast.
     const { default: FreshShell } = await import('./Shell');
     const { container } = render(<FreshShell>child</FreshShell>);
     const root = container.querySelector('.min-h-screen') as HTMLElement;
