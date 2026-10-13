@@ -1132,4 +1132,62 @@ margin rate, because these inputs are absent from the repository:
 - **Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = EXIT 0, 0 errors.
 - **Gate B**: `vitest run --config src/app/api/vitest.config.ts` = **3545 passed | 26 skipped | 0 failed**, exit 0, 283.97s. Shell.theme timeout resolved via per-test override.
 
+### 2026-10-13 F3-entitlements completion (this session — shell runner restored, all gates run in-agent)
+
+**The defect was worse than the tier-config gap.** `getOrganizationTier` ran
+`LEFT JOIN subscriptions s ... AND s.status = 'ACTIVE'` selecting `s.tier` —
+but **no migration creates `subscriptions`** (026 created
+`organization_subscriptions`; 087 declares it authoritative), the 026 CHECK
+stores **lowercase** status (`'active'`, never `'ACTIVE'`), and **tier lives on
+`subscription_plans`**, not on subscription rows. The query therefore threw on
+**every call** and the catch returned `FREE` — silently demoting every org,
+including paying BUSINESS/SCALE customers, before the config gap even mattered.
+Fixed to the 087 sources of truth:
+
+```sql
+LEFT JOIN organization_subscriptions os
+  ON os.organization_id = o.id AND os.status IN ('active','trial')
+LEFT JOIN subscription_plans sp ON sp.id = os.plan_id
+ORDER BY os.created_at DESC   -- latest subscription row wins
+```
+
+**Tier model fixes in `apps/web/src/app/api/utils/entitlements.ts`:**
+- `SubscriptionTier` widened `FREE|STARTER|PRO|ENTERPRISE` → + `BUSINESS` + `SCALE`.
+- `DEFAULT_TIER_CONFIGS` gains BUSINESS (13 features inc. `priority_support`,
+  15 seats, 0.9× credits) and SCALE (14 features inc. `custom_branding`,
+  campaigns −1, 50 seats per 067, 0.85× credits); Enterprise remains the cap.
+- All three `tierOrder` arrays (checkEntitlement, checkEntitlements,
+  getUpgradeRecommendations) now `['FREE','STARTER','PRO','BUSINESS','SCALE','ENTERPRISE']`.
+- Legacy `professional` label (still permitted by the 066 CHECK) normalises →
+  `PRO` instead of fail-closed demotion; `planCatalog.ts` already resolves the
+  retained `plan_professional` alias to canonical `tier='pro'` rows (066).
+
+**Two tests from earlier today (committed while the shell was broken, never
+executed) were RED — both root-caused and fixed:**
+1. `check-credit-pricing-readiness.mjs`: the FREE-fallback check matched its own
+   **docblock prose** (`getAllCosts` documents the banned `OR tier='FREE'`
+   pattern); the guard now scans comment-stripped code. Worse, the HOLD
+   **polarity was inverted** — `blocks` fired only when SCALE/PROFESSIONAL rows
+   *existed*, so the gate would have exited 0 while unpriced and 2 once priced,
+   exactly backwards. Now: exit 2 (BLOCKED-APPROVAL) while unpriced → exit 0
+   (READY) once the owner-approved rows land.
+2. `seo-surface.guard.test.ts`: forbidden-origin check matched `robots.ts`'
+   **historical comment** explaining the old `dealflow.ai` bug; origin checks
+   now use `readLive()` (comment-stripped) so live references are still caught.
+
+**Fresh verification evidence (in-agent, 2026-10-13):**
+- Gate A: `tsc -p tsconfig.typecheck.json --noEmit` → **EXIT 0**.
+- Targeted: gate(3) + seo(11) + entitlements(32) = **40/40 pass**;
+  `entitlements.fail-closed.test.ts` 16 → **32 tests** (query-shape pin:
+  authoritative tables, no phantom join, no `'ACTIVE'`).
+- Gate B (full suite): **335 passed | 1 skipped files / 3569 passed |
+  26 skipped | 0 failed**, 364.41s.
+- Gate script direct: **exit 2 HOLD** — `HOLD (BLOCKED-APPROVAL): safeguards
+  hold; 2 pricing item(s) need owner rates`, table prints `SCALE=MISSING` /
+  `PROFESSIONAL=MISSING`, rates never invented.
+
+**Owner items unchanged:** approve SCALE per-action rates (professional fate),
+then rollout option A/B/C.
+
+
 

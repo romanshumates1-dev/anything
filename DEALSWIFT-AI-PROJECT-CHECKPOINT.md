@@ -850,6 +850,13 @@ fix (probe 2026-10-07: 104 routes / 0 faults).
 ## RECENT COMMITS
 
 ```
+8c62e50  fix(billing): honour BUSINESS/SCALE in entitlements + repair phantom `subscriptions` query
+         → getOrganizationTier now reads 087 authoritative tables (was: nonexistent table,
+         uppercase status, wrong tier column — threw EVERY call and demoted ALL orgs to FREE);
+         32/32 entitlements tests; ALSO fixes 5ba8cfa/6e5dd97 tests that shipped red while the
+         shell was broken (gate HOLD polarity inverted + prose scan; SEO comment scan)
+6e5dd97  test(seo): pin sitemap/robots/origin single-source-of-truth (SEO-1 audit)
+5ba8cfa  feat(billing): add offline credit-pricing rollout gate + regression test; record 30-row seed fix and SCALE pricing decision
 71252d0  test(migrations): fix stale counts in run-migrations guard after stripTrailingComment
 638c7c3  feat(gamification): season standings UI + API + tenant-isolated org standings
 aa7864f  feat(gamification): write season XP through an idempotency ledger (migration 100)
