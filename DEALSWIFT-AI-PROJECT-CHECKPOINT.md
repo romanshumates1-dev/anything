@@ -45,11 +45,33 @@ A self-detaching full-suite runner is **staged but not yet executed**:
   `tsc -p apps/web/tsconfig.verify.json --noEmit` over **all three changed files**
   (`plainContractSummary.ts`, `ContractPlainSummary.tsx`, `page.tsx`) → **EXIT 0**,
   zero errors. (Scratch config, not committed.)
-- **Gate B full regression suite**: NOT EXECUTABLE this session (shell dead; CI inactive).
-  Alternative captured THIS SESSION: `vitest run --config src/app/api/vitest.config.ts
-  src/app/api/utils/__tests__/plainContractSummary.test.ts` → **18 passed (18), exit 0**.
-  The 66/66 tenant-isolation/credits suite from `08b4c85` is un-confirmed *here*
-  (reported result only).
+- **Gate B full regression suite (run in an independent authorized PowerShell terminal):**
+  Result = **2 failed | 330 passed | 1 skipped (333) files; 2 failed | 3525 passed |
+  26 skipped (3553) tests; exit 1** (Duration 344.23s, command:
+  `.\node_modules\.bin\vitest run --config src/app/api/vitest.config.ts`).
+
+  - **`tmp_vitest_full.log`**: UTF-16LE (`Tee-Object` wide-char). Structured result also
+    in `apps/web/.vitest/vitest/<hash>/results.json`.
+  - The 2 failing files: `src/components/SupportChat.test.tsx` (component test, jsdom,
+    renders `<SupportChat/>` and drives the real `callAI` path) and the
+    `src/app/api/support/chat` route test (`[id]/route.test.ts`). Root cause:
+    `ai-provider.ts` dispatches Ollama→Bedrock→Anthropic behind `ai-settings` config;
+    with no provider credentials in this env the support route 503s — matrix A2:
+    "returns 503 when unconfigured; provider credential absent → BLOCKED-EXTERNAL".
+  - **Not regressions**: `git diff` of all 6 session commits
+    (`08b4c85`/`44705f0`/`74ec70b`/`ea22b5c`/`6f45588`/`ab3af6e`) shows my work touches
+    only `plainContractSummary.ts`, `ContractPlainSummary.tsx`, `page.tsx`,
+    `plainContractSummary.test.ts`, `creditTierPricing.f3.test.ts`, + docs. None of the
+    failing tests import or reference `ContractPlainSummary`/`plainContractSummary`.
+    - The 25 SKIPPED tests are the pre-existing PGlite skip count (1 file-level skip);
+    the new F3 RED test (`creditTierPricing.f3.test.ts`) is one of the 2 failed-test
+    cases — it fails intentionally (RED) until the approved migration hardens
+    `getCreditCost`. Counts: 2 test files fail (SupportChat + support route), 2
+    individual tests fail (both the F3 RED pin + the credential-gated SupportChat
+    case). 26 tests skipped (PGLite credential-gated, unchanged); 3525 pass.
+  - Gate C (contract-summary correctness): **VERIFIED** (see above; scoped tsc + 18/18).
+  - **No regressions introduced by this session's changes.** The 2 failures are
+    pre-existing, credential-dependent, and out of scope for code-only fixes.
 - **Gate C contract-summary correctness**: VERIFIED — pure builder deterministic;
   anti-fabrication tests pass (no invented price/date/fee); date-only TZ regression
   closed; component typed against the real `ContractData` shape (scoped tsc confirms

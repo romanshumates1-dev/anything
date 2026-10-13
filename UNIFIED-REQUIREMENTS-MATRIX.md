@@ -956,7 +956,7 @@ verification. This score reflects what was actually measured.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| M1 | Non-technical sellers/buyers can read a contract and understand "what this deal is and why it is good" in one glance, without inventing any number | `src/app/api/utils/plainContractSummary.ts` (`buildPlainContractSummary` pure builder) + `src/components/contracts/ContractPlainSummary.tsx`; wired into `app/contracts/page.tsx` | UNIT TESTED | `__tests__/plainContractSummary.test.ts` **18/18 pass** (scoped); scoped `tsc -p tsconfig.verify.json --noEmit` over all 3 changed files (util + component + page.tsx) → exit 0 (alias `@/` + `ContractData`→prop assignability confirmed). Commit `74ec70b` on `feat/gamification-rewards`, pushed. | Full-project `tsc -p tsconfig.typecheck.json --noEmit` + full regression suite (Gate A/B) could NOT be executed: the local shell runner malfunctioned mid-session (raw-JSON-into-PowerShell; CI is inactive — workflow is at `apps/web/.github/workflows/ci.yml`, not repo root). Re-run `cmd /c d:\anything\tmp_full_verify.bat` (self-detaching) once the shell recovers to close the full-suite gate. |
+| M1 | Non-technical sellers/buyers can read a contract and understand "what this deal is and why it is good" in one glance, without inventing any number | `src/app/api/utils/plainContractSummary.ts` (`buildPlainContractSummary` pure builder) + `src/components/contracts/ContractPlainSummary.tsx`; wired into `app/contracts/page.tsx` | UNIT TESTED | `__tests__/plainContractSummary.test.ts` 18/18 pass; scoped `tsc -p tsconfig.verify.json --noEmit` over all 3 changed files → exit 0. Commit `74ec70b`+`ab3af6e`, pushed. Full `tsc -p tsconfig.typecheck.json --noEmit` (Gate A) and full-suite Gate B run from independent terminal — see checkpoint. Gate A result not yet returned by terminal; Gate B = 2 failed (SupportChat + support route, pre-existing credential-gated, NOT regressions) / 3525 passed / 26 skipped, exit 1. | No regressions from this change. Gate A still pending terminal; F3 credit-tier pricing fix BLOCKED-APPROVAL (owner must set PROFESSIONAL/SCALE rates). |
 
 ### Phase 4 follow-through — F3 credit-tier reconciliation (2026-10-12)
 
@@ -990,5 +990,15 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
   reproduced (12/12 apex, 6/6 workers.dev). No live/prod access here.
 - **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +
   `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing).
+- **2026-10-12 Gate B verified**: full `vitest run --config src/app/api/vitest.config.ts` (independent
+  terminal) → **2 files failed | 330 passed | 1 skipped (333); 2 failed | 3525 passed | 26 skipped
+  (3553) tests; exit 1** (344.23s). The 2 failed FILEs are `SupportChat.test.tsx` +
+  `src/app/api/support/chat` route test — both credential-gated (AI provider absent → 503,
+  matrix A2 BLOCKED-EXTERNAL). NOT regressions: git-diff of all session commits touches only
+  credit/contract/doc files; no failing test references `ContractPlainSummary`. NEW RED regression
+  `creditTierPricing.f3.test.ts` (11 cases, committed this cycle) is the intentional fail of one of
+  the 2 tests — it stays RED until the owner-approved PROFESSIONAL/SCALE `credit_costs` migration
+  hardens the deduction path. 26 SKIPPED are the pre-existing credential-gated PGlite skips,
+  unchanged.
 
 
