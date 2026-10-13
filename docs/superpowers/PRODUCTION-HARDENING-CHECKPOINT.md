@@ -3,6 +3,69 @@
 **Purpose:** single resume point for this mission. A new session must read this
 first and must NOT redo completed work.
 
+## 2026-10-12 — Dashboard analytics tenant-isolation hardening (commit 08b4c85)
+
+Findings F2/F3/F4 (multi-tenant analytics test-gap review) closed on branch
+`feat/gamification-rewards`. All work IMPLEMENTED + TESTED locally; NOT yet
+DEPLOYED and NOT PRODUCTION-VERIFIED (see frozen blockers below).
+
+Root causes + fixes (all in `apps/web/src/app/api/utils/`):
+- **F2 — `getDashboardNextActions` query #2** (`dashboardSlices.ts`): the
+  "Conversations requiring human escalation" query had lost its
+  `AND c.requires_human = TRUE` predicate, so it returned the 5 most recent
+  conversations for ANY lead in the org and labelled each "AI needs assistance".
+  Query #1 (hotLeads) still carried it, so the two were inconsistent. Restored
+  the predicate. requires_human is the one authoritative escalation signal on the
+  row (no classification column exists), matching engagements/query #1.
+- **Campaigns join hardening — `getCampaigns`**: the `LEFT JOIN campaign_leads`
+  was not pinned to the org. Added `AND cl.organization_id = ${orgId}` in the ON
+  clause (LEFT JOIN preserved so zero-lead campaigns still return). This is the
+  guard migration 042 introduced `campaign_leads.organization_id` for.
+- **F3 — `getAllCosts` / `getCredits`** (`credits.ts` + `dashboardSlices.ts`):
+  `getAllCosts` served an unknown/drifted tier entirely at FREE prices with no
+  error (`WHERE tier=$1 OR tier='FREE'`). `subscription_plans.tier` has drifted
+  ('professional' in 035, 'scale' in 067) with NO `credit_costs` rows, so a real
+  customer could be silently mispriced. `getAllCosts` now validates the tier
+  against the authoritative `CREDIT_TIERS` set (FREE/STARTER/PRO/BUSINESS/
+  ENTERPRISE) and THROWS for an unknown tier. `getCredits` catches that and
+  degrades to balance+history with an EMPTY cost table (loudly logged) instead of
+  500-ing or inventing FREE prices. `getCreditCost` (singular) keeps its
+  documented per-action FREE fallback, unchanged. Known-tier pricing preserved.
+
+Files changed (6):
+- `dashboardSlices.ts` (F2 + campaigns join + getCredits graceful degradation)
+- `credits.ts` (CREDIT_TIERS + isKnownCreditTier + getAllCosts validation)
+- `__tests__/dashboardSlices.multitenant.pglite.test.ts` (NEW, 16 tests)
+- `__tests__/creditsPipeline.multitenant.pglite.test.ts` (NEW, 11 tests)
+- `__tests__/getCredits.tierResilience.test.ts` (NEW, 3 tests)
+- `__tests__/credits.test.ts` (F3 tier-validation cases)
+
+Test evidence (real PGlite Postgres, two seeded orgs):
+- dashboardSlices.multitenant: **16/16** — funnel/weeklyProgress/activity/
+  nextActions/campaigns never leak Org B into Org A; F2 + campaigns-join-pin are
+  RED-proven (temporarily reverting each made the specific test fail:
+  `expected 2 to be 1` and `expected 3 to be 2` respectively) then restored.
+  Includes a negative-control block proving the tenant predicate is load-bearing.
+- creditsPipeline.multitenant: **11/11** — real `getBalanceDetails` /
+  `getTransactionHistory` / `getPipelineStatus` isolated per org (balance,
+  transactions, pending-action counts, lastRun status, stage-health error rate).
+- getCredits.tierResilience: **3/3** — known tier prices; drifted tier
+  ('scale'/'professional') -> no throw, balance preserved, costs empty, no FREE
+  substitution.
+- credits.test.ts: **23/23** (incl. 3 new F3 tier-validation cases).
+- Combined affected suites: **66/66**.
+- typecheck (`tsc -p tsconfig.typecheck.json --noEmit`): **0 errors**.
+- oxlint on changed files: **0 errors**, 5 warnings — all pre-existing
+  (`validateAmount` param in credits.ts + unused imports in credits.test.ts),
+  none introduced by this change.
+
+Not done (do NOT claim production fixed): no deploy run; no live `/api/credits`
+round-trip against a real drifted-tier org; homepage G2 500 root cause still
+unconfirmed; Stripe live webhook still untested. Those remain BLOCKED-EXTERNAL.
+
+
+first and must NOT redo completed work.
+
 ## Repo state
 - branch: `feat/cloudflare-workers`
 - last commit: see `git log --oneline -1`
