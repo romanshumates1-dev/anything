@@ -767,7 +767,14 @@ export async function getDashboardNextActions(orgId: string): Promise<{ actions:
     });
   }
 
-  // 2. Conversations requiring human escalation
+  // 2. Conversations requiring human escalation.
+  // F2 (regression-tested): this query lost its `AND c.requires_human = TRUE`
+  // predicate, so it returned the 5 most recent conversations for ANY lead in
+  // the org and labelled every one "AI needs assistance". Query #1 (hotLeads)
+  // still carried the predicate, so the two were inconsistent. Restored so the
+  // escalation label only appears for conversations that genuinely require a
+  // human. requires_human is the one authoritative escalation signal on the row
+  // (there is no classification column), matching engagements/query #1.
   const humanRequired = await sql`
     SELECT
       l.id,
@@ -777,7 +784,7 @@ export async function getDashboardNextActions(orgId: string): Promise<{ actions:
     FROM ai_conversations c
     JOIN leads l ON l.id = c.lead_id
     WHERE l.organization_id = ${orgId}
-
+      AND c.requires_human = TRUE
     ORDER BY c.created_at DESC
     LIMIT 5
   `;
@@ -905,13 +912,19 @@ export interface CampaignSliceRow {
  * with no filtering at all.
  */
 export async function getCampaigns(orgId: string): Promise<CampaignSliceRow[]> {
+  // Tenant-isolation: `campaigns` is org-filtered in WHERE, and the
+  // `campaign_leads` join is additionally pinned to the same org in the ON
+  // clause. migration 042 added `campaign_leads.organization_id` precisely so a
+  // lead-roster join "can never be queried unscoped even if a future call site
+  // forgets the join to campaigns" — this is that guard. ON-clause (not WHERE)
+  // so a LEFT JOIN still returns campaigns that currently have zero leads.
   return (await sql`
     SELECT
       c.*,
       COUNT(cl.id) AS member_count,
       COUNT(cl.id) FILTER (WHERE cl.status = 'sent') AS sent_count
     FROM campaigns c
-    LEFT JOIN campaign_leads cl ON cl.campaign_id = c.id
+    LEFT JOIN campaign_leads cl ON cl.campaign_id = c.id AND cl.organization_id = ${orgId}
     WHERE c.organization_id = ${orgId}
     GROUP BY c.id
     ORDER BY c.created_at DESC
@@ -954,10 +967,26 @@ export async function getCredits(
   const subscription = await getSubscriptionStatus(orgId);
   const tier = subscription?.tier || 'free';
 
-  const [balanceDetails, costs] = await Promise.all([
+  // getAllCosts fails CLOSED for a tier that has no credit_costs rows (F3): it
+  // throws rather than silently serving FREE prices. subscription_plans.tier has
+  // drifted over time ('professional' in 035, 'scale' in 067) and those labels
+  // have no cost rows, so a real customer can be on such a plan. We must not
+  // crash the whole credits payload (the balance card would 500) and must not
+  // invent prices — so a tier error degrades to "no costs shown", loudly logged,
+  // while balance + history still render. Known tiers are unaffected.
+  let costs: Record<string, number>;
+  const [balanceDetails, costResult] = await Promise.all([
     getBalanceDetails(orgId),
-    getAllCosts(tier),
+    getAllCosts(tier).catch((err) => {
+      console.error(
+        `[CREDITS] No pricing for tier "${tier}" (org ${orgId}); serving balance without a cost table:`,
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    }),
   ]);
+
+  costs = (costResult ?? {}) as Record<string, number>;
 
   const payload: CreditsPayload = {
     balance: balanceDetails.balance,

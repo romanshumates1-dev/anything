@@ -21,6 +21,8 @@ import {
   getBalanceDetails,
   getCreditCost,
   getAllCosts,
+  isKnownCreditTier,
+  CREDIT_TIERS,
   hasEnoughCredits,
   canAffordAction,
   deductCredits,
@@ -227,6 +229,50 @@ describe('Credit System', () => {
       expect(costs.SMS_SEND).toBe(3);
       expect(costs.EMAIL_SEND).toBe(1);
       expect(costs.AI_REQUEST).toBe(5);
+    });
+  });
+
+  // F3: an unknown tier must NOT be silently priced at FREE.
+  describe('getAllCosts — tier validation (F3)', () => {
+    it('recognises every seeded credit tier (case-insensitive)', () => {
+      for (const tier of CREDIT_TIERS) {
+        expect(isKnownCreditTier(tier)).toBe(true);
+        expect(isKnownCreditTier(tier.toLowerCase())).toBe(true);
+      }
+    });
+
+    it('throws for an unknown tier instead of returning FREE pricing', async () => {
+      // subscription_plans.tier has drifted ('professional' in 025, 'scale' in
+      // 067) and those labels have NO credit_costs rows. Before the fix,
+      // getAllCosts('professional') ran `WHERE tier=$1 OR tier='FREE'`, matched
+      // only FREE, and returned FREE prices with no error — a silently wrong
+      // price for a paid plan.
+      await expect(getAllCosts('professional')).rejects.toThrow(/Unknown subscription tier/i);
+      await expect(getAllCosts('scale')).rejects.toThrow(/Unknown subscription tier/i);
+      await expect(getAllCosts('')).rejects.toThrow(/Unknown subscription tier/i);
+      await expect(getAllCosts('GARBAGE_TIER')).rejects.toThrow(/refusing to price it at FREE/i);
+      // sql must never be reached for an invalid tier.
+      expect(sql).not.toHaveBeenCalled();
+    });
+
+    it('preserves legitimate FREE, PRO, and ENTERPRISE pricing (no substitution)', async () => {
+      // Each known tier is priced by its OWN rows; FREE only fills an action
+      // the specific tier has not defined. Verify the query is issued with the
+      // requested (uppercased) tier and the documented FREE fallback.
+      (sql as any).mockResolvedValue([{ action: 'SMS_SEND', cost: 2 }]);
+      const enterprise = await getAllCosts('enterprise');
+      expect(enterprise.SMS_SEND).toBe(2);
+      // sql is a tagged-template mock: mock.calls[0] is the args array, whose
+      // [0] is the strings array and whose later slots are interpolated values.
+      const callArgs = (sql as any).mock.calls[0];
+      expect(String(callArgs[0])).toContain('credit_costs');
+      const passedValues = callArgs.slice(1);
+      expect(passedValues).toContain('ENTERPRISE'); // uppercased, not 'enterprise'
+
+      (sql as any).mockClear();
+      (sql as any).mockResolvedValue([{ action: 'SMS_SEND', cost: 5 }]);
+      const free = await getAllCosts('FREE');
+      expect(free.SMS_SEND).toBe(5);
     });
   });
 

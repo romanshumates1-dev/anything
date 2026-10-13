@@ -190,10 +190,44 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
 }
 
 /**
+ * The authoritative set of subscription tiers that have credit-cost rows.
+ *
+ * This mirrors the tiers seeded into `credit_costs` (migration 080:
+ * FREE/STARTER/PRO/BUSINESS/ENTERPRISE). It is deliberately NOT the set of
+ * `subscription_plans.tier` values — that table has drifted over time
+ * ('professional' in 025, 'scale' in 067) and those labels have no
+ * `credit_costs` rows. Pricing an unknown tier must FAIL, not silently fall
+ * back to FREE (see getAllCosts).
+ */
+export const CREDIT_TIERS = ['FREE', 'STARTER', 'PRO', 'BUSINESS', 'ENTERPRISE'] as const;
+export type CreditTier = (typeof CREDIT_TIERS)[number];
+
+/** True when `tier` (any case) is a tier that has credit costs defined. */
+export function isKnownCreditTier(tier: string): boolean {
+  return (CREDIT_TIERS as readonly string[]).includes(tier.toUpperCase());
+}
+
+/**
  * Get all credit costs for a specific tier.
+ *
+ * F3: an unknown/unexpected tier used to fall through `WHERE tier = $1 OR
+ * tier = 'FREE'` and be served entirely at FREE prices with no error — a
+ * silently wrong price. The tier is now validated FIRST (before the try, so the
+ * catch below cannot swallow it): a tier outside {@link CREDIT_TIERS} throws and
+ * the caller surfaces the misconfiguration instead of displaying FREE pricing
+ * for a paid plan. Known tiers keep their exact prices, and a known tier that is
+ * merely missing a row for one action still falls back to FREE for THAT action
+ * only — that per-action fallback is intentional and unchanged.
  */
 export async function getAllCosts(tier: string): Promise<Record<CreditAction, number>> {
   const normalizedTier = tier.toUpperCase();
+
+  if (!isKnownCreditTier(normalizedTier)) {
+    throw new Error(
+      `[CREDITS] Unknown subscription tier "${tier}" — refusing to price it at FREE. ` +
+        `Known tiers: ${CREDIT_TIERS.join(', ')}.`,
+    );
+  }
 
   try {
     const rows = await sql`
