@@ -6,6 +6,57 @@ project state. A new model inherits state from here and from
 
 ---
 
+## SESSION UPDATE — 2026-10-13 (post-verification: pricing decision, rollout gate, row-count fix)
+
+Branch `feat/gamification-rewards`, HEAD `90d85146` (one docs commit past reported
+`4382e52`, pushed, no remote drift). Working tree clean of feature changes.
+
+### Row-count fix (verified, not fabricated)
+- The 080 seed is **30 rows (5 tiers x 6 actions)**, not 45. Verified by regex
+  count over `080_credit_system.sql:45-87`. Fixed here and in MATRIX Priority-3
+  table. The new gate test pins `tuples.length === 30`.
+
+### Priority 1 — Pricing decision (BLOCKED-APPROVAL; no rates invented)
+- `professional` ($249, 035) was re-aliased by 066 to tier=`pro`; 067 set Pro to
+  $399 and seeded `plan_scale` at $2,499. Pricing page renders only
+  free/starter/pro/business/scale — `professional` is defunct.
+- Real live gap is SCALE only: no `credit_costs` rows; fail-closed (HTTP 402,
+  deducted:0, PRICING_NOT_CONFIGURED, no ledger write).
+- Recommendation: Option A (explicit SCALE rows, idempotent INSERT, mirror 080)
+  once owner approves 6 rates. Option B (SCALE→BUSINESS inheritance) overcharges
+  — interim only with sign-off. Option C (fail-closed) is current safe default.
+- Owner items: (1) prod `SELECT count(*) FROM credit_costs` baseline (075
+  documented ABORTED — prod may be frozen at 074); (2) live plan prices (066 vs
+  067 Pro conflict); (3) exact 6 SCALE rates; (4) `professional` fate; (5) A/B/C.
+- Margin rates NOT computable from repo data (no provider unit costs, no
+  allowance→action mapping, no usage distributions). Assumptions kept separate;
+  nothing invented.
+
+### Priority 2 — Rollout gate (script = checklist; NOT executed here)
+- New `apps/web/scripts/check-credit-pricing-readiness.mjs` (offline: no
+  DB/network/secrets): verifies 080 matrix, CREDIT_TIERS mirror, no FREE-union,
+  getCreditCost throws, PRICING_NOT_CONFIGURED path, creditGuard 402 mapping,
+  pricing-page scope, 067 plan_scale price. Exits 0 READY / 1 defect / 2 HOLD.
+- Safe sequence: baselines → approve rates → land seed → gate READY → deploy
+  code+DB together → staging billing checks (never real balances).
+- Terminal run: `node apps/web/scripts/check-credit-pricing-readiness.mjs`
+  (expect exit 2, BLOCKED lines for SCALE/PROFESSIONAL).
+
+### Priority 3 — Next actionable work (this session)
+- New `apps/web/scripts/check-credit-pricing-readiness.test.ts` under the
+  existing vitest gate: pins 30-row matrix, asserts gate exits 2/HOLD with
+  MISSING markers, proves gate reaches READY/exit 0 on a fully-priced fixture.
+- Terminal: `npx vitest run --config src/app/api/vitest.config.ts scripts/check-credit-pricing-readiness.test.ts`
+- Pricing migration itself NOT created/applied — awaiting owner rates.
+
+### Priority 4 — Status
+- Earlier: Gate A exit 0, Gate B 3545/26/0 exit 0 (terminal evidence, in MATRIX).
+- This session: docs + 2 new files, uncommitted pending. No behavior change, no
+  prod changes, no migrations run. Shell runner still broken (recorded).
+- Still blocked: SCALE rates (APPROVAL), homepage G2 (no live access), Stripe
+  live webhook (missing secrets).
+
+---
 ## SESSION UPDATE â€” 2026-10-12 (contract-summary delivery + F3 credit-tier investigation)
 
 Branch `feat/gamification-rewards`. `git fetch` confirms **no remote drift** â€” all
@@ -84,7 +135,7 @@ anything:
 
 ### Priority 3 — Professional / Scale pricing (decision pending owner approval)
 - ⚠️ **Data-quality finding (verified, not fabricated):** the repo does **NOT** have a single coherent "Professional $249 / Scale $2,499" pricing story. Migration `035` seeded `plan_professional` at $249 (tier=`professional`); migration `066` **superseded and re-aliased** it (lines 154-161: `plan_professional` → tier=`pro`, $79, "alias for pro"). Migration `067` then set `plan_pro` to **$399** and seeded `plan_scale` at **$2,499**. So: (a) the `professional` tier label is **defunct** (aliased to `pro`), corroborated by the pricing page querying `WHERE tier IN ('free','starter','pro','business','scale')` — `professional` is never rendered; (b) `066` ($79 Pro) and `067` ($399 Pro) **conflict** on the live Pro price. Fuller conflict table + six-action matrix in `UNIFIED-REQUIREMENTS-MATRIX.md` §Priority 3.
-- `080_credit_system.sql` (lines 45-87) seeds `credit_costs` for **exactly 5 tiers × 6 actions = 45 rows**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. Values read verbatim:
+- `080_credit_system.sql` (lines 45-87) seeds `credit_costs` for **exactly 5 tiers × 6 actions = 30 rows**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. Values read verbatim:
   - SMS_SEND: FREE=5, STARTER=4, PRO=3, BUSINESS=2, ENTERPRISE=2
   - EMAIL_SEND: 2, 2, 1, 1, 1
   - AI_REQUEST: 10, 8, 5, 4, 3

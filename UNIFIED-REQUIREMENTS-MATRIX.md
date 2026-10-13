@@ -1022,7 +1022,7 @@ in chronological order:
 | `066_chatgpt_style_pricing` | free/starter/**pro**/business/enterprise | $0/$29/**$79**/$199/custom | **Supersedes 035.** Lines 154-161: **re-aliases `plan_professional` → tier=`pro`, $79** ("alias for pro"). Adds overage rates in cents. |
 | `067_value_based_pricing` | free/starter/pro/business/**scale**/enterprise | $0/$129/**$399**/$899/**$2,499**/custom | **Diverges from 066:** Pro $79→$399, Business $199→$899. Seeds `plan_scale` ($2,499). Does NOT seed `plan_professional` (066 aliased it to `plan_pro`). |
 | `075_free_tier_and_usage_limits` | — | — | **Documented as ABORTED** (lines 33-48): constraint DROP/ADD raised `violated by some row` because live DB held `pro/business/scale` rows. Comment: "aborted the entire migration chain here (075) — which is why 080-086 (the credit system) never applied" on the live DB. Local/test DB converges to the 7-tier superset; production may be frozen at 074. |
-| `080_credit_system` | — | — | Seeds `credit_costs` for **5 tiers only**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE` (45 rows). **No `SCALE` or `PROFESSIONAL` rows.** |
+| `080_credit_system` | — | — | Seeds `credit_costs` for **5 tiers only**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE` (**30 rows**: 5 tiers × 6 actions). **No `SCALE` or `PROFESSIONAL` rows.** |
 
 **Current effective `subscription_plans` state (local DB, post-101):** `plan_free
 ($0), plan_starter ($129), plan_pro ($399), plan_business ($899), plan_scale
@@ -1106,6 +1106,21 @@ margin rate, because these inputs are absent from the repository:
 4. **Decide `professional` tier fate:** drop it from the CHECK, or confirm it
    should be a separately-priced tier (it is currently a defunct alias of `PRO`).
 5. **Choose rollout option** (A / B / C) and authorize deployment.
+
+### 2026-10-13 post-verification update
+- 080 seed corrected to **30 rows** (was "45" in one draft line). Gate script
+  `apps/web/scripts/check-credit-pricing-readiness.mjs` (offline rollout
+  checklist, exits 0/1/2) + regression test
+  `apps/web/scripts/check-credit-pricing-readiness.test.ts` added this session
+  (uncommitted pending). Pricing migration NOT created/applied — BLOCKED-APPROVAL.
+- Fail-closed protections preserved and GREEN (prior cycle): unknown tier +
+  missing paid-tier action row + DB error never become FREE pricing;
+  `deductCreditsForAction` returns `PRICING_NOT_CONFIGURED` + deducted:0;
+  `creditGuard` maps to clean 402. Dashboard degrades to `costs:{}`.
+- Real live gap is SCALE only ($2,499/mo); `professional` is defunct (066 alias).
+  Owner items: prod credit_costs baseline, live plan prices, 6 SCALE rates,
+  professional fate, rollout option A/B/C.
+
 
 ### Verification (final, 2026-10-12 cycle)
 - **Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = EXIT 0, 0 errors.
