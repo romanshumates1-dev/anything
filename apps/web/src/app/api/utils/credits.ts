@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Credit System Utilities
  *
  * Manages platform credits for outreach operations.
@@ -54,7 +54,7 @@ export interface DeductResult {
   deducted: number;
   transactionId?: string;
   insufficientCredits?: boolean;
-  errorCode?: 'INSUFFICIENT_CREDITS' | 'OVERFLOW' | 'INVALID_AMOUNT' | 'DUPLICATE' | 'INTERNAL_ERROR';
+  errorCode?: 'INSUFFICIENT_CREDITS' | 'OVERFLOW' | 'INVALID_AMOUNT' | 'DUPLICATE' | 'INTERNAL_ERROR' | 'PRICING_NOT_CONFIGURED';
 }
 
 /**
@@ -144,10 +144,19 @@ export async function getBalanceDetails(organizationId: string): Promise<CreditB
  * F3-hardened contract (see DEALSWIFT-AI-PROJECT-CHECKPOINT.md §Phase 4):
  * - An UNKNOWN or UNMAPPED tier (e.g. the real paid plans 'professional' and
  *   'scale', which have subscription_plans rows but no credit_costs rows) THROWS
- *   immediately. It must never silently price at FREE — that would undercharge
- *   paying orgs and corrupt the billing ledger (metadata.cost).
- * - For a KNOWN tier that simply lacks a row for this one action, a per-action
- *   FREE fallback is allowed (intentional, matches getAllCosts semantics).
+ *   immediately, before any SQL. It must never silently price at FREE — that
+ *   would undercharge paying orgs and corrupt the billing ledger (metadata.cost).
+ * - A KNOWN tier that lacks a row for a specific action:
+ *   - PAID tiers (any tier != 'FREE') THROW (fail-closed). Silently pricing the
+ *     missing action at the FREE rate would undercharge a paying org and write a
+ *     wrong (FREE) price into metadata.cost via deductCreditsForAction.
+ *   - The FREE tier falls back to its own (floor) rate constant — this can never
+ *     undercharge a paying customer (the FREE tier costs the FREE rate by definition).
+ * - A pricing DB failure THROWS so it can never silently produce a price.
+ *
+ * Callers: canAffordAction and deductCreditsForAction both propagate this throw
+ * as a fail-closed result (creditGuard.checkCredits / withCreditDeduction
+ * translate it to a clean 402 / 409), so no wrong amount is ever debited.
  */
 export async function getCreditCost(action: CreditAction, tier: string): Promise<number> {
   const normalizedTier = tier.toUpperCase();
@@ -159,8 +168,20 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
     );
   }
 
+  // FREE-tier escape hatch: the FREE rate is the pricing floor. A missing seed
+  // row for the FREE tier still resolves to the FREE rate — this can never
+  // undercharge a paying customer (FREE tiers cost the FREE rate by definition).
+  const defaultCosts: Record<CreditAction, number> = {
+    SMS_SEND: 5,
+    EMAIL_SEND: 2,
+    AI_REQUEST: 10,
+    AI_NEGOTIATION: 25,
+    CONTRACT_GENERATE: 15,
+    LEAD_FIND: 3,
+  };
+
   try {
-    // Exact tier match for the requested action.
+    // Authoritative per-tier rate for this action.
     const [result] = await sql`
       SELECT cost
       FROM credit_costs
@@ -172,33 +193,30 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
       return result.cost;
     }
 
-    // Per-action FREE fallback for a known tier that is merely missing this one row.
-    const [fallback] = await sql`
-      SELECT cost
-      FROM credit_costs
-      WHERE action = ${action}
-        AND tier = 'FREE'
-    `;
-
-    if (fallback) {
-      return fallback.cost;
+    // A known tier is missing its row for this specific action.
+    if (normalizedTier !== 'FREE') {
+      // For a PAID tier, silently substituting the FREE rate would undercharge a
+      // paying customer and write a wrong (FREE) price into the billing ledger
+      // (metadata.cost) via deductCreditsForAction. FAIL CLOSED: throw so
+      // canAffordAction / deductCreditsForAction surface the misconfiguration
+      // instead of debiting a wrong amount. This is the Priority-2 invariant —
+      // a missing paid-tier action row must NEVER silently become FREE pricing.
+      throw new Error(
+        `[CREDITS] Known tier "${normalizedTier}" has no credit_costs row for ` +
+          `action "${action}" — refusing to price at FREE (would undercharge a paid org). ` +
+          `Seed the row or set a per-action tier rate.`,
+      );
     }
 
-    // Last-resort constant only if the DB itself is empty of this action.
-    const defaultCosts: Record<CreditAction, number> = {
-      SMS_SEND: 5,
-      EMAIL_SEND: 2,
-      AI_REQUEST: 10,
-      AI_NEGOTIATION: 25,
-      CONTRACT_GENERATE: 15,
-      LEAD_FIND: 3,
-    };
-
-    return defaultCosts[action] ?? 10;
+    // FREE tier: a missing seed row resolves to the FREE rate (the correct floor
+    // price for this tier) so free-tier usage is never blocked by seed drift.
+    return defaultCosts[action] ?? 5;
   } catch (error) {
-    // A pricing-system DB failure must not silently produce a price; throw so
-    // callers (canAffordAction / deductCreditsForAction) fail loud instead of
-    // debiting a wrong amount.
+    // Re-throw our own pricing failures so callers fail closed; for any other DB
+    // error, wrap and throw rather than silently returning a (FREE) price.
+    if (error instanceof Error && error.message.startsWith('[CREDITS]')) {
+      throw error;
+    }
     console.error('[CREDITS] Failed to get cost:', error);
     throw new Error(
       `[CREDITS] getCreditCost unavailable for action "${action}" tier "${tier}": ${error instanceof Error ? error.message : String(error)}`,
@@ -227,14 +245,20 @@ export function isKnownCreditTier(tier: string): boolean {
 /**
  * Get all credit costs for a specific tier.
  *
- * F3: an unknown/unexpected tier used to fall through `WHERE tier = $1 OR
- * tier = 'FREE'` and be served entirely at FREE prices with no error — a
- * silently wrong price. The tier is now validated FIRST (before the try, so the
- * catch below cannot swallow it): a tier outside {@link CREDIT_TIERS} throws and
- * the caller surfaces the misconfiguration instead of displaying FREE pricing
- * for a paid plan. Known tiers keep their exact prices, and a known tier that is
- * merely missing a row for one action still falls back to FREE for THAT action
- * only — that per-action fallback is intentional and unchanged.
+ * F3-hardened:
+ * - An UNKNOWN/UNMAPPED tier (e.g. 'professional'/'scale', which have
+ *   subscription_plans rows but no credit_costs rows) THROWS immediately. It
+ *   must never fall through `WHERE tier = $1 OR tier = 'FREE'` and be served
+ *   entirely at FREE prices (a silently wrong price for a paid plan). The tier
+ *   is validated FIRST, before any SQL, so the catch below cannot swallow it.
+ * - A KNOWN tier is priced by its OWN rows only. The query no longer unions
+ *   tier = 'FREE' to fill gaps: a missing action for a paid tier is OMITTED from
+ *   the returned map, NEVER silently back-filled with the FREE rate (consistent
+ *   with getCreditCost, which throws that same case). The dashboard renderer
+ *   (dashboardSlices.getCredits) already .catch()es this and degrades to
+ *   "no costs shown" — it never receives a misleading FREE price for a paid plan.
+ * - A pricing DB failure THROWS (it no longer returns a FREE default), so a
+ *   pricing outage never silently prices a paid plan at FREE.
  */
 export async function getAllCosts(tier: string): Promise<Record<CreditAction, number>> {
   const normalizedTier = tier.toUpperCase();
@@ -247,33 +271,35 @@ export async function getAllCosts(tier: string): Promise<Record<CreditAction, nu
   }
 
   try {
+    // Query this tier's OWN rows only. We deliberately do NOT union tier = 'FREE'
+    // to fill gaps: silently substituting FREE prices for a paid tier's missing
+    // action would underprice the dashboard display and contradict getCreditCost
+    // (which throws the same case). A missing action is simply omitted from the
+    // returned map — the dashboard renders only what is actually priced.
     const rows = await sql`
       SELECT action, cost
       FROM credit_costs
       WHERE tier = ${normalizedTier}
-         OR tier = 'FREE'
-      ORDER BY tier DESC
+      ORDER BY action
     `;
 
     const costs: Record<string, number> = {};
     for (const row of rows) {
-      // Later rows (FREE) won't overwrite earlier rows (specific tier)
-      if (!(row.action in costs)) {
-        costs[row.action] = row.cost;
-      }
+      costs[row.action] = row.cost;
     }
 
     return costs as Record<CreditAction, number>;
   } catch (error) {
+    // A pricing-system DB failure must not silently produce FREE prices.
+    // Re-throw so dashboardSlices.getCredits (which .catch()es this) degrades to
+    // "no costs shown" — consistent with the billing path, never a silent FREE price.
+    if (error instanceof Error && error.message.startsWith('[CREDITS]')) {
+      throw error;
+    }
     console.error('[CREDITS] Failed to get all costs:', error);
-    return {
-      SMS_SEND: 5,
-      EMAIL_SEND: 2,
-      AI_REQUEST: 10,
-      AI_NEGOTIATION: 25,
-      CONTRACT_GENERATE: 15,
-      LEAD_FIND: 3,
-    };
+    throw new Error(
+      `[CREDITS] getAllCosts unavailable for tier "${tier}": ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -547,7 +573,24 @@ export async function deductCreditsForAction(
   metadata?: Record<string, unknown>,
   idempotencyKey?: string
 ): Promise<DeductResult> {
-  const cost = await getCreditCost(action, tier);
+    let cost: number;
+  try {
+    // A missing/unmapped tier or a missing paid-tier action row makes
+    // getCreditCost THROW (fail-closed). Never silently debit at a wrong price.
+    cost = await getCreditCost(action, tier);
+  } catch (error) {
+    console.error(
+      `[CREDITS] Pricing unavailable for action "${action}" tier "${tier}" ` +
+        `(org ${organizationId}); blocking deduction:`,
+      error instanceof Error ? error.message : error,
+    );
+    return {
+      success: false,
+      remainingBalance: await getBalance(organizationId),
+      deducted: 0,
+      errorCode: 'PRICING_NOT_CONFIGURED',
+    };
+  }
   const actionDescription = description || `${action} operation`;
 
   // Generate idempotency key if not provided but action has a unique reference

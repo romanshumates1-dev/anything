@@ -95,25 +95,69 @@ describe('Credit System', () => {
       expect(sql).not.toHaveBeenCalled();
     });
 
-    it('falls back to FREE only for a KNOWN tier missing that one action row', async () => {
-      // PRO is a known tier; if its row for SMS_SEND is absent, the per-action
-      // FREE fallback is intentional and allowed (does not apply to unmapped tiers).
-      (sql as any)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ cost: 5 }]);
+        it('FAILS CLOSED (throws) for a known PAID tier missing that action row', async () => {
+      // PRO is a paid tier with credit_costs rows in production (migration 080),
+      // but if seed drift leaves it missing a row for an action, pricing must NOT
+      // silently fall back to the FREE rate — that would undercharge a paying org
+      // and write a wrong (FREE) price into the billing ledger (metadata.cost).
+      // It must reject so canAffordAction/deductCreditsForAction surface the
+      // misconfiguration instead of debiting a wrong amount.
+      (sql as any).mockReset();
+      (sql as any).mockResolvedValueOnce([]); // PRO row for SMS_SEND absent
 
-      const cost = await getCreditCost('SMS_SEND', 'PRO');
-      expect(cost).toBe(5);
+      await expect(getCreditCost('SMS_SEND', 'PRO')).rejects.toThrow(
+        /no credit_costs row for action/i,
+      );
+      // The FREE fallback query must NOT be issued for a paid tier.
+      expect((sql as any).mock.calls.length).toBe(1);
     });
 
-    it('returns default cost if nothing in database', async () => {
-      (sql as any)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([]);
+    it('returns the FREE rate (never a paid-tier rate) when the FREE tier row is missing', async () => {
+      // The FREE tier is the floor: a missing seed row still resolves to the FREE
+      // rate constant. This can never undercharge a paying customer (the FREE
+      // tier costs the FREE rate by definition), so it is safe and intentional.
+      // Only the FREE tier gets this escape hatch — every other tier throws above.
+      (sql as any).mockReset();
+      (sql as any).mockResolvedValueOnce([]); // FREE row for SMS_SEND absent
 
-      const cost = await getCreditCost('SMS_SEND', 'PRO');
+      const cost = await getCreditCost('SMS_SEND', 'FREE');
+      expect(cost).toBe(5); // FREE-tier SMS rate
+    });
 
-      expect(cost).toBe(5); // Default SMS cost
+    it('throws on a pricing database error (never silently returns a price)', async () => {
+      // A DB failure while pricing must FAIL LOUD, not silently default to a
+      // (FREE) price that could undercharge a paying org.
+      (sql as any).mockReset();
+      (sql as any).mockRejectedValueOnce(new Error('connection refused'));
+
+      await expect(getCreditCost('SMS_SEND', 'PRO')).rejects.toThrow(/getCreditCost unavailable/i);
+    });
+
+    it('propagates a pricing failure through canAffordAction (fail-closed at the affordability check)', async () => {
+      // A known paid tier missing its action row must surface as a pricing error
+      // through canAffordAction — it must NOT reach the affordability math as a
+      // silently-FREE cost (which would let an underpriced action proceed).
+      (sql as any).mockReset();
+      (sql as any).mockResolvedValue([]); // getCreditCost exact match -> empty -> PRO throws
+
+      await expect(canAffordAction(TEST_ORG_ID, 'SMS_SEND', 'PRO')).rejects.toThrow(
+        /no credit_costs row for action/i,
+      );
+    });
+
+    it('deductCreditsForAction fails closed (success=false) on missing paid-tier pricing', async () => {
+      // The live deduction path must never silently debit a FREE price to a paid
+      // org. When getCreditCost cannot price the action, deductCreditsForAction
+      // surfaces a controlled failure (no credit movement, no 500) so callers
+      // that check .success (creditGuard.withCreditDeduction, jobs) see a safe,
+      // billable-blocked result instead of an uncaught throw.
+      (sql as any).mockReset();
+      (sql as any).mockResolvedValue([]); // getCreditCost exact match -> empty -> PRO throws
+
+      const result = await deductCreditsForAction(TEST_ORG_ID, 'SMS_SEND', 'PRO', 'test deduction');
+      expect(result.success).toBe(false);
+      expect(result.deducted).toBe(0);
+      expect(result.errorCode).toBe('PRICING_NOT_CONFIGURED');
     });
   });
 
@@ -274,9 +318,10 @@ describe('Credit System', () => {
     });
 
     it('preserves legitimate FREE, PRO, and ENTERPRISE pricing (no substitution)', async () => {
-      // Each known tier is priced by its OWN rows; FREE only fills an action
-      // the specific tier has not defined. Verify the query is issued with the
-      // requested (uppercased) tier and the documented FREE fallback.
+            // Each known tier is priced by its OWN rows only — FREE does NOT fill gaps
+      // for a paid tier (a missing action is omitted, not silently priced at FREE,
+      // which would understate the price vs. the billing logic). Verify the query
+      // is issued with the requested (uppercased) tier.
       (sql as any).mockResolvedValue([{ action: 'SMS_SEND', cost: 2 }]);
       const enterprise = await getAllCosts('enterprise');
       expect(enterprise.SMS_SEND).toBe(2);
@@ -289,8 +334,38 @@ describe('Credit System', () => {
 
       (sql as any).mockClear();
       (sql as any).mockResolvedValue([{ action: 'SMS_SEND', cost: 5 }]);
-      const free = await getAllCosts('FREE');
+            const free = await getAllCosts('FREE');
       expect(free.SMS_SEND).toBe(5);
+    });
+
+    it('does not silently price a paid tier at FREE for a missing action row', async () => {
+      // getAllCosts must serve a paid tier by its OWN rows only. A missing action
+      // is omitted from the map, NOT back-filled with the FREE rate, so the
+      // dashboard never shows a misleadingly low price for a paying plan.
+      (sql as any).mockReset();
+      (sql as any).mockResolvedValue([
+        { action: 'SMS_SEND', cost: 3 }, // only PRO's SMS row present
+      ]);
+
+      const costs = await getAllCosts('PRO');
+      expect(costs.SMS_SEND).toBe(3);
+      expect(costs.EMAIL_SEND).toBeUndefined(); // missing, NOT silently FREE
+      expect(costs.AI_REQUEST).toBeUndefined();
+
+      // The query must not union in tier = 'FREE'.
+      const callArgs = (sql as any).mock.calls[0];
+      expect(String(callArgs[0])).not.toContain("tier = 'FREE'");
+      expect(String(callArgs[0])).not.toContain("tier='FREE'");
+    });
+
+    it('throws on a pricing database error (never silently returns a FREE default)', async () => {
+      // A pricing DB failure must FAIL LOUD. The dashboard (dashboardSlices.getCredits)
+      // already .catch()es this and degrades to "no costs shown" — but it must never
+      // silently serve FREE prices for a paid plan.
+      (sql as any).mockReset();
+      (sql as any).mockRejectedValueOnce(new Error('shard unavailable'));
+
+      await expect(getAllCosts('PRO')).rejects.toThrow(/getAllCosts unavailable/i);
     });
   });
 

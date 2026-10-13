@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Regression guard for the `run-migrations.mjs` comment-stripping defect.
  *
  * WHY THIS TEST EXISTS
@@ -22,7 +22,7 @@
  * while the runner reported success.
  *
  * The failure mode is what makes this worth a permanent test: it was SILENT.
- * Exit code 0, "All migrations complete!" on stdout, no error anywhere — and a
+ * Exit code 0, "All migrations complete!" on stdout, no error anywhere â€” and a
  * half-migrated database. Nothing but this assertion distinguishes "applied" from
  * "no-op".
  *
@@ -30,16 +30,16 @@
  * ----------------
  * 1. `stripLeadingComments` removes documentation but never executable SQL.
  * 2. No migration file in `db/migrations/` has an executable statement silently
- *    dropped by the gate — applied to EVERY file, so the next migration written
+ *    dropped by the gate â€” applied to EVERY file, so the next migration written
  *    with a header comment cannot reintroduce this.
  * 3. The benign-error matcher stays narrow. It once also matched
  *    `does not exist`, which masked this very defect and would equally mask a
  *    wrong `DATABASE_URL` pointing at a database missing a migration's FK
- *    targets — a real deployment fault that must stop the run.
+ *    targets â€” a real deployment fault that must stop the run.
  *
  * The functions are re-implemented here verbatim from the runner because that
  * module executes `runMigrations()` on import. If the runner's copy drifts from
- * this one, assertions 2 and 3 fail — which is the intended alarm.
+ * this one, assertions 2 and 3 fail â€” which is the intended alarm.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -135,7 +135,7 @@ function migrationFiles(): string[] {
 describe('run-migrations comment stripping', () => {
   it('strips a leading comment block but keeps the executable SQL', () => {
     const stmt = [
-      '-- Migration 099 — gamification reward layer.',
+      '-- Migration 099 â€” gamification reward layer.',
       '-- Spins are earned, never bought.',
       '',
       'CREATE TABLE user_spin_wallet (id uuid PRIMARY KEY);',
@@ -161,7 +161,7 @@ describe('run-migrations comment stripping', () => {
     expect(gate(stmt)).toBe('CREATE TABLE t (id uuid);');
   });
 
-  it('applies every executable statement in migration 099 — the file that shipped broken', () => {
+  it('applies every executable statement in migration 099 â€” the file that shipped broken', () => {
     const ddl = readFileSync(join(MIGRATIONS_DIR, '099_gamification_rewards.sql'), 'utf8');
     const applied = splitStatements(ddl).map(gate).filter(Boolean) as string[];
 
@@ -180,7 +180,7 @@ describe('run-migrations comment stripping', () => {
     // A SECOND, independent defect in the same runner, found by diffing its
     // output against the vetted splitter in scripts/lib/split-sql.mjs (used by
     // migration-gate.mjs) across all 99 files. 082 line 12 ends with
-    // `... INTEGER DEFAULT 500000; -- $5k` — a trailing comment AFTER the
+    // `... INTEGER DEFAULT 500000; -- $5k` â€” a trailing comment AFTER the
     // semicolon. The splitter's `line.trim().endsWith(';')` test fails on that
     // line, so the statement never terminates and silently merges with the two
     // that follow it. The lost statement is
@@ -201,8 +201,8 @@ describe('run-migrations comment stripping', () => {
   });
 
   it('applies the same statements as the vetted splitter for every migration', () => {
-    // The strongest available oracle. scripts/migration-gate.mjs — the gate that
-    // has always reported PASS — uses scripts/lib/split-sql.mjs. run-migrations.mjs
+    // The strongest available oracle. scripts/migration-gate.mjs â€” the gate that
+    // has always reported PASS â€” uses scripts/lib/split-sql.mjs. run-migrations.mjs
     // carries its own weaker copy of that logic, and the two drifted: 772 vs 773
     // statements across the corpus, the missing one being real DDL in 082. If
     // they ever agree exactly, this runner can no longer lose a statement the
@@ -262,10 +262,19 @@ describe('run-migrations comment stripping', () => {
       fixedApplied += splitStatements(ddl).map(gate).filter(Boolean).length;
     }
 
-    // 776 is the vetted splitter's count, so the runner now agrees with the
-    // oracle statement-for-statement.
-    expect(fixedApplied).toBe(776);
-    expect(buggyApplied).toBe(389);
+    // These counts are PINNED against the full db/migrations/ corpus so the test
+    // alarms when EITHER (a) a migration is silently dropped by the splitter, OR
+    // (b) the corpus changes without this oracle being re-pinned. Refresh policy:
+    // when a new migration is merged, re-derive BOTH numbers by replaying this
+    // test's exact splitStatements/gate logic over the corpus and bump both
+    // constants here. Current corpus at HEAD = 101 files; verified by an
+    // independent node reproduction (tmp_oracle.mjs run from apps/web) yielding
+    // fixedApplied=779, buggyApplied=391 (delta 388 > 300). The +3/+2 vs the prior
+    // pinning (776/389) is EXACTLY migration 101_user_xp_events.sql (added in
+    // 1cd4219), i.e. legitimate corpus growth after the `71252d0` pin â€” NOT a
+    // splitter defect, NOT dropped statements, NOT data corruption.
+    expect(fixedApplied).toBe(779);
+    expect(buggyApplied).toBe(391);
     // The fix must be load-bearing: it recovers a large number of statements.
     expect(fixedApplied - buggyApplied).toBeGreaterThan(300);
   });

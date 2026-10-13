@@ -975,28 +975,52 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
   unmapped tier. Its two call sites are both internal to `credits.ts` and both
   billing-relevant, not display-only:
   1. `canAffordAction` (credits.ts:280) — the real-time affordability check.
-  2. **`deductCreditsForAction` (credits.ts:533) — the live credit-deduction path.**
+  2. **`deductCreditsForAction` (credits.ts:557) — the live credit-deduction path.**
   So a paying `scale`/`professional` org was **undercharged on live usage** (charged the FREE
   surcharge), and that underprice was written to the ledger (`metadata.cost`).
-  **Safe remediation applied (no rates invented):** `getCreditCost` now validates the tier
-  via `isKnownCreditTier` BEFORE any SQL — an unknown/unmapped tier THROWS
-  (`[CREDITS] Unknown subscription tier … refusing to price it at FREE`), so it can no
-  longer FREE-fall-back; `canAffordAction`/`deductCreditsForAction` propagate the rejection
-  (fail-closed at the debit boundary). Known tiers missing one action row still get an
-  intentional per-action FREE fallback. Existing test at credits.test.ts:81-89 updated to
-  assert the throw (was asserting the FREE fallback).
+  **Safe remediation applied (no rates invented — 2026-10-12 follow-through):**
+  `getCreditCost` now validates the tier via `isKnownCreditTier` BEFORE any SQL — an
+  unknown/unmapped tier THROWS (`[CREDITS] Unknown subscription tier … refusing to price it
+  at FREE`), so it can no longer FREE-fall-back; `canAffordAction`/`deductCreditsForAction`
+  propagate the rejection (fail-closed at the debit boundary). **Additionally, the residual
+  per-action FREE fallback for a KNOWN PAID tier that is merely missing one action row was
+  closed:** `getCreditCost` (credits.ts:188) now THROWS for `normalizedTier !== 'FREE'` with
+  no row, instead of substituting the FREE rate — which would still undercharge a paying org
+  and write a wrong (FREE) `metadata.cost`. Only the FREE tier keeps the escape hatch
+  (resolving to its own floor-rate constant, which is correct by definition and can never
+  undercharge a paying customer). `getAllCosts` (credits.ts:273) no longer unions
+  `tier = 'FREE'` to fill gaps — a missing action is omitted from the cost map, and DB errors
+  now THROW (the dashboard caller `getCredits` already .catch()es this and degrades to
+  `costs:{}`). `creditGuard.checkCredits` translates the pricing throw into a clean
+  `allowed:false` (surfacing as a 402 via `requireCredits`) instead of a 500 for the real-time
+  affordability path, and `deductCreditsForAction` returns `success:false` with
+  `errorCode:'PRICING_NOT_CONFIGURED'` + `deducted:0` (no credit movement) instead of
+  throwing into `.success`-checking callers (`creditGuard.withCreditDeduction`, `jobs`).
+  Regression pins added: `credits.test.ts` now has GREEN fail-closed assertions for (a) a
+  known PAID tier missing an action row, (b) a DB error while pricing, (c)
+  `canAffordAction` propagation, (d) `deductCreditsForAction` fail-closed result, and (e)
+  `getAllCosts` never unioning `tier='FREE'` + throwing on DB error.
 - **Safe migration (BLOCKED-APPROVAL — NOT implemented):** idempotent migration seeding
   `credit_costs` for `PROFESSIONAL` & `SCALE` at owner-approved per-unit rates. With the
   harden in place, until those rows exist every billable action for a `professional`/`scale`
-  org fails closed (throws at the debit boundary) instead of underbilling — safe failure,
-  no silent revenue loss; free-tier and known tiers unaffected. Failing-test-first pin
-  (`creditTierPricing.f3.test.ts`, now GREEN off the harden) is committed; no production
-  balances modified; no non-authoritative mapping invented. Billing-owner sign-off on
-  per-unit rates required.
-- **Homepage G2**: unchanged — DIAGNOSABLE (matrix G2); root cause unmeasured; not
-  reproduced (12/12 apex, 6/6 workers.dev). No live/prod access here.
-- **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +
-  `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing).
+  org fails closed at the debit boundary (throws, no silent revenue loss); free-tier and
+  known tiers unaffected. Decision table below. Billing-owner sign-off on per-unit rates
+  required.
+
+### Priority 3 — Professional / Scale rate decision table (verified, no values invented)
+
+| Action | FREE | STARTER | PRO | BUSINESS | ENTERPRISE | PROFESSIONAL | SCALE |
+|---|---|---|---|---|---|---|---|
+| SMS_SEND | 5 | 4 | 3 | 2 | 2 | **MISSING** | **MISSING** |
+| EMAIL_SEND | 2 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** |
+| AI_REQUEST | 10 | 8 | 5 | 4 | 3 | **MISSING** | **MISSING** |
+| AI_NEGOTIATION | 25 | 20 | 12 | 10 | 8 | **MISSING** | **MISSING** |
+| CONTRACT_GENERATE | 15 | 12 | 8 | 6 | 5 | **MISSING** | **MISSING** |
+| LEAD_FIND | 3 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** |
+
+The seeded `credit_costs` rows (migration `080_credit_system.sql`, lines 45-87) cover **exactly 5 tiers × 6 actions = 45 rows** for `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`; the numeric values above are read verbatim from the migration and are the authoritative source of truth (none invented here). The `PROFESSIONAL` and `SCALE` tiers have **no** rows in `credit_costs` whatsoever (confirmed by the fail-closed assertions: `getCreditCost`/`getAllCosts` throw for these tiers). The idempotent migration proposal (seed PRO/SCALE rates) is **BLOCKED-APPROVAL: NOT applied** — exact rates are for the billing owner to set (see `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` §Priority 3 decisions).
+
+**Operational effect of leaving PROFESSIONAL/SCALE unpriced:** until the owner approves and seeds per-action rates, every billable action (SMS/email/AI/contract/lead) for a `professional` ($249/mo) or `scale` ($2,499/mo) org **fails closed**: the action is refused with `errorCode: PRICING_NOT_CONFIGURED` (HTTP 402 at the API layer via `creditGuard`), `deducted: 0`, and the error is logged. No credit is moved, no wrong (FREE) price is written to `metadata.cost`, and free-tier/PRO/ENTERPRISE/BUSINESS/STARTER orgs are unaffected. The dashboard renders balance + history with `costs: {}` rather than misleading prices.
 - **2026-10-12 Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = 0 errors (verified
   by your terminal).
 - **2026-10-12 Gate B (fresh full run, post F3 harden)**: `1 failed | 3539 passed | 26

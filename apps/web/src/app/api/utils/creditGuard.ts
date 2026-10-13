@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Credit Guard - Middleware for credit checks
  *
  * Provides utilities for checking and deducting credits
@@ -36,8 +36,27 @@ export async function checkCredits(
   const subscription = await getSubscriptionStatus(organizationId);
   const tier = subscription?.tier || 'free';
 
-  // Check if can afford
-  const { canAfford, cost, balance } = await canAffordAction(organizationId, action, tier);
+  // getCreditCost fails closed for unmapped/paid tiers missing a price row (F3).
+  // canAffordAction propagates that throw â€” translate it into a pricing error here
+  // so API routes return a clean 402/409 instead of an uncaught 500.
+  let canAfford: boolean;
+  let cost: number;
+  let balance: number;
+  try {
+    ({ canAfford, cost, balance } = await canAffordAction(organizationId, action, tier));
+  } catch (error) {
+    console.error(
+      `[CREDITS] Pricing unavailable for ${action} at tier "${tier}" (org ${organizationId}); blocking.`,
+      error instanceof Error ? error.message : error,
+    );
+    return {
+      allowed: false,
+      cost: 0,
+      balance: 0,
+      tier,
+      error: `Pricing is not configured for your plan ("${tier}"). Upgrade your plan or contact support to perform ${action}.`,
+    };
+  }
 
   if (!canAfford) {
     return {

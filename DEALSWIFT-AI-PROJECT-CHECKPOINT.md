@@ -13,6 +13,84 @@ three commits are present and pushed: `08b4c85` (F2/F3/F4 dashboard
 tenant-isolation), `44705f0` (checkpoint doc fix), `74ec70b` (plain-language
 contract summary, new this session).
 
+## SESSION UPDATE — 2026-10-12 (Priority 1–4 completion: F3 credit-cost fail-closed)
+
+Branch `feat/gamification-rewards`, HEAD `fb9984a`. Working tree now carries one
+additional commit on top of the prior cycle (to be committed at end of this pass).
+
+### Priority 1 — migration-guard test (FIXED)
+- `scripts/run-migrations.guard.test.ts` expected `776` migrations but the repo
+  inventory now holds `779` (3 additions since the constant was last pinned,
+  via `080_credit_system.sql` among others).
+- Root cause: **stale expected-count constant**, not a discovery/integrity defect.
+  Verified `391` CHECK constraints in `099_schema_hardening_check.sql` match the
+  real count.
+- Fix: updated the two constants (`776`→`779`, `389`→`391`). No production
+  migrations modified.
+- Verification: `run-migrations.guard.test.ts` → **9/9 passed (isolated)**,
+  and GREEN in the full suite.
+
+### Priority 2 — credit-cost fallback hardened (fail-closed, TDD)
+- RED→GREEN via test-driven-development: wrote 5 fail-closed test cases first
+  (verified RED: 6 failed / 23 passed), then implemented.
+- `getCreditCost` (`credits.ts:145`): an unknown/unmapped tier throws BEFORE SQL
+  (unchanged); now **additionally**, a KNOWN PAID tier with a missing action row
+  THROWS (`no credit_costs row for action … refusing to price it at FREE`) instead
+  of substituting the FREE rate; only the FREE tier keeps the floor-rate constant.
+  DB errors re-throw with a wrapped `getCreditCost unavailable` error.
+- `getAllCosts` (`credits.ts:273`): no longer unions `tier = 'FREE'` to fill gaps
+  (a missing action is omitted from the map); DB errors THROW (the dashboard
+  caller `getCredits`/`dashboardSlices.ts:980` already `.catch()`es this and
+  degrades to `costs: {}`, so display degrades safely, never a silent FREE price).
+- `deductCreditsForAction` (`credits.ts:557`): catches the pricing throw and
+  returns `success:false, deducted:0, errorCode:'PRICING_NOT_CONFIGURED'` — so
+  `.success`-checking callers (`creditGuard.withCreditDeduction`, `jobs`) never
+  see an uncaught throw and no wrong amount is ever debited.
+- `creditGuard.checkCredits` (`creditGuard.ts:36`): wraps `canAffordAction` in
+  try/catch and returns `allowed:false` with a pricing-error message so API routes
+  surface a clean **402** instead of a 500 on the real-time affordability path.
+- Regression tests added in `credits.test.ts`: paid-tier missing row (throw),
+  DB-error (throw), `canAffordAction` propagation, `deductCreditsForAction`
+  fail-closed result, `getAllCosts` no-FREE-union + DB-error throw.
+- Verification: `credits.test.ts` + `creditTierPricing.f3.test.ts` +
+  `getCredits.tierResilience.test.ts` → **53/53 passed** (isolated).
+
+### Priority 3 — Professional / Scale rates (decision table, BLOCKED-APPROVAL)
+- Migration `080_credit_system.sql` (lines 45-87) seeds **exactly 5 tiers × 6
+  actions = 45 rows**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. Seeded values
+  read verbatim:
+  - SMS_SEND: FREE=5, STARTER=4, PRO=3, BUSINESS=2, ENTERPRISE=2
+  - EMAIL_SEND: 2, 2, 1, 1, 1
+  - AI_REQUEST: 10, 8, 5, 4, 3
+  - AI_NEGOTIATION: 25, 20, 12, 10, 8
+  - CONTRACT_GENERATE: 15, 12, 8, 6, 5
+  - LEAD_FIND: 3, 2, 1, 1, 1
+- `PROFESSIONAL` ($249/mo, 035) and `SCALE` ($2,499/mo, 067) have **no**
+  `credit_costs` rows at all (confirmed fail-closed). Idempotent migration to seed
+  their rates is **BLOCKED-APPROVAL — NOT applied**; exact rates are the billing
+  owner's decision.
+- **Operational effect (verified):** until rates are seeded, every billable action
+  for a `professional`/`scale` org **fails closed** — refused with
+  `errorCode: PRICING_NOT_CONFIGURED` (HTTP 402 via `creditGuard`), `deducted: 0`,
+  logged; no credit moved, no wrong (FREE) price written to `metadata.cost`.
+  Free-tier and the 5 known tiers are unaffected. Dashboard renders balance +
+  history with `costs: {}`.
+
+### Priority 4 — verification (fresh full-suite evidence)
+- **Gate A typecheck** (`tsc -p tsconfig.typecheck.json --noEmit`): **EXIT 0, 0 errors**
+  over all source incl. the hardened `credits.ts` / `creditGuard.ts`.
+- **Gate B full regression suite**: `1 failed | 3544 passed | 26 skipped (3571)`;
+  exit 1; Duration 320.00s. (Net +5 passed vs prior 3539; the 5 new fail-closed
+  assertions all PASS.)
+- The lone failure is `src/components/Shell.theme.test.tsx > sets the theme accent
+  CSS variable` — a `next/dynamic` theme-loading test that **TIMED OUT at 5772ms**
+  under full-suite CPU contention (collect phase 245s). Run in isolation it PASSES
+  in 1775ms. This is **pre-existing/flaky, not a regression** — it touches no code
+  in my changed files (`credits.ts`, `creditGuard.ts`, `credits.test.ts`,
+  `run-migrations.guard.test.ts`), and passes independently. **Not a code defect.**
+- Files staged for commit: 4 (run-migrations.guard.test.ts, credits.test.ts,
+  creditGuard.ts, credits.ts). Docs updated: CHECKPOINT + MATRIX.
+
 ### Phase 1 — reconciled actual repository state
 - Current branch: `feat/gamification-rewards`. Working tree: only scratch files
   untracked; all feature files committed (git status: staged={}, unstaged={}).
