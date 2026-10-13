@@ -2,9 +2,11 @@
 /**
  * check-credit-pricing-readiness.mjs — billing-readiness rollout gate (F3 follow-through).
  *
- * Verifies from live repo sources only (no DB, no network, no secrets):
+  * Verifies from live repo sources only (no DB, no network, no secrets):
  *  1. `db/migrations/080_credit_system.sql` seeds exactly 30 `credit_costs` rows
- *     (5 tiers x 6 actions) and holds NO professional/scale rows (the known gap).
+ *     (5 tiers x 6 actions) and holds NO SCALE rows (the known gap). PROFESSIONAL
+ *     is intentionally absent — it is a deprecated alias retiered to PRO by
+ *     migration 066 and normalised at runtime in entitlements.ts:getOrganizationTier.
  *  2. `src/app/api/utils/credits.ts` fail-closed safeguards: CREDIT_TIERS mirrors
  *     the 5 seeded tiers; getAllCosts never unions a FREE fallback; getCreditCost
  *     rejects unknown tiers + missing paid-tier action rows before any debit;
@@ -15,7 +17,7 @@
  *     never the defunct 'professional' label.
  *  5. `067_value_based_pricing.sql` seeds plan_scale at $2,499/mo (249900c).
  *
- * Exit codes: 0 = rollout-ready (safeguards hold AND scale/professional priced);
+  * Exit codes: 0 = rollout-ready (safeguards hold AND scale priced);
  * 1 = code-safeguard defect (fix code first); 2 = safeguards hold but pricing is
  * incomplete (BLOCKED-APPROVAL — owner must set per-action rates; never invent them).
  *
@@ -30,7 +32,14 @@ const read = (rel) => readFileSync(join(appRoot, rel), 'utf8');
 
 const ACTIONS = ['SMS_SEND', 'EMAIL_SEND', 'AI_REQUEST', 'AI_NEGOTIATION', 'CONTRACT_GENERATE', 'LEAD_FIND'];
 const SEEDED_TIERS = ['FREE', 'STARTER', 'PRO', 'BUSINESS', 'ENTERPRISE'];
-const UNPRICED_TIERS = ['PROFESSIONAL', 'SCALE'];
+// SCALE is a live tier (pricing page renders it, migration 067 seeds plan_scale
+// at $2,499/mo) but has NO credit_costs rows — genuine unpriced gap.
+// PROFESSIONAL is a deprecated alias: migration 066 retiered plan_professional to
+// tier='pro' and entitlements.ts normalises 'PROFESSIONAL'→'PRO' at runtime, so
+// the application never queries credit_costs for 'professional'. PRO (and its
+// credit_costs rows) is already in SEEDED_TIERS above. Including PROFESSIONAL here
+// would produce a false-positive BLOCK forever — do NOT add it.
+const UNPRICED_TIERS = ['SCALE'];
 
 const failures = [];
 const blocks = [];

@@ -20,9 +20,12 @@
  * 1. The 080 seed matrix: exactly 30 rows, 5 tiers × 6 actions, SCALE and
  *    PROFESSIONAL absent.
  * 2. The gate script exits 2 (HOLD / BLOCKED-APPROVAL) on the current repo:
- *    safeguards hold, but SCALE + PROFESSIONAL are unpriced, so the owner must
- *    approve per-action rates before any pricing migration is seeded. Its stdout
- *    prints the verbatim per-action table with MISSING — never an invented rate.
+ *    safeguards hold, but SCALE (the only live tier with unpriced credit_costs)
+ *    needs owner approval for per-action rates before any pricing migration is
+ *    seeded. PROFESSIONAL is NOT blocked - it is a deprecated alias normalised to
+ *    PRO at runtime (migration 066 + entitlements.ts:getOrganizationTier), and
+ *    PRO already has credit_costs rows. Its stdout prints the verbatim per-action
+ *    table with MISSING for unpriced tiers - never an invented rate.
  * 3. The gate exits 0 (READY) against a fully-priced fixture tree — proving the
  *    gate opens once the owner approves rates and the migration lands, not stuck
  *    red forever. (Fixture costs are placeholders used ONLY to exercise the gate
@@ -75,20 +78,29 @@ describe('credit-pricing rollout gate (F3)', () => {
     expect([...have].some((k) => k.startsWith('SCALE/') || k.startsWith('PROFESSIONAL/'))).toBe(false);
   });
 
-  it('exits 2 (HOLD / BLOCKED-APPROVAL): safeguards hold, Scale/Professional unpriced', () => {
+    it('exits 2 (HOLD / BLOCKED-APPROVAL): safeguards hold, SCALE unpriced', () => {
     const { code, out } = runGate(SCRIPT);
     expect(code).toBe(2);
-    expect(out).toContain('BLOCKED-APPROVAL');
+    expect(out).toContain('HOLD (BLOCKED-APPROVAL)');
+    // PROFESSIONAL is a deprecated alias normalised to PRO — it must NOT
+    // appear as a BLOCKED line. Only SCALE (a live tier with no costs) blocks.
+    expect(out).not.toContain('BLOCKED PROFESSIONAL');
+    expect(out).toContain('BLOCKED SCALE');
     // Per-action table printed with honest MISSING markers, never invented rates.
     expect(out).toContain('SMS_SEND:');
     expect(out).toContain('SCALE=MISSING');
+    // PROFESSIONAL=MISSING is expected in the table (the DB has no row for it),
+    // but it is NOT a block — the app normalises PROFESSIONAL→PRO which IS priced.
     expect(out).toContain('PROFESSIONAL=MISSING');
     // Known tiers priced from their own rows (verbatim 080 values).
     expect(out).toContain('FREE=5');
     expect(out).toContain('ENTERPRISE=2');
+    // HOLD message should reference 1 pricing item (SCALE only), not 2.
+    expect(out).toContain('1 pricing item(s)');
+    expect(out).not.toContain('2 pricing item');
   });
 
-  it('reaches READY (exit 0) once SCALE + PROFESSIONAL rows exist — gate opens after approval', () => {
+    it('reaches READY (exit 0) once SCALE rows exist — gate opens after approval', () => {
     const dir = join(tmpdir(), `pricing-gate-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
     try {
       // Mirror the exact relative layout the gate reads from its app root.
@@ -99,16 +111,12 @@ describe('credit-pricing rollout gate (F3)', () => {
       mkdirSync(srcUtilsDir, { recursive: true });
       mkdirSync(marketingDir, { recursive: true });
 
-      // 080 + synthetic post-approval rows (placeholder costs ONLY to exercise
-      // the gate; never shipped, never asserted as correct prices).
+      // 080 + synthetic post-approval SCALE rows (placeholder costs ONLY to exercise
+      // the gate; never shipped, never asserted as correct prices). PROFESSIONAL
+      // rows are intentionally omitted — the alias is normalised to PRO at
+      // runtime, so adding PROFESSIONAL credit_costs rows would be a no-op.
       const seedSrc = readFileSync(SEED, 'utf8');
       const fixtureRows = [
-        "  ('SMS_SEND', 'PROFESSIONAL', 3),",
-        "  ('EMAIL_SEND', 'PROFESSIONAL', 1),",
-        "  ('AI_REQUEST', 'PROFESSIONAL', 5),",
-        "  ('AI_NEGOTIATION', 'PROFESSIONAL', 12),",
-        "  ('CONTRACT_GENERATE', 'PROFESSIONAL', 8),",
-        "  ('LEAD_FIND', 'PROFESSIONAL', 1),",
         "  ('SMS_SEND', 'SCALE', 2),",
         "  ('EMAIL_SEND', 'SCALE', 1),",
         "  ('AI_REQUEST', 'SCALE', 3),",
@@ -121,8 +129,8 @@ describe('credit-pricing rollout gate (F3)', () => {
           'ON CONFLICT (action, tier) DO UPDATE SET cost = EXCLUDED.cost;',
           `ON CONFLICT (action, tier) DO NOTHING;\nINSERT INTO credit_costs (action, tier, cost) VALUES\n${fixtureRows}\nON CONFLICT (action, tier) DO NOTHING;`,
         ) + '\n';
-      // Sanity: fixture really adds the 12 rows (30 -> 42) before running the gate.
-      expect([...pricedSeed.matchAll(TUPLE_RE)].length).toBe(42);
+      // Sanity: fixture really adds the 6 SCALE rows (30 -> 36) before running the gate.
+      expect([...pricedSeed.matchAll(TUPLE_RE)].length).toBe(36);
       writeFileSync(join(dbDir, '080_credit_system.sql'), pricedSeed);
 
       // All other gate inputs: verbatim copies of the real sources.
