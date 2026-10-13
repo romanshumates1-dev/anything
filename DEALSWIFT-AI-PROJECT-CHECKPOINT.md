@@ -85,6 +85,48 @@ Current safe behavior (verified by existing tests in `08b4c85`, re-read this ses
 
 Residual (elevated to revenue-risk, not safety/honesty defect): the singular getCreditCost(action, tier) falls back to the FREE credit_costs row for an unmapped tier. Its two call sites are both internal to credits.ts and both billing-relevant (not display-only): canAffordAction (credits.ts:280) and the live credit-deduction path deductCreditsForAction (credits.ts:533). A paying scale/professional org (tier passed in with no credit_costs row) is therefore undercharged on live usage, not just mis-priced on screen. Existing test asserts the FREE fallback intentional (credits.test.ts:81-89), written before the tier drift was recognized. Safe fix NOT implemented — BLOCKED-APPROVAL + TDD: idempotent migration seeding credit_costs for PROFESSIONAL & SCALE at the best existing rate (ENTERPRISE-equivalent, from migration 067 overage ordering); failing test first for both getAllCosts('scale') and getCreditCost('SMS_SEND','scale'); no balances modified, no invented mapping. Billing-owner sign-off required.
 
+#### F3 pricing-migration proposal (owner-decision record; NOT implemented)
+
+**Problem (confirmed revenue-integrity):** `getCreditCost` (credits.ts:145) FREE-falls-back
+for `tier ∉ CREDIT_TIERS`. Its two consumers — `canAffordAction` (280) and
+`deductCreditsForAction` (533, the live deduction path) — pass `subscription_plans.tier`
+straight in. Real paying plans `professional` ($249/mo, 035) and `scale` ($2,499/mo, 067)
+have **no** `credit_costs` rows (seeded only FREE/STARTER/PRO/BUSINESS/ENTERPRISE in 080),
+so they are currently **undercharged on every billable action** and the underprice is
+written to the ledger (`metadata.cost`).
+
+**Affected operations (all `CreditAction` values):** `SMS_SEND, EMAIL_SEND, AI_REQUEST,
+AI_NEGOTIATION, CONTRACT_GENERATE, LEAD_FIND` — via `deductCreditsForAction` from
+`creditGuard.ts` (`withCreditDeduction`, `deductSms`, `deductEmail`, `deductAi`) and the
+email-send job (`jobs.ts:299`). `canAffordAction` likewise under-reports cost to the UI.
+
+**Current seeded rates (migration 080) — the existing authoritative table:**
+```
+action            FREE  STARTER  PRO  BUSINESS  ENTERPRISE
+SMS_SEND            5      4     3      2         2
+EMAIL_SEND          2      2     1      1         1
+AI_REQUEST         10      8     5      4         3
+AI_NEGOTIATION     25     20    12     10         8
+CONTRACT_GENERATE  15     12     8      6         5
+LEAD_FIND           3      2     1      1         1
+```
+**Missing mappings:** rows for `PROFESSIONAL` and `SCALE` do not exist.
+
+**Safe remediation options (pick one — owner decides the rates):**
+
+| Option | Change | Revenue impact | Service-interruption risk | Effort |
+| --- | --- | --- | --- | --- |
+| **O1 (recommended)** Seed `PROFESSIONAL` = ENTERPRISE-best rate; `SCALE` = best rate | 1 new idempotent migration (080's `INSERT … ON CONFLICT` pattern); `getCreditCost` harden to validate tier (throw, never FREE-fallback). | Immediate revenue correction to the *best* existing rate — **undercharges corrected**, but to the *low* end (debit only; no balance clawback) | **Yes, transient** — for the (rare) org whose tier rows are absent and before deploy, `deductCreditsForAction` will now THROW instead of FREE-falling-back → that action fails with `INSUFFICIENT_CREDITS`/`INTERNAL_ERROR` rather than underbilling. Paying customers keep working once rows exist; free-tier unaffected. | Small (migration + hardening + test). Requires owner rate sign-off. |
+| **O2 (fail-safe alternative)** Leave `getCreditCost` FREE-fallback; add `credit_costs` rows for the missing tiers. | Same migration only; no code-path throw. | Same correction; no deduction-path interruption. | **None** — the FREE fallback still exists for *future* unknown tiers (residual risk remains). | Smallest, but leaves the fail-open door ajar. |
+| **O3 (status-quo)** Do nothing. | none. | **Continued undercharging** of ALL `professional`/`scale` orgs on EVERY billable action; ledger records FREE prices. | None (silently wrong). | 0. **Not recommended — active revenue defect.** |
+
+**Pricing decisions requiring OWNER approval (cannot be auto-derived):**
+1. `PROFESSIONAL` credit rate per action (migration 080 has no PROFESSIONAL column; no authoritative source).
+2. `SCALE` credit rate per action (likewise absent).
+3. Whether to harden `getCreditCost` to throw on unknown tier (Option O1) vs keep fallback (Option O2) — the throw is the safer default but carries the transient-interruption note above.
+
+**Do NOT do (directive compliance):** no `PROFESSIONAL`/`SCALE` rate invented here; no production balance adjustments; no deployment of billing changes; a RED test (creditTierPricing.f3.test.ts, 11 cases across 8 it/ it.each blocks) is committed pinning the fail-closed contract so the fix can be TDD-validated once rates are approved.
+
 ### Remaining master-scope status
 - Homepage G2 500: **unchanged** — matrix G2 remains DIAGNOSABLE (memory hypothesis
   unmeasured; 40/40 no-repro). No new evidence obtainable (no live/prod access).
