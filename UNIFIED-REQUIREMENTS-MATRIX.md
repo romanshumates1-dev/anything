@@ -991,14 +991,14 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
 - **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +
   `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing).
 - **2026-10-12 Gate B verified**: full `vitest run --config src/app/api/vitest.config.ts` (independent
-  terminal) → **2 files failed | 330 passed | 1 skipped (333); 2 failed | 3525 passed | 26 skipped
-  (3553) tests; exit 1** (344.23s). The 2 failed FILEs are `SupportChat.test.tsx` +
-  `src/app/api/support/chat` route test — both credential-gated (AI provider absent → 503,
-  matrix A2 BLOCKED-EXTERNAL). NOT regressions: git-diff of all session commits touches only
-  credit/contract/doc files; no failing test references `ContractPlainSummary`. NEW RED regression
-  `creditTierPricing.f3.test.ts` (11 cases, committed this cycle) is the intentional fail of one of
-  the 2 tests — it stays RED until the owner-approved PROFESSIONAL/SCALE `credit_costs` migration
-  hardens the deduction path. 26 SKIPPED are the pre-existing credential-gated PGlite skips,
-  unchanged.
+  terminal) → **2 failed | 3525 passed | 26 skipped (3553) tests; exit 1** (344.23s). The 2 failed
+  test FILES are `SupportChat.test.tsx` (credential-gated: renders `<SupportChat/>` driving the real
+  `callAI` path; AI provider absent → 503, matrix A2 BLOCKED-EXTERNAL) and the NEW RED regression
+  `creditTierPricing.f3.test.ts` (11 cases, committed this cycle — intentional fail pinning the
+  fail-closed contract for `getCreditCost` on unmapped paid tiers; stays RED until the
+  owner-approved PROFESSIONAL/SCALE `credit_costs` migration hardens the `deductCreditsForAction`
+  path). NOT regressions: git-diff of all session commits touches only credit/contract/doc files;
+  no failing test references `ContractPlainSummary`. 26 SKIPPED are the pre-existing
+  credential-gated PGlite skips, unchanged.
 
 
