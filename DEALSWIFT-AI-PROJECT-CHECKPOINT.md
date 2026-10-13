@@ -6,7 +6,112 @@ project state. A new model inherits state from here and from
 
 ---
 
-## SESSION UPDATE — 2026-10-11 (EXP-GAME-01 gamification completion)
+## SESSION UPDATE — 2026-10-12 (contract-summary delivery + F3 credit-tier investigation)
+
+Branch `feat/gamification-rewards`. `git fetch` confirms **no remote drift** — all
+three commits are present and pushed: `08b4c85` (F2/F3/F4 dashboard
+tenant-isolation), `44705f0` (checkpoint doc fix), `74ec70b` (plain-language
+contract summary, new this session).
+
+### Phase 1 — reconciled actual repository state
+- Current branch: `feat/gamification-rewards`. Working tree: only scratch files
+  untracked; all feature files committed (git status: staged={}, unstaged={}).
+- Confirmed via `git log` + `git show 74ec70b:src/app/contracts/page.tsx`:
+  `import ContractPlainSummary` + `<ContractPlainSummary contract={contract} />`
+  rendered in each contract card. No duplicate implementations, no history rewrite.
+- The prior "reported" results (3460 passed per 2026-10-11; 66/66 for F2/F3/F4) are
+  **recorded from prior sessions** and were not re-run this session (see Phase 2).
+
+### Phase 2 — command-runner diagnosis (PRECISE LIMITATION)
+The `run_commands` shell runner entered a **persistent failure mode** mid-session.
+Every invocation serializes the tool's own argument envelope as the literal script
+body, so PowerShell receives `<arg_key>commands</arg_key>["..."]` where it expects the
+command string; `& ([ScriptBlock]::Create($c))` then parses `<` as the reserved
+future-use operator → `The '<' operator is reserved for future use.`. It first
+appeared intermittent (some `echo`/`powershell -File` calls succeeded), then became
+total — even `echo hi` now fails. **CI cannot substitute**: the workflow file lives at
+`apps/web/.github/workflows/ci.yml`, and its own header states it must be copied to the
+repo-root `.github/workflows/` to activate; no root workflow exists, so GitHub Actions
+does not run here.
+
+A self-detaching full-suite runner is **staged but not yet executed**:
+`d:/anything/tmp_full_verify.bat`. When the shell recovers, run
+`cmd /c d:\anything\tmp_full_verify.bat` — it launches detached and writes
+`tmp_tsc_done.txt` / `tmp_vitest_done.txt` plus `tmp_tsc.log` / `tmp_vitest_full.log`.
+
+### Phase 3 — verification gates (honest status)
+- **Gate A full typecheck** (`tsc -p tsconfig.typecheck.json --noEmit`): NOT EXECUTABLE
+  this session (shell dead). Alternative captured THIS SESSION: scoped
+  `tsc -p apps/web/tsconfig.verify.json --noEmit` over **all three changed files**
+  (`plainContractSummary.ts`, `ContractPlainSummary.tsx`, `page.tsx`) → **EXIT 0**,
+  zero errors. (Scratch config, not committed.)
+- **Gate B full regression suite**: NOT EXECUTABLE this session (shell dead; CI inactive).
+  Alternative captured THIS SESSION: `vitest run --config src/app/api/vitest.config.ts
+  src/app/api/utils/__tests__/plainContractSummary.test.ts` → **18 passed (18), exit 0**.
+  The 66/66 tenant-isolation/credits suite from `08b4c85` is un-confirmed *here*
+  (reported result only).
+- **Gate C contract-summary correctness**: VERIFIED — pure builder deterministic;
+  anti-fabrication tests pass (no invented price/date/fee); date-only TZ regression
+  closed; component typed against the real `ContractData` shape (scoped tsc confirms
+  assignability).
+
+### Delivered this session (next unblocked master requirement)
+Plain-language contract summary — explicitly requested in `nexttodo.md` ("clear and
+simple … so a 3rd grader … can understand why it's a good deal"). Self-contained and
+credential-free, so it was the highest-priority *unblocked* item.
+- `src/app/api/utils/plainContractSummary.ts` — pure builder + helpers; anti-fabrication
+  guardrails; TZ-correct date-only formatter (closes `2026-03-04`→`March 3` for UTC-West);
+  whole-dollar money.
+- `src/components/contracts/ContractPlainSummary.tsx` — `'use client` render.
+- `src/app/contracts/page.tsx` — render it near the top of each contract card.
+- `__tests__/plainContractSummary.test.ts` — 18 tests incl. anti-fabrication + TZ regression.
+- Commit `74ec70b`, pushed.
+
+### Phase 4 — F3 credit-tier investigation (READ-ONLY; no production data touched)
+Authoritative, from migrations:
+- `subscription_plans.tier` CHECK + seeds (migrations 025/035/067):
+  `free, starter, pro, professional, business, scale, enterprise`.
+- `credit_costs` seeded (080) for only: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`.
+- **Gap**: real paid plans `professional` ($249/mo, migration 035) and `scale`
+  ($2,499/mo, migration 067) have **no** `credit_costs` rows, so `subscription_plans.tier`
+  legitimately drifts from the `CREDIT_TIERS` set.
+
+Current safe behavior (verified by existing tests in `08b4c85`, re-read this session):
+- `getAllCosts('scale' | 'professional' | '' | 'GARBAGE_TIER')` **throws**
+  "Unknown subscription tier … refusing to price it at FREE" (credits.test.ts:250-255);
+  `sql` is never called — **fail-closed, no silent FREE pricing on the dashboard path**.
+- `getCredits` degrades: balance + history served, `costs: {}` (NOT FREE, no 500) for
+  `scale`/`professional` (getCredits.tierResilience.test.ts).
+
+Residual (not a safety/honesty defect): singular `getCreditCost(action, tier)` still
+falls back to the `FREE` `credit_costs` row for an unmapped tier — **tested-as-intentional**
+(credits.test.ts:81-89 "falls back to FREE tier cost if tier not found"). For paying
+Scale/Professional customers it underprices per-action usage.
+
+Recommendation (NOT implemented — pricing-sensitive; needs TDD which requires a working
+shell, and billing-owner sign-off): add an **idempotent** migration seeding
+`credit_costs` rows for `PROFESSIONAL` & `SCALE` at the **best existing rate**
+(ENTERPRISE-equivalent), derived from migration 067's overage ordering (Scale has the
+lowest overage $/unit → lowest credit surcharge). Back it with a failing test first
+(`getAllCosts('scale')` returns real costs, never FREE). Do NOT modify real customer
+balances or invent a non-authoritative mapping.
+
+### Remaining master-scope status
+- Homepage G2 500: **unchanged** — matrix G2 remains DIAGNOSABLE (memory hypothesis
+  unmeasured; 40/40 no-repro). No new evidence obtainable (no live/prod access).
+- Stripe live webhook: **BLOCKED-EXTERNAL** (needs `STRIPE_SECRET_KEY` +
+  `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing
+  tests). No live round-trip possible without secrets.
+- Buyer-matching / payment-method-gated assignment / fee disbursement / assignment
+  emails / campaign launch (nexttodo.md): **BLOCKED-EXTERNAL** on Stripe Connect / AWS /
+  email credentials + design; not started.
+- Next genuinely unblocked requirement once the shell recovers: re-run
+  `tmp_full_verify.bat` to close Gate A + B, then implement the PROFESSIONAL/SCALE
+  `credit_costs` migration with a TDD test (or resume credential-blocked items).
+
+
+
+
 
 **Branch `feat/gamification-rewards`.** Typecheck = **0 errors**. Full regression suite = **3460 passed / 0 failed** (325 files, 26 PGlite-skipped). All work TDD RED→GREEN.
 

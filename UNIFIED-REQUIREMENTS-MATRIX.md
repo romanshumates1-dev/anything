@@ -951,3 +951,37 @@ What still prevents a higher score — and this is the honest ceiling:
 **10/10 is not reachable in this environment.** It requires live Stripe, Apollo
 and Bedrock evidence plus a paid Workers plan. Claiming it would mean inventing
 verification. This score reflects what was actually measured.
+
+## SET M — CONTRACT HONESTY (added 2026-10-12)
+
+| ID | Requirement | Implementation | Status | Evidence | Blocker |
+| --- | --- | --- | --- | --- | --- |
+| M1 | Non-technical sellers/buyers can read a contract and understand "what this deal is and why it is good" in one glance, without inventing any number | `src/app/api/utils/plainContractSummary.ts` (`buildPlainContractSummary` pure builder) + `src/components/contracts/ContractPlainSummary.tsx`; wired into `app/contracts/page.tsx` | UNIT TESTED | `__tests__/plainContractSummary.test.ts` **18/18 pass** (scoped); scoped `tsc -p tsconfig.verify.json --noEmit` over all 3 changed files (util + component + page.tsx) → exit 0 (alias `@/` + `ContractData`→prop assignability confirmed). Commit `74ec70b` on `feat/gamification-rewards`, pushed. | Full-project `tsc -p tsconfig.typecheck.json --noEmit` + full regression suite (Gate A/B) could NOT be executed: the local shell runner malfunctioned mid-session (raw-JSON-into-PowerShell; CI is inactive — workflow is at `apps/web/.github/workflows/ci.yml`, not repo root). Re-run `cmd /c d:\anything\tmp_full_verify.bat` (self-detaching) once the shell recovers to close the full-suite gate. |
+
+### Phase 4 follow-through — F3 credit-tier reconciliation (2026-10-12)
+
+Authoritative `subscription_plans.tier` (migrations 025/035/067 CHECK + seeds):
+`free, starter, pro, professional, business, scale, enterprise`. `credit_costs`
+(seeded 080) covers only `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. The real paid
+plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
+`credit_costs` rows.
+
+- **Dashboard path is fail-closed and tested** (commit `08b4c85`): `getAllCosts('scale' |
+  'professional')` throws `Unknown subscription tier … refusing to price it at FREE`
+  (credits.test.ts:250-255); `getCredits` degrades to balance + history with `costs:{}`
+  (getCredits.tierResilience.test.ts). **No silent FREE pricing is shown to users.**
+- **Residual (revenue, not safety):** singular `getCreditCost(action, tier)` still falls
+  back to the `FREE` credit_costs row for an unmapped tier (credits.test.ts:81-89,
+  tested-as-intentional). A paying Scale/Professional customer is underpriced per-action.
+- **Recommended safe fix (NOT yet implemented — pricing-sensitive + needs TDD + billing
+  owner sign-off):** idempotent migration seeding `credit_costs` for `PROFESSIONAL` &
+  `SCALE` at the **best existing rate** (ENTERPRISE-equivalent), derived from migration
+  067's overage ordering (Scale has the lowest overage $/unit → lowest credit
+  surcharge). Must be backed by a failing test first; no production balances modified;
+  no non-authoritative mapping invented.
+- **Homepage G2**: unchanged — DIAGNOSABLE (matrix G2); root cause unmeasured; not
+  reproduced (12/12 apex, 6/6 workers.dev). No live/prod access here.
+- **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +
+  `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing).
+
+
