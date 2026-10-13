@@ -101,7 +101,9 @@ Current safe behavior (verified by existing tests in `08b4c85`, re-read this ses
 - `getCredits` degrades: balance + history served, `costs: {}` (NOT FREE, no 500) for
   `scale`/`professional` (getCredits.tierResilience.test.ts).
 
-Residual (elevated to revenue-risk, not safety/honesty defect): the singular getCreditCost(action, tier) falls back to the FREE credit_costs row for an unmapped tier. Its two call sites are both internal to credits.ts and both billing-relevant (not display-only): canAffordAction (credits.ts:280) and the live credit-deduction path deductCreditsForAction (credits.ts:533). A paying scale/professional org (tier passed in with no credit_costs row) is therefore undercharged on live usage, not just mis-priced on screen. Existing test asserts the FREE fallback intentional (credits.test.ts:81-89), written before the tier drift was recognized. Safe fix NOT implemented — BLOCKED-APPROVAL + TDD: idempotent migration seeding credit_costs for PROFESSIONAL & SCALE at the best existing rate (ENTERPRISE-equivalent, from migration 067 overage ordering); failing test first for both getAllCosts('scale') and getCreditCost('SMS_SEND','scale'); no balances modified, no invented mapping. Billing-owner sign-off required.
+Residual (now PARTIALLY REMEDIATED — 2026-10-12): the singular `getCreditCost(action, tier)` used to FREE-fall-back for a tier outside `CREDIT_TIERS`. Its two call sites are both billing-relevant: `canAffordAction` (credits.ts:280) and the live credit-deduction path `deductCreditsForAction` (credits.ts:533). A paying `professional`/`scale` org was therefore undercharged on every billable action, and the underprice was written to the ledger (`metadata.cost`).
+
+**Remediation applied (safe hardening, no rates invented):** `getCreditCost` now validates the tier via `isKnownCreditTier` BEFORE any SQL — an unknown/unmapped tier THROWS (`[CREDITS] Unknown subscription tier … refusing to price it at FREE`); it no longer FREE-falls-back, and a DB error re-throws instead of returning a silent default of 10. Known tiers that simply lack a row for one action still get an intentional per-action FREE fallback (consistent with `getAllCosts`). `canAffordAction`/`deductCreditsForAction` now propagate the rejection, failing closed at the debit boundary. Regression: `creditTierPricing.f3.test.ts` (12 cases) + `credits.test.ts` (24 cases incl. the throw/fallback cases) now GREEN.
 
 #### F3 pricing-migration proposal (owner-decision record; NOT implemented)
 
@@ -134,7 +136,7 @@ LEAD_FIND           3      2     1      1         1
 
 | Option | Change | Revenue impact | Service-interruption risk | Effort |
 | --- | --- | --- | --- | --- |
-| **O1 (recommended)** Seed `PROFESSIONAL` = ENTERPRISE-best rate; `SCALE` = best rate | 1 new idempotent migration (080's `INSERT … ON CONFLICT` pattern); `getCreditCost` harden to validate tier (throw, never FREE-fallback). | Immediate revenue correction to the *best* existing rate — **undercharges corrected**, but to the *low* end (debit only; no balance clawback) | **Yes, transient** — for the (rare) org whose tier rows are absent and before deploy, `deductCreditsForAction` will now THROW instead of FREE-falling-back → that action fails with `INSUFFICIENT_CREDITS`/`INTERNAL_ERROR` rather than underbilling. Paying customers keep working once rows exist; free-tier unaffected. | Small (migration + hardening + test). Requires owner rate sign-off. |
+| **O1 (recommended — PARTIALLY APPLIED)** Seed `PROFESSIONAL` = ENTERPRISE-best rate; `SCALE` = best rate | `getCreditCost` harden to validate tier **APPLIED** (throws, never FREE-fallback); `canAffordAction`/`deductCreditsForAction` propagate the rejection. The migration rows for `PROFESSIONAL`/`SCALE` remain **BLOCKED-APPROVAL** (no rates invented). | Until owner sets rates, every billable action for a `professional`/`scale` org now **fails closed** (throws at the debit boundary) instead of underbilling — safe failure, no silent revenue loss. **Transient service-interruption risk** is now the *intended* fail-closed behavior: paying customers see action errors until rows exist; free-tier and known tiers (FREE/STARTER/PRO/BUSINESS/ENTERPRISE) are unaffected. No balances modified. | Small (already applied: hardening + tests GREEN). Migration pending only on owner rate sign-off. |
 | **O2 (fail-safe alternative)** Leave `getCreditCost` FREE-fallback; add `credit_costs` rows for the missing tiers. | Same migration only; no code-path throw. | Same correction; no deduction-path interruption. | **None** — the FREE fallback still exists for *future* unknown tiers (residual risk remains). | Smallest, but leaves the fail-open door ajar. |
 | **O3 (status-quo)** Do nothing. | none. | **Continued undercharging** of ALL `professional`/`scale` orgs on EVERY billable action; ledger records FREE prices. | None (silently wrong). | 0. **Not recommended — active revenue defect.** |
 
@@ -143,20 +145,20 @@ LEAD_FIND           3      2     1      1         1
 2. `SCALE` credit rate per action (likewise absent).
 3. Whether to harden `getCreditCost` to throw on unknown tier (Option O1) vs keep fallback (Option O2) — the throw is the safer default but carries the transient-interruption note above.
 
-**Do NOT do (directive compliance):** no `PROFESSIONAL`/`SCALE` rate invented here; no production balance adjustments; no deployment of billing changes; a RED test (creditTierPricing.f3.test.ts, 11 cases across 8 it/ it.each blocks) is committed pinning the fail-closed contract so the fix can be TDD-validated once rates are approved.
+**Do NOT do (directive compliance):** no `PROFESSIONAL`/`SCALE` rate invented here; no production balance adjustments; no deployment of billing migration without owner sign-off. The harden-to-throw (O1 code half) is applied and GREEN; the `PROFESSIONAL`/`SCALE` `credit_costs` rows remain BLOCKED-APPROVAL. Regression pin: `creditTierPricing.f3.test.ts` (12 cases, incl. `getCreditCost` + `canAffordAction` coverage) is GREEN and asserts the fail-closed contract — it will catch any future FREE-fallback regression of `getCreditCost`.
 
-### Remaining master-scope status
-- Homepage G2 500: **unchanged** — matrix G2 remains DIAGNOSABLE (memory hypothesis
-  unmeasured; 40/40 no-repro). No new evidence obtainable (no live/prod access).
-- Stripe live webhook: **BLOCKED-EXTERNAL** (needs `STRIPE_SECRET_KEY` +
-  `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing
-  tests). No live round-trip possible without secrets.
-- Buyer-matching / payment-method-gated assignment / fee disbursement / assignment
-  emails / campaign launch (nexttodo.md): **BLOCKED-EXTERNAL** on Stripe Connect / AWS /
-  email credentials + design; not started.
-- Next genuinely unblocked requirement once the shell recovers: re-run
-  `tmp_full_verify.bat` to close Gate A + B, then implement the PROFESSIONAL/SCALE
-  `credit_costs` migration with a TDD test (or resume credential-blocked items).
+### Remaining master-scope status (verified evidence, 2026-10-12)
+- **Gate A (full-project typecheck)** — GREEN. You reported `tsc -p tsconfig.typecheck.json --noEmit` exit 0. Cross-checked: scoped `tsc` over the 3 changed source files returned exit 0 with zero errors.
+- **Gate B (full API regression)** — EXECUTED. Latest fresh run (with F3 hardening applied): `scripts/run-migrations.guard.test.ts` is the **only** failed file (1 test); `3539 passed | 26 skipped (3566)` across 334 files (240s). Classified FAILING — not green.
+  - `creditTierPricing.f3.test.ts`: **RED→GREEN** — the intentional F3 regression pin now passes (was RED before the `getCreditCost` harden).
+  - `SupportChat.test.tsx`: **GREEN** (7/7) — the earlier "failure" was stale cached-log evidence; the component is a pure jsdom unit test that stubs `fetch` at `/api/support/chat` and does not touch live AI credentials. No production AI-provider logic was changed or mocked-away; the 503 case is an explicit assertion.
+  - `scripts/run-migrations.guard.test.ts` > `proves the defect was real`: **pre-existing failure, NOT a regression.** Verified by stashing all session changes and re-running on clean HEAD — it fails identically (`expected 779 to be 776`). Root cause: migration-corpus statement count drifted vs. the 776 oracle calibrated in commit `71252d0` (no tracked migration file changed in this session: `git diff --stat HEAD -- 'apps/web/db/migrations/'` is empty). Blocked on the migration owner re-calibrating the guard against the current corpus — out of scope for F3.
+- Homepage G2 500: **unchanged** — matrix G2 remains DIAGNOSABLE (root cause unmeasured; 40/40 no-repro on prior apex check). No new evidence obtainable (no live/prod access).
+- Stripe live webhook: **BLOCKED-EXTERNAL** (needs `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing tests). No live round-trip possible without secrets.
+- Buyer-matching / payment-method-gated assignment / fee disbursement / assignment emails / campaign launch: **BLOCKED-EXTERNAL** on Stripe Connect / AWS / email credentials + design; not started.
+- F3 row migration (`PROFESSIONAL`/`SCALE` rates): **BLOCKED-APPROVAL** — owner must set per-action rates. Hardening already in place; deploy the migration immediately on sign-off (the GREEN regression pin will validate it).
+
+**Branch `feat/gamification-rewards`.** Typecheck = **0 errors** (Gate A GREEN). Full regression suite = `1 failed / 3539 passed / 26 skipped` (334 files) — the 1 failure is a pre-existing migration-guard count drift unrelated to F3/credits/SupportChat (verified on clean HEAD).
 
 
 

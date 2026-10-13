@@ -956,7 +956,7 @@ verification. This score reflects what was actually measured.
 
 | ID | Requirement | Implementation | Status | Evidence | Blocker |
 | --- | --- | --- | --- | --- | --- |
-| M1 | Non-technical sellers/buyers can read a contract and understand "what this deal is and why it is good" in one glance, without inventing any number | `src/app/api/utils/plainContractSummary.ts` (`buildPlainContractSummary` pure builder) + `src/components/contracts/ContractPlainSummary.tsx`; wired into `app/contracts/page.tsx` | UNIT TESTED | `__tests__/plainContractSummary.test.ts` 18/18 pass; scoped `tsc -p tsconfig.verify.json --noEmit` over all 3 changed files → exit 0. Commit `74ec70b`+`ab3af6e`, pushed. Full `tsc -p tsconfig.typecheck.json --noEmit` (Gate A) and full-suite Gate B run from independent terminal — see checkpoint. Gate A result not yet returned by terminal; Gate B = 2 failed (SupportChat + support route, pre-existing credential-gated, NOT regressions) / 3525 passed / 26 skipped, exit 1. | No regressions from this change. Gate A still pending terminal; F3 credit-tier pricing fix BLOCKED-APPROVAL (owner must set PROFESSIONAL/SCALE rates). |
+| M1 | Non-technical sellers/buyers can read a contract and understand "what this deal is and why it is good" in one glance, without inventing any number | `src/app/api/utils/plainContractSummary.ts` (`buildPlainContractSummary` pure builder) + `src/components/contracts/ContractPlainSummary.tsx`; wired into `app/contracts/page.tsx` | UNIT TESTED | `__tests__/plainContractSummary.test.ts` 18/18 pass; scoped `tsc -p tsconfig.verify.json --noEmit` over all 3 changed files → exit 0. Commit `74ec70b`+`ab3af6e`, pushed. FULL `tsc -p tsconfig.typecheck.json --noEmit` (Gate A) = 0 errors (verified by your terminal). Fresh full-suite Gate B (post F3 harden) → `1 failed / 3539 passed / 26 skipped (3566)` across 334 files; the 1 failure is the pre-existing migration-guard count drift (`expected 779 to be 776`, verified failing on clean HEAD — unrelated to F3/credits/SupportChat). F3 `getCreditCost` tier-validation harden applied + GREEN; PROFESSIONAL/SCALE `credit_costs` rows still BLOCKED-APPROVAL (no rates invented). | No regressions from this change. Gate A GREEN. Gate B failing only on the pre-existing migration-guard drift (out of scope for F3); all F3/credits/SupportChat tests GREEN.
 
 ### Phase 4 follow-through — F3 credit-tier reconciliation (2026-10-12)
 
@@ -970,35 +970,49 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
   'professional')` throws `Unknown subscription tier … refusing to price it at FREE`
   (credits.test.ts:250-255); `getCredits` degrades to balance + history with `costs:{}`
   (getCredits.tierResilience.test.ts). **No silent FREE pricing is shown to users.**
-- **Residual — elevated to revenue-risk (NOT a display-only defect):** the singular
-  `getCreditCost(action, tier)` falls back to the `FREE` `credit_costs` row for an
+- **Residual (PARTIALLY REMEDIATED — 2026-10-12):** the singular
+  `getCreditCost(action, tier)` used to fall back to the `FREE` `credit_costs` row for an
   unmapped tier. Its two call sites are both internal to `credits.ts` and both
   billing-relevant, not display-only:
   1. `canAffordAction` (credits.ts:280) — the real-time affordability check.
   2. **`deductCreditsForAction` (credits.ts:533) — the live credit-deduction path.**
-  So a paying `scale`/`professional` org (tier passed straight in → no `credit_costs`
-  row) is **undercharged on live usage** (charged the FREE surcharge). Existing test
-  asserts the fallback is intentional (credits.test.ts:81-89), written before the drift
-  was recognized.
-- **Safe fix (BLOCKED-APPROVAL — NOT implemented):** idempotent migration seeding
-  `credit_costs` for `PROFESSIONAL` & `SCALE` at the best existing rate
-  (ENTERPRISE-equivalent), from migration 067's overage ordering (Scale's lowest
-  overage $/unit → lowest credit surcharge). Failing test first (both `getAllCosts`
-  and `getCreditCost` for `scale`); no production balances modified; no
-  non-authoritative mapping. Billing-owner sign-off on per-unit rates required.
+  So a paying `scale`/`professional` org was **undercharged on live usage** (charged the FREE
+  surcharge), and that underprice was written to the ledger (`metadata.cost`).
+  **Safe remediation applied (no rates invented):** `getCreditCost` now validates the tier
+  via `isKnownCreditTier` BEFORE any SQL — an unknown/unmapped tier THROWS
+  (`[CREDITS] Unknown subscription tier … refusing to price it at FREE`), so it can no
+  longer FREE-fall-back; `canAffordAction`/`deductCreditsForAction` propagate the rejection
+  (fail-closed at the debit boundary). Known tiers missing one action row still get an
+  intentional per-action FREE fallback. Existing test at credits.test.ts:81-89 updated to
+  assert the throw (was asserting the FREE fallback).
+- **Safe migration (BLOCKED-APPROVAL — NOT implemented):** idempotent migration seeding
+  `credit_costs` for `PROFESSIONAL` & `SCALE` at owner-approved per-unit rates. With the
+  harden in place, until those rows exist every billable action for a `professional`/`scale`
+  org fails closed (throws at the debit boundary) instead of underbilling — safe failure,
+  no silent revenue loss; free-tier and known tiers unaffected. Failing-test-first pin
+  (`creditTierPricing.f3.test.ts`, now GREEN off the harden) is committed; no production
+  balances modified; no non-authoritative mapping invented. Billing-owner sign-off on
+  per-unit rates required.
 - **Homepage G2**: unchanged — DIAGNOSABLE (matrix G2); root cause unmeasured; not
   reproduced (12/12 apex, 6/6 workers.dev). No live/prod access here.
 - **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +
   `STRIPE_WEBHOOK_SECRET`); provider-independent webhook tests already pass (52 billing).
-- **2026-10-12 Gate B verified**: full `vitest run --config src/app/api/vitest.config.ts` (independent
-  terminal) → **2 failed | 3525 passed | 26 skipped (3553) tests; exit 1** (344.23s). The 2 failed
-  test FILES are `SupportChat.test.tsx` (credential-gated: renders `<SupportChat/>` driving the real
-  `callAI` path; AI provider absent → 503, matrix A2 BLOCKED-EXTERNAL) and the NEW RED regression
-  `creditTierPricing.f3.test.ts` (11 cases, committed this cycle — intentional fail pinning the
-  fail-closed contract for `getCreditCost` on unmapped paid tiers; stays RED until the
-  owner-approved PROFESSIONAL/SCALE `credit_costs` migration hardens the `deductCreditsForAction`
-  path). NOT regressions: git-diff of all session commits touches only credit/contract/doc files;
-  no failing test references `ContractPlainSummary`. 26 SKIPPED are the pre-existing
-  credential-gated PGlite skips, unchanged.
+- **2026-10-12 Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = 0 errors (verified
+  by your terminal).
+- **2026-10-12 Gate B (fresh full run, post F3 harden)**: `1 failed | 3539 passed | 26
+  skipped (3566)` across 334 files (203.67s). Breakdown:
+  - `creditTierPricing.f3.test.ts`: **RED→GREEN** (was RED; the intentional F3 regression
+    pin now passes after the `getCreditCost` harden).
+  - `SupportChat.test.tsx`: **GREEN 7/7** — a pure jsdom component unit test that stubs
+    `fetch('/api/support/chat')`; does NOT drive the real `callAI`/AI provider at import
+    time. The earlier reported "SupportChat 503" failure was stale cached-log evidence and
+    is NOT reproducible. No production AI-provider logic changed or mocked-away; the 503
+    case is an explicit assertion.
+  - `scripts/run-migrations.guard.test.ts` > `proves the defect was real`: **pre-existing
+    failure, NOT a regression** — verified by stashing all session changes and re-running on
+    clean HEAD (fails identically: `expected 779 to be 776`). Migration-corpus count
+    drifted vs. the 776 oracle from commit `71252d0`; no tracked migration file changed this
+    session (`git diff --stat HEAD -- 'apps/web/db/migrations/'` is empty). Out of scope
+    for F3; re-calibrate the guard against the current corpus.
 
 

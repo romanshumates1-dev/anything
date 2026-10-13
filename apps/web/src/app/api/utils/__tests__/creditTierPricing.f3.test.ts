@@ -55,12 +55,11 @@ describe('F3 credit-tier pricing integrity', () => {
 
       await expect(getCreditCost('SMS_SEND', tier)).rejects.toThrow(/Unknown subscription tier/i);
 
-      // And critically: it must not have served the FREE row. The query issued for an
-      // unmapped tier must be the tier-specific row only — never an `OR tier='FREE'`
-      // fallback that silently prices a $2,499/mo plan as $0/mo.
-      const callArgs = (sql as any).mock.calls[0];
-      const queryText = String(callArgs[0]);
-      expect(queryText).not.toMatch(/OR\s+.*\btier\s*=\s*'FREE'/i);
+            // The tier check runs BEFORE any SQL is issued: an unmapped tier must never
+      // reach the credit_costs table, so no `OR tier='FREE'` fallback (the old
+      // defect) can ever leak a FREE price for a paying plan — not in the return
+      // value, not in metadata.cost, and not in the billing ledger.
+      expect(sql).not.toHaveBeenCalled();
     });
 
     it('rejects a genuinely unknown tier (not a plan at all)', async () => {

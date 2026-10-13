@@ -78,13 +78,31 @@ describe('Credit System', () => {
       expect(cost).toBe(3);
     });
 
-    it('falls back to FREE tier cost if tier not found', async () => {
+                it('throws for an unknown/unmapped tier instead of silently pricing at FREE', async () => {
+      // F3 hardening (see credits.ts getCreditCost): an unknown or unmapped tier
+      // such as the real paid plans 'professional'/'scale' must NOT fall back to
+      // the FREE-tier cost — that would undercharge paying orgs and write the wrong
+      // (FREE) price into the billing ledger (metadata.cost). It must reject.
+      // Deliberately do NOT prime mockResolvedValueOnce values here: the tier check
+      // rejects BEFORE sql is called (see expect(sql).not.toHaveBeenCalled below),
+      // and unconsumed Once-queues would leak into later tests because
+      // vi.clearAllMocks only clears call history, not queued Once values.
+      (sql as any).mockReset();
+
+      await expect(getCreditCost('SMS_SEND', 'UNKNOWN_TIER')).rejects.toThrow(
+        /Unknown subscription tier/i,
+      );
+      expect(sql).not.toHaveBeenCalled();
+    });
+
+    it('falls back to FREE only for a KNOWN tier missing that one action row', async () => {
+      // PRO is a known tier; if its row for SMS_SEND is absent, the per-action
+      // FREE fallback is intentional and allowed (does not apply to unmapped tiers).
       (sql as any)
-        .mockResolvedValueOnce([]) // First query returns empty for specific tier
-        .mockResolvedValueOnce([{ cost: 5 }]); // Second query for FREE tier
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ cost: 5 }]);
 
-      const cost = await getCreditCost('SMS_SEND', 'UNKNOWN_TIER');
-
+      const cost = await getCreditCost('SMS_SEND', 'PRO');
       expect(cost).toBe(5);
     });
 

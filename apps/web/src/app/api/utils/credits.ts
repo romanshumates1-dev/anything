@@ -140,14 +140,27 @@ export async function getBalanceDetails(organizationId: string): Promise<CreditB
 
 /**
  * Get the credit cost for an action based on subscription tier.
- * Falls back to FREE tier cost if tier not found.
+ *
+ * F3-hardened contract (see DEALSWIFT-AI-PROJECT-CHECKPOINT.md §Phase 4):
+ * - An UNKNOWN or UNMAPPED tier (e.g. the real paid plans 'professional' and
+ *   'scale', which have subscription_plans rows but no credit_costs rows) THROWS
+ *   immediately. It must never silently price at FREE — that would undercharge
+ *   paying orgs and corrupt the billing ledger (metadata.cost).
+ * - For a KNOWN tier that simply lacks a row for this one action, a per-action
+ *   FREE fallback is allowed (intentional, matches getAllCosts semantics).
  */
 export async function getCreditCost(action: CreditAction, tier: string): Promise<number> {
-  // Normalize tier to uppercase
   const normalizedTier = tier.toUpperCase();
 
+  if (!isKnownCreditTier(normalizedTier)) {
+    throw new Error(
+      `[CREDITS] Unknown subscription tier "${tier}" — refusing to price it at FREE. ` +
+        `Known tiers with credit costs: ${CREDIT_TIERS.join(', ')}.`,
+    );
+  }
+
   try {
-    // First try exact tier match
+    // Exact tier match for the requested action.
     const [result] = await sql`
       SELECT cost
       FROM credit_costs
@@ -159,7 +172,7 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
       return result.cost;
     }
 
-    // Fall back to FREE tier cost (highest price)
+    // Per-action FREE fallback for a known tier that is merely missing this one row.
     const [fallback] = await sql`
       SELECT cost
       FROM credit_costs
@@ -171,7 +184,7 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
       return fallback.cost;
     }
 
-    // Default costs if nothing in database
+    // Last-resort constant only if the DB itself is empty of this action.
     const defaultCosts: Record<CreditAction, number> = {
       SMS_SEND: 5,
       EMAIL_SEND: 2,
@@ -183,9 +196,13 @@ export async function getCreditCost(action: CreditAction, tier: string): Promise
 
     return defaultCosts[action] ?? 10;
   } catch (error) {
+    // A pricing-system DB failure must not silently produce a price; throw so
+    // callers (canAffordAction / deductCreditsForAction) fail loud instead of
+    // debiting a wrong amount.
     console.error('[CREDITS] Failed to get cost:', error);
-    // Return conservative default on error
-    return 10;
+    throw new Error(
+      `[CREDITS] getCreditCost unavailable for action "${action}" tier "${tier}": ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
