@@ -1009,34 +1009,106 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
 
 ### Priority 3 — Professional / Scale rate decision table (verified, no values invented)
 
-| Action | FREE | STARTER | PRO | BUSINESS | ENTERPRISE | PROFESSIONAL | SCALE |
+**⚚ CRITICAL DATA-QUALITY FINDING (verified, not fabricated):** the repository does
+**NOT** contain a single coherent "Professional $249 / Scale $2,499" pricing story.
+Multiple migrations define **conflicting** plan rows, and the `professional` tier
+label has been **re-aliased** by migration `066`. Facts, read verbatim from source,
+in chronological order:
+
+| Migration | Tier | Price | Key notes |
+|---|---|---|---|
+| `025` | (schema) | — | CHECK: `(starter, professional, enterprise)` |
+| `035_seed_subscription_plans` | starter / professional / enterprise | $99 / **$249** / custom | `plan_professional` seeded, tier=`professional`. |
+| `066_chatgpt_style_pricing` | free/starter/**pro**/business/enterprise | $0/$29/**$79**/$199/custom | **Supersedes 035.** Lines 154-161: **re-aliases `plan_professional` → tier=`pro`, $79** ("alias for pro"). Adds overage rates in cents. |
+| `067_value_based_pricing` | free/starter/pro/business/**scale**/enterprise | $0/$129/**$399**/$899/**$2,499**/custom | **Diverges from 066:** Pro $79→$399, Business $199→$899. Seeds `plan_scale` ($2,499). Does NOT seed `plan_professional` (066 aliased it to `plan_pro`). |
+| `075_free_tier_and_usage_limits` | — | — | **Documented as ABORTED** (lines 33-48): constraint DROP/ADD raised `violated by some row` because live DB held `pro/business/scale` rows. Comment: "aborted the entire migration chain here (075) — which is why 080-086 (the credit system) never applied" on the live DB. Local/test DB converges to the 7-tier superset; production may be frozen at 074. |
+| `080_credit_system` | — | — | Seeds `credit_costs` for **5 tiers only**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE` (45 rows). **No `SCALE` or `PROFESSIONAL` rows.** |
+
+**Current effective `subscription_plans` state (local DB, post-101):** `plan_free
+($0), plan_starter ($129), plan_pro ($399), plan_business ($899), plan_scale
+($2,499), plan_enterprise` (custom) — 6 plan rows / 6 prices. The tier labels
+present are `free, starter, pro, business, scale, enterprise`; there is **no live
+row with tier=`professional`** (066 repointed `plan_professional` to tier=`pro`).
+The CHECK still *permits* `professional`, so a legacy/inserted row is possible but
+not seeded. The pricing page (`pricing/page.tsx:105`) queries `WHERE tier IN
+('free','starter','pro','business','scale')` — so the **public site never renders a
+`professional` tier**, corroborating it is defunct.
+
+**Live tier lacking `credit_costs` rows AND with a billable plan: `SCALE`
+($2,499/mo per 067).** `PROFESSIONAL` as a distinct tier is defunct (aliased to
+`PRO` at $399); fail-closed for it is a dead-code-safety path.
+
+### Six-action credit-cost matrix
+
+| Action | FREE | STARTER | PRO | BUSINESS | ENTERPRISE | SCALE | PROFESSIONAL* |
 |---|---|---|---|---|---|---|---|
-| SMS_SEND | 5 | 4 | 3 | 2 | 2 | **MISSING** | **MISSING** |
-| EMAIL_SEND | 2 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** |
-| AI_REQUEST | 10 | 8 | 5 | 4 | 3 | **MISSING** | **MISSING** |
-| AI_NEGOTIATION | 25 | 20 | 12 | 10 | 8 | **MISSING** | **MISSING** |
-| CONTRACT_GENERATE | 15 | 12 | 8 | 6 | 5 | **MISSING** | **MISSING** |
-| LEAD_FIND | 3 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** |
+| SMS_SEND | 5 | 4 | 3 | 2 | 2 | **MISSING** | **MISSING** (defunct) |
+| EMAIL_SEND | 2 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** (defunct) |
+| AI_REQUEST | 10 | 8 | 5 | 4 | 3 | **MISSING** | **MISSING** (defunct) |
+| AI_NEGOTIATION | 25 | 20 | 12 | 10 | 8 | **MISSING** | **MISSING** (defunct) |
+| CONTRACT_GENERATE | 15 | 12 | 8 | 6 | 5 | **MISSING** | **MISSING** (defunct) |
+| LEAD_FIND | 3 | 2 | 1 | 1 | 1 | **MISSING** | **MISSING** (defunct) |
 
-The seeded `credit_costs` rows (migration `080_credit_system.sql`, lines 45-87) cover **exactly 5 tiers × 6 actions = 45 rows** for `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`; the numeric values above are read verbatim from the migration and are the authoritative source of truth (none invented here). The `PROFESSIONAL` and `SCALE` tiers have **no** rows in `credit_costs` whatsoever (confirmed by the fail-closed assertions: `getCreditCost`/`getAllCosts` throw for these tiers). The idempotent migration proposal (seed PRO/SCALE rates) is **BLOCKED-APPROVAL: NOT applied** — exact rates are for the billing owner to set (see `DEALSWIFT-AI-PROJECT-CHECKPOINT.md` §Priority 3 decisions).
+\* `PROFESSIONAL` is aliased to `PRO` (tier=`pro`) by migration 066; the `PRO` rows
+above are what a `plan_professional` customer currently resolves to.
 
-**Operational effect of leaving PROFESSIONAL/SCALE unpriced:** until the owner approves and seeds per-action rates, every billable action (SMS/email/AI/contract/lead) for a `professional` ($249/mo) or `scale` ($2,499/mo) org **fails closed**: the action is refused with `errorCode: PRICING_NOT_CONFIGURED` (HTTP 402 at the API layer via `creditGuard`), `deducted: 0`, and the error is logged. No credit is moved, no wrong (FREE) price is written to `metadata.cost`, and free-tier/PRO/ENTERPRISE/BUSINESS/STARTER orgs are unaffected. The dashboard renders balance + history with `costs: {}` rather than misleading prices.
-- **2026-10-12 Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = 0 errors (verified
-  by your terminal).
-- **2026-10-12 Gate B (fresh full run, post F3 harden)**: `1 failed | 3539 passed | 26
-  skipped (3566)` across 334 files (203.67s). Breakdown:
-  - `creditTierPricing.f3.test.ts`: **RED→GREEN** (was RED; the intentional F3 regression
-    pin now passes after the `getCreditCost` harden).
-  - `SupportChat.test.tsx`: **GREEN 7/7** — a pure jsdom component unit test that stubs
-    `fetch('/api/support/chat')`; does NOT drive the real `callAI`/AI provider at import
-    time. The earlier reported "SupportChat 503" failure was stale cached-log evidence and
-    is NOT reproducible. No production AI-provider logic changed or mocked-away; the 503
-    case is an explicit assertion.
-  - `scripts/run-migrations.guard.test.ts` > `proves the defect was real`: **pre-existing
-    failure, NOT a regression** — verified by stashing all session changes and re-running on
-    clean HEAD (fails identically: `expected 779 to be 776`). Migration-corpus count
-    drifted vs. the 776 oracle from commit `71252d0`; no tracked migration file changed this
-    session (`git diff --stat HEAD -- 'apps/web/db/migrations/'` is empty). Out of scope
-    for F3; re-calibrate the guard against the current corpus.
+**Sources:** `080_credit_system.sql:45-87` (sole `credit_costs` source, verbatim —
+none invented); `066`/`067` (`subscription_plans` prices); `pricing/page.tsx:105`
+(public-site tier filter). **Pricing migration: BLOCKED-APPROVAL — NOT applied.**
+
+### Pricing methodology: why margin-based rates CANNOT yet be computed (missing inputs)
+
+Per directive §Priority 3.4, the data does **not** support a back-of-envelope
+margin rate, because these inputs are absent from the repository:
+
+1. **Provider unit costs:** Twilio SMS rates by destination/country, the email
+   provider cost, and AI model inference cost ($/token) for AI_REQUEST /
+   AI_NEGOTIATION / CONTRACT_GENERATE are **not** in the codebase. Migration
+   `029_ai_providers` stores provider config but not per-token costs.
+2. **Included allowances are not mapped to actions per tier.**
+   `subscription_plans.limits` carries `monthly_ai_credits` /
+   `monthly_sms_allowance` / `monthly_email_allowance` (usage-allowance model),
+   but `credit_costs` charges **per-action**. No field links how many
+   `SMS_SEND` credits a plan's allowance buys, so the "effective price per
+   included unit" is not derivable without assumptions.
+3. **Expected usage distributions per tier are absent.** No volume histogram per
+   paying org exists, so the blend justifying a tier's marginal credit rate is
+   unknown.
+4. **CONFLICT between 066 ($79 Pro) and 067 ($399 Pro) prices.** Only a live
+   `SELECT tier, price_cents FROM subscription_plans` settles which is current.
+5. **Migration `075` is documented ABORTED** (its own comment, 075:33-48). If
+   production is frozen at 074, the `credit_costs` table itself does not exist in
+   prod and the credit-billing path is not the live one — overage billing
+   (066/067 `limits.overage_*_cents`) is. This changes what "SCALE credit costs"
+   means and must be reconciled before any seed.
+
+### Options for Professional/Scale credit pricing (owner decision)
+
+| Option | What | Advantages | Risks | Recommendation |
+|---|---|---|---|---|
+| **A. Explicit tier-specific rows** | Seed 6 `credit_costs` rows for `SCALE` via idempotent `INSERT … ON CONFLICT DO UPDATE` (mirror 080 style). | Tier priced from own economics; dashboard shows real prices; clean. | Owner must *decide* 6 rates; must run after 066/067 + 075 reconcile on live DB. | **Choose this** once rates approved. |
+| **B. Owner-approved inheritance policy** | Code maps `SCALE → BUSINESS` (next lower tier) rates until seeded — explicit, not silent FREE. `PROFESSIONAL` (defunct) → `PRO`. | Unblocks Scale customers now with conservative (higher) rates; no FREE leakage; reversible. | `SCALE` ($2,499) paying `BUSINESS` ($899) rates = **overcharge** vs the plan's value — dispute risk. Must be time-boxed + surfaced to billing. | Acceptable **interim** only if Scale customers are blocked AND owner signs off on overcharge risk. |
+| **C. Leave unpriced (current state)** | Fail-closed: every billable action for `SCALE` returns `errorCode: PRICING_NOT_CONFIGURED` → HTTP 402, `deducted:0`. | Zero revenue-leakage; no overcharge; no assumptions. | `SCALE` ($2,499/mo) customers **cannot SMS/email/AI/contract/lead** via the credit path. Business-stopping for them. | Current safe default. Use until A/B approved, or if no live Scale customers on the credit path. |
+
+### Owner approval items (required before any migration)
+1. **Confirm live migration baseline:** `SELECT count(*) FROM credit_costs;` on prod.
+   If it errors, 075 aborted on prod and the credit path must be re-versioned —
+   not just the rates.
+2. **Confirm live plan prices:** `SELECT tier, price_cents FROM
+   subscription_plans WHERE tier IN ('scale','pro','business','starter');` —
+   resolve the 066 vs 067 conflict.
+3. **Approve exact per-action credit rates for SCALE** (6 rows). Suggested
+   *starting point for discussion only (NOT approved, NOT applied)*: mirror
+   `BUSINESS` (SMS 2, email 1, AI 4, AI_NEG 10, CONTRACT 6, LEAD_FIND 1) — but
+   this overcharges relative to SCALE's $2,499 vs BUSINESS $899 and should be
+   re-evaluated once provider costs + usage distribution exist. Owner may pick
+   lower rates reflecting SCALE's larger allowances.
+4. **Decide `professional` tier fate:** drop it from the CHECK, or confirm it
+   should be a separately-priced tier (it is currently a defunct alias of `PRO`).
+5. **Choose rollout option** (A / B / C) and authorize deployment.
+
+### Verification (final, 2026-10-12 cycle)
+- **Gate A**: `tsc -p tsconfig.typecheck.json --noEmit` = EXIT 0, 0 errors.
+- **Gate B**: `vitest run --config src/app/api/vitest.config.ts` = **3545 passed | 26 skipped | 0 failed**, exit 0, 283.97s. Shell.theme timeout resolved via per-test override.
 
 

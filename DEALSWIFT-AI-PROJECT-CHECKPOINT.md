@@ -82,26 +82,18 @@ anything:
 - Verification: `credits.test.ts` + `creditTierPricing.f3.test.ts` +
   `getCredits.tierResilience.test.ts` â†’ **53/53 passed** (isolated).
 
-### Priority 3 â€” Professional / Scale rates (decision table, BLOCKED-APPROVAL)
-- Migration `080_credit_system.sql` (lines 45-87) seeds **exactly 5 tiers Ã— 6
-  actions = 45 rows**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. Seeded values
-  read verbatim:
+### Priority 3 — Professional / Scale pricing (decision pending owner approval)
+- ⚠️ **Data-quality finding (verified, not fabricated):** the repo does **NOT** have a single coherent "Professional $249 / Scale $2,499" pricing story. Migration `035` seeded `plan_professional` at $249 (tier=`professional`); migration `066` **superseded and re-aliased** it (lines 154-161: `plan_professional` → tier=`pro`, $79, "alias for pro"). Migration `067` then set `plan_pro` to **$399** and seeded `plan_scale` at **$2,499**. So: (a) the `professional` tier label is **defunct** (aliased to `pro`), corroborated by the pricing page querying `WHERE tier IN ('free','starter','pro','business','scale')` — `professional` is never rendered; (b) `066` ($79 Pro) and `067` ($399 Pro) **conflict** on the live Pro price. Fuller conflict table + six-action matrix in `UNIFIED-REQUIREMENTS-MATRIX.md` §Priority 3.
+- `080_credit_system.sql` (lines 45-87) seeds `credit_costs` for **exactly 5 tiers × 6 actions = 45 rows**: `FREE, STARTER, PRO, BUSINESS, ENTERPRISE`. Values read verbatim:
   - SMS_SEND: FREE=5, STARTER=4, PRO=3, BUSINESS=2, ENTERPRISE=2
   - EMAIL_SEND: 2, 2, 1, 1, 1
   - AI_REQUEST: 10, 8, 5, 4, 3
   - AI_NEGOTIATION: 25, 20, 12, 10, 8
   - CONTRACT_GENERATE: 15, 12, 8, 6, 5
   - LEAD_FIND: 3, 2, 1, 1, 1
-- `PROFESSIONAL` ($249/mo, 035) and `SCALE` ($2,499/mo, 067) have **no**
-  `credit_costs` rows at all (confirmed fail-closed). Idempotent migration to seed
-  their rates is **BLOCKED-APPROVAL â€” NOT applied**; exact rates are the billing
-  owner's decision.
-- **Operational effect (verified):** until rates are seeded, every billable action
-  for a `professional`/`scale` org **fails closed** â€” refused with
-  `errorCode: PRICING_NOT_CONFIGURED` (HTTP 402 via `creditGuard`), `deducted: 0`,
-  logged; no credit moved, no wrong (FREE) price written to `metadata.cost`.
-  Free-tier and the 5 known tiers are unaffected. Dashboard renders balance +
-  history with `costs: {}`.
+- **The real live gap: `SCALE`** ($2,499/mo per 067) has **no** `credit_costs` rows (confirmed fail-closed). `PROFESSIONAL` as a distinct tier is defunct (aliased to `PRO`); fail-closed there is a dead-code-safety path. Idempotent migration to seed SCALE rates is **BLOCKED-APPROVAL — NOT applied**; exact rates are the billing owner's decision.
+- **Operational effect (verified):** until seeded, every billable action for a `scale` org **fails closed** — refused with `errorCode: PRICING_NOT_CONFIGURED` (HTTP 402 via `creditGuard`), `deducted: 0`, logged. No credit moved, no wrong (FREE) price written to `metadata.cost`. Free-tier and the 5 known tiers unaffected. Dashboard renders balance + history with `costs: {}`.
+- **Margin methodology NOT supportable from repo data** (missing: provider unit costs, per-tier action-allotment mapping, usage distributions; 066/067 price conflict; migration `075` documented ABORTED — `credit_costs` may not exist in prod at all). No rates invented. See MATRIX §Options for the three owner-decision paths (A: explicit SCALE rows; B: explicit SCALE→BUSINESS inheritance with overcharge risk; C: leave fail-closed = current state).
 
 ### Priority 4 â€” verification (fresh full-suite evidence)
 - **Gate A typecheck** (`tsc -p tsconfig.typecheck.json --noEmit`): **EXIT 0, 0 errors**
