@@ -278,7 +278,7 @@ and are now recorded as implemented and tested.
 | P1 | Campaign UX redesign | `app/campaigns` | IMPLEMENTED | routes exist; list handler `api/outreach/campaigns` GET now auth + tenant-isolation tested (`54a9d6b`, 5 tests, mutation-proven) | not browser-verified (live) |
 | Q1 | Workflow phase toggles (phone/SMS/email) | `api/campaigns/{automation,config}`, `api/utils/campaignBuilder.ts` | **IMPLEMENTED — reporting + validation + execution VERIFIED 2026-10-09** | Reporting (`campaignPhases.enabled.test.ts`) and validation (`SEQUENCE_CHANNEL_DISABLED`/`SEQUENCE_NONE_ENABLED`) already pinned. **Execution half now verified** by `campaignPhases.execution.test.ts`: `toEngineSettings()` — the builder→engine hand-off, sole caller `campaigns/route.ts` — filters disabled phases out of both `maxTouches` and `touchDelays[]`, so a campaign with calling OFF will not dial. 6 tests, mutation-proven (dropping either `.filter(p=>p.enabled)` turns 6/6 red). |
 | R1 | AI phone calling | `api/gateway/voice-gateway.ts`, `api/utils/twilio-adapter.ts`, `api/utils/callSchedulingEngine.ts`, `api/campaigns/[id]/voice/` | **UNIT TESTED** | 33 tests across voice-gateway, twilio-adapter, voiceSelection, voiceRoute — false negative #3 | live calls need provider credential |
-| S1 | AI templates | `app/templates`, `components/templates` | IMPLEMENTED | routes + components exist | — |
+| S1 | AI templates | `app/templates`, `components/templates`, `api/templates` (+ `library`, `[id]`) | **UNIT TESTED** | `api/templates/__tests__/templates.routes.test.ts` — 29 tests across all 4 routes: 401/403 gates before any query; enum `?category=EMAIL` 500 pinned to a 400-before-SQL; tenant isolation (`organization_id` bound on every `user_templates` read/write); defect-#32 bound filters ($n params, never inlined); CRUD/ownership 404s (PUT issues NO update for foreign rows); soft delete; AI `was_used` marking; opaque 500s with no SQL leak. **Mutation-proven**: dropping `.eq('organization_id', …)` → 2 red; disabling the enum guard → 1 red; both reverted (`git diff` clean). 29/29 green, 0 tsc errors attributable to the file. | — |
 | T1 | Voice selection / AUTO recommendation | `api/utils/voiceSelection.ts` | **UNIT TESTED** | `voiceSelection.test.ts` — false negative #4 | live provider credential |
 
 ## SET U — ADMIN CRM ANALYTICS
@@ -874,15 +874,14 @@ them is the gate. A green gate proves one code path, not all of them.
    Caveat: verified over authenticated HTTP, not in a browser. Console errors,
    hydration failures and error boundaries are still unproven absent — that is
    what the browser crawl is for.
-3. **`scripts/wrangler-deploy.mjs` DOES NOT REBUILD** — it only runs
-   `wrangler deploy`. Found 2026-10-04. Running it after a code change ships a
+3. ~~**`scripts/wrangler-deploy.mjs` DOES NOT REBUILD**~~ — **REMEDIATED 2026-10-10 (`a91dfa8`)**: the script now REFUSES to ship a stale `.open-next` artifact instead of silently deploying one, and the refusal is pinned by `deploy-integrity-ratchet.test.ts`. The original report: it only ran
+   `wrangler deploy` (found 2026-10-04), so running it after a code change shipped a
    **stale `.open-next` bundle while reporting success.** Observed directly: a
    deploy returned a fresh Worker (`6ea153be`) yet `/signup?ref=` still 404'd,
    because `app-path-routes-manifest.json` was timestamped 20:02 while the
    commit was 01:43 — neither `/signup/route` nor `/referrals/page` was in the
    bundle (368 routes registered; both absent).
-   **Always run `yarn cf:build` first.** This is a silent-failure trap: it hides
-   any code change from production while looking successful.
+   Guard added `a91dfa8`; `wrangler-deploy.guard.test.ts` also present. The silent-failure trap (hiding code changes from production while looking successful) is closed. **Standing advice unchanged: always run `yarn cf:build` first.**
 
 ## EXTERNAL BLOCKERS
 
