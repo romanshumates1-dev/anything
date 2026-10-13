@@ -6,6 +6,15 @@ project state. A new model inherits state from here and from
 
 ---
 
+## SESSION UPDATE — 2026-10-13 (milestone: rollout gate shipped; SEO-1 audit)
+
+- Committed `5ba8cfa`, pushed: rollout gate script + test, 30-row fix, pricing decision record.
+- New `apps/web/src/app/seo-surface.guard.test.ts` (this session, uncommitted pending): SEO-1 audit pinned — sitemap dedupe, path→page resolution, indexable-route coverage, single origin. Verifies offline.
+- Pending owner terminal: gate script (expect exit 2 HOLD) + new vitest files (expect GREEN). Shell runner still broken (recorded, not re-hammered).
+- Still blocked: SCALE rates (APPROVAL), homepage G2 (no live access), Stripe live webhook (missing secrets).
+
+---
+
 ## SESSION UPDATE — 2026-10-13 (post-verification: pricing decision, rollout gate, row-count fix)
 
 Branch `feat/gamification-rewards`, HEAD `90d85146` (one docs commit past reported

@@ -1107,6 +1107,12 @@ margin rate, because these inputs are absent from the repository:
    should be a separately-priced tier (it is currently a defunct alias of `PRO`).
 5. **Choose rollout option** (A / B / C) and authorize deployment.
 
+### 2026-10-13 milestone update (this session)
+- Rollout gate `apps/web/scripts/check-credit-pricing-readiness.mjs` + test committed `5ba8cfa`, pushed. 080 seed corrected 45→30 rows.
+- SEO-1 audit: new `apps/web/src/app/seo-surface.guard.test.ts` pins no-duplicate sitemap, every sitemap path resolves (except intentional /compliance→/trust redirect), every indexable route in sitemap (except /legal/accept noindex), single origin of truth (no dealflow.ai). Committed below.
+- Gate runs pending owner terminal (shell runner broken, recorded): gate script expect exit 2 HOLD; new tests expect GREEN.
+
+
 ### 2026-10-13 post-verification update
 - 080 seed corrected to **30 rows** (was "45" in one draft line). Gate script
   `apps/web/scripts/check-credit-pricing-readiness.mjs` (offline rollout
