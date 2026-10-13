@@ -970,15 +970,22 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
   'professional')` throws `Unknown subscription tier … refusing to price it at FREE`
   (credits.test.ts:250-255); `getCredits` degrades to balance + history with `costs:{}`
   (getCredits.tierResilience.test.ts). **No silent FREE pricing is shown to users.**
-- **Residual (revenue, not safety):** singular `getCreditCost(action, tier)` still falls
-  back to the `FREE` credit_costs row for an unmapped tier (credits.test.ts:81-89,
-  tested-as-intentional). A paying Scale/Professional customer is underpriced per-action.
-- **Recommended safe fix (NOT yet implemented — pricing-sensitive + needs TDD + billing
-  owner sign-off):** idempotent migration seeding `credit_costs` for `PROFESSIONAL` &
-  `SCALE` at the **best existing rate** (ENTERPRISE-equivalent), derived from migration
-  067's overage ordering (Scale has the lowest overage $/unit → lowest credit
-  surcharge). Must be backed by a failing test first; no production balances modified;
-  no non-authoritative mapping invented.
+- **Residual — elevated to revenue-risk (NOT a display-only defect):** the singular
+  `getCreditCost(action, tier)` falls back to the `FREE` `credit_costs` row for an
+  unmapped tier. Its two call sites are both internal to `credits.ts` and both
+  billing-relevant, not display-only:
+  1. `canAffordAction` (credits.ts:280) — the real-time affordability check.
+  2. **`deductCreditsForAction` (credits.ts:533) — the live credit-deduction path.**
+  So a paying `scale`/`professional` org (tier passed straight in → no `credit_costs`
+  row) is **undercharged on live usage** (charged the FREE surcharge). Existing test
+  asserts the fallback is intentional (credits.test.ts:81-89), written before the drift
+  was recognized.
+- **Safe fix (BLOCKED-APPROVAL — NOT implemented):** idempotent migration seeding
+  `credit_costs` for `PROFESSIONAL` & `SCALE` at the best existing rate
+  (ENTERPRISE-equivalent), from migration 067's overage ordering (Scale's lowest
+  overage $/unit → lowest credit surcharge). Failing test first (both `getAllCosts`
+  and `getCreditCost` for `scale`); no production balances modified; no
+  non-authoritative mapping. Billing-owner sign-off on per-unit rates required.
 - **Homepage G2**: unchanged — DIAGNOSABLE (matrix G2); root cause unmeasured; not
   reproduced (12/12 apex, 6/6 workers.dev). No live/prod access here.
 - **Stripe live webhook**: BLOCKED-EXTERNAL (needs `STRIPE_SECRET_KEY` +

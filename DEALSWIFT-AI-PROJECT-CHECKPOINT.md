@@ -83,18 +83,7 @@ Current safe behavior (verified by existing tests in `08b4c85`, re-read this ses
 - `getCredits` degrades: balance + history served, `costs: {}` (NOT FREE, no 500) for
   `scale`/`professional` (getCredits.tierResilience.test.ts).
 
-Residual (not a safety/honesty defect): singular `getCreditCost(action, tier)` still
-falls back to the `FREE` `credit_costs` row for an unmapped tier — **tested-as-intentional**
-(credits.test.ts:81-89 "falls back to FREE tier cost if tier not found"). For paying
-Scale/Professional customers it underprices per-action usage.
-
-Recommendation (NOT implemented — pricing-sensitive; needs TDD which requires a working
-shell, and billing-owner sign-off): add an **idempotent** migration seeding
-`credit_costs` rows for `PROFESSIONAL` & `SCALE` at the **best existing rate**
-(ENTERPRISE-equivalent), derived from migration 067's overage ordering (Scale has the
-lowest overage $/unit → lowest credit surcharge). Back it with a failing test first
-(`getAllCosts('scale')` returns real costs, never FREE). Do NOT modify real customer
-balances or invent a non-authoritative mapping.
+Residual (elevated to revenue-risk, not safety/honesty defect): the singular getCreditCost(action, tier) falls back to the FREE credit_costs row for an unmapped tier. Its two call sites are both internal to credits.ts and both billing-relevant (not display-only): canAffordAction (credits.ts:280) and the live credit-deduction path deductCreditsForAction (credits.ts:533). A paying scale/professional org (tier passed in with no credit_costs row) is therefore undercharged on live usage, not just mis-priced on screen. Existing test asserts the FREE fallback intentional (credits.test.ts:81-89), written before the tier drift was recognized. Safe fix NOT implemented — BLOCKED-APPROVAL + TDD: idempotent migration seeding credit_costs for PROFESSIONAL & SCALE at the best existing rate (ENTERPRISE-equivalent, from migration 067 overage ordering); failing test first for both getAllCosts('scale') and getCreditCost('SMS_SEND','scale'); no balances modified, no invented mapping. Billing-owner sign-off required.
 
 ### Remaining master-scope status
 - Homepage G2 500: **unchanged** — matrix G2 remains DIAGNOSABLE (memory hypothesis
