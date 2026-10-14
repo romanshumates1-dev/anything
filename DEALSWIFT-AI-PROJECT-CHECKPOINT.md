@@ -928,6 +928,50 @@ None of these are deployed to production; last live production Worker remains
     `qa-page-probe.mjs` are committed (`4036224`). Do not re-open the
     "every page 307s to /legal/accept" finding.
 
+## 2026-10-14 — DEAL-COMPLETION DATA-HONESTY FIX (`b3c2e07`)
+
+While reconciling the master backlog for the highest-priority unblocked work, a
+genuine **fabricated-data defect** (the exact class SET H2 / R1–R7 flag as
+unacceptable) was found in the core seller workflow and fixed with TDD.
+
+**Defect:** `generateSimpleSummary()` in `apps/web/src/app/api/deals/complete/route.ts`
+— the money-facing summary on the buyer→payment→sign→confirm flow (returned by
+`GET /api/deals/complete` AND emailed as the "Assignment Fee" on deal close) —
+**invented numbers** when `deal.metadata` lacked a recorded value:
+
+- `purchasePrice = … || 100000` (fabricated $100k price)
+- `arv = … || price * 1.4` (fabricated ARV)
+- `assignmentFee = … || Math.min(20000, price * 0.1)` (fabricated fee)
+- `propertyAddress = … || 'Property Address'` (fake address)
+- `closingDate = … || today + 14 days` (invented date)
+
+The `confirm` path then **emailed the invented `assignmentFee` as if it were
+collected** ("DEAL CLOSED — Assignment Fee: $X") — a number the system never knew,
+in a money email.
+
+**Fix (data-honesty; auth/org-scoping/transactions unchanged):**
+`generateSimpleSummary` is now **exported** and rewritten to the same rule as
+`plainContractSummary.ts` — every financial field is the recorded value **or
+`null`**; nothing is derived from a guess. `numOrNull()` coerces raw metadata to a
+finite number or null. `buyerPays`/`potentialProfit` are computed only when all
+inputs are real. New `hasCompleteFinancials` boolean distinguishes honest
+"not recorded" from a real number. `whyGoodDeal` emits only existing figures. The
+confirm email renders `"not recorded"` for nulls (via a `currency()` helper +
+`feeLine`) and no longer crashes on a null fee. Only production file touched:
+`deals/complete/route.ts` (+86/−33).
+
+**Verification (this session):**
+- `dealSummary.honesty.test.ts` — **7/7 GREEN**, mutation-proven: restoring the
+  `100000`/`1.4×`/`Math.min` defaults → **5 failed** (`expected 100000 to be null`,
+  `expected 12000 to be null`); reverted (identical file hash) → 7/7.
+- Deal-related regression group (`deals/complete/__tests__` + `dealOutcomes` +
+  `dealEconomics`) → **22/22 pass**.
+- **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **TSC_EXIT=0**.
+- Committed + pushed: `b3c2e07` on `feat/gamification-rewards`.
+
+**Status:** IMPLEMENTED + UNIT TESTED (local). Not deployed. Live deal-close email
+round-trip remains BLOCKED-EXTERNAL (Stripe / AWS email provider).
+
 ## SECURITY NOTE
 
 This checkpoint records **credential NAMES only** (e.g. `STRIPE_SECRET_KEY
