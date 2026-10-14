@@ -26,7 +26,7 @@
  * canonicalFor uses absolute URLs: scrapers must resolve them
  * correctly regardless of where the JSON-LD is consumed.
  */
-import { siteOrigin } from './seo';
+import { siteOrigin, SOCIAL_IMAGE_PATH } from './seo';
 import { jsonLdForEmbed } from './faq-schema';
 
 /**
@@ -79,7 +79,7 @@ export function buildOrganizationSchema() {
     name: SITE_NAME,
     logo: {
       '@type': 'ImageObject',
-      url: `${siteOrigin()}/og-image.png`,
+      url: `${siteOrigin()}${SOCIAL_IMAGE_PATH}`,
     },
     sameAs: [],
   };

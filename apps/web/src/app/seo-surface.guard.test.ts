@@ -33,6 +33,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { buildWebSiteSchema, buildOrganizationSchema, jsonLdForEmbed } from '@/lib/structuredData';
+import { SOCIAL_IMAGE_PATH } from '@/lib/seo';
 import { join } from 'node:path';
 
 const APP_ROOT = process.cwd();
@@ -143,6 +144,12 @@ describe('SEO surface guard (SEO-1)', () => {
     expect(siteSchema.url).toBe(APEX + '/');
     expect(orgSchema['@type']).toBe('Organization');
     expect(orgSchema.logo.url).toContain(APEX);
+    // The logo URL must be derived from the single source of truth in lib/seo.ts,
+    // not a duplicated literal — otherwise the schema silently drifts when the
+    // social image path changes (exactly the class of defect SOCIAL_IMAGE_PATH
+    // exists to prevent).
+    expect(SOCIAL_IMAGE_PATH).toBe('/og-image.png');
+    expect(orgSchema.logo.url).toBe(`${APEX}${SOCIAL_IMAGE_PATH}`);
     // The `</` escape must neutralise every `<` so a script tag in any
     // string field cannot early-close the <script> element.
     const raw = JSON.stringify(buildWebSiteSchema());
