@@ -301,9 +301,21 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Negotiation not found' }, { status: 404 });
       }
 
-      // HARD FLOOR: Assignment fee must be at least $5,000 (non-negotiable)
+      // HARD FLOOR: Assignment fee must be at least $5,000 (non-negotiable).
+      // DATA HONESTY (SET H2 / R1–R7): the fee is real money the buyer owes.
+      // It must be a RECORDED negotiation value — never a fabricated default.
+      // This previously did `negotiation.assignment_fee || 10000`, which papered a
+      // buyer-facing contract at an invented $10,000 whenever the fee was simply
+      // not recorded. Fail closed instead (same pattern as the purchase-price
+      // guard above), so a contract is never sent quoting a number nobody set.
       const MINIMUM_ASSIGNMENT_FEE = 5000;
-      const assignmentFee = negotiation.assignment_fee || 10000;
+      const recordedFee = negotiation.assignment_fee;
+      if (typeof recordedFee !== 'number' || !Number.isFinite(recordedFee) || recordedFee <= 0) {
+        return Response.json({
+          error: 'Assignment fee has not been recorded for this negotiation; record the agreed fee before sending the contract',
+        }, { status: 400 });
+      }
+      const assignmentFee = recordedFee;
       if (assignmentFee < MINIMUM_ASSIGNMENT_FEE) {
         return Response.json({
           error: `Assignment fee must be at least $${MINIMUM_ASSIGNMENT_FEE.toLocaleString()} (current: $${assignmentFee.toLocaleString()})`

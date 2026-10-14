@@ -212,6 +212,34 @@ describe('POST /api/contracts/send', () => {
       expect(body.error).toContain('at least $5,000');
     });
 
+    it('400 (not a fabricated $10,000 contract) when NO assignment fee was negotiated', async () => {
+      // DATA HONESTY (SET H2 / R1–R7): a negotiation with no recorded
+      // assignment_fee must NOT be papered into a buyer-facing assignment
+      // contract at an invented $10,000. The fee is real money the buyer owes;
+      // if it was never recorded, the contract cannot be generated — fail closed.
+      mockSql
+        .mockResolvedValueOnce([{ id: 'b1', name: 'Buyer', email: 'buyer@example.com' }])
+        .mockResolvedValueOnce([{
+          id: 'n1',
+          lead_id: 'l1',
+          seller_name: 'Seller',
+          assignment_fee: null, // never negotiated/recorded
+          created_at: new Date().toISOString(),
+          metadata: { property_address: '123 Main St' },
+        }]);
+
+      const res = await POST(mockRequest({
+        contractType: 'assignment_contract',
+        buyerId: 'b1',
+        negotiationId: 'n1',
+      }));
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      // Must NOT have sent a contract, and must NOT quote a fabricated fee.
+      expect(body.error).toContain('Assignment fee');
+      expect(JSON.stringify(body)).not.toContain('10000');
+    });
+
     it('sends assignment contract when fee meets minimum', async () => {
       mockSql
         .mockResolvedValueOnce([{ id: 'b1', name: 'Buyer Name', email: 'buyer@example.com' }])

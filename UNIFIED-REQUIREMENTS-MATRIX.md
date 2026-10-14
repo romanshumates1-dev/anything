@@ -1089,6 +1089,37 @@ placeholders. An offer page fundamentally needs a number, so "what to show when 
 exists" is a **product decision** (e.g. "contact us" vs "pending underwriting"), not a
 safe autonomous rewrite. Flagged for owner/design approval; not bundled here.
 
+### SET M follow-through — assignment-contract fee honesty fix (2026-10-14, this session, `b3c2e07` chain)
+
+A third, more serious instance of the same fabricated-data class was found and fixed in a
+**buyer-facing legal document**: `app/api/contracts/send/route.ts` generated the assignment
+contract with `const assignmentFee = negotiation.assignment_fee || 10000`. When a
+negotiation had **no recorded fee**, this fabricated a **$10,000** assignment fee, passed
+the `$5,000` floor check, and sent a signed assignment contract telling a real buyer they
+owed a fee that was never negotiated — real money, on a legal instrument, from a number
+nobody set. (No guard existed, unlike the purchase-agreement path which already required a
+price or 400'd at L214.)
+
+**Fix (fail-closed, mirrors the existing L214 purchase-price guard):** the assignment fee
+must now be a **recorded** positive finite `negotiation.assignment_fee`; if absent/null/
+non-numeric/≤0 the route returns **400** ("Assignment fee has not been recorded … record
+the agreed fee before sending the contract") instead of fabricating a contract. The `$5,000`
+floor still applies to a recorded fee. Auth/CSRF/IDOR/esign logic unchanged. (The
+purchase-agreement path's `|| 100000` fallbacks at L222-223 are defensive/unreachable —
+that path already 400s when no price is available at L214 — so left as-is, not part of this
+change.)
+
+**Verification (TDD, mutation-proven):**
+- New test `send/route.test.ts` → "400 (not a fabricated $10,000 contract) when NO
+  assignment fee was negotiated" — asserts status 400, error mentions "Assignment fee", and
+  the response contains no fabricated `10000`.
+- **Mutation-proven RED:** restoring `|| 10000` → **1 failed** (`expected 200 to be 400`);
+  reverted (identical file hash) → GREEN.
+- `contracts/send` suite → **16/16 pass**; contracts group (`send`+`generate`+`route`) →
+  **34/34 pass** (no regressions).
+- **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **TSC_EXIT=0**.
+- Diff: 1 production file (`send/route.ts`) + 1 test file. No unrelated behavior changed.
+
 ### Priority 3 — Professional / Scale rate decision table (verified, no values invented)
 
 **⚚ CRITICAL DATA-QUALITY FINDING (verified, not fabricated):** the repository does
