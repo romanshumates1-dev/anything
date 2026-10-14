@@ -14,6 +14,11 @@ import {
 import sql from "@/app/api/utils/sql";
 import PricingTierSelector from "./PricingTierSelector";
 import { canonicalFor } from '@/lib/seo';
+import {
+  buildProductSchema,
+  buildFaqJsonLdFor,
+  jsonLdForEmbed,
+} from '@/lib/structuredData';
 
 export const metadata: Metadata = {
 	...canonicalFor('/pricing'),
@@ -230,6 +235,28 @@ export default async function PricingPage() {
 
   return (
     <div className="bg-[#0F172A]">
+      {/* Structured data (JSON-LD) — SEO-1.
+          Product/AggregateOffer is built from the SAME `TIERS` rows the
+          cards render (prices come from subscription_plans), so the
+          machine-readable price can never disagree with the visible one.
+          Omitted entirely when the DB read failed: an empty offer list
+          would assert a price range we cannot substantiate.
+          The pricing FAQ reuses the SAME `FAQS` array the <details>
+          elements map over, which is what makes the markup valid. */}
+      {TIERS.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: jsonLdForEmbed(buildProductSchema(TIERS)),
+          }}
+        />
+      )}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdForEmbed(buildFaqJsonLdFor(FAQS, '/pricing')),
+        }}
+      />
       {/* Signup Notification Popup */}
       <LiveSocialProof variant="popup" fetchFromApi />
 

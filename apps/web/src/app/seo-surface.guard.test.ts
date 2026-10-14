@@ -32,7 +32,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { buildWebSiteSchema, buildOrganizationSchema, jsonLdForEmbed } from '@/lib/structuredData';
+import { buildWebSiteSchema, buildOrganizationSchema, buildProductSchema, buildFaqJsonLdFor, jsonLdForEmbed } from '@/lib/structuredData';
 import { SOCIAL_IMAGE_PATH } from '@/lib/seo';
 import { join } from 'node:path';
 
@@ -154,5 +154,74 @@ describe('SEO surface guard (SEO-1)', () => {
     // string field cannot early-close the <script> element.
     const raw = JSON.stringify(buildWebSiteSchema());
     expect(raw).not.toContain('</');
+  });
+
+  it('/pricing carries Product + AggregateOffer and FAQPage JSON-LD', () => {
+    // SEO-1 gap: /pricing rendered 5 priced tiers and 6 billing FAQs with no
+    // structured data at all, so the site's highest-intent page earned no
+    // price or rich-result treatment.
+    const pricing = read('src/app/(marketing)/pricing/page.tsx');
+    expect(pricing).toContain('buildProductSchema');
+    expect(pricing).toContain('buildFaqJsonLdFor');
+    expect(pricing).toContain('application/ld+json');
+  });
+
+  it('Product offers mirror the tier rows passed in (no invented prices)', () => {
+    // The schema MUST be derived from the DB rows the cards render, otherwise
+    // machine-readable prices drift from visible ones.
+    const tiers = [
+      { name: 'Free', slug: 'free', price: 0 },
+      { name: 'Starter', slug: 'starter', price: 49 },
+      { name: 'Pro', slug: 'pro', price: 129 },
+    ];
+    const schema = JSON.parse(jsonLdForEmbed(buildProductSchema(tiers)));
+    expect(schema['@type']).toBe('Product');
+    expect(schema.offers['@type']).toBe('AggregateOffer');
+    expect(schema.offers.priceCurrency).toBe('USD');
+    expect(schema.offers.lowPrice).toBe(0);
+    expect(schema.offers.highPrice).toBe(129);
+    expect(schema.offers.offerCount).toBe(3);
+    expect(schema.offers.offers).toHaveLength(3);
+    // lowPrice/highPrice and Offer.price must share the same unit (USD major
+    // units) — mixing dollars and cents is an invalid AggregateOffer.
+    expect(schema.offers.offers.map((o: any) => o.price)).toEqual([0, 49, 129]);
+    expect(schema.offers.offers[2].url).toBe(`${APEX}/pricing#pro`);
+  });
+
+  it('Product schema is honest: no synthetic "originalPrice" leaks in', () => {
+    // The pricing page computes `originalPrice = price * 2` for the "50% OFF"
+    // banner. That is marketing framing, not a real list price, and must not
+    // become a machine-readable price.
+    const schema = buildProductSchema([{ name: 'Pro', slug: 'pro', price: 129 }]);
+    const flat = JSON.stringify(schema);
+    expect(flat).not.toContain('originalPrice');
+    expect(flat).not.toContain('258');
+    expect(flat).not.toContain('priceSpecification');
+  });
+
+  it('FAQPage builder emits every passed Q&A, matching what the page renders', () => {
+    const faqs = [
+      { q: 'What is your refund policy?', a: 'Seven days, full refund.' },
+      { q: 'Can I cancel anytime?', a: 'Yes, no fees.' },
+    ];
+    const schema = JSON.parse(jsonLdForEmbed(buildFaqJsonLdFor(faqs, '/pricing')));
+    expect(schema['@type']).toBe('FAQPage');
+    expect(schema.url).toBe(`${APEX}/pricing`);
+    expect(schema.mainEntity).toHaveLength(2);
+    expect(schema.mainEntity[0]['@type']).toBe('Question');
+    expect(schema.mainEntity[0].name).toBe('What is your refund policy?');
+    expect(schema.mainEntity[0].acceptedAnswer['@type']).toBe('Answer');
+    expect(schema.mainEntity[0].acceptedAnswer.text).toBe('Seven days, full refund.');
+  });
+
+  it('empty tier list yields a zero range rather than a fabricated one', () => {
+    // /pricing omits the Product schema entirely when the DB read fails; this
+    // pins the builder's own behaviour for that degenerate input so it can
+    // never produce a plausible-looking but baseless price range.
+    const schema = buildProductSchema([]);
+    expect(schema.offers.offerCount).toBe(0);
+    expect(schema.offers.offers).toEqual([]);
+    expect(schema.offers.lowPrice).toBe(0);
+    expect(schema.offers.highPrice).toBe(0);
   });
 });
