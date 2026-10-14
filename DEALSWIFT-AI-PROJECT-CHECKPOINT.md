@@ -859,6 +859,13 @@ fix (probe 2026-10-07: 104 routes / 0 faults).
 ## RECENT COMMITS
 
 ```
+f45dc81  feat(seo): emit WebSite + Organization JSON-LD on the homepage
+20dd61b  refactor(seo): derive JSON-LD logo from SOCIAL_IMAGE_PATH (single source of truth)
+2ecc2af  feat(seo): add Product/Offer + FAQPage JSON-LD to /pricing (SEO-1)
+5237806  feat(seo): add SoftwareApplication JSON-LD to /features and /how-it-works (SEO-1)
+69f18d1  fix(seo): give /cash-offer its own title+description (was inheriting homepage title)
+a8ab8c2  fix(billing): remove PROFESSIONAL false-positive from pricing gate (HOLD was 2→1)
+abd7e52  test(templates): add 29 behavioral tests for all four AI templates routes (S1)
 8c62e50  fix(billing): honour BUSINESS/SCALE in entitlements + repair phantom `subscriptions` query
          → getOrganizationTier now reads 087 authoritative tables (was: nonexistent table,
          uppercase status, wrong tier column — threw EVERY call and demoted ALL orgs to FREE);
