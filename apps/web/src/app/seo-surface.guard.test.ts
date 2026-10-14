@@ -32,7 +32,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { buildWebSiteSchema, buildOrganizationSchema, buildProductSchema, buildFaqJsonLdFor, jsonLdForEmbed } from '@/lib/structuredData';
+import { buildWebSiteSchema, buildOrganizationSchema, buildProductSchema, buildFaqJsonLdFor, buildSoftwareApplicationSchema, jsonLdForEmbed } from '@/lib/structuredData';
 import { SOCIAL_IMAGE_PATH } from '@/lib/seo';
 import { join } from 'node:path';
 
@@ -223,5 +223,43 @@ describe('SEO surface guard (SEO-1)', () => {
     expect(schema.offers.offers).toEqual([]);
     expect(schema.offers.lowPrice).toBe(0);
     expect(schema.offers.highPrice).toBe(0);
+  });
+
+  it('/features and /how-it-works carry SoftwareApplication JSON-LD', () => {
+    // Both pages describe the product itself and had no structured data.
+    for (const p of ['features', 'how-it-works']) {
+      const page = read(`src/app/(marketing)/${p}/page.tsx`);
+      expect(page).toContain('buildSoftwareApplicationSchema');
+      expect(page).toContain('application/ld+json');
+    }
+  });
+
+  it('SoftwareApplication schema is keyed to the page that emits it', () => {
+    // Each page must own its own URL, otherwise two pages claim the same
+    // entity and Google picks one arbitrarily.
+    const features = JSON.parse(
+      jsonLdForEmbed(buildSoftwareApplicationSchema('/features'))
+    );
+    const how = JSON.parse(
+      jsonLdForEmbed(buildSoftwareApplicationSchema('/how-it-works'))
+    );
+    expect(features['@type']).toBe('SoftwareApplication');
+    expect(features.url).toBe(`${APEX}/features`);
+    expect(how.url).toBe(`${APEX}/how-it-works`);
+    expect(features.url).not.toBe(how.url);
+    expect(features.publisher['@type']).toBe('Organization');
+    expect(features.applicationCategory).toBe('BusinessApplication');
+  });
+
+  it('SoftwareApplication schema authors NO rating (anti-fabrication)', () => {
+    // The repo removed three invented testimonials from /pricing. A
+    // self-authored aggregateRating is an explicit Google manual-action
+    // risk, so the schema must never carry one. If real review data ever
+    // backs it, the value must be computed from the database.
+    const flat = JSON.stringify(buildSoftwareApplicationSchema('/features'));
+    expect(flat).not.toContain('aggregateRating');
+    expect(flat).not.toContain('ratingValue');
+    expect(flat).not.toContain('reviewCount');
+    expect(flat).not.toContain('"review"');
   });
 });

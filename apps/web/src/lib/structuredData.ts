@@ -86,6 +86,48 @@ export function buildOrganizationSchema() {
 }
 
 /**
+ * SoftwareApplication schema for /features and /how-it-works.
+ *
+ * These two pages describe the product itself, which is precisely what
+ * `SoftwareApplication` is for (as opposed to `Product`, which /pricing
+ * uses to carry the concrete price offers). Declaring the application
+ * category lets Google understand the site sells software and associate
+ * the company entity built by the Organization schema.
+ *
+ * HONESTY: `aggregateRating` and `review` are deliberately ABSENT. The
+ * repo removed three invented testimonials from /pricing on 2026-09-30,
+ * and self-serving ratings in structured data are an explicit Google
+ * manual-action risk. Real reviews live in the database and render on
+ * /reviews; if a rating schema is ever added it must be computed from
+ * those rows, never authored here.
+ */
+export function buildSoftwareApplicationSchema(pagePath: string) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'DealFlow AI',
+    url: `${siteOrigin()}${pagePath}`,
+    description: SITE_DESCRIPTION,
+    applicationCategory: 'BusinessApplication',
+    applicationSubCategory: 'Real estate lead engagement automation',
+    operatingSystem: 'Web',
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: `${siteOrigin()}/`,
+    },
+    offers: {
+      '@type': 'Offer',
+      // $0 because a free tier genuinely exists and is advertised on
+      // /pricing; the concrete per-plan prices live in the Product
+      // schema there rather than being duplicated (and drifted) here.
+      price: 0,
+      priceCurrency: 'USD',
+    },
+  };
+}
+
+/**
  * FAQPage JSON-LD for any page that renders Q&A pairs as a parameter.
  *
  * /pricing renders six billing FAQs as <details> elements. Those are

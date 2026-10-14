@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import { canonicalFor } from '@/lib/seo';
+import { buildSoftwareApplicationSchema, jsonLdForEmbed } from '@/lib/structuredData';
 
 export const metadata: Metadata = {
 	...canonicalFor('/how-it-works'),
@@ -173,6 +174,14 @@ const steps = [
 export default function HowItWorksPage() {
   return (
     <div className="bg-[#0F172A]">
+      {/* SoftwareApplication JSON-LD (SEO-1): same schema as /features, keyed to
+          this URL so each page owns its own structured entity. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdForEmbed(buildSoftwareApplicationSchema('/how-it-works')),
+        }}
+      />
       <div className="py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           {/* Hero */}

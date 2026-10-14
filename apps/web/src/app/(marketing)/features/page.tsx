@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { canonicalFor } from '@/lib/seo';
+import { buildSoftwareApplicationSchema, jsonLdForEmbed } from '@/lib/structuredData';
 
 export const metadata: Metadata = {
 	...canonicalFor('/features'),
@@ -102,6 +103,15 @@ const features = [
 export default function FeaturesPage() {
   return (
     <div className="bg-[#0F172A]">
+      {/* SoftwareApplication JSON-LD (SEO-1): this page describes the product,
+          which is what the schema is for. Carries no aggregateRating — a
+          self-authored rating is a Google manual-action risk. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdForEmbed(buildSoftwareApplicationSchema('/features')),
+        }}
+      />
       <div className="py-20 sm:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Hero */}
