@@ -1006,6 +1006,53 @@ plans `professional` ($249/mo) and `scale` ($2,499/mo) therefore have **no**
   known tiers unaffected. Decision table below. Billing-owner sign-off on per-unit rates
   required.
 
+### SET M follow-through — deal-completion summary data-honesty fix (2026-10-14, this session)
+
+A **fabricated-data defect** of the exact class SET H2 / R1–R7 flag as unacceptable was
+found in the core seller workflow: `generateSimpleSummary()` in
+`app/api/deals/complete/route.ts` — the money-facing summary on the buyer→payment→sign→
+confirm flow (returned by `GET /api/deals/complete` AND emailed as the "Assignment Fee"
+on deal close). When `deal.metadata` lacked a recorded value it **invented** one:
+
+- `purchasePrice = … || 100000` (a fabricated $100k price)
+- `arv = … || price * 1.4` (fabricated ARV)
+- `assignmentFee = … || Math.min(20000, price * 0.1)` (fabricated fee)
+- `propertyAddress = … || 'Property Address'` (fake address)
+- `closingDate = … || today + 14 days` (invented date)
+
+The `confirm` path then **emailed the invented `assignmentFee` as if it were collected**
+("DEAL CLOSED — Assignment Fee: $X") — a number the system never knew, in a money email.
+
+**Fix (data-honesty, no API/behavior contract broken):** `generateSimpleSummary` is now
+exported and rewritten to the same rule as `plainContractSummary.ts` — every financial
+field is either the value actually recorded in `deal.metadata` **or `null`**; nothing is
+derived from a guess. A new `numOrNull()` coerces raw metadata to a finite number or null
+(non-numeric/`{}`/`null` are treated as unknown, never coerced). Derived figures
+(`buyerPays`, `potentialProfit`) are computed only when every input is real, else null.
+New `hasCompleteFinancials` boolean lets callers distinguish an honest "not recorded" from
+a real number. `whyGoodDeal` bullets are emitted only for figures that exist. The confirm
+email now renders `"not recorded"` for any null figure (via a `currency()` helper +
+`feeLine`) instead of a fabricated amount, and no longer crashes on a null fee
+(`.toLocaleString()` on null would have thrown). **Auth/org-scoping/transactions unchanged.**
+
+**Verification (TDD, mutation-proven):**
+- `src/app/api/deals/complete/__tests__/dealSummary.honesty.test.ts` — **7/7 pass** GREEN.
+  Covers: recorded figures used exactly; all-null financials on empty/absent metadata
+  (asserts the exact fabricated `100000`/`1.4×`/`12000` values are now null); partial-input
+  cases stay null (no partial fabrication); non-numeric metadata → null; `whyGoodDeal` only
+  asserts existing figures.
+- **Mutation-proven RED:** temporarily restoring the `100000`/`1.4×`/`Math.min` defaults →
+  **5 failed** (`expected 100000 to be null`, `expected 12000 to be null`,
+  `expected true to be false`). Reverted to the honest impl (identical file hash), re-ran →
+  **7/7 GREEN**.
+- **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **TSC_EXIT=0**.
+- Diff: 1 production file (`deals/complete/route.ts`, +86/−33) + 1 new test file. No
+  unrelated behavior changed.
+
+Status: **IMPLEMENTED + UNIT TESTED** (local). Not deployed; production-email honesty for
+already-closed deals is unchanged (historical emails stand). Live deal-close round-trip
+remains BLOCKED-EXTERNAL (Stripe/AWS email provider).
+
 ### Priority 3 — Professional / Scale rate decision table (verified, no values invented)
 
 **⚚ CRITICAL DATA-QUALITY FINDING (verified, not fabricated):** the repository does

@@ -10,43 +10,85 @@ import { requireAdmin } from '@/app/api/utils/authz';
 import { getOrganization } from '@/lib/organization-context';
 import { sendEmailAuto as sendEmail } from '@/app/api/utils/emailProviders';
 
-interface ContractSummary {
+/**
+ * CONTEXT-TRUTHFUL contract summary for the deal-completion flow.
+ *
+ * This used to INVENT numbers: when `deal.metadata` lacked a recorded price it
+ * defaulted to `100000`, fabricated an ARV of `price * 1.4`, invented an
+ * assignment fee of `Math.min(20000, price * 0.1)`, a fake `'Property Address'`,
+ * and a `+14 days` closing date — then the confirm path emailed those invented
+ * figures as if they were the deal's real "Assignment Fee". That is exactly the
+ * fabricated-data defect class the matrix flags as unacceptable (SET H2, R1–R7):
+ * a page/email that returns 200 while showing numbers the system never knew.
+ *
+ * RULE (matches `plainContractSummary.ts`): every financial field is either the
+ * value the system actually recorded or `null`. Nothing is derived from a
+ * guessed price, and no derived figure (ARV, fee, buyer total, profit, closing
+ * date) is asserted when its inputs are unknown. `hasCompleteFinancials` lets
+ * callers tell an honest "not recorded" apart from a real number so a UI/email
+ * can never present a guess as fact.
+ */
+export interface ContractSummary {
   dealId: string;
-  propertyAddress: string;
-  purchasePrice: number;
-  assignmentFee: number;
-  buyerPays: number;
-  sellerReceives: number;
-  closingDate: string;
+  propertyAddress: string | null;
+  purchasePrice: number | null;
+  assignmentFee: number | null;
+  buyerPays: number | null;
+  sellerReceives: number | null;
+  potentialProfit: number | null;
+  closingDate: string | null;
   whyGoodDeal: string[];
+  hasCompleteFinancials: boolean;
 }
 
-function generateSimpleSummary(deal: any): ContractSummary {
-  const purchasePrice = deal.metadata?.purchase_price || deal.metadata?.offer_price || 100000;
-  const arv = deal.metadata?.arv || deal.metadata?.estimated_value || purchasePrice * 1.4;
-  const assignmentFee = deal.metadata?.assignment_fee || Math.min(20000, purchasePrice * 0.1);
-  const buyerPays = purchasePrice + assignmentFee;
-  const potentialProfit = arv - buyerPays;
+/** Coerce a raw metadata value to a finite number or null (never a guess). */
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
 
-  const whyGoodDeal = [
-    `You pay $${buyerPays.toLocaleString()} total`,
-    `Property worth ~$${arv.toLocaleString()} after repairs`,
-    `Potential profit: $${potentialProfit.toLocaleString()}`,
-    `No competition - deal is locked`,
-    `Close in ${deal.metadata?.closing_days || 14} days`,
-  ];
+export function generateSimpleSummary(deal: any): ContractSummary {
+  // price: only a RECORDED purchase/offer price. No 100000 fallback.
+  const purchasePrice =
+    numOrNull(deal?.metadata?.purchase_price) ??
+    numOrNull(deal?.metadata?.offer_price);
+  const arv =
+    numOrNull(deal?.metadata?.arv) ?? numOrNull(deal?.metadata?.estimated_value);
+  // assignment fee: only a RECORDED fee. No Math.min(20000, price*0.1) guess.
+  const assignmentFee = numOrNull(deal?.metadata?.assignment_fee);
+
+  // Derived figures are computed only when every input is real; otherwise null.
+  const buyerPays =
+    purchasePrice !== null && assignmentFee !== null
+      ? purchasePrice + assignmentFee
+      : null;
+  const potentialProfit =
+    arv !== null && buyerPays !== null ? arv - buyerPays : null;
+
+  const propertyAddress =
+    deal?.metadata?.address || deal?.metadata?.property_address || null;
+  const closingDate = deal?.metadata?.closing_date || null;
+
+  const whyGoodDeal: string[] = [];
+  if (buyerPays !== null) whyGoodDeal.push(`You pay $${buyerPays.toLocaleString()} total`);
+  if (arv !== null) whyGoodDeal.push(`Property worth ~$${arv.toLocaleString()} after repairs`);
+  if (potentialProfit !== null)
+    whyGoodDeal.push(`Potential profit: $${potentialProfit.toLocaleString()}`);
+  if (closingDate) whyGoodDeal.push(`Closing on ${closingDate}`);
 
   return {
     dealId: deal.id,
-    propertyAddress: deal.metadata?.address || deal.metadata?.property_address || 'Property Address',
+    propertyAddress,
     purchasePrice,
     assignmentFee,
     buyerPays,
-    sellerReceives: purchasePrice,
-    closingDate: deal.metadata?.closing_date || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    sellerReceives: purchasePrice, // seller receives the recorded contract price
+    potentialProfit,
+    closingDate,
     whyGoodDeal,
+    hasCompleteFinancials: purchasePrice !== null && assignmentFee !== null,
   };
 }
+
 
 // Check if buyer can proceed (payment verified)
 export async function GET(req: NextRequest) {
@@ -221,31 +263,42 @@ export async function POST(req: NextRequest) {
 
       const summary = generateSimpleSummary(deal);
 
+      // Honest email: only assert figures the system actually recorded. When the
+      // assignment fee was never recorded, say so explicitly rather than emailing
+      // a fabricated "$0" or invented fee as if it were collected (this path
+      // previously emailed Math.min(20000, price*0.1) for a deal with no recorded
+      // fee). currency() renders "not recorded" for null so the operator email
+      // can never present a guess as a collected amount.
+      const currency = (n: number | null) => (n === null ? 'not recorded' : `$${n.toLocaleString()}`);
+      const feeLine = summary.assignmentFee === null
+        ? 'not recorded — see deal metadata'
+        : `$${summary.assignmentFee.toLocaleString()}`;
+
       // Send confirmation email with assignment fee notification
       await sendEmail(organization.id, {
         to: 'roman.shumate@dealswiftautomation.com',
-        subject: `[DealFlow] DEAL CLOSED - Assignment Fee: $${summary.assignmentFee.toLocaleString()}`,
-        text: `Deal closed for ${summary.propertyAddress}. Assignment Fee: $${summary.assignmentFee.toLocaleString()}`,
+        subject: `[DealFlow] DEAL CLOSED - Assignment Fee: ${feeLine}`,
+        text: `Deal closed for ${summary.propertyAddress ?? 'property (address not recorded)'}. Assignment Fee: ${feeLine}`,
         html: `
           <h2 style="color: green;">Deal Closed Successfully!</h2>
 
           <h3>Assignment Fee Collected</h3>
-          <p style="font-size: 24px; font-weight: bold; color: green;">$${summary.assignmentFee.toLocaleString()}</p>
+          <p style="font-size: 24px; font-weight: bold; color: green;">${feeLine}</p>
 
           <h3>Deal Summary</h3>
           <table style="border-collapse: collapse; width: 100%;">
-            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Property</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${summary.propertyAddress}</td></tr>
-            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Purchase Price</strong></td><td style="padding: 8px; border: 1px solid #ddd;">$${summary.purchasePrice.toLocaleString()}</td></tr>
-            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Assignment Fee</strong></td><td style="padding: 8px; border: 1px solid #ddd;">$${summary.assignmentFee.toLocaleString()}</td></tr>
-            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Buyer Total</strong></td><td style="padding: 8px; border: 1px solid #ddd;">$${summary.buyerPays.toLocaleString()}</td></tr>
-            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Closing Date</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${summary.closingDate}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Property</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${summary.propertyAddress ?? 'not recorded'}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Purchase Price</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${currency(summary.purchasePrice)}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Assignment Fee</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${currency(summary.assignmentFee)}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Buyer Total</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${currency(summary.buyerPays)}</td></tr>
+            <tr><td style="padding: 8px; border: 1px solid #ddd;"><strong>Closing Date</strong></td><td style="padding: 8px; border: 1px solid #ddd;">${summary.closingDate ?? 'not recorded'}</td></tr>
           </table>
 
           <p style="margin-top: 20px;"><strong>Time:</strong> ${new Date().toISOString()}</p>
         `,
       }).catch(console.error);
 
-      console.log(`[DEAL] ${dealId} CLOSED_WON - Fee: $${summary.assignmentFee}`);
+      console.log(`[DEAL] ${dealId} CLOSED_WON - Fee: ${feeLine}`);
 
       return Response.json({
         status: 'CLOSED_WON',
