@@ -262,4 +262,38 @@ describe('SEO surface guard (SEO-1)', () => {
     expect(flat).not.toContain('reviewCount');
     expect(flat).not.toContain('"review"');
   });
+
+  it('every public marketing + legal page declares its own title and description', () => {
+    // DEFECT FOUND 2026-10-14: /cash-offer spread ONLY `canonicalFor(...)`,
+    // so Next.js fell back to the (marketing) layout's `default` title and
+    // the page shipped the IDENTICAL <title> as the homepage. Two indexable
+    // URLs sharing one title splits ranking signal and gives searchers no
+    // reason to click either.
+    //
+    // The layout template is "%s — DealFlow AI", so a page-level title is
+    // appended to the brand automatically — omitting it is never a way to
+    // avoid duplication.
+    const pages = [
+      'about', 'cash-offer', 'contact', 'faq', 'features', 'how-it-works',
+      'pricing', 'reviews', 'trust',
+      'legal/terms', 'legal/privacy', 'legal/acceptable-use', 'legal/sms-terms',
+      'legal/refunds', 'legal/cookies', 'legal/disclaimers', 'legal/esign',
+      'legal/dmca',
+    ];
+
+    const missingTitle: string[] = [];
+    const missingDescription: string[] = [];
+    const missingCanonical: string[] = [];
+
+    for (const page of pages) {
+      const src = read(`src/app/(marketing)/${page}/page.tsx`);
+      if (!/^\s*title:/m.test(src)) missingTitle.push(page);
+      if (!/^\s*description:/m.test(src)) missingDescription.push(page);
+      if (!src.includes('canonicalFor')) missingCanonical.push(page);
+    }
+
+    expect(missingTitle).toEqual([]);
+    expect(missingDescription).toEqual([]);
+    expect(missingCanonical).toEqual([]);
+  });
 });
