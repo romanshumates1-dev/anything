@@ -38,6 +38,23 @@ interface BuyerMatch {
   priority: string;
 }
 
+/**
+ * DATA-HONESTY (SET H2 / R1–R7): the price shown to matched buyers must be a
+ * RECORDED deal value, never a fabricated default. Buyer matching used to fall
+ * back to `|| 100000` and then EMAIL real buyers a "New Deal Available" showing
+ * `Purchase: $100,000 + Assignment: $X` for a deal whose price was never
+ * recorded — invented money in a customer-facing opportunity email. Returns null
+ * when no price is recorded so the caller can present an honest "price to be
+ * confirmed" state instead of a fabricated dollar figure. Exported for testing.
+ */
+export function resolveMatchPrice(metadata: { purchase_price?: unknown; offer_price?: unknown } | null | undefined): number | null {
+  for (const candidate of [metadata?.purchase_price, metadata?.offer_price]) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
 function calculateMatchScore(buyer: any, deal: any): {
   score: number;
   reasons: string[];
@@ -48,7 +65,12 @@ function calculateMatchScore(buyer: any, deal: any): {
   const metadata = deal.metadata || {};
 
   const dealZip = metadata.zip || metadata.property_zip;
-  const dealPrice = metadata.purchase_price || metadata.offer_price || 100000;
+  // Internal match-scoring default: when no price is recorded we score the buyer
+  // as if the deal were a mid-range value. This ONLY affects buyer RANKING
+  // (priceRangeMatch signal), never a user-facing figure — the buyer-facing price
+  // is resolved separately via resolveMatchPrice (see the notification path) and
+  // is never fabricated. Kept as a documented internal algorithm parameter.
+  const dealPrice = resolveMatchPrice(metadata) ?? 100000;
   const dealType = metadata.property_type || 'single_family';
 
   // Build buyer signals for scoring engine
@@ -182,7 +204,13 @@ export async function POST(req: NextRequest) {
     if (notifyBuyers && matches.length > 0) {
       const metadata = deal.metadata || {};
       const address = metadata.address || metadata.property_address || 'Property';
-      const price = metadata.purchase_price || metadata.offer_price || 100000;
+      // DATA-HONESTY: the price emailed to buyers must be recorded, never the
+      // fabricated `|| 100000` this used to send ("Purchase: $100,000"). When no
+      // price is recorded, present an honest "price to be confirmed" state and
+      // OMIT the dollar figures rather than email invented money to real buyers.
+      const recordedPrice = resolveMatchPrice(metadata);
+      const priceIsRecorded = recordedPrice !== null;
+      const price = recordedPrice ?? 0;
 
       // [HIGH FIX] Use regional fee engine instead of simplistic formula
       // Industry benchmark: 5-10% with $5K-$35K range
@@ -193,7 +221,11 @@ export async function POST(req: NextRequest) {
         isDistressed: metadata.is_distressed || false,
       });
       const assignmentFee = metadata.assignment_fee || Math.round(regionalFee.targetFeeCents / 100);
-      const totalPrice = price + assignmentFee;
+      // DATA-HONESTY: only assert dollar figures that were actually recorded.
+      // When no purchase price is recorded, the email shows an honest "price to be
+      // confirmed" line instead of a fabricated $100,000 purchase + total.
+      const priceDisplay = priceIsRecorded ? `$${price.toLocaleString()}` : 'price to be confirmed';
+      const totalPriceDisplay = priceIsRecorded ? `$${(price + assignmentFee).toLocaleString()}` : 'price to be confirmed';
 
       // [COMPLIANCE] Generate state-specific disclosure footer
       const complianceFooter = generateComplianceFooter(
@@ -246,7 +278,7 @@ export async function POST(req: NextRequest) {
         return sendEmail(organization.id, {
           to: match.email,
           subject: `${isVip ? '[VIP] ' : ''}New Deal Available: ${address}`,
-          text: `New Investment Opportunity\n\n${address}\n$${totalPrice.toLocaleString()}\n\nPurchase: $${price.toLocaleString()} + Assignment: $${assignmentFee.toLocaleString()}\n\nDeal ID: ${dealId}\n\nThis is a contract assignment opportunity.`,
+          text: `New Investment Opportunity\n\n${address}\n${totalPriceDisplay}\n\nPurchase: ${priceDisplay}${priceIsRecorded ? ` + Assignment: $${assignmentFee.toLocaleString()}` : ''}\n\nDeal ID: ${dealId}\n\nThis is a contract assignment opportunity.`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px;">
               <h2>New Investment Opportunity</h2>
@@ -254,8 +286,8 @@ export async function POST(req: NextRequest) {
 
               <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <h3 style="margin-top: 0;">${address}</h3>
-                <p style="font-size: 24px; color: #2e7d32; font-weight: bold;">$${totalPrice.toLocaleString()}</p>
-                <p style="color: #666;">Purchase: $${price.toLocaleString()} + Assignment: $${assignmentFee.toLocaleString()}</p>
+                <p style="font-size: 24px; color: #2e7d32; font-weight: bold;">${totalPriceDisplay}</p>
+                <p style="color: #666;">Purchase: ${priceDisplay}${priceIsRecorded ? ` + Assignment: $${assignmentFee.toLocaleString()}` : ''}</p>
               </div>
 
               <h3>Why This Deal?</h3>
