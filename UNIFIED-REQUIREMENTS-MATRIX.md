@@ -1303,4 +1303,42 @@ executed) were RED — both root-caused and fixed:**
 then rollout option A/B/C.
 
 
+### SET M follow-through — match-buyer email price honesty fix (2026-10-14, this session)
+
+Auditing the seller-to-buyer notification workflow for the fabricated-data class
+flagged by SET H2 / R1–R7, a **fourth instance** was found and fixed:
+`app/api/deals/match-buyer/route.ts` computed the buyer-facing purchase price as
+`metadata.purchase_price || metadata.offer_price || 100000` and emailed real
+buyers a "New Deal Available" showing `Purchase: $100,000 + Assignment: $X` for
+a deal whose price was never recorded — invented money in a customer-facing
+opportunity email, identical in class to the three prior fixes in this chain.
+
+**Fix:** extracted an exported pure `resolveMatchPrice(metadata)` that returns the
+recorded `purchase_price` (coerced to a positive finite number, treating `0` /
+negative / NaN / non-numeric as unknown) or `offer_price` fallback, else `null`
+— never a fabricated default. The internal buyer-scoring `priceRangeMatch`
+signal retains `?? 100000` (documented as ranking-only, never user-facing). The
+email path now uses `priceDisplay` / `totalPriceDisplay` which render
+"price to be confirmed" instead of a dollar figure when `resolveMatchPrice`
+returns `null`, and omits the `Assignment: $X` line from the email entirely
+(both text and HTML) when no purchase price was recorded. Compliance footers,
+VIP windows, and match-scoring logic are unchanged.
+
+**Assessment of the two other flagged fallbacks (NOT defects):**
+
+| Route | Flagged fallback | Assessment | Status |
+| --- | --- | --- | --- |
+| `campaigns/templates/route.ts` | `offerAmount: 150000`, `propertyAddress: 'Property Address'` | Admin-only render utility (`requireAdmin`). No live email-sending caller. Templates require `validate: true` mode and reject missing compliance fields via `validateEmailCompliance`. Not user-facing fabrication. | No action needed |
+| `contracts/generate/route.ts` | `earnest_money || 10000` | Intentional, disclosed default — pinned by `dealEconomics.test.ts:48` (`expect(PURCHASE_AGREEMENT_DEFAULTS.earnest_money).toBe(1000)`), validated by `engine.ts:317`, documented as a contract term default alongside `inspection_days || 14`. | No action needed |
+
+**Verification (TDD, mutation-proven):**
+- `src/app/api/deals/match-buyer/__tests__/matchPrice.honesty.test.ts` — **6/6 pass**.
+- **Mutation-proven RED:** reverting `return null` → `return 100000` → **2
+  failed** (`expected 100000 to be null`); reverted (identical logic restored)
+  → 6/6.
+- **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **EXIT 0**.
+- Diff: 1 production file (`deals/match-buyer/route.ts`, +38/−6) + 1 new test.
+  No unrelated behavior changed.
+
+
 
