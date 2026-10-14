@@ -1053,6 +1053,42 @@ Status: **IMPLEMENTED + UNIT TESTED** (local). Not deployed; production-email ho
 already-closed deals is unchanged (historical emails stand). Live deal-close round-trip
 remains BLOCKED-EXTERNAL (Stripe/AWS email provider).
 
+### SET M follow-through — closing-portal purchase-price honesty fix (2026-10-14, this session, `b3c2e07` chain)
+
+While auditing the seller workflow's remaining money-facing transitions for the same
+fabricated-data class, a second instance was found and fixed:
+`app/api/portal/closing/route.ts` computed the buyer-facing purchase price as
+`lead?.offer_cents ? lead.offer_cents/100 : metadata.acceptedAmount || **150000**` — a
+fabricated `$150,000` shown in `closingStatus.purchasePrice` **and** as the
+`disbursement.amount` when the deal's real price was simply not recorded (a closing portal
+returning 200 while presenting a number the system never knew).
+
+**Fix:** extracted an exported pure `resolveClosingPurchasePrice(offerCents, metadata)` that
+returns the recorded `offer_cents/100` or a recorded positive `acceptedAmount`, else
+`null` — never a fabricated default. `0` cents is treated as "no offer" (→null), and
+non-numeric/negative/NaN recorded values are treated as unknown (never coerced). The
+`ClosingStatus.purchasePrice` and `disbursement.amount` fields are now `number | null` so
+the honest "not recorded" propagates instead of a guess. Portal auth/rate-limiting/status
+logic unchanged.
+
+**Verification (TDD, mutation-proven):**
+- `src/app/api/portal/closing/__tests__/closingPurchasePrice.honesty.test.ts` — **5/5 pass**.
+- **Mutation-proven RED:** restoring `|| 150000` → **2 failed** (`expected 150000 to be
+  null`); reverted (identical file hash) → 5/5.
+- Portal + deal group regression → **12/12 pass** (closing honesty + deal honesty).
+- **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **TSC_EXIT=0**.
+- Diff: 1 production file (`closing/route.ts`, +30/−3) + 1 new test. No unrelated change.
+
+**Remaining in the SAME cluster (documented, NOT auto-fixed — needs product-design input):**
+`app/api/portal/offer/route.ts` still fabricates offer-side figures shown to sellers:
+`arv_cents/100 : **200000**`, `assessed_value_cents/100 : **150000**`, `offerAmount =
+existingOffer || Math.round(arv * distressMultiplier)` (a computed figure presented as a
+real offer), two inconsistent `distressMultiplier` scales (`/100` in the sourced path vs
+raw-score in the lead path — a real bug), and `'Address on file'`/`'Property Owner'`
+placeholders. An offer page fundamentally needs a number, so "what to show when no offer
+exists" is a **product decision** (e.g. "contact us" vs "pending underwriting"), not a
+safe autonomous rewrite. Flagged for owner/design approval; not bundled here.
+
 ### Priority 3 — Professional / Scale rate decision table (verified, no values invented)
 
 **⚚ CRITICAL DATA-QUALITY FINDING (verified, not fabricated):** the repository does

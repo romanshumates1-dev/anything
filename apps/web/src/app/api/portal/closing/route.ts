@@ -27,7 +27,7 @@ const CLOSING_ACTION_LIMIT = 10; // 10 actions per hour per IP (document uploads
 interface ClosingStatus {
   leadId: string;
   propertyAddress: string;
-  purchasePrice: number;
+  purchasePrice: number | null; // null when no price was recorded (honest "not recorded")
   closingDate: string;
   status: 'pending_docs' | 'docs_received' | 'title_clear' | 'scheduled' | 'closing_day' | 'completed';
   progress: number;
@@ -45,9 +45,34 @@ interface ClosingStatus {
   }[];
   disbursement?: {
     method: 'wire' | 'check';
-    amount: number;
+    amount: number | null; // null when no purchase price was recorded
     status: 'pending' | 'sent' | 'received';
   };
+}
+
+/**
+ * DATA-HONESTY: the buyer-facing purchase price is the recorded value or null —
+ * never a fabricated default. This used to fall back to `|| 150000`, showing the
+ * buyer an invented $150,000 purchase price (and any figures derived from it) for
+ * a deal whose real price was simply not recorded. Same fabricated-data class as
+ * `generateSimpleSummary` (SET H2 / R1–R7): a portal that returns 200 while
+ * presenting a number the system never knew. Exported for direct unit testing.
+ */
+export function resolveClosingPurchasePrice(
+  offerCents: unknown,
+  metadata: { acceptedAmount?: unknown } | null | undefined
+): number | null {
+  // offer_cents is the authoritative recorded offer (integer cents).
+  if (typeof offerCents === 'number' && Number.isFinite(offerCents) && offerCents > 0) {
+    return offerCents / 100;
+  }
+  // Fall back to a recorded accepted amount only if it is a real positive number.
+  const accepted = metadata?.acceptedAmount;
+  if (typeof accepted === 'number' && Number.isFinite(accepted) && accepted > 0) {
+    return accepted;
+  }
+  // No recorded price → null (honest "not recorded"), never 150000.
+  return null;
 }
 
 export async function GET(req: NextRequest) {
@@ -124,7 +149,9 @@ export async function GET(req: NextRequest) {
     `.catch(() => [null]);
 
     const metadata = lead?.metadata || {};
-    const purchasePrice = lead?.offer_cents ? lead.offer_cents / 100 : metadata.acceptedAmount || 150000;
+    // DATA-HONESTY: recorded value or null — never a fabricated `|| 150000`.
+    // See resolveClosingPurchasePrice (module scope) for the full rationale.
+    const purchasePrice = resolveClosingPurchasePrice(lead?.offer_cents, metadata);
 
     // Determine status and steps
     const steps: { id: string; name: string; status: 'pending' | 'in_progress' | 'completed' }[] = [
