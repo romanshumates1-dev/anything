@@ -32,6 +32,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { buildWebSiteSchema, buildOrganizationSchema, jsonLdForEmbed } from '@/lib/structuredData';
 import { join } from 'node:path';
 
 const APP_ROOT = process.cwd();
@@ -123,5 +124,28 @@ describe('SEO surface guard (SEO-1)', () => {
     const robots = read(ROBOTS);
     expect(robots.includes('NEXT_PUBLIC_APP_URL')).toBe(true);
     expect(robots.includes(APEX)).toBe(true);
+  });
+
+  it('homepage carries WebSite + Organization JSON-LD structured data', () => {
+    // SEO requirement: "structured data where appropriate". The homepage is the
+    // highest-traffic page; it must declare WebSite (sitelink search box) and
+    // Organization (Knowledge Panel) so rich results cannot be lost to absent
+    // markup. Only 2 of 21 pages had JSON-LD before this fix.
+    const home = read('src/app/(marketing)/page.tsx');
+    expect(home).toContain('buildWebSiteSchema');
+    expect(home).toContain('buildOrganizationSchema');
+    expect(home).toContain('application/ld+json');
+    // Verify the actual builders produce valid schemas (pure function tests).
+    const siteSchema = JSON.parse(jsonLdForEmbed(buildWebSiteSchema()));
+    const orgSchema = JSON.parse(jsonLdForEmbed(buildOrganizationSchema()));
+    expect(siteSchema['@type']).toBe('WebSite');
+    expect(siteSchema['@context']).toBe('https://schema.org');
+    expect(siteSchema.url).toBe(APEX + '/');
+    expect(orgSchema['@type']).toBe('Organization');
+    expect(orgSchema.logo.url).toContain(APEX);
+    // The `</` escape must neutralise every `<` so a script tag in any
+    // string field cannot early-close the <script> element.
+    const raw = JSON.stringify(buildWebSiteSchema());
+    expect(raw).not.toContain('</');
   });
 });

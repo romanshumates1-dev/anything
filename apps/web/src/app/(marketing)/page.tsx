@@ -27,6 +27,11 @@ import {
   ReferralGiveawayBanner,
 } from "@/components/marketing";
 import { canonicalFor } from '@/lib/seo';
+import {
+  buildWebSiteSchema,
+  buildOrganizationSchema,
+  jsonLdForEmbed,
+} from '@/lib/structuredData';
 
 // Marketing landing owns "/". Guests see this page; authenticated users are
 // sent to the SaaS app at /dashboard.
@@ -43,6 +48,22 @@ export default async function LandingPage() {
 
   return (
     <div className="bg-[#0F172A]">
+      {/* WebSite + Organization structured data (JSON-LD).
+          Emitted as static, absolute markup so crawlers see the
+          same site identity the canonical tags describe. The
+          `</` escape in jsonLdForEmbed prevents element early-close. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdForEmbed(buildWebSiteSchema()),
+        }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: jsonLdForEmbed(buildOrganizationSchema()),
+        }}
+      />
       {/* Signup Notification Popup */}
       <LiveSocialProof variant="popup" fetchFromApi />
 
