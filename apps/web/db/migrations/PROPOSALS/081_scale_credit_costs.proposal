@@ -1,0 +1,67 @@
+-- ============================================================================
+-- PROPOSAL ONLY  —  NOT A MIGRATION  —  NOT AUTHORIZED FOR DEPLOYMENT
+-- ----------------------------------------------------------------------------
+-- This file is NOT named *.sql and lives in db/migrations/PROPOSALS/ so that NO
+-- migration runner (which scans db/migrations/*.sql) will execute it. It is a
+-- human review artifact, not applied code. The rollout gate
+-- scripts/check-credit-pricing-readiness.mjs currently exits HOLD (2) for SCALE
+-- and must remain HOLD until the owner approves rates and a real migration lands.
+--
+-- PURPOSE
+--   Provide the exact, idempotent `credit_costs` INSERT that would unblock the
+--   `scale` subscription tier once per-action rates are owner-approved. Until
+--   then the existing fail-closed behavior is intact: getCreditCost('SCALE')
+--   throws -> checkCredits returns {allowed:false, cost:0} -> HTTP 402. No wrong
+--   debit, no ledger write. (Pinned by creditGuard.fail-closed.test.ts.)
+--
+-- CONTEXT (authoritative sources)
+--   * `scale` IS a live, billable subscription tier: db/migrations/067 seeds
+--     plan_scale at $2,499/mo; apps/web/src/app/api/utils/pricingTiers.ts lists
+--     SCALE ($1,500/mo in the frontend config — NOTE: stale/divergent from the
+--     $2,499 DB price; see "Open discrepancy" below), and the pricing page
+--     (src/app/(marketing)/pricing/page.tsx) renders it from the DB.
+--   * migration 080 seeds credit_costs for exactly 5 tiers:
+--     FREE/STARTER/PRO/BUSINESS/ENTERPRISE (30 rows = 5 tiers x 6 actions).
+--     SCALE has ZERO credit_costs rows — the one remaining unpriced live tier.
+--   * Current per-action rates (migration 080, verbatim):
+--
+--       Action            FREE  ST  PRO  BUS  ENT   SCALE  <-- owner decides
+--       SMS_SEND            5    4    3    2    2   <---v   (this proposal)
+--       EMAIL_SEND          2    2    1    1    1
+--       AI_REQUEST         10    8    5    4    3
+--       AI_NEGOTIATION     25   20   12   10    8
+--       CONTRACT_GENERATE  15   12    8    6    5
+--       LEAD_FIND           3    2    1    1    1
+--
+-- DECISION REQUIRED (owner — the agent must NOT invent production rates)
+--   Option A (smallest step): adopt the proposed placeholder rates below
+--              (ENTERPRISE-parity, the monotone volume-discount continuation)
+--              and INSERT these 6 rows.
+--   Option B (no new rows): do NOT seed SCALE rows; instead normalise
+--              subscription-tier 'scale' -> credit-tier 'ENTERPRISE' in
+--              entitlements.ts:getOrganizationTier so SCALE bills at ENTERPRISE
+--              rates. (Requires a code change + test; the gate's READY fixture
+--              already mirrors the outcome.)
+--   Option C (distinct SCALE rates): set owner-approved per-action rates that
+--              differ from ENTERPRISE.
+--
+-- Open discrepancy (NOT in scope of this proposal, does not affect fail-closed):
+--   pricingTiers.ts lists SCALE at $1,500/mo while db/migrations/067 seeds
+--   plan_scale at $2,499/mo. The marketing page renders the DB price ($2,499),
+--   but PricingTierSelector.tsx still reads pricingTiers.ts ($1,500). Reconcile
+--   the stale frontend config to the authoritative DB price before marketing
+--   claims are finalised. (No billing risk: billing reads migration 067.)
+-- ============================================================================
+
+-- To APPLY: rename to db/migrations/081_scale_credit_costs.sql (drop PROPOSAL
+-- suffix), then run `yarn cf:gate` (gate will flip from HOLD/exit 2 to READY/exit 0).
+-- Idempotency: ON CONFLICT DO NOTHING is safe to re-run.
+
+INSERT INTO credit_costs (action, tier, cost) VALUES
+  ('SMS_SEND',        'SCALE', 2),   -- PLACEHOLDER: ENTERPRISE parity; owner approve
+  ('EMAIL_SEND',      'SCALE', 1),   -- PLACEHOLDER: ENTERPRISE parity; owner approve
+  ('AI_REQUEST',      'SCALE', 3),   -- PLACEHOLDER: ENTERPRISE parity; owner approve
+  ('AI_NEGOTIATION',  'SCALE', 8),   -- PLACEHOLDER: ENTERPRISE parity; owner approve
+  ('CONTRACT_GENERATE','SCALE', 5),  -- PLACEHOLDER: ENTERPRISE parity; owner approve
+  ('LEAD_FIND',       'SCALE', 1)    -- PLACEHOLDER: ENTERPRISE parity; owner approve
+ON CONFLICT (action, tier) DO NOTHING;
