@@ -3,16 +3,22 @@
  *
  * 8-tier pricing system with 1/3/6/12 month billing periods.
  * Longer commitments receive progressive discounts.
- */
+ *
+ * NOTE (2026-10): monthly prices for DB-backed paid tiers are pinned to
+ * db/migrations/067_value_based_pricing.sql price_cents (Starter 129, Pro 399,
+ * Business 899, Scale 2499) — these are what customers are BILLED. The display
+ * prices here MUST equal the DB cents (see pricingDisplaySource.test.ts).
+ * GROWTH/PROFESSIONAL/ELITE are marketing-only upsell tiers with no DB plan
+ * rows and no self-service billing; their prices are marketing-facing only.
 
 export const PRICING_TIERS = {
   STARTER: {
     name: 'Starter',
     prices: {
-      1: 100,   // $100/month
-      3: 270,   // $90/month effective
-      6: 480,   // $80/month effective
-      12: 840,  // $70/month effective
+      1: 129,   // $129/mo — matches migration 067 plan_starter (12900c)
+      3: 348,   // $116/mo effective
+      6: 648,   // $108/mo effective
+      12: 1032, // $86/mo effective
     },
     credits: 500,
     features: {
@@ -28,7 +34,7 @@ export const PRICING_TIERS = {
   },
   PRO: {
     name: 'Pro',
-    prices: { 1: 299, 3: 807, 6: 1494, 12: 2628 },
+    prices: { 1: 399, 3: 1077, 6: 2034, 12: 3271 },
     credits: 2000,
     features: {
       leads: 500,
@@ -43,7 +49,7 @@ export const PRICING_TIERS = {
   },
   BUSINESS: {
     name: 'Business',
-    prices: { 1: 599, 3: 1617, 6: 2994, 12: 5268 },
+    prices: { 1: 899, 3: 2427, 6: 4314, 12: 6915 },
     credits: 5000,
     features: {
       leads: 2000,
@@ -73,7 +79,7 @@ export const PRICING_TIERS = {
   },
   SCALE: {
     name: 'Scale',
-    prices: { 1: 1500, 3: 4050, 6: 7500, 12: 13200 },
+    prices: { 1: 2499, 3: 6747, 6: 12494, 12: 21988 },
     credits: 20000,
     features: {
       leads: 10000,
