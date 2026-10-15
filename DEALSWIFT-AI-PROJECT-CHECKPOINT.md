@@ -859,6 +859,15 @@ fix (probe 2026-10-07: 104 routes / 0 faults).
 ## RECENT COMMITS
 
 ```
+6f80931  fix(contracts): derive earnest money from the contract's own price; fail closed on
+         missing address      → RED 2 failed/17, GREEN 19/19, mutation-proven, Gate A TSC_EXIT=0
+074c95d  fix(test): use correct third-argument timeout syntax for Shell.theme.test
+1947619  docs(matrix): record match-buyer data-honesty fix + SET M follow-through
+4088db5  fix(deals): stop fabricating purchase price in match-buyer notification email
+ed93223  fix(contracts): fail closed instead of fabricating a $10,000 assignment fee
+b405725  fix(portal): stop fabricating $150,000 purchase price in closing portal
+fd4d2d2  docs(checkpoint): record deal-completion data-honesty fix b3c2e07 + Gate A verified
+b3c2e07  fix(deals): stop fabricating financial figures in deal-completion summary
 f45dc81  feat(seo): emit WebSite + Organization JSON-LD on the homepage
 20dd61b  refactor(seo): derive JSON-LD logo from SOCIAL_IMAGE_PATH (single source of truth)
 2ecc2af  feat(seo): add Product/Offer + FAQPage JSON-LD to /pricing (SEO-1)

@@ -1329,7 +1329,7 @@ VIP windows, and match-scoring logic are unchanged.
 | Route | Flagged fallback | Assessment | Status |
 | --- | --- | --- | --- |
 | `campaigns/templates/route.ts` | `offerAmount: 150000`, `propertyAddress: 'Property Address'` | Admin-only render utility (`requireAdmin`). No live email-sending caller. Templates require `validate: true` mode and reject missing compliance fields via `validateEmailCompliance`. Not user-facing fabrication. | No action needed |
-| `contracts/generate/route.ts` | `earnest_money || 10000` | Intentional, disclosed default — pinned by `dealEconomics.test.ts:48` (`expect(PURCHASE_AGREEMENT_DEFAULTS.earnest_money).toBe(1000)`), validated by `engine.ts:317`, documented as a contract term default alongside `inspection_days || 14`. | No action needed |
+| `contracts/generate/route.ts` | `earnest_money \|\| 1000` (literal, equals `PURCHASE_AGREEMENT_DEFAULTS.earnest_money = 1000`; no `MINIMUM_EARNEST_MONEY` symbol exists) | Intentional, disclosed default — pinned by `dealEconomics.test.ts:48` (`expect(PURCHASE_AGREEMENT_DEFAULTS.earnest_money).toBe(1000)`), validated by `engine.ts:317`, documented as a contract term default alongside `inspection_days \|\| 14`. No producer writes `metadata.earnest_money`, so the default is always the disclosed value; no negotiated zero exists to overwrite. | No action needed |
 
 **Verification (TDD, mutation-proven):**
 - `src/app/api/deals/match-buyer/__tests__/matchPrice.honesty.test.ts` — **6/6 pass**.
@@ -1339,6 +1339,50 @@ VIP windows, and match-scoring logic are unchanged.
 - **Gate A:** `tsc -p tsconfig.typecheck.json --noEmit` → **EXIT 0**.
 - Diff: 1 production file (`deals/match-buyer/route.ts`, +38/−6) + 1 new test.
   No unrelated behavior changed.
+
+## SET M follow-through: contracts/send earnest-money + placeholder-address fix (2026-10-14)
+
+**Defect (data honesty, customer-facing legal document):** `POST /api/contracts/send`
+(`purchase_agreement` branch) validated that *either* `agreed_price` **or**
+`metadata.estimated_value` exists (guard permits estimate-only leads) but then
+computed `earnestMoney = (lead.agreed_price || 100000) * 0.01` — so a
+$500,000-estimate contract was rendered stating **"Purchase Price: $500000"**
+next to **"Earnest money deposit of $1000"** (1% of an invented $100,000, not of
+the stated price) and sent for e-signature. Additionally a lead missing both
+address sources produced a contract whose subject property read literally
+`"Property Address"` (placeholder), while `contracts/generate/route.ts` fails
+closed on the same condition.
+
+**Fix (smallest complete change):** one validated basis for both figures —
+`statedPrice = agreed_price || estimated_value`, guarded by
+`Number.isFinite(contractPrice) && contractPrice > 0` (invalid/missing →
+400 `Purchase price required for contract generation`, same message as before);
+`earnestMoney = 1% of contractPrice`; new fail-closed guard → 400
+`Property address required for contract generation` when neither
+`metadata.property_address` nor `lead.address` exists. Both `|| 100000`
+fallbacks removed (0 occurrences remain in the file). Display strings
+(`String(statedPrice)`) unchanged from prior rendering.
+
+**Verification (TDD, mutation-proven):**
+- RED before fix: `route.test.ts` → **2 failed | 17 passed** (`expected … to
+  contain 'Earnest money deposit of $5000'`; `expected 200 to be 400`).
+- GREEN after fix: **19 passed / 19**.
+- Mutation proof: restoring `earnestMoney … (lead.agreed_price || 100000) …`
+  → **1 failed | 18 passed** (fails at the `$5000` assertion); restored → 19/19.
+- Gate A `tsc -p tsconfig.typecheck.json --noEmit` → EXIT 0 (see checkpoint).
+
+**Audited-not-defects in the same sweep:** `send/route.ts` L33 `\${{earnestMoney}}`
+is intentional `{{var}}` mustache syntax for `fillTemplate` (single-brace
+interpolation; no `${{` bug exists in any contract template); no stray files
+were created by earlier malformed edit attempts (`apps\src` absent; git status
+clean of them).
+
+**Owner-config item (not code):** `send/route.ts:189` falls back to a fake
+postal address `'123 Main St, Suite 100, Dallas, TX 75001'` when
+`COMPANY_POSTAL_ADDRESS` is unset — outbound email footers need the real
+registered address → **BLOCKED-APPROVAL** (owner supplies address; no code
+change possible without it).
+
 
 
 
