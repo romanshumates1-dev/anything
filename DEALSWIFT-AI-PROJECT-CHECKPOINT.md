@@ -861,6 +861,16 @@ fix (probe 2026-10-07: 104 routes / 0 faults).
 ```
 6f80931  fix(contracts): derive earnest money from the contract's own price; fail closed on
          missing address      → RED 2 failed/17, GREEN 19/19, mutation-proven, Gate A TSC_EXIT=0
+```
+
+### Verification gates at 600ac1a (2026-10-14, both green)
+- **Gate A** full-project typecheck `node_modules\.bin\tsc.cmd --noEmit -p tsconfig.typecheck.json` → **TSC_EXIT=0**.
+- **Gate B** full canonical suite `node_modules\.bin\vitest.cmd run --config src/app/api/vitest.config.ts` → **VITEST_EXIT=0**;
+  **3630 passed | 26 skipped | 0 failed (3656 tests, 340 files)**, 302.93s. The 26 skips are the
+  pre-existing credential-gated PGlite skips (counted as skipped, NOT passed); 1 skipped file likewise.
+  Shell.theme.test passed in-suite (no timeout recurrence).
+
+```
 074c95d  fix(test): use correct third-argument timeout syntax for Shell.theme.test
 1947619  docs(matrix): record match-buyer data-honesty fix + SET M follow-through
 4088db5  fix(deals): stop fabricating purchase price in match-buyer notification email
