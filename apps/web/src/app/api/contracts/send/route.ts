@@ -210,17 +210,30 @@ export async function POST(req: NextRequest) {
         return Response.json({ error: 'Lead not found' }, { status: 404 });
       }
 
-      // Validate purchase price is available for earnest money calculation
-      if (!lead.agreed_price && !lead.metadata?.estimated_value) {
+      // One validated price basis for BOTH the stated purchase price and the
+      // earnest-money calculation. This guard allows an estimated_value-only
+      // lead, so earnest money must derive from the same value shown on the
+      // contract — never from an invented $100,000 fallback.
+      const statedPrice = lead.agreed_price || lead.metadata?.estimated_value;
+      const contractPrice = Number(statedPrice);
+      if (!Number.isFinite(contractPrice) || contractPrice <= 0) {
         return Response.json({ error: 'Purchase price required for contract generation' }, { status: 400 });
+      }
+
+      // A purchase agreement without a property address is not a contract.
+      // Mirrors contracts/generate/route.ts, which fails closed on the same
+      // condition instead of emitting a placeholder subject property.
+      const statedAddress = lead.metadata?.property_address || lead.address;
+      if (!statedAddress) {
+        return Response.json({ error: 'Property address required for contract generation' }, { status: 400 });
       }
 
       const vars = {
         date: new Date().toLocaleDateString(),
         sellerName: lead.name || 'Property Owner',
-        propertyAddress: lead.metadata?.property_address || lead.address || 'Property Address',
-        purchasePrice: String(lead.agreed_price || lead.metadata?.estimated_value || 100000),
-        earnestMoney: String(Math.round((lead.agreed_price || 100000) * 0.01)),
+        propertyAddress: statedAddress,
+        purchasePrice: String(statedPrice),
+        earnestMoney: String(Math.round(contractPrice * 0.01)),
         closingDays: '30',
         inspectionDays: '14',
         unsubscribeUrl,

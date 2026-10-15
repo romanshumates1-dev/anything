@@ -147,6 +147,68 @@ describe('POST /api/contracts/send', () => {
       );
     });
 
+    it("derives earnest money from the contract's own stated price (no fabricated $100,000 basis)", async () => {
+      mockSql
+        .mockResolvedValueOnce([{
+          id: 'l1',
+          name: 'Estimate Only Seller',
+          email: 'seller@example.com',
+          agreed_price: null,
+          metadata: { estimated_value: 500000, property_address: '42 Elm St' },
+        }])
+        .mockResolvedValueOnce([]) // insert contract
+        .mockResolvedValueOnce([]); // update with envelope
+
+      const res = await POST(mockRequest({ contractType: 'purchase_agreement', leadId: 'l1' }));
+      expect(res.status).toBe(200);
+
+      const createSigningLink = (getEsignProvider.mock.results[0].value as any).createSigningLink;
+      const doc: string = createSigningLink.mock.calls[0][0].documentContent;
+
+      // The price guard allows an estimated_value-only lead: that value IS the
+      // contract's purchase price, so earnest money must be 1% of the same value.
+      expect(doc).toContain('Purchase Price: $500000');
+      expect(doc).toContain('Earnest money deposit of $5000');
+      // Never 1% of an invented $100,000, and never the fabricated basis itself.
+      expect(doc).not.toContain('$1000');
+      expect(doc).not.toContain('$100000');
+    });
+
+    it('still computes 1% earnest money when an agreed price exists', async () => {
+      mockSql
+        .mockResolvedValueOnce([{
+          id: 'l1',
+          name: 'John Seller',
+          email: 'seller@example.com',
+          agreed_price: 200000,
+          metadata: { property_address: '123 Main St' },
+        }])
+        .mockResolvedValueOnce([]) // insert contract
+        .mockResolvedValueOnce([]); // update with envelope
+
+      const res = await POST(mockRequest({ contractType: 'purchase_agreement', leadId: 'l1' }));
+      expect(res.status).toBe(200);
+      const createSigningLink = (getEsignProvider.mock.results[0].value as any).createSigningLink;
+      const doc: string = createSigningLink.mock.calls[0][0].documentContent;
+      expect(doc).toContain('Purchase Price: $200000');
+      expect(doc).toContain('Earnest money deposit of $2000');
+    });
+
+    it('400 instead of sending a contract whose subject property reads "Property Address"', async () => {
+      mockSql.mockResolvedValueOnce([{
+        id: 'l1',
+        name: 'No Address Seller',
+        email: 'seller@example.com',
+        agreed_price: 200000,
+        metadata: {}, // no property_address, and the lead row has no address column value
+      }]);
+      const res = await POST(mockRequest({ contractType: 'purchase_agreement', leadId: 'l1' }));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: 'Property address required for contract generation',
+      });
+    });
+
     it('scopes lead lookup to organization (IDOR prevention)', async () => {
       mockSql.mockResolvedValueOnce([]);
       await POST(mockRequest({ contractType: 'purchase_agreement', leadId: 'other-org-lead' }));
