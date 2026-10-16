@@ -770,6 +770,11 @@ deployment changed, the environment changed, or a regression demands it.
 | Typecheck | `yarn typecheck` â†’ exit 0 | 2026-10-04 |
 | Lint on changed files | `oxlint` â†’ 0 warnings, 0 errors | 2026-10-04 |
 
+### Dashboard analytics regression (H2 data-honesty)
+
+- **`requires_human` escalation filter — NOT requirement F2 (password-hashing).** `getDashboardNextActions` query #2 lost its `requires_human = TRUE` predicate, mislabeling every recent conversation as "AI needs assistance". Predicate restored (`dashboardSlices.ts:778`, commented as `H2 data-honesty regression (NOT F2/password-hashing)`); proven by `dashboardSlices.multitenant.pglite.test.ts` > "escalation: only requires_human conversations are labelled escalation" (two-org, GREEN) plus the negative control "ai_conversations without requires_human would include the normal lead (escalation-predicate control)", which FAILS (red) if the predicate is dropped — so the regression pin is mutation-proven.
+- **Cross-org isolation + SQL-execution regression for all five dashboard slices** (stats, quick-stats, funnel, next-actions, weekly-summaries), run on real PGlite against `db/schema.sql`: `dashboardSlices.pglite.test.ts` (7) + `dashboardSlices.multitenant.pglite.test.ts` (18) = **25/25 green** @ HEAD `60faac0` (10.10s).
+
 ### Invalidated / stale evidence
 
 - **Full-suite "2946 passed, 0 failed" (at `c87d510`)** â€” STALE. Superseded; the

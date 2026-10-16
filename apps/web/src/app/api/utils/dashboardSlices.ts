@@ -768,7 +768,7 @@ export async function getDashboardNextActions(orgId: string): Promise<{ actions:
   }
 
   // 2. Conversations requiring human escalation.
-  // F2 (regression-tested): this query lost its `AND c.requires_human = TRUE`
+  // H2 data-honesty regression (NOT F2 / password-hashing): this query lost its `AND c.requires_human = TRUE`
   // predicate, so it returned the 5 most recent conversations for ANY lead in
   // the org and labelled every one "AI needs assistance". Query #1 (hotLeads)
   // still carried the predicate, so the two were inconsistent. Restored so the

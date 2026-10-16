@@ -18,7 +18,7 @@
  * functions and joins from dashboardSlices.ts against a real Postgres engine
  * (PGlite) — not mocked return values.
  *
- * F2 is covered here too: `nextActions` query #2 ("Conversations requiring human
+ * The escalation-filter regression is covered here too: `nextActions` query #2 ("Conversations requiring human
  * escalation") must surface ONLY conversations with `requires_human = TRUE`, so
  * a normal conversation in the same org must never be labelled "AI needs
  * assistance".
@@ -120,6 +120,8 @@ vi.mock('date-fns', () => ({
 }));
 
 const {
+  getDashboardStats,
+  getDashboardQuickStats,
   getDashboardFunnel,
   getDashboardWeeklyProgress,
   getDashboardActivity,
@@ -336,7 +338,7 @@ async function seedTwoOrgs() {
 
     -- Conversations: Org A lead 103 requires_human=TRUE (genuine escalation),
     -- Org A lead 101 requires_human=FALSE (normal — must NOT be labelled
-    -- escalation after the F2 fix). Org B lead 203 requires_human=TRUE (leak bait).
+    -- escalation after the escalation-predicate fix). Org B lead 203 requires_human=TRUE (leak bait).
     INSERT INTO public.ai_conversations (lead_id, channel, history, status, confidence_score, requires_human, last_message_at, created_at)
     VALUES
       (101, 'sms', '[]'::jsonb, 'active',   0.9, false, now() - interval '3 hours', now() - interval '1 day'),
@@ -403,6 +405,67 @@ describe('dashboard analytics — two-organization tenant isolation', () => {
     await truncateAll();
     await seedTwoOrgs();
     await seedTwoOrgsPipeline();
+  });
+
+  /* ---- stats ---------------------------------------------------------- */
+
+  it('stats: Org A counts never include Org B leads/jobs/audit/human flags', async () => {
+    // getDashboardStats has four counters; seed each with a distinguished,
+    // per-org row so a leak is an obvious count mismatch rather than 0==0.
+    // truncateAll wipes jobs/audit_logs per run; "user" + organization_members
+    // persist but are org-keyed, so the empty-org test below stays at zero.
+    await db.exec(`
+      INSERT INTO public."user" (id, name, email, "emailVerified", role)
+      VALUES ('user_a', 'A-User', 'a@stats.user', true, 'MEMBER'),
+             ('user_b', 'B-User', 'b@stats.user', true, 'MEMBER')
+      ON CONFLICT DO NOTHING;
+      INSERT INTO public.organization_members (id, user_id, organization_id, role)
+      VALUES ('om_a_stats', 'user_a', '${ORG_A}', 'OWNER'),
+             ('om_b_stats', 'user_b', '${ORG_B}', 'OWNER')
+      ON CONFLICT DO NOTHING;
+      INSERT INTO public.jobs (type, payload, status, run_at, created_at)
+      VALUES ('a_job', '{"organization_id":"${ORG_A}"}'::jsonb, 'pending', now(), now()),
+             ('b_job', '{"organization_id":"${ORG_B}"}'::jsonb, 'pending', now(), now());
+      INSERT INTO public.audit_logs (user_id, action, target_type, target_id, payload)
+      VALUES ('user_a', 'lead_create', 'lead', '101', '{}'::jsonb),
+             ('user_b', 'lead_create', 'lead', '201', '{}'::jsonb);
+    `);
+
+    const a = await getDashboardStats(ORG_A);
+    const b = await getDashboardStats(ORG_B);
+
+    // totalLeads: Org A = 101..104 (4); Org B = 201..204 (4); no cross count.
+    expect(a.totalLeads).toBe(4);
+    expect(b.totalLeads).toBe(4);
+    // pendingJobs: scoped via payload->>'organization_id' (defect #43 fix).
+    expect(a.pendingJobs).toBe(1);
+    expect(b.pendingJobs).toBe(1);
+    // auditCount: scoped through organization_members (defect #43 fix), not
+    // organization_id on audit_logs (that column does not exist).
+    expect(a.auditCount).toBe(1);
+    expect(b.auditCount).toBe(1);
+    // requiresHuman: each org's flagged conversations only (103 for A, 203 for B).
+    expect(a.requiresHuman).toBe(1);
+    expect(b.requiresHuman).toBe(1);
+  });
+
+  /* ---- quick-stats ----------------------------------------------------- */
+
+  it('quickStats: per-org counts exclude the other org (leads/contacts/responses/deals)', async () => {
+    const a = await getDashboardQuickStats(ORG_A);
+    const b = await getDashboardQuickStats(ORG_B);
+    // Unscoped these would each be 8 leads / 6 contacted / 4 responses / 2 deals
+    // (both orgs combined). Scoped, each org sees exactly its own half — proving
+    // the organization_id predicate on leads and the leads-subquery on
+    // ai_conversations both hold.
+    expect(a.leads.value).toBe(4);
+    expect(a.contacted.value).toBe(3);
+    expect(a.responses.value).toBe(2);
+    expect(a.deals.value).toBe(1);
+    expect(b.leads.value).toBe(4);
+    expect(b.contacted.value).toBe(3);
+    expect(b.responses.value).toBe(2);
+    expect(b.deals.value).toBe(1);
   });
 
   /* ---- funnel --------------------------------------------------------- */
@@ -476,9 +539,9 @@ describe('dashboard analytics — two-organization tenant isolation', () => {
     expect(sent[0].title).toContain('12 messages sent');
   });
 
-  /* ---- nextActions (F2) ---------------------------------------------- */
+  /* ---- nextActions (escalation-filter) ---------------------------------------------- */
 
-  it('F2: only requires_human conversations are labelled escalation', async () => {
+  it('escalation: only requires_human conversations are labelled escalation', async () => {
     const { actions } = await getDashboardNextActions(ORG_A);
     const humanActions = actions.filter((x: any) => x.id.startsWith('human-'));
     // Org A lead 103 requires_human=TRUE -> surfaced. Lead 101 requires_human=
@@ -575,7 +638,7 @@ describe('dashboard analytics — negative control (unscoped query leaks Org B)'
     expect(unscoped.rows[0].n).toBe(8); // control: removing the filter doubles it
   });
 
-  it('ai_conversations without requires_human would include the normal lead (F2 control)', async () => {
+  it('ai_conversations without requires_human would include the normal lead (escalation-predicate control)', async () => {
     const withPredicate = await db.query(
       `SELECT l.id FROM ai_conversations c JOIN leads l ON l.id = c.lead_id
        WHERE l.organization_id = $1 AND c.requires_human = TRUE`,

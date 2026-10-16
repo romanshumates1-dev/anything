@@ -117,6 +117,7 @@ const {
   getDashboardStats,
   getDashboardQuickStats,
   getDashboardEngagements,
+  getDashboardNextActions,
 } = await import('@/app/api/utils/dashboardSlices');
 
 /* ------------------------------------------------------------------ schema -- */
@@ -150,6 +151,31 @@ beforeAll(async () => {
       UNIQUE(user_id, organization_id)
     );
     ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS organization_id text REFERENCES public.organizations(id);
+
+    -- getDashboardNextActions reads 'contracts' for its contract branch; schema.sql
+    -- does not define it (added by migrations 080/082), so create a minimal
+    -- compatible table so the slice's contract query executes instead of
+    -- throwing "relation \"contracts\" does not exist". Columns mirror the real
+    -- table; 'direction' is plain text here because the campaign_direction enum
+    -- is irrelevant to this branch (the table is left empty in these tests).
+    CREATE TABLE IF NOT EXISTS public.contracts (
+      id text PRIMARY KEY,
+      organization_id text NOT NULL,
+      template_id text,
+      direction text NOT NULL DEFAULT 'SELLER',
+      seller_lead_id text,
+      filled_body text NOT NULL,
+      pdf_url text,
+      status text NOT NULL DEFAULT 'PENDING_SIGNATURE',
+      signed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      inspection_days integer NOT NULL DEFAULT 10,
+      contract_price_cents bigint,
+      assigned_at timestamptz,
+      esign_status text CHECK (esign_status IN ('pending','sent','viewed','signed','countersigned')),
+      assignment_fee_cents integer
+    );
   `);
 }, 30_000);
 
@@ -263,5 +289,55 @@ describe('dashboard slices — SQL executes against real schema (defects #38, #4
     const result = await getDashboardEngagements('org-empty-0000000000000000000002');
     expect(result).toBeDefined();
     expect(result.engagements).toEqual([]);
+  });
+
+  /* ---- nextActions (escalation-filter regression) ----------------------- *
+   * The escalation-filter defect: getDashboardNextActions query #2 ("Conversations requiring human
+   * escalation") lost its `requires_human = TRUE` predicate, so every recent
+   * conversation was labelled "AI needs assistance". The predicate is restored
+   * in dashboardSlices.ts (the `humanRequired` query). This proves only
+   * genuinely-flagged conversations escalate — and that a different org's
+   * flagged lead cannot leak across orgs.
+   *
+   * seedData already provides the fixture: Lead 3 (Lead C) has requires_human
+   * = TRUE, Lead 1 (Lead A) has requires_human = FALSE. ORG_2 below adds a
+   * second org with its own flagged lead as leak bait.
+   * */
+  it('getDashboardNextActions — escalation-filter predicate: only owning org requires_human leads surface', async () => {
+    const ORG_2 = 'org-test-0000000000000000000002';
+
+    // Second-org leak bait: a requires_human=TRUE conversation on a lead whose
+    // organization_id is ORG_2, never ORG.
+    await db.exec(`
+      INSERT INTO public.organizations (id, name, owner_user_id, timezone, slug)
+      VALUES ('${ORG_2}', 'Other Org', 'system', 'America/New_York', 'other')
+      ON CONFLICT DO NOTHING;
+      INSERT INTO public.leads (id, type, name, email, status, metadata, organization_id, created_at, updated_at)
+      VALUES (100, 'seller', 'Lead Z', 'z@test.com', 'closed',
+              '{"address":"Z-Addr"}'::jsonb, '${ORG_2}', now(), now())
+      ON CONFLICT DO NOTHING;
+      INSERT INTO public.ai_conversations (lead_id, channel, history, status, confidence_score, requires_human, last_message_at, created_at)
+      VALUES (100, 'sms', '[]'::jsonb, 'active', 0.8, true, now() - interval '1 hour', now() - interval '2 days');
+    `);
+
+    // Org 1 (ORG): Lead 3 (requires_human=TRUE) escalates as 'human-3'.
+    const org1 = await getDashboardNextActions(ORG);
+    const esc1 = org1.actions.filter((a: any) => a.id.startsWith('human-'));
+    expect(esc1.length).toBe(1);
+    expect(esc1[0].id).toBe('human-3');
+    expect(esc1[0].type).toBe('response');
+    expect(esc1[0].title).toContain('Lead C');
+    expect(esc1[0].description).toContain('AI needs assistance');
+    const blob1 = JSON.stringify(org1.actions);
+    expect(blob1).not.toContain('Lead A'); // requires_human=FALSE -> excluded
+    expect(blob1).not.toContain('Lead Z'); // cross-org leak -> excluded
+
+    // Org 2 (ORG_2): only its own flagged lead (100) escalates; Org 1 stays out.
+    const org2 = await getDashboardNextActions(ORG_2);
+    const esc2 = org2.actions.filter((a: any) => a.id.startsWith('human-'));
+    expect(esc2.length).toBe(1);
+    expect(esc2[0].id).toBe('human-100');
+    expect(esc2[0].type).toBe('response');
+    expect(JSON.stringify(org2.actions)).not.toContain('Lead A');
   });
 });
