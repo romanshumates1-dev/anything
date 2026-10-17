@@ -111,7 +111,18 @@ export async function POST(req: NextRequest) {
       seller_email: metadata.seller_email || deal.email || '',
 
       purchase_price: negotiation?.purchase_price || metadata.agreed_price || metadata.purchase_price || deal.agreed_price || 0,
-      earnest_money: metadata.earnest_money || 1000,
+      // DATA-HONESTY (follows resolveMatchPrice/resolveClosingPurchasePrice): an
+      // absent earnest_money must NOT be silently replaced by a fabricated $1,000
+      // on a legal contract. Coerce only a real, finite, positive value; otherwise
+      // leave it undefined so the template renders "To Be Negotiated" instead of
+      // a dollar figure nobody set. This mirrors the purchase_price fail-closed
+      // guard below (line: "Deal is missing valid purchase_price").
+      earnest_money:
+        metadata.earnest_money != null &&
+        Number.isFinite(metadata.earnest_money) &&
+        metadata.earnest_money > 0
+          ? Number(metadata.earnest_money)
+          : undefined,
       closing_date: negotiation?.closing_date || metadata.closing_date || '',
       contract_date: new Date().toISOString().split('T')[0],
       inspection_days: metadata.inspection_days || 14,

@@ -369,7 +369,7 @@ function generateRegionalAddendum(deal: DealData, state: string): string | undef
         contract_date: contractDate,
         seller_name: deal.seller_name,
         buyer_name: BUYER_ENTITY,
-        earnest_money: deal.earnest_money || PURCHASE_AGREEMENT_DEFAULTS.earnest_money,
+        earnest_money: deal.earnest_money,
         property_year_built: deal.property_year_built,
         hoa_addendum_attached: deal.hoa,
         seller_disclosure_attached: false, // To be provided by seller
@@ -462,7 +462,7 @@ export function generateContract(
       property_legal_description: deal.property_legal_description,
       property_parcel_id: deal.property_parcel_id,
       purchase_price: deal.purchase_price,
-      earnest_money: deal.earnest_money || PURCHASE_AGREEMENT_DEFAULTS.earnest_money,
+      earnest_money: deal.earnest_money,
       closing_date: deal.closing_date,
       inspection_days: deal.inspection_days || PURCHASE_AGREEMENT_DEFAULTS.inspection_days,
       attorney_mod_days: deal.attorney_mod_days || PURCHASE_AGREEMENT_DEFAULTS.attorney_mod_days,

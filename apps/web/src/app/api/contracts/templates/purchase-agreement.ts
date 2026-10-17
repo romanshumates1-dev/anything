@@ -24,7 +24,7 @@ export interface PurchaseAgreementVariables {
 
   // Terms
   purchase_price: number;
-  earnest_money: number;
+  earnest_money?: number; // undefined => "To Be Negotiated"; never a fabricated $1,000 default
   closing_date: string;
   inspection_days: number; // min 7, default 14-21
   attorney_mod_days: number; // default 5
@@ -43,7 +43,10 @@ export interface PurchaseAgreementVariables {
 export const PURCHASE_AGREEMENT_DEFAULTS = {
   inspection_days: 14,
   attorney_mod_days: 5,
-  earnest_money: 1000,
+  // DATA-HONESTY: NO earnest_money default. The old `earnest_money: 1000`
+  // silently printed a fabricated deposit on legal contracts (see
+  // earnestMoney.honesty.test.ts). Unrecorded earnest money must render as
+  // "To Be Negotiated", never a dollar figure nobody set.
 };
 
 export const MIN_INSPECTION_DAYS = 7;
@@ -71,8 +74,13 @@ export function validatePurchaseAgreementVariables(
   if (typeof vars.purchase_price !== 'number' || vars.purchase_price <= 0) {
     errors.push('purchase_price must be a positive number');
   }
-  if (typeof vars.earnest_money !== 'number' || vars.earnest_money < 0) {
-    errors.push('earnest_money must be a non-negative number');
+  if (typeof vars.earnest_money !== 'number' && vars.earnest_money !== undefined) {
+    errors.push('earnest_money must be a number or absent');
+  } else if (
+    vars.earnest_money !== undefined &&
+    (vars.earnest_money < 0 || !Number.isFinite(vars.earnest_money))
+  ) {
+    errors.push('earnest_money must be a non-negative number when provided');
   }
 
   // Inspection days validation
@@ -147,6 +155,23 @@ export function generatePurchaseAgreement(
   const inspectionDays = vars.inspection_days || PURCHASE_AGREEMENT_DEFAULTS.inspection_days;
   const attorneyModDays = vars.attorney_mod_days || PURCHASE_AGREEMENT_DEFAULTS.attorney_mod_days;
 
+  // DATA-HONESTY: an unrecorded earnest money must NOT be fabricated into a
+  // dollar figure on a legal contract. Mirror the resolveMatchPrice /
+  // resolveClosingPurchasePrice fail-closed pattern: render an explicit
+  // "To Be Negotiated" notice instead of inventing a value.
+  const earnestMoneyDisplay =
+    vars.earnest_money != null &&
+    Number.isFinite(vars.earnest_money) &&
+    vars.earnest_money > 0
+      ? formatCurrency(vars.earnest_money)
+      : 'To Be Negotiated (not yet recorded)';
+  const balanceDueDisplay =
+    vars.earnest_money != null &&
+    Number.isFinite(vars.earnest_money) &&
+    vars.earnest_money > 0
+      ? formatCurrency(vars.purchase_price - vars.earnest_money)
+      : 'To Be Determined';
+
   return `
 ================================================================================
                     REAL ESTATE PURCHASE AND SALE AGREEMENT
@@ -191,7 +216,7 @@ Together with all improvements, fixtures, and appurtenances thereto
 PURCHASE PRICE: ${formatCurrency(vars.purchase_price)}
 (${numberToWords(vars.purchase_price)} Dollars)
 
-EARNEST MONEY DEPOSIT: ${formatCurrency(vars.earnest_money)}
+EARNEST MONEY DEPOSIT: ${earnestMoneyDisplay}
 
 The Earnest Money Deposit shall be delivered to the designated Title Company
 or Escrow Agent within THREE (3) BUSINESS DAYS of the Effective Date of this
@@ -200,7 +225,7 @@ Agreement (due by ${formatDate(earnestMoneyDueDate)}).
 The Earnest Money shall be held in escrow and applied toward the Purchase Price
 at Closing, or refunded to Buyer per the terms of this Agreement.
 
-BALANCE DUE AT CLOSING: ${formatCurrency(vars.purchase_price - vars.earnest_money)}
+BALANCE DUE AT CLOSING: ${balanceDueDisplay}
 
 --------------------------------------------------------------------------------
                             SECTION 4: CLOSING

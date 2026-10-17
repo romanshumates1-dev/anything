@@ -10,7 +10,7 @@ export interface TexasAddendumVariables {
   contract_date: string;
   seller_name: string;
   buyer_name: string;
-  earnest_money: number;
+  earnest_money?: number; // undefined => "To Be Negotiated"; never a fabricated deposit
   title_company_name?: string;
   title_company_address?: string;
 
@@ -72,6 +72,16 @@ function formatDate(dateStr: string): string {
 export function generateTexasAddendum(vars: TexasAddendumVariables): string {
   const needsLeadPaint = vars.property_year_built && vars.property_year_built < 1978;
 
+  // DATA-HONESTY (mirrors purchase-agreement.ts): an unrecorded earnest money
+  // must NOT be fabricated into a dollar figure on a legal instrument — render
+  // an explicit unpriced notice instead (resolveMatchPrice fail-closed rule).
+  const earnestMoneyDisplay =
+    vars.earnest_money != null &&
+    Number.isFinite(vars.earnest_money) &&
+    vars.earnest_money > 0
+      ? formatCurrency(vars.earnest_money)
+      : 'To Be Negotiated (not yet recorded)';
+
   return `
 ================================================================================
                     TEXAS ADDENDUM TO PURCHASE AGREEMENT
@@ -90,7 +100,7 @@ Property: ${vars.property_address}
                       SECTION A: EARNEST MONEY PROVISIONS
 --------------------------------------------------------------------------------
 
-EARNEST MONEY: ${formatCurrency(vars.earnest_money)}
+EARNEST MONEY: ${earnestMoneyDisplay}
 
 ${vars.title_company_name ? `Title Company: ${vars.title_company_name}` : ''}
 ${vars.title_company_address ? `Address: ${vars.title_company_address}` : ''}

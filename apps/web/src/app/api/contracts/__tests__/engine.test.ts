@@ -44,8 +44,11 @@ describe('Contract Engine', () => {
       expect(PURCHASE_AGREEMENT_DEFAULTS.attorney_mod_days).toBe(5);
     });
 
-    it('defaults have correct earnest money ($1000)', () => {
-      expect(PURCHASE_AGREEMENT_DEFAULTS.earnest_money).toBe(1000);
+    it('defaults have NO fabricated earnest money (fail-closed)', () => {
+      // DATA-HONESTY: the old `earnest_money: 1000` default printed invented
+      // money on legal contracts; it must never return
+      // (see earnestMoney.honesty.test.ts).
+      expect('earnest_money' in PURCHASE_AGREEMENT_DEFAULTS).toBe(false);
     });
   });
 
