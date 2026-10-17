@@ -8,12 +8,47 @@ project state. A new model inherits state from here and from
 
 ## SESSION UPDATE — 2026-10-17 (resume: document the pushed achievement race fix `734b286`)
 
-**BASELINE:** Branch `feat/gamification-rewards`, HEAD `734b286` (in sync with
+**BASELINE:** Branch `feat/gamification-rewards`, HEAD `b95fd19` (in sync with
 origin per `git log --decorate`), working tree clean of feature changes (only
-long-standing untracked `tmp_*` scratch + 3 untracked config/plan files). The
-checkpoint's top entry ended at `6306a6c` and never recorded `734b286`, which
-the prior session had already committed and pushed. This session verified and
-documented it; no production code changed.
+long-standing untracked `tmp_*` scratch + 3 untracked config/plan files). On top
+of `734b286` (race-fix commit, documented below), the session added `629d6ca`
+(real-engine PGlite proof for migration 102) and `506d241` (refresh stale
+run-migrations corpus pin for migration 102), then `b95fd19` (test-timeout
+fixes). All committed and pushed.
+
+### Test-timeout gate fixes (`b95fd19`)
+
+Three source-scanning "ratchet" guard tests plus `bankAccounts.security.test.ts`
+consistently exceeded their timeouts under full-suite I/O load, causing flaky
+failures that masked legitimate coverage.
+
+- **middleware.test.ts** — CORS posture test scans ~755 source files via
+  `scanSource` + `readSource`. Under full-suite load (360s collection phase),
+  the synchronous read exceeded the default 5s `testTimeout`. Added
+  `{ timeout: 30_000 }`.
+- **secret-compare-guard.test.ts** — same pattern, scans every file for raw
+  `===`/`!==` against secret-shaped operands. Added `{ timeout: 30_000 }`.
+- **user-preferences-single-source.test.ts** — had its OWN unoptimized
+  `sourceFiles()` using `readdirSync` + `statSync` (no `withFileTypes`, no
+  memoization). Refactored to use the shared `_sourceScan.ts` helper (which
+  uses `withFileTypes` for ~4x faster traversal + memoized `readSource`
+  text cache). Added `{ timeout: 30_000 }`.
+- **bankAccounts.security.test.ts** — `beforeAll` dynamic-import hook exceeded
+  the global 60s `hookTimeout` under 360s collection load. Added `120_000`ms
+  per-hook timeout.
+
+The 5s `testTimeout` is designed to catch *hanging* tests, not legitimate
+I/O-bound file-tree scans. 30s preserves the hang-detection property while
+giving irreducible file reads enough headroom.
+
+**Verification (this session):**
+
+- All 4 affected test files individually: **24/24 pass**.
+- Full suite: **343/344 files passed** (1 skipped), **3655/3681 tests passed**
+  (26 skipped), **0 failures** — Duration 423.82s.
+- Typecheck: `tsc -p tsconfig.typecheck.json --noEmit` → **TSC_EXIT=0**
+  (test files excluded from the typecheck config; changes are test-only).
+- Committed + pushed: `b95fd19` on `feat/gamification-rewards`.
 
 ### Achievement points double-award race closed (`734b286`, migration 102)
 
