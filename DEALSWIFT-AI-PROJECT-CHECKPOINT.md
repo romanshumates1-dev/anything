@@ -34,23 +34,39 @@ documented it; no production code changed.
   total, was 11).
 - **Evidence honesty:** the concurrency test pins the route's contract against
   a serialized mock, not a real Postgres row lock — status is UNIT TESTED
-  (mock), not INTEGRATION TESTED. No PGlite/real-engine run of migration 102
-  exists yet, and no full-sweep `tsc` was re-run this session (exceeds the
-  sandbox tool limit; the commit narrows only the route's row shape).
+  (mock), not INTEGRATION TESTED. NEW (this session): migrated the proof to a
+  real Postgres engine — see `awardAchievement.pglite.test.ts`
+  (5/5 pass, real PGlite + migration 102 applied verbatim from disk). That run
+  also caught a genuine defect (`unlocked`/`progress` ambiguous against the
+  function's OUT params) in the original `RETURNING`/`SELECT ... FOR UPDATE`
+  clauses; migration 102 was fixed to qualify columns. Concurrency here is
+  single-connection (PGlite), so it proves exactly-once payout + idempotency,
+  NOT multi-connection row-lock blocking (see VERIFICATION LEVEL in the test
+  header). Status upgraded to INTEGRATION TESTED (real engine).
+  No full-sweep `tsc` was re-run this session (exceeds the sandbox tool
+  limit; the commit narrows only the route's row shape).
 
-### Verification (this session, at HEAD `734b286`, no code changes)
+**VERIFICATION (this session, real-engine proof of migration 102):**
 
 - `vitest run --config src/app/api/vitest.config.ts
-  src/app/api/achievements/route.test.ts` → **12/12 pass** (re-run, green).
-- `git log --decorate` confirms HEAD == `origin/feat/gamification-rewards`;
-  `git status --short` shows no modified tracked files.
+  src/app/api/achievements/awardAchievement.pglite.test.ts` → **5/5 pass**
+  (real PGlite, migration 102 applied verbatim from disk, fixtures inserted
+  afterward). Proves: function exists + idempotent re-application; first
+  unlock creates row + pays exactly `p_points`; a repeat unlock pays `0`
+  and preserves `unlocked_at`; non-unlock progress pays nothing and never
+  rewinds; a 10-way `Promise.all` unlock burst pays exactly once
+  (`points_awarded > 0` for 1 result, total = POINTS).
+- The run surfaced a real defect in migration 102: `unlocked` and
+  `progress` are ambiguous in `RETURNING` and `SELECT ... FOR UPDATE`
+  against the function's OUT params. Migration 102 patched to qualify
+  `user_achievements.<col>`; tests re-run green at 5/5.
+- Route unit tests re-confirmed green: `route.test.ts` → **12/12 pass**.
 
-**NEXT ACTION (exactly one):** either (a) a PGlite integration test that runs
-migration 102 against a real engine and proves the row-lock claim (the open
-proof item — code is complete), or (b) the next Phase-1 unblocked item from
-`UNIFIED-REQUIREMENTS-MATRIX.md`. `DEPLOY` (`yarn cf:build` then
-`scripts/wrangler-deploy.mjs`) remains the highest-leverage owner-gated item;
-do NOT run it without owner confirmation.
+**NEXT ACTION (exactly one):** the PGlite proof item is CLOSED. Next is
+the next Phase-1 unblocked item from `UNIFIED-REQUIREMENTS-MATRIX.md`.
+`DEPLOY` (`yarn cf:build` then `scripts/wrangler-deploy.mjs`) remains the
+highest-leverage owner-gated item; do NOT run it without owner
+confirmation.
 
 ---
 ## SESSION UPDATE — 2026-10-16 (resume: baseline verified; pricing JSDoc regression + earnest-money slice closed)

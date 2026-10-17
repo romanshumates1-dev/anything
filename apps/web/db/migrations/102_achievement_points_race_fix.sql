@@ -46,7 +46,7 @@ BEGIN
   ON CONFLICT (user_id, achievement_id) DO NOTHING;
 
   -- Serialize all concurrent upserts on this (user, achievement) pair.
-  SELECT unlocked INTO v_was_unlocked
+  SELECT user_achievements.unlocked INTO v_was_unlocked
   FROM user_achievements
   WHERE user_id = p_user_id AND achievement_id = p_achievement_id
   FOR UPDATE;
@@ -60,7 +60,7 @@ BEGIN
                              CASE WHEN p_should_unlock THEN NOW() ELSE NULL END),
       updated_at    = NOW()
   WHERE user_id = p_user_id AND achievement_id = p_achievement_id
-  RETURNING progress, unlocked, unlocked_at
+  RETURNING user_achievements.progress, user_achievements.unlocked, user_achievements.unlocked_at
   INTO v_progress, v_unlocked, v_unlocked_at;
 
   -- Pay points only on a real locked→unlocked transition caused by this call.
