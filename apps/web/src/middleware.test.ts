@@ -62,7 +62,7 @@ describe('CORS posture', () => {
     excludeTests: true,
   });
 
-  it('no shipped source file emits an Access-Control-Allow-* header', () => {
+  it('no shipped source file emits an Access-Control-Allow-* header', { timeout: 30_000 }, () => {
     const offenders: string[] = [];
     for (const file of files) {
       if (readSource(file).includes('Access-Control-Allow')) offenders.push(file);

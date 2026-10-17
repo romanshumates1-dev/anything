@@ -90,7 +90,7 @@ describe('secret-compare guard (timing-safe secrets)', () => {
     expect(files.length).toBeGreaterThan(300);
   });
 
-  it('has no raw ===/!== comparisons against secret-shaped operands', () => {
+  it('has no raw ===/!== comparisons against secret-shaped operands', { timeout: 30_000 }, () => {
     const violations: string[] = [];
 
     // Vacuous-pass guard, asserted here too (not just in the sibling test) so

@@ -22,25 +22,10 @@
  * reference must be a PATCH (a write, which is not a duplicate read).
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { scanSource, readSource, SRC_ROOT } from '../../app/api/__tests__/security/_sourceScan';
 
-const SRC = join(process.cwd(), 'src');
 const SHARED_FETCHER = 'lib/userPreferences.ts';
-
-function sourceFiles(dir: string, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      // Never walk into test fixtures or build output.
-      if (entry === '__tests__' || entry === 'node_modules') continue;
-      sourceFiles(full, acc);
-      continue;
-    }
-    if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) acc.push(full);
-  }
-  return acc;
-}
 
 /**
  * Strips comments. Several files DISCUSS this endpoint in prose (why anonymous
@@ -52,20 +37,20 @@ function stripComments(source: string): string {
 }
 
 describe('user preferences are read from exactly one place', () => {
-  const files = sourceFiles(SRC);
+  const files = scanSource(SRC_ROOT);
 
   it('found the source tree', () => {
     expect(files.length).toBeGreaterThan(100);
   });
 
-  it('no component reads /api/user/preferences outside the shared fetcher', () => {
+  it('no component reads /api/user/preferences outside the shared fetcher', { timeout: 30_000 }, () => {
     const offenders: string[] = [];
 
     for (const file of files) {
-      const text = stripComments(readFileSync(file, 'utf8'));
+      const text = stripComments(readSource(file));
       // Normalised: on Windows the path separators are backslashes, so a raw
       // endsWith('lib/userPreferences.ts') would never match.
-      const relPath = relative(SRC, file).replace(/\\/g, '/');
+      const relPath = relative(SRC_ROOT, file).replace(/\\/g, '/');
       const needle = '/api/user/preferences';
       let index = text.indexOf(needle);
       while (index !== -1) {
@@ -87,8 +72,8 @@ describe('user preferences are read from exactly one place', () => {
   });
 
   it('the shared fetcher exists and owns the one key', () => {
-    const fetcher = join(SRC, ...SHARED_FETCHER.split('/'));
-    const text = readFileSync(fetcher, 'utf8');
+    const fetcher = join(SRC_ROOT, ...SHARED_FETCHER.split('/'));
+    const text = readSource(fetcher);
     expect(text).toContain('/api/user/preferences');
     expect(text).toContain("['user-preferences']");
   });

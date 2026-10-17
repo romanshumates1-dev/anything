@@ -36,9 +36,13 @@ process.env.ENCRYPTION_KEY =
 type Helpers = typeof import('@/app/api/utils/bankAccounts');
 let h: Helpers;
 
+// Under full-suite collection load (≈360s of file-walking) the dynamic
+// import + module init can exceed the global 60s hookTimeout. 120s keeps
+// the gate meaningful (a genuinely stuck import still fails in 2 min) while
+// absorbing the worst I/O contention on this machine.
 beforeAll(async () => {
   h = (await import('@/app/api/utils/bankAccounts')) as Helpers;
-});
+}, 120_000);
 
 describe('bank account public shape', () => {
   it('never exposes routing or account numbers, encrypted or not', () => {
