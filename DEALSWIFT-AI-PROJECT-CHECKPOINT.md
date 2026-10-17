@@ -6,6 +6,53 @@ project state. A new model inherits state from here and from
 
 ---
 
+## SESSION UPDATE — 2026-10-17 (resume: document the pushed achievement race fix `734b286`)
+
+**BASELINE:** Branch `feat/gamification-rewards`, HEAD `734b286` (in sync with
+origin per `git log --decorate`), working tree clean of feature changes (only
+long-standing untracked `tmp_*` scratch + 3 untracked config/plan files). The
+checkpoint's top entry ended at `6306a6c` and never recorded `734b286`, which
+the prior session had already committed and pushed. This session verified and
+documented it; no production code changed.
+
+### Achievement points double-award race closed (`734b286`, migration 102)
+
+- **Defect:** `POST /api/achievements` read `was_unlocked` and wrote in
+  separate statements, so two concurrent callers racing on a never-touched
+  achievement both read `false` and both were credited `user_stats.points`.
+  The route carried this as a stated KNOWN LIMIT.
+- **Fix:** new `102_achievement_points_race_fix.sql` adds
+  `award_achievement(...)` — ensures the row exists, locks it `FOR UPDATE`,
+  applies the monotonic upsert (GREATEST progress, OR unlock, COALESCE
+  timestamp), and pays points ONLY on a real locked→unlocked transition.
+  Additive + idempotent (`CREATE OR REPLACE`; no existing object touched).
+  The route collapses two statements into one
+  `SELECT * FROM award_achievement(...)` and reports `points_awarded` from the
+  function; the KNOWN LIMIT comment is replaced by a RACE CLOSED comment.
+- **Tests:** `route.test.ts` retools all mocks to the function contract and
+  adds `awards points exactly once under concurrent repeat calls` (12 tests
+  total, was 11).
+- **Evidence honesty:** the concurrency test pins the route's contract against
+  a serialized mock, not a real Postgres row lock — status is UNIT TESTED
+  (mock), not INTEGRATION TESTED. No PGlite/real-engine run of migration 102
+  exists yet, and no full-sweep `tsc` was re-run this session (exceeds the
+  sandbox tool limit; the commit narrows only the route's row shape).
+
+### Verification (this session, at HEAD `734b286`, no code changes)
+
+- `vitest run --config src/app/api/vitest.config.ts
+  src/app/api/achievements/route.test.ts` → **12/12 pass** (re-run, green).
+- `git log --decorate` confirms HEAD == `origin/feat/gamification-rewards`;
+  `git status --short` shows no modified tracked files.
+
+**NEXT ACTION (exactly one):** either (a) a PGlite integration test that runs
+migration 102 against a real engine and proves the row-lock claim (the open
+proof item — code is complete), or (b) the next Phase-1 unblocked item from
+`UNIFIED-REQUIREMENTS-MATRIX.md`. `DEPLOY` (`yarn cf:build` then
+`scripts/wrangler-deploy.mjs`) remains the highest-leverage owner-gated item;
+do NOT run it without owner confirmation.
+
+---
 ## SESSION UPDATE — 2026-10-16 (resume: baseline verified; pricing JSDoc regression + earnest-money slice closed)
 
 **BASELINE:** Branch `feat/gamification-rewards`, HEAD was `ea12630` (in sync with
