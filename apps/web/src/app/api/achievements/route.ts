@@ -160,68 +160,32 @@ export async function POST(request: Request) {
     // unlock timestamp, so a lower or replayed progress value cannot rewind a
     // record or restamp it.
     //
-    // KNOWN LIMIT, stated rather than hidden: two callers racing on an
-    // achievement that has NEVER been touched could both read `was_unlocked =
-    // false` and both be credited. Closing that needs the award to live in a
-    // stored function (as migration 088 does for AI credits) or a points ledger
-    // keyed by unlock event. It is not fixed here, and this comment is the
-    // record of it. Every sequential repeat — the actual exploit — is exact.
+    // RACE CLOSED: the inline upsert above let two callers racing on a
+    // never-touched achievement both read `was_unlocked = false` and both be
+    // credited. Migration 102 replaces that with `award_achievement()`, a stored
+    // function that ensures the row exists, locks it FOR UPDATE, reads the
+    // pre-existing `unlocked` flag, applies the monotonic upsert, and pays
+    // points ONLY on a real locked→unlocked transition. Concurrent callers now
+    // serialize on the row lock, so exactly one payout occurs.
+
     const [row] = await sql`
-      WITH prev AS (
-        SELECT unlocked AS was_unlocked
-        FROM user_achievements
-        WHERE user_id = ${session.userId} AND achievement_id = ${achievement.id}
-      ),
-      upsert AS (
-        INSERT INTO user_achievements (user_id, achievement_id, progress, unlocked, unlocked_at)
-        VALUES (
-          ${session.userId},
-          ${achievement.id},
-          ${clamped},
-          ${shouldUnlock || false},
-          ${shouldUnlock ? new Date() : null}
-        )
-        ON CONFLICT (user_id, achievement_id) DO UPDATE SET
-          progress = GREATEST(user_achievements.progress, EXCLUDED.progress),
-          unlocked = user_achievements.unlocked OR EXCLUDED.unlocked,
-          unlocked_at = COALESCE(user_achievements.unlocked_at, EXCLUDED.unlocked_at),
-          updated_at = NOW()
-        RETURNING progress, unlocked
+      SELECT * FROM award_achievement(
+        ${session.userId},
+        ${achievement.id},
+        ${clamped},
+        ${shouldUnlock || false},
+        ${achievement.points}
       )
-      SELECT
-        upsert.progress AS progress,
-        upsert.unlocked AS unlocked,
-        (COALESCE(prev.was_unlocked, false) = false AND upsert.unlocked) AS just_unlocked
-      FROM upsert
-      LEFT JOIN prev ON true
     `;
 
+    const finalProgress = Number(row?.progress ?? clamped);
     const unlocked = Boolean(row?.unlocked ?? shouldUnlock);
-    // Award ONLY on a real transition. A replayed or already-unlocked write
-    // falls through here with just_unlocked = false and adds nothing.
-    const justUnlocked = Boolean(row?.just_unlocked);
-    const pointsAwarded = justUnlocked ? achievement.points : 0;
-
-    // If unlocked by THIS call, update user points
-    if (justUnlocked) {
-      // INSERT..ON CONFLICT, not a bare UPDATE: `user_stats` has no row for a
-      // user until something creates one, and this endpoint was the only thing
-      // that did. A bare UPDATE would match zero rows and silently award nothing
-      // to exactly the newest users. The increment stays guarded by
-      // `justUnlocked`, so the upsert cannot become a second payout path.
-      await sql`
-        INSERT INTO user_stats (user_id, points)
-        VALUES (${session.userId}, ${achievement.points})
-        ON CONFLICT (user_id) DO UPDATE SET
-          points = COALESCE(user_stats.points, 0) + ${achievement.points},
-          updated_at = NOW()
-      `;
-    }
+    const pointsAwarded = Number(row?.points_awarded ?? 0);
 
     return NextResponse.json({
       success: true,
       unlocked,
-      progress: row ? row.progress : clamped,
+      progress: finalProgress,
       pointsAwarded,
     });
   } catch (error) {

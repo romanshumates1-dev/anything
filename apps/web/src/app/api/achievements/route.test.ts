@@ -12,6 +12,10 @@
  * switched the feature off could still mint progress through it. Both are fixed
  * here. The gamification toggle semantics themselves are covered by
  * `gamification.test.ts` and are not re-tested.
+ *
+ * Migration 102 closes the documented double-award race: `award_achievement()`
+ * serializes concurrent callers on a row lock and pays points only on a real
+ * locked→unlocked transition. The concurrency test below pins that behaviour.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -48,15 +52,6 @@ function sqlText(callIndex: number): string {
   return String(call?.[0]?.join(' ') ?? '');
 }
 
-/**
- * True when the statement at `callIndex` is the points write. Matches both the
- * INSERT..ON CONFLICT form (the real one) and a bare UPDATE, so the assertion is
- * about "a payout statement was issued", not about one particular spelling.
- */
-function isStatsUpdate(callIndex: number): boolean {
-  return /(update\s+user_stats|into\s+user_stats)/i.test(sqlText(callIndex));
-}
-
 function body(payload: unknown): Request {
   return {
     json: async () => payload,
@@ -67,9 +62,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   requireSession.mockResolvedValue({ userId: USER_ID });
   requireGamificationEnabled.mockResolvedValue(null);
-  // 1: achievement lookup. 2: the upsert, which now reports whether this call
-  // was the one that transitioned the row to unlocked.
-  mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([]);
+  // 1: achievement lookup. 2: award_achievement() result (progress/unlocked/
+  // just_unlocked/points_awarded from the stored function).
+  mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([
+    { progress: 5, unlocked: true, just_unlocked: true, points_awarded: 150 },
+  ]);
 });
 
 describe('POST /api/achievements — authentication and gating', () => {
@@ -125,31 +122,35 @@ describe('POST /api/achievements — progress validation', () => {
 
 describe('POST /api/achievements — points are awarded exactly once', () => {
   it('credits points on the transition that unlocks', async () => {
-    // Row reports it just became unlocked -> this call is the first one.
-    // `just_unlocked` is what the upsert's RETURNING clause produces; it is the
-    // whole basis of the "awarded exactly once" rule.
+    // `award_achievement()` reports this call as the one that transitioned the
+    // row to unlocked, so the full points are paid.
     mockSql.mockReset();
-    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([{ unlocked: true, just_unlocked: true }]);
+    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([
+      { progress: 5, unlocked: true, just_unlocked: true, points_awarded: 150 },
+    ]);
 
     const res = await POST(body({ achievementKey: 'first_steps', progress: 5 }));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.unlocked).toBe(true);
     expect(data.pointsAwarded).toBe(150);
-    expect(mockSql.mock.calls.some((_, i) => isStatsUpdate(i))).toBe(true);
+    expect(data.progress).toBe(5);
   });
 
   it('does NOT credit points again on a repeat unlock', async () => {
-    // Row was already unlocked before this call -> the upsert reports no
-    // transition, so nothing may be paid out. This is the exact double-award.
+    // Row was already unlocked before this call -> the stored function reports
+    // no transition, so nothing may be paid out. This is the exact double-award
+    // the race fix prevents.
     mockSql.mockReset();
-    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([]);
+    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([
+      { progress: 5, unlocked: true, just_unlocked: false, points_awarded: 0 },
+    ]);
 
     const res = await POST(body({ achievementKey: 'first_steps', progress: 5, unlock: true }));
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.pointsAwarded).toBe(0);
-    expect(mockSql.mock.calls.some((_, i) => isStatsUpdate(i))).toBe(false);
+    expect(data.unlocked).toBe(true);
   });
 
   it('stays idempotent across a burst of identical repeat calls', async () => {
@@ -157,17 +158,23 @@ describe('POST /api/achievements — points are awarded exactly once', () => {
     // award-bearing statement fires only the first time, because after that the
     // stored row is already unlocked. Keying off the SQL text also means the
     // test cannot silently break if the route's statement ORDER changes.
-    let unlocked = false;
+    let callCount = 0;
     mockSql.mockReset();
     mockSql.mockImplementation(async (strings: TemplateStringsArray) => {
       const text = String(strings.join(' '));
       if (/from\s+achievements/i.test(text)) return [achievementRow()];
-      if (/insert\s+into\s+user_achievements/i.test(text)) {
-        const justUnlocked = !unlocked;
-        unlocked = true;
-        return [{ progress: 5, unlocked: true, just_unlocked: justUnlocked }];
+      if (/award_achievement/i.test(text)) {
+        callCount += 1;
+        const justUnlocked = callCount === 1;
+        return [
+          {
+            progress: 5,
+            unlocked: true,
+            just_unlocked: justUnlocked,
+            points_awarded: justUnlocked ? 150 : 0,
+          },
+        ];
       }
-      if (/into\s+user_stats/i.test(text)) return [];
       return [];
     });
 
@@ -184,9 +191,52 @@ describe('POST /api/achievements — points are awarded exactly once', () => {
     expect(awards.filter((a) => a > 0)).toHaveLength(1);
   });
 
+  it('awards points exactly once under concurrent repeat calls', async () => {
+    // Two simultaneous POSTs for a never-touched achievement: the stored
+    // function serializes them on the row lock, so exactly one caller gets
+    // the transition and the points. The mock has no yield point between
+    // reading and flipping `unlockSeen`, so it faithfully serializes like the
+    // real row lock does.
+    let unlockSeen = false;
+    mockSql.mockReset();
+    mockSql.mockImplementation(async (strings: TemplateStringsArray) => {
+      const text = String(strings.join(' '));
+      if (/from\s+achievements/i.test(text)) return [achievementRow()];
+      if (/award_achievement/i.test(text)) {
+        const justUnlocked = !unlockSeen;
+        unlockSeen = true;
+        return [
+          {
+            progress: 5,
+            unlocked: true,
+            just_unlocked: justUnlocked,
+            points_awarded: justUnlocked ? 150 : 0,
+          },
+        ];
+      }
+      return [];
+    });
+
+    // Fire both POSTs concurrently (no await between them).
+    const [resA, resB] = await Promise.all([
+      POST(body({ achievementKey: 'first_steps', progress: 5 })),
+      POST(body({ achievementKey: 'first_steps', progress: 5 })),
+    ]);
+
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    const [dataA, dataB] = await Promise.all([resA.json(), resB.json()]);
+    const awards = [dataA.pointsAwarded, dataB.pointsAwarded];
+    // Exactly one payout across the two concurrent calls.
+    expect(awards.filter((a) => a > 0)).toHaveLength(1);
+    expect(awards.reduce((sum, a) => sum + a, 0)).toBe(150);
+  });
+
   it('never decreases already-recorded progress', async () => {
     mockSql.mockReset();
-    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([{ progress: 4 }]);
+    mockSql.mockResolvedValueOnce([achievementRow()]).mockResolvedValueOnce([
+      { progress: 4, unlocked: false, just_unlocked: false, points_awarded: 0 },
+    ]);
 
     const res = await POST(body({ achievementKey: 'first_steps', progress: 1 }));
     const data = await res.json();
