@@ -267,14 +267,19 @@ describe('run-migrations comment stripping', () => {
     // (b) the corpus changes without this oracle being re-pinned. Refresh policy:
     // when a new migration is merged, re-derive BOTH numbers by replaying this
     // test's exact splitStatements/gate logic over the corpus and bump both
-    // constants here. Current corpus at HEAD = 101 files; verified by an
+    // constants here. Current corpus at HEAD = 102 files; verified by an
     // independent node reproduction (tmp_oracle.mjs run from apps/web) yielding
-    // fixedApplied=779, buggyApplied=391 (delta 388 > 300). The +3/+2 vs the prior
+    // fixedApplied=781, buggyApplied=392 (delta 389 > 300). The +3/+2 vs the prior
     // pinning (776/389) is EXACTLY migration 101_user_xp_events.sql (added in
     // 1cd4219), i.e. legitimate corpus growth after the `71252d0` pin â€” NOT a
     // splitter defect, NOT dropped statements, NOT data corruption.
-    expect(fixedApplied).toBe(779);
-    expect(buggyApplied).toBe(391);
+    // Migration 102_achievement_points_race_fix.sql (added in 734b286) grew the
+    // corpus +2 fixed (779->781) and +1 buggy (391->392) under the naive splitter.
+    // NOT a regression: the 629d6ca column-qualification patch changed zero
+    // statement terminators (verified at 4769b8a and 629d6ca: fixedApplied=781
+    // in both). Re-pin per the refresh policy above; delta 781-392 = 389 > 300.
+    expect(fixedApplied).toBe(781);
+    expect(buggyApplied).toBe(392);
     // The fix must be load-bearing: it recovers a large number of statements.
     expect(fixedApplied - buggyApplied).toBeGreaterThan(300);
   });
