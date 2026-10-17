@@ -10,6 +10,7 @@
  * prices here MUST equal the DB cents (see pricingDisplaySource.test.ts).
  * GROWTH/PROFESSIONAL/ELITE are marketing-only upsell tiers with no DB plan
  * rows and no self-service billing; their prices are marketing-facing only.
+ */
 
 export const PRICING_TIERS = {
   STARTER: {

@@ -94,4 +94,21 @@ describe('pricingTiers.ts mirrors the DB plan prices (migration 067)', () => {
       ).toBe(row!.cents / 100);
     }
   });
+
+  it('the PRICING_TIERS export is NOT swallowed by the header comment', () => {
+    // Regression pin for the 60faac0 defect: that commit's NOTE block replaced
+    // the header JSDoc's closing `*/` and never re-added it, so lines 1-152
+    // became ONE giant comment — PRICING_TIERS, TierName and BillingPeriod all
+    // vanished from the module (23 tsc errors; /pricing imported undefined
+    // exports). This file reads source text by design (see header), and the
+    // first `*/` in the source MUST appear BEFORE the export statement.
+    const firstCommentClose = pricingTiersSrc.indexOf('*/');
+    const exportIndex = pricingTiersSrc.indexOf('export const PRICING_TIERS');
+    expect(firstCommentClose, 'file must close its header block comment').toBeGreaterThan(-1);
+    expect(exportIndex, 'pricingTiers.ts must export PRICING_TIERS').toBeGreaterThan(-1);
+    expect(
+      firstCommentClose,
+      'PRICING_TIERS export must come AFTER the header comment closer (60faac0 regression)',
+    ).toBeLessThan(exportIndex);
+  });
 });
