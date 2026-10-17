@@ -6,6 +6,79 @@ project state. A new model inherits state from here and from
 
 ---
 
+## SESSION UPDATE — 2026-10-16 (resume: baseline verified; pricing JSDoc regression + earnest-money slice closed)
+
+**BASELINE:** Branch `feat/gamification-rewards`, HEAD was `ea12630` (in sync with
+origin), working tree carried an intentional uncommitted earnest-money honesty
+follow-up (3 contracts files) + untracked `earnestMoney.honesty.test.ts` from the
+prior session. Both verified green, completed, committed and pushed this session:
+`c2e06f1`, `6306a6c`. Fresh evidence recorded below; older claims re-verified
+where this session's changes touched them.
+
+### CRITICAL regression found & fixed — `60faac0` commented out all of PRICING_TIERS
+
+- `git show 60faac0` proved that commit's NOTE block **replaced** the header
+  JSDoc's closing `*/` and never re-added it. Lines 1-152 of
+  `apps/web/src/app/api/utils/pricingTiers.ts` became ONE giant block comment:
+  `PRICING_TIERS`, `TierName`, `BillingPeriod` all vanished from the module.
+  Full-sweep Gate A listed **24 tsc errors** (20 in pricingTiers.ts, 3 in
+  `PricingTierSelector.tsx` TS2305 imports, 1 in engine.ts — see below); at
+  runtime `/pricing`'s tier selector imported undefined exports.
+- **Why no test caught it:** `pricingDisplaySource.test.ts` (added by the same
+  commit) deliberately reads the file as TEXT (SWC-transform workaround in its
+  header) — it validated the price digits while the export itself was dead code.
+- **Fix `c2e06f1`:** restored ` */` after the NOTE + new text-level regression
+  pin (`the PRICING_TIERS export is NOT swallowed by the header comment`:
+  first `*/` must precede the export). **Mutation-proven:** re-removing the
+  closer → `expected 3802 to be less than 633`; restored → green.
+
+### Earnest-money honesty slice completed (uncommitted work inherited from 2026-10-15 session)
+
+- The inherited diff was GREEN on vitest but **failed Gate A**:
+  `engine.ts(372,9) TS2322 number | undefined → number` — the TX addendum's
+  `TexasAddendumVariables.earnest_money` was still required.
+- **Fix `6306a6c`:** `texas.ts` makes `earnest_money` optional and renders the
+  same `To Be Negotiated (not yet recorded)` notice as the purchase agreement
+  (absent/zero/NaN → unpriced notice; never $1,000). Also removed the
+  `PURCHASE_AGREEMENT_DEFAULTS.earnest_money: 1000` trap (the old fallback's
+  source); `engine.test.ts`'s pin of that default inverted to
+  `'earnest_money' in DEFAULTS === false`. New TX-addendum honesty tests
+  (earnestMoney.honesty.test.ts now 11 tests).
+- **Mutation-proven:** `formatCurrency(0)` instead of the notice → 3 honesty
+  tests fail; restored → green.
+
+### Verification (this session, at final HEAD `6306a6c`)
+
+- **Gate A:** full-project `tsc -p tsconfig.typecheck.json` pre-fix = 24 errors
+  (all in the 3 files above); post-fix **targeted** Gate A over exactly those
+  files + the whole changed set (`tsc` same options, transitive deps included)
+  → **TSC_EXIT=0**. Full-sweep re-run could not complete in this sandbox
+  (background processes killed at the 30s tool limit) — the composition is
+  equivalent: the only pre-fix errors were in files now clean.
+- **Gate B subset:** `contracts` + `pricingDisplaySource` → **144/144 pass**
+  (contracts group grew 137→141 by the new TX tests; pricing 2→3).
+- Also re-verified inherited evidence at this HEAD: `dashboardSlices.pglite`
+  7/7, `check-credit-pricing-readiness` 3/3.
+
+### Baseline commands (verified working this session)
+
+```
+cd D:\anything\apps\web
+node_modules\.bin\vitest.cmd run --config src/app/api/vitest.config.ts <paths>
+node_modules\.bin\tsc.cmd --noEmit -p tsconfig.typecheck.json   # ~2-4 min; exceeds
+    # the 30s shell-tool limit — run it owner-side or in a longer-timeout session
+```
+
+**NEXT ACTION (exactly one):** pick the next Phase-1 unblocked item from
+`UNIFIED-REQUIREMENTS-MATRIX.md` (the pricing-page runtime import was fixed as
+part of `c2e06f1`; `DEPLOY` — `yarn cf:build` then `scripts/wrangler-deploy.mjs`
+— remains the highest-leverage owner-gated item; do NOT run it without owner
+confirmation). Housekeeping candidate: the ~70 `tmp_*` files at repo root are
+untracked scratch from prior sessions — safe to delete, none are referenced by
+tests.
+
+---
+
 ## SESSION UPDATE — 2026-10-13 (milestone: rollout gate shipped; SEO-1 audit)
 
 - Committed `5ba8cfa`, pushed: rollout gate script + test, 30-row fix, pricing decision record.
